@@ -16,6 +16,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/webevidence"
 )
 
@@ -123,9 +124,24 @@ func TestAgentBrowserHTTPRejectsAmbiguousControl(t *testing.T) {
 
 type agentBrowserScreencastStub struct {
 	agentBrowserHTTPStub
-	streams   int
-	lastRunID string
-	frames    []application.AgentBrowserScreencastFrameView
+	streams          int
+	lastRunID        string
+	frames           []application.AgentBrowserScreencastFrameView
+	releases         []application.AgentBrowserDownloadRelease
+	recordedApproval application.AgentBrowserDownloadApproval
+}
+
+func (s *agentBrowserScreencastStub) BrowserDownloads(context.Context, string) ([]browserruntime.AgentBrowserDownloadReceipt, error) {
+	return []browserruntime.AgentBrowserDownloadReceipt{}, nil
+}
+
+func (s *agentBrowserScreencastStub) ReleaseBrowserDownload(_ context.Context, runID, guid string,
+	release application.AgentBrowserDownloadRelease,
+) (string, browserruntime.AgentBrowserDownloadReceipt, application.AgentBrowserDownloadApproval, error) {
+	s.releases = append(s.releases, release)
+	return "workspace:///.cyberagent-workbench/browser-artifacts/downloads/" + runID + "/" + guid,
+		browserruntime.AgentBrowserDownloadReceipt{GUID: guid, State: browserruntime.AgentBrowserDownloadCompleted},
+		s.recordedApproval, nil
 }
 
 // flushableRecorder lets the SSE handler flush through httptest.ResponseRecorder.
@@ -262,5 +278,59 @@ func TestAgentBrowserScreencastUnavailableWithoutStreamer(t *testing.T) {
 	response := performRequest(t, api, http.MethodGet, path, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
 	if response.Code != http.StatusNotFound {
 		t.Fatal("live view offered without a streaming controller", response.Code)
+	}
+}
+
+func TestAgentBrowserDownloadListAndReleaseEndpoint(t *testing.T) {
+	fixture := newAPIFixture(t)
+	stub := &agentBrowserScreencastStub{}
+	stub.view = application.AgentBrowserView{Version: "agent_browser_status.v1", RunID: fixture.run.ID,
+		SessionID: "browser-download-session", Generation: 1, State: "ready", Headless: true,
+		UpdatedAt: time.Now().UTC(), Capabilities: application.AgentBrowserCapabilities{Available: true}}
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, AgentBrowserController: stub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guid := "0f1e2d3c-4b5a-4647-8879-0a1b2c3d4e5f"
+	listPath := "/api/v1/runs/" + fixture.run.ID + "/agent-browser/downloads"
+	releasePath := listPath + "/" + guid + "/release"
+
+	list := performRequest(t, api, http.MethodGet, listPath, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("downloads list status=%d body=%s", list.Code, list.Body.String())
+	}
+
+	// The approval event the release leaves behind names a different operator
+	// than this request: the response reports what is recorded, not who asked.
+	stub.recordedApproval = application.AgentBrowserDownloadApproval{
+		DeclaredOperator: "first-operator", ApprovedAt: time.Date(2026, 10, 30, 9, 8, 7, 0, time.UTC)}
+	release := performControlPathRequest(t, api, releasePath, "release-agent-browser-download", strings.NewReader(`{"version":"agent_browser_download_release.v1","operator":"openapi-operator"}`))
+	if release.Code != http.StatusOK {
+		t.Fatalf("release status=%d body=%s", release.Code, release.Body.String())
+	}
+	if !strings.Contains(release.Body.String(), `"locator":"workspace:///.cyberagent-workbench/browser-artifacts/downloads/`) {
+		t.Fatalf("release body: %s", release.Body.String())
+	}
+	if !strings.Contains(release.Body.String(), `"operator":"first-operator"`) ||
+		!strings.Contains(release.Body.String(), `"released_at":"2026-10-30T09:08:07Z"`) {
+		t.Fatalf("release response did not report the recorded approval: %s", release.Body.String())
+	}
+	if strings.Contains(release.Body.String(), `"operator":"openapi-operator"`) {
+		t.Fatalf("release response echoed the replaying caller: %s", release.Body.String())
+	}
+	// The control-plane authorization carries no human identity: the
+	// controller receives the server-derived principal and the caller-declared
+	// operator name as two separate values.
+	if len(stub.releases) != 1 ||
+		stub.releases[0].Principal != application.AgentBrowserDownloadReleasePrincipalControlPlane ||
+		stub.releases[0].Operator != "openapi-operator" ||
+		stub.releases[0].Principal == stub.releases[0].Operator {
+		t.Fatalf("release identity was not split into principal and declared operator: %+v", stub.releases)
+	}
+
+	denied := performRequest(t, api, http.MethodPost, releasePath, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000",
+		strings.NewReader(`{"version":"agent_browser_download_release.v1"}`))
+	if denied.Code != http.StatusUnauthorized {
+		t.Fatalf("release accepted a read token: %d", denied.Code)
 	}
 }

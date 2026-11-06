@@ -11,7 +11,7 @@ function mount(client: Partial<APIClient>, section: V2SettingsSection, threadID 
   window.localStorage.setItem("prayu.locale.v1", "zh-CN");
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (currentSection: V2SettingsSection) => <QueryClientProvider client={queryClient}><LocaleProvider>
-    <V2Settings client={{ extensionInventory: vi.fn().mockResolvedValue(emptyExtensions), ...client } as APIClient} desktop={desktop} onOpenInspector={vi.fn()}
+    <V2Settings client={{ extensionInventory: vi.fn().mockResolvedValue(emptyExtensions), ...client } as APIClient} desktop={desktop} onOpenHistory={vi.fn()}
       onSelectSection={vi.fn()} section={currentSection} threadID={threadID} workspaces={[]} />
   </LocaleProvider></QueryClientProvider>;
   const rendered = render(view(section));
@@ -193,9 +193,9 @@ describe("shared advanced settings", () => {
     expect(await screen.findByRole("region", { name: "高级模型设置" })).toBeInTheDocument();
   });
 
-  it("uses existing local Inspector preferences without making a service request", async () => {
+  it("uses existing local Record preferences without making a service request", async () => {
     const user = userEvent.setup();
-    mount({}, "inspector");
+    mount({}, "records");
     await user.click(screen.getByRole("button", { name: "紧凑" }));
     await user.click(screen.getByRole("button", { name: "完整诊断" }));
     expect(window.localStorage.getItem("prayu.ui-density")).toBe("compact");

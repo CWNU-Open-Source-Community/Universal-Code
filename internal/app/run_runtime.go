@@ -94,7 +94,9 @@ func (a *App) newCLIExecutionRuntime(ctx context.Context,
 	}
 	if capabilities.DangerFullAccessEnabled {
 		r.browser = application.NewAgentBrowserService(a.store, application.AgentBrowserOptions{
-			HomePath: a.home, Capabilities: capabilities, Headless: true, ServiceReadiness: r.commands,
+			HomePath: a.home, Capabilities: capabilities,
+			Headless:        !application.BrowserHeadedFromEnvironment(),
+			SessionLifetime: application.BrowserSessionLifetimeFromEnvironment(), ServiceReadiness: r.commands,
 		})
 	}
 	return r, nil

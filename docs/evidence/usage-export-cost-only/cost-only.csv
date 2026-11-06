@@ -1,0 +1,2 @@
+﻿kind,date,provider,model,thread_id,title,last_activity_at,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,total_tokens,calls,usage_reported_calls,cache_usage_reported_calls,unassigned_calls,cost_currency,known_cost_usd,priced_calls,unpriced_calls,untracked_calls
+totals,,,,,,,0,0,0,0,0,0,0,0,0,USD,0.125000,1,0,0

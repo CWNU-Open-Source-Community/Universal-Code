@@ -54,12 +54,10 @@ import "./shared-shell.css";
 const V2Settings = lazy(() => import("./components/settings").then((module) => ({
   default: module.V2Settings,
 })));
-const V2InspectorTools = lazy(() => import("./components/inspector-tools").then((module) => ({
-  default: module.V2InspectorTools,
-})));
-const V2InspectorHome = lazy(() => import("./components/inspector-home").then((module) => ({
-  default: module.V2InspectorHome,
-})));
+const V2HistoryPage = lazy(() => import("./components/history-page").then((module) => ({ default: module.V2HistoryPage })));
+const V2RunDetailsPage = lazy(() => import("./components/run-details-page").then((module) => ({ default: module.V2RunDetailsPage })));
+const V2SessionDetailsPage = lazy(() => import("./components/session-details-page").then((module) => ({ default: module.V2SessionDetailsPage })));
+const V2AutomationsPage = lazy(() => import("./components/automations-page").then((module) => ({ default: module.V2AutomationsPage })));
 
 function NewConversation({ client, workspaces, workspaceID, projectID, workspaceNotice, onWorkspaceChange, onCreated,
   onTurnSuccess, onManageModels, onOpenTaskConfiguration, phase, onPhaseChange, budget, configurationValid, webAccessValid, projectSkills,
@@ -280,13 +278,12 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     setReviewEntry(undefined);
   }, [client, selectedThreadID]);
   useEffect(() => {
-    if (route.tool === "run" && reviewMemoryRef.current.runID && reviewMemoryRef.current.runID !== route.resourceID)
+    if (route.kind === "run" && reviewMemoryRef.current.runID && reviewMemoryRef.current.runID !== route.resourceID)
       reviewMemoryRef.current = { generation: reviewMemoryRef.current.generation + 1 };
-  }, [route.tool, route.resourceID]);
-  const surface = route.section ? "settings" : "conversation";
-  const view = route.view ?? "conversation";
+  }, [route.kind, route.resourceID]);
+  const surface = route.section ? "settings" : route.kind === "thread" || route.kind === "new" ? "conversation" : "resource";
   const settingsSection = route.section ?? "general";
-  const newConversation = route.kind !== "thread";
+  const newConversation = !selectedThreadID;
   const [narrowLayout, setNarrowLayout] = useState(() => Boolean(window.matchMedia?.("(max-width: 720px)").matches));
   const [desktopSidebarVisible, setDesktopSidebarVisible] = useState(true);
   const [narrowSidebarVisible, setNarrowSidebarVisible] = useState(false);
@@ -344,7 +341,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   }, [normalizedThreadSearch, searchComposing, searchTooLong]);
   const [storedWorkspace, setWorkspaceID] = useV2PersistentState<unknown>("workspace", "");
   const projectID = typeof storedWorkspace === "string" ? storedWorkspace : "";
-  const localWorkspace = useProjectlessWorkspace(client, route.kind === "new" && !route.section && !route.tool && !projectID);
+  const localWorkspace = useProjectlessWorkspace(client, route.kind === "new" && !route.section && !projectID);
   const workspaceID = projectID || (client.hasProjectlessWorkspaces ? localWorkspace.workspaceID : "");
   const [savedPhase, setSavedPhase] = useV2PersistentState<unknown>(`new-thread-phase:${workspaceID}`, "deliver");
   const phase: V2WorkPhase = savedPhase === "plan" ? "plan" : "deliver";
@@ -448,7 +445,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     const saved = recovery?.read<unknown>("route", "");
     if (typeof saved === "string" && saved) {
       const restored = readV2Route(saved);
-      if (restored.kind === "thread" || restored.kind === "new") { navigate(restored, true); return; }
+      if (restored.kind !== "initial" && restored.kind !== "invalid") { navigate(restored, true); return; }
     }
     const id = previousThreadID || threads[0]?.id;
     navigate(id ? { kind: "thread", threadID: id } : { kind: "new" }, true);
@@ -545,7 +542,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const openConversation = (threadID: string, onAccepted?: () => void) => {
     setBackgroundCreations((current) => current.filter((thread) => thread.id !== threadID));
     updateModelSetupToken("");
-    navigate({ kind: "thread", threadID, ...(route.view ? { view: route.view } : {}) }, false, onAccepted);
+    navigate({ kind: "thread", threadID }, false, onAccepted);
     closeNavigationSidebar();
   };
   const openSidebarConversation = (threadID: string) => openConversation(threadID, () => {
@@ -553,7 +550,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     setReadRequest((current) => ({ threadID, revision: current.revision + 1 }));
   });
   const openAdjacentChat = (direction: -1 | 1) => {
-    if (!selectedThreadID || surface !== "conversation" || view !== "conversation" || route.tool || searchOpen) return false;
+    if (!selectedThreadID || surface !== "conversation" || searchOpen) return false;
     const index = visibleChatOrder.current.indexOf(selectedThreadID);
     const next = index < 0 ? undefined : visibleChatOrder.current[index + direction];
     if (next) openSidebarConversation(next);
@@ -569,26 +566,24 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   };
   const setSettingsSection = (section: V2SettingsSection) => {
     if (section !== "models" && section !== "advanced-models") updateModelSetupToken("");
-    navigate({ ...route, kind: selectedThreadID ? "thread" : "new",
-      ...(selectedThreadID ? { threadID: selectedThreadID } : {}), section }, Boolean(route.section));
+    const source = route.kind === "initial" || route.kind === "invalid" ? { kind: "new" as const } : route;
+    navigate({ ...source, section }, Boolean(route.section));
     closeNavigationSidebar();
   };
   const goBack = () => { updateModelSetupToken(""); navigation.back(); closeNavigationSidebar(); };
   const returnFromSettings = () => {
     updateModelSetupToken("");
-    navigate({ ...route, section: undefined }, true);
+    navigation.back();
     closeNavigationSidebar();
   };
-  const changeView = (next: "conversation" | "inspector") => {
+  const openTask = () => {
     updateModelSetupToken("");
-    navigate({ kind: selectedThreadID ? "thread" : "new",
-      ...(selectedThreadID ? { threadID: selectedThreadID } : {}),
-      ...(next === "inspector" ? { view: "inspector" } : {}) });
+    navigate(selectedThreadID ? { kind: "thread", threadID: selectedThreadID } : { kind: "new" });
     closeNavigationSidebar();
   };
   const openSettings = () => setSettingsSection("general");
   const openModels = (prepareForDraft = false) => {
-    updateModelSetupToken(prepareForDraft && newConversation ? globalThis.crypto.randomUUID() : "",
+    updateModelSetupToken(prepareForDraft && route.kind === "new" ? globalThis.crypto.randomUUID() : "",
       workspaceID);
     setSettingsSection("models");
   };
@@ -603,12 +598,16 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     requestAnimationFrame(() => requestAnimationFrame(() =>
       document.querySelector<HTMLElement>('.v2-new-conversation .v2-composer :is(textarea, [contenteditable="true"][role="textbox"])')?.focus()));
   };
-  const openInspector = () => changeView("inspector");
+  const openHistory = () => {
+    updateModelSetupToken("");
+    navigate({ kind: "history" });
+    closeNavigationSidebar();
+  };
   const openTool = (tool: "run" | "session" | "schedule", resourceID?: string, pane?: V2RunPane) => {
     if (tool === "run" && reviewMemoryRef.current.runID !== resourceID)
       reviewMemoryRef.current = { generation: reviewMemoryRef.current.generation + 1 };
-    navigate({ kind: selectedThreadID ? "thread" : "new", ...(selectedThreadID ? { threadID: selectedThreadID } : {}),
-      view: "inspector", tool, ...(resourceID ? { resourceID } : {}), ...(tool === "run" && pane ? { pane } : {}),
+    navigate({ kind: tool === "schedule" ? "automations" : tool, ...(selectedThreadID ? { threadID: selectedThreadID } : {}),
+      ...(resourceID ? { resourceID } : {}), ...(tool === "run" && pane ? { pane } : {}),
     });
   };
   const openCreatedRun = (runID: string) => {
@@ -617,7 +616,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     if (routeRef.current !== route) return;
     // Fork/Resume returns a Run, not a Thread association. Open that exact
     // record without carrying the old Thread's permissions into its scope.
-    navigate({ kind: "new", view: "inspector", tool: "run", resourceID: runID });
+    navigate({ kind: "run", resourceID: runID });
   };
   const openGithubReview = (runID: string) => {
     if (!selectedThreadID || routeRef.current !== route) return;
@@ -627,7 +626,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   };
 
   const openSearch = (currentThread: boolean) => {
-    if (currentThread && (!selectedThreadID || surface !== "conversation" || route.tool || view !== "conversation")) return false;
+    if (currentThread && (!selectedThreadID || surface !== "conversation")) return false;
     if (surface === "settings") returnFromSettings();
     setSearchCurrentThread(currentThread);
     setSidebarVisible(true);
@@ -658,7 +657,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           onArchive={setArchiveCandidate} onNewConversation={() => startNew()} onOpenModels={() => openModels(newConversation)}
           onNewInProject={(id) => startNew(id)} client={client}
           executionFilter={executionFilter} onExecutionFilterChange={setExecutionFilter}
-          visible={sidebarVisible && surface === "conversation"}
+          visible={sidebarVisible}
           onEditProject={client.hasControl ? setEditingProject : undefined}
           onMoveThread={client.hasThreadControl ? (thread, destination) => moveMutation.mutate({ thread, destination }) : undefined}
           movingThreadID={moveMutation.isPending ? moveMutation.variables.thread.id : undefined}
@@ -669,8 +668,10 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           }} />}
           onOpenSettings={openSettings}
           onOpenConnections={() => setSettingsSection("connections")}
-          onOpenInspector={() => changeView(view === "inspector" ? "conversation" : "inspector")}
-          inspectorActive={view === "inspector"}
+          onOpenHistory={openHistory}
+          onOpenAutomations={() => { navigate({ kind: "automations" }); closeNavigationSidebar(); }}
+          automationsActive={route.kind === "automations"}
+          historyActive={route.kind === "history"}
           onSearchOpen={(open) => {
             setSearchOpen(open);
             setSearchCurrentThread(false);
@@ -696,7 +697,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           refreshing={sidebarQuery.isFetching && !sidebarQuery.isLoading && !sidebarQuery.isFetchingNextPage}
           onRetry={() => void (sidebarQuery.isFetchNextPageError ? sidebarQuery.fetchNextPage() : sidebarQuery.refetch())}
           onLoadMore={() => void sidebarQuery.fetchNextPage()} onRefresh={() => void sidebarQuery.refetch()}
-          selectedThreadID={newConversation ? "" : selectedThreadID} threads={threads} workspaces={workspaces} />}>
+          selectedThreadID={selectedThreadID} threads={threads} workspaces={workspaces} />}>
       {editingProject && <ProjectDialog client={client} workspace={editingProject} onClose={() => setEditingProject(null)}
         onSaved={(workspace) => setImportedWorkspaces((current) => [...current.filter(({ id }) => id !== workspace.id), workspace])} />}
       <div className="v2-product-surface" inert={moveMutation.isPending && moveMutation.variables.thread.id === selectedThreadID}
@@ -704,15 +705,15 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
         {route.kind === "invalid" ? <div className="v2-notice" role="alert">{t("任务地址无法识别。", "The task address is not recognized.")}
           <button onClick={() => startNew()} type="button">{t("打开新对话", "Open new conversation")}</button></div>
           : surface === "settings" ? <V2LazySurface resetKey="settings" loadingText={t("正在加载设置…", "Loading settings…")} errorLabel={t("设置", "Settings")}>
-          <V2Settings client={client} onOpenInspector={openInspector}
+          <V2Settings client={client} onOpenHistory={openHistory}
           onSelectSection={setSettingsSection} onOpenThread={openConversation} onOpenTask={(workspaceID) => {
             if (!selectedThreadID && workspaceID) selectWorkspace(workspaceID);
-            changeView("conversation");
+            openTask();
           }} section={settingsSection}
           threadID={selectedThreadID} workspaces={workspaces}
           defaultWebAccessMode={webAccessDefaults.mode} defaultWebAccessTargets={webAccessDefaults.targets}
           onDefaultWebAccessChange={webAccessDefaults.onChange}
-          sourceRunID={route.tool === "run" ? route.resourceID : reviewMemoryRef.current.client === client &&
+          sourceRunID={route.kind === "run" ? route.resourceID : reviewMemoryRef.current.client === client &&
             reviewMemoryRef.current.threadID === selectedThreadID ? reviewMemoryRef.current.runID : undefined}
           onOpenGithubReview={openGithubReview}
           draftWorkspaceID={workspaceID} draftPhase={phase} draftBudget={draftTaskConfiguration.budget}
@@ -720,15 +721,20 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           onDraftValidityChange={draftTaskConfiguration.onValidityChange}
           draftProjectSkills={draftTaskConfiguration.projectSkills} onDraftProjectSkillsChange={draftTaskConfiguration.onProjectSkillsChange}
           prepareModelForDraft={Boolean(modelSetupToken)} modelSetupToken={modelSetupToken}
-          onModelReady={completeModelSetup} /></V2LazySurface> : route.tool
-          ? <V2LazySurface resetKey="inspector-tools"
-            loadingText={t("正在加载检查工具…", "Loading inspection tools…")} errorLabel={t("检查工具", "Inspection tools")}>
-            <V2InspectorTools client={client} tool={route.tool} resourceID={route.resourceID}
-            threadID={selectedThreadID} pane={route.pane} onBack={openInspector} onOpenSettings={setSettingsSection}
-            onOpenRun={openCreatedRun} /></V2LazySurface>
-          : view === "inspector" && !selectedThreadID
-          ? <V2LazySurface resetKey="inspector-home" loadingText={t("正在加载 Inspector…", "Loading Inspector…")} errorLabel="Inspector">
-            <V2InspectorHome client={client} onOpenTool={openTool} onOpenSettings={setSettingsSection} /></V2LazySurface>
+          onModelReady={completeModelSetup} /></V2LazySurface> : route.kind === "run"
+          ? <V2LazySurface resetKey="run" loadingText={t("正在加载运行记录…", "Loading run record…")} errorLabel={t("运行记录", "Run record")}>
+            <V2RunDetailsPage client={client} resourceID={route.resourceID ?? ""} threadID={selectedThreadID} pane={route.pane}
+              onBack={goBack} onOpenSettings={setSettingsSection} onOpenRun={openCreatedRun} /></V2LazySurface>
+          : route.kind === "session"
+          ? <V2LazySurface resetKey="session" loadingText={t("正在加载会话记录…", "Loading session record…")} errorLabel={t("会话记录", "Session record")}>
+            <V2SessionDetailsPage client={client} resourceID={route.resourceID ?? ""} threadID={selectedThreadID}
+              onBack={goBack} onOpenSettings={setSettingsSection} /></V2LazySurface>
+          : route.kind === "automations"
+          ? <V2LazySurface resetKey="automations" loadingText={t("正在加载自动化…", "Loading automations…")} errorLabel={t("自动化", "Automations")}>
+            <V2AutomationsPage client={client} initialRunID={route.resourceID} initialThreadID={selectedThreadID} /></V2LazySurface>
+          : route.kind === "history"
+          ? <V2LazySurface resetKey="history" loadingText={t("正在加载历史记录…", "Loading history…")} errorLabel={t("历史记录", "History")}>
+            <V2HistoryPage client={client} onOpenRecord={(kind, resourceID) => navigate({ kind, resourceID })} /></V2LazySurface>
           : newConversation || !selectedThreadID
           ? <NewConversation client={client} draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
             projectID={projectID}
@@ -825,13 +831,11 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
               navigate({ kind: "new" });
               closeNavigationSidebar();
             }}
-            view={view} onOpenTool={openTool}
+            recordsRequested={route.panel === "records"} onOpenTool={openTool}
             reviewMemoryRef={reviewMemoryRef} reviewEntry={reviewEntry}
             onReviewEntryHandled={(requestID) => setReviewEntry((current) => current?.requestID === requestID ? undefined : current)}
-            onOpenInspectorHome={() => navigate({ kind: "new", view: "inspector" })}
-            onExitInspector={() => changeView("conversation")}
             draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
-            onManageModels={() => openModels(false)} onOpenInspector={openInspector}
+            onManageModels={() => openModels(false)}
             messageID={route.messageID} onExitMessage={() => navigate({ kind: "thread", threadID: selectedThreadID })}
             threadID={selectedThreadID} workspaces={workspaces} />}
       </div>

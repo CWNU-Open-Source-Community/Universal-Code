@@ -1,4 +1,4 @@
-.v2-mcp-picker.v2-inspector-drawer { width: min(560px, 100vw); overflow: auto; }
+.v2-mcp-picker.v2-detail-drawer { width: min(560px, 100vw); overflow: auto; }
 .v2-mcp-picker p { font-size: 13px; line-height: 1.6; }
 .v2-mcp-catalog, .v2-mcp-arguments { display: flex; flex-direction: column; gap: 16px; padding: 0 20px 20px; min-width: 0; }
 .v2-mcp-picker input { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--v2-border); border-radius: 8px; background: var(--prayu-panel-strong); color: inherit; padding: 9px 11px; font: inherit; }

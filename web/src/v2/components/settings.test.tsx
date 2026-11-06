@@ -21,7 +21,7 @@ it("mounts real environment settings from the production settings section and re
   render(<QueryClientProvider client={new QueryClient()}><V2Settings client={{ hasControl: true,
     getSandboxEnvironment, saveSandboxEnvironment,
   } as unknown as APIClient} section="environment" threadID="" workspaces={[]} onSelectSection={vi.fn()}
-    onOpenInspector={vi.fn()} /></QueryClientProvider>);
+    onOpenHistory={vi.fn()} /></QueryClientProvider>);
   const panel = await screen.findByRole("region", { name: "执行环境设置" });
   const picker = await within(panel).findByRole("group", { name: "编码环境后端" });
   expect(within(picker).getAllByRole("button")).toHaveLength(3);
@@ -35,7 +35,7 @@ it("routes connection and environment tasks directly without inspecting or chang
   const get = vi.fn(); const postControl = vi.fn();
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <V2Settings client={{ get, postControl } as unknown as APIClient} section="connections"
-    threadID="" workspaces={[]} onSelectSection={onSelectSection} onOpenInspector={vi.fn()}
+    threadID="" workspaces={[]} onSelectSection={onSelectSection} onOpenHistory={vi.fn()}
     onOpenTask={onOpenTask} /></QueryClientProvider>);
   const nav = screen.getByRole("navigation", { name: "连接与环境设置" });
   const user = userEvent.setup();
@@ -58,7 +58,7 @@ it("opens GitHub tools for the explicit historical Run and never substitutes an 
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const draw = (sourceRunID: string) => <QueryClientProvider client={queries}><V2Settings client={client} section="connections"
     threadID="thread-current" sourceRunID={sourceRunID} workspaces={[]} onSelectSection={vi.fn()}
-    onOpenInspector={vi.fn()} onOpenGithubReview={onOpenGithubReview} /></QueryClientProvider>;
+    onOpenHistory={vi.fn()} onOpenGithubReview={onOpenGithubReview} /></QueryClientProvider>;
   const view = render(draw("run-history"));
   const entry = screen.getByRole("button", { name: /GitHub 连接与审阅/u });
   await waitFor(() => expect(entry).toBeEnabled());
@@ -92,7 +92,7 @@ function renderArchived(threads: ThreadView[]) {
     queries: { retry: false }, mutations: { retry: false },
   } });
   render(<QueryClientProvider client={queryClient}>
-    <V2Settings client={client} onOpenInspector={vi.fn()} onSelectSection={vi.fn()}
+    <V2Settings client={client} onOpenHistory={vi.fn()} onSelectSection={vi.fn()}
       section="archived" threadID="thread-current" workspaces={[]} />
   </QueryClientProvider>);
   return { getPage, transitionThread };
@@ -128,7 +128,7 @@ function renderModels(configuredProviders: string[] = []) {
     queries: { retry: false }, mutations: { retry: false },
   } });
   render(<QueryClientProvider client={queryClient}>
-    <V2Settings client={client} onOpenInspector={vi.fn()} onSelectSection={vi.fn()}
+    <V2Settings client={client} onOpenHistory={vi.fn()} onSelectSection={vi.fn()}
       section="models" threadID="thread-current" workspaces={[]} />
   </QueryClientProvider>);
   return { providerDefinitions, providerCredentialStatuses };
@@ -143,7 +143,7 @@ describe("V2 archived settings", () => {
       page: { limit: 100, next_cursor: cursor ? "" : "archive-cursor" }, requestID: "archive-page",
     }));
     render(<QueryClientProvider client={new QueryClient()}><V2Settings
-      client={{ getPage } as unknown as APIClient} onOpenInspector={vi.fn()} onSelectSection={vi.fn()}
+      client={{ getPage } as unknown as APIClient} onOpenHistory={vi.fn()} onSelectSection={vi.fn()}
       section="archived" threadID="" workspaces={[]} /></QueryClientProvider>);
     await screen.findByText("Recent 0");
     await user.type(screen.getByRole("searchbox", { name: "搜索已归档的聊天" }), "matching");
@@ -206,7 +206,7 @@ describe("V2 general permission summary", () => {
   it("switches the settings language immediately, across sections, and after remounting", async () => {
     const user = userEvent.setup();
     const draw = (section: "general" | "appearance") => <V2Settings client={{} as APIClient}
-      onOpenInspector={vi.fn()} onSelectSection={vi.fn()} section={section} threadID=""
+      onOpenHistory={vi.fn()} onSelectSection={vi.fn()} section={section} threadID=""
       workspaces={[]} />;
     const view = render(draw("general"));
     expect(screen.getByRole("heading", { name: "常规", level: 1 })).toBeInTheDocument();
@@ -242,7 +242,7 @@ describe("V2 general permission summary", () => {
     const onSelectSection = vi.fn();
     const queryClient = new QueryClient();
     render(<QueryClientProvider client={queryClient}>
-      <V2Settings client={{} as APIClient} onOpenInspector={vi.fn()}
+      <V2Settings client={{} as APIClient} onOpenHistory={vi.fn()}
         onSelectSection={onSelectSection} section="general" threadID="thread-current"
         workspaces={[]} />
     </QueryClientProvider>);
@@ -310,7 +310,7 @@ describe("V2 permission settings hierarchy", () => {
       getThreadExecutionPermission, changeThreadExecutionPermission, postControl } as unknown as APIClient;
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<LocaleProvider><QueryClientProvider client={queryClient}>
-      <V2Settings client={client} onOpenInspector={vi.fn()} onSelectSection={vi.fn()}
+      <V2Settings client={client} onOpenHistory={vi.fn()} onSelectSection={vi.fn()}
         section="permissions" threadID="" workspaces={[]} />
     </QueryClientProvider></LocaleProvider>);
 
@@ -352,7 +352,7 @@ describe("V2 appearance and mist glass controls", () => {
     window.localStorage.setItem("prayu.theme", "dark");
     const user = userEvent.setup();
     render(<QueryClientProvider client={new QueryClient()}>
-      <V2Settings client={{} as APIClient} onOpenInspector={vi.fn()} onSelectSection={vi.fn()}
+      <V2Settings client={{} as APIClient} onOpenHistory={vi.fn()} onSelectSection={vi.fn()}
         section="appearance" threadID="" workspaces={[]} />
     </QueryClientProvider>);
 
@@ -405,7 +405,7 @@ describe("V2 appearance and mist glass controls", () => {
     window.localStorage.setItem("prayu.theme", "light");
     const user = userEvent.setup();
     render(<QueryClientProvider client={new QueryClient()}>
-      <V2Settings client={{} as APIClient} onOpenInspector={vi.fn()} onSelectSection={vi.fn()}
+      <V2Settings client={{} as APIClient} onOpenHistory={vi.fn()} onSelectSection={vi.fn()}
         section="appearance" threadID="" workspaces={[]} />
     </QueryClientProvider>);
 

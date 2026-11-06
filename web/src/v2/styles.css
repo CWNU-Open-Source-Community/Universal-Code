@@ -73,7 +73,7 @@
 .v2-file-references > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; border: 1px solid var(--v2-border); border-radius: 7px; padding: 3px 6px; font-size: 11px; }
 .v2-file-references code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v2-file-references button { border: 0; background: transparent; flex-shrink: 0; padding: 3px; }
-.v2-file-picker.v2-inspector-drawer { width: min(760px, 100vw); overflow: auto; }
+.v2-file-picker.v2-detail-drawer { width: min(760px, 100vw); overflow: auto; }
 .v2-file-picker > .workspace-explorer { padding: 0 18px 18px; }
 .v2-file-picker > header { flex-shrink: 0; position: sticky; top: 0; z-index: 2; background: var(--prayu-panel-strong); }
 .v2-file-picker p { font-size: 13px; line-height: 1.6; margin: 0; }
@@ -813,8 +813,8 @@
 .v2-conversation-main-column > .v2-composer-dock { flex-shrink: 0; }
 .v2-workbench-slot { display: flex; flex: 0 1 0px; min-width: 0; overflow: hidden; visibility: hidden; transition: flex-basis 420ms var(--v2-pane-ease), visibility 420ms; }
 .v2-workbench-slot.is-open { flex-basis: clamp(340px, var(--v2-workbench-width, 440px), calc(100% - 340px)); visibility: visible; }
-.v2-workbench-slot > .v2-inspector-drawer.is-docked { width: clamp(340px, 32cqw, 420px); transform: translateX(100%); transition: transform 500ms var(--v2-pane-ease); }
-.v2-workbench-slot.is-open > .v2-inspector-drawer.is-docked { transform: translateX(0); }
+.v2-workbench-slot > .v2-detail-drawer.is-docked { width: clamp(340px, 32cqw, 420px); transform: translateX(100%); transition: transform 500ms var(--v2-pane-ease); }
+.v2-workbench-slot.is-open > .v2-detail-drawer.is-docked { transform: translateX(0); }
 .v2-workbench-slot > .v2-workspace-dock.is-docked { width: 100%; min-width: 340px; transform: translateX(100%); transition: transform 420ms var(--v2-pane-ease); }
 .v2-workbench-slot.is-open > .v2-workspace-dock.is-docked { transform: translateX(0); }
 .v2-workbench-slot[data-resizing="true"],
@@ -823,7 +823,7 @@
 .v2-conversation-stage.is-full-view > .v2-conversation-main-column { flex: 0 0 0px; min-width: 0; max-width: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
 .v2-conversation-stage.is-full-view > .v2-workbench-slot.is-open { flex: 1 1 100%; flex-basis: 100%; max-width: 100%; }
 .v2-conversation-stage.is-full-view > .v2-workbench-slot.is-open > .v2-workspace-dock.is-docked { min-width: 0; }
-.v2-inspector-drawer.is-docked {
+.v2-detail-drawer.is-docked {
   position: relative;
   flex: 0 0 clamp(340px, 32%, 420px);
   width: auto;
@@ -2001,7 +2001,7 @@
 }
 
 .v2-overlay,
-.v2-inspector-backdrop {
+.v2-detail-backdrop {
   align-items: center;
   backdrop-filter: blur(12px) saturate(100%);
   background: rgb(28 28 28 / 20%);
@@ -2179,8 +2179,8 @@
   to { filter: blur(0); opacity: 1; transform: scale(1); }
 }
 
-.v2-inspector-backdrop { align-items: stretch; justify-content: flex-end; }
-.v2-inspector-drawer {
+.v2-detail-backdrop { align-items: stretch; justify-content: flex-end; }
+.v2-detail-drawer {
   backdrop-filter: blur(42px) saturate(100%);
   background: var(--v2-floating-surface);
   border-left: 1px solid var(--v2-border-strong);
@@ -2191,14 +2191,14 @@
   padding: 0;
   width: 390px;
 }
-.v2-inspector-drawer > header:not(.v2-terminal-drawer-header) { align-items: center; border-bottom: 1px solid var(--v2-border); display: flex; height: 52px; justify-content: space-between; padding: 0 13px 0 17px; }
-.v2-inspector-drawer > header:not(.v2-terminal-drawer-header) div { align-items: center; display: flex; gap: 8px; }
-.v2-inspector-drawer > header:not(.v2-terminal-drawer-header) button { background: transparent; border: 0; border-radius: 8px; height: 30px; width: 30px; }
-.v2-inspector-drawer > p { color: var(--v2-muted); padding: 20px; }
-.v2-inspector-facts { display: grid; gap: 16px; padding: 20px; }
-.v2-inspector-facts label { color: var(--v2-muted); display: grid; font-size: 11px; gap: 5px; text-transform: uppercase; }
-.v2-inspector-facts code,
-.v2-inspector-facts strong { color: var(--v2-ink); font-size: 12px; overflow-wrap: anywhere; text-transform: none; }
+.v2-detail-drawer > header:not(.v2-terminal-drawer-header) { align-items: center; border-bottom: 1px solid var(--v2-border); display: flex; height: 52px; justify-content: space-between; padding: 0 13px 0 17px; }
+.v2-detail-drawer > header:not(.v2-terminal-drawer-header) div { align-items: center; display: flex; gap: 8px; }
+.v2-detail-drawer > header:not(.v2-terminal-drawer-header) button { background: transparent; border: 0; border-radius: 8px; height: 30px; width: 30px; }
+.v2-detail-drawer > p { color: var(--v2-muted); padding: 20px; }
+.v2-detail-facts { display: grid; gap: 16px; padding: 20px; }
+.v2-detail-facts label { color: var(--v2-muted); display: grid; font-size: 11px; gap: 5px; text-transform: uppercase; }
+.v2-detail-facts code,
+.v2-detail-facts strong { color: var(--v2-ink); font-size: 12px; overflow-wrap: anywhere; text-transform: none; }
 .v2-shell .v2-open-legacy { background: var(--prayu-primary-bg); border: 1px solid var(--prayu-primary-border); border-radius: 10px; color: var(--prayu-primary-fg); box-shadow: 0 2px 8px var(--prayu-primary-shadow), inset 0 1px 0 var(--prayu-glass-highlight); height: 38px; margin: auto 16px 16px; }
 .v2-toast { backdrop-filter: blur(24px); background: var(--v2-floating-surface); border: 1px solid var(--v2-border); border-radius: 11px; bottom: 18px; box-shadow: 0 12px 32px rgb(0 0 0 / 16%); left: 50%; padding: 10px 14px; position: fixed; transform: translateX(-50%); z-index: 600; }
 .v2-toast:has(> .v2-retry-action) { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 14px; max-width: calc(100vw - 32px); width: max-content; }
@@ -2394,7 +2394,7 @@
   .v2-model-route-popover,
   .v2-dialog,
   .v2-high-risk-dialog,
-  .v2-inspector-drawer,
+  .v2-detail-drawer,
   .v2-file-drawer,
   .v2-terminal-drawer
 ) {
@@ -2405,7 +2405,7 @@
   backdrop-filter: blur(max(var(--prayu-glass-blur, 5px), 16px)) saturate(120%);
 }
 
-:where([data-prayu-theme="glass"]) .v2-inspector-drawer.is-docked {
+:where([data-prayu-theme="glass"]) .v2-detail-drawer.is-docked {
   background: var(--dsh-glass-card);
   border-left: 1px solid var(--dsh-glass-rim);
   box-shadow: var(--dsh-glass-edge);
@@ -2544,7 +2544,7 @@
 .v2-network-popover,
 .v2-run-network-popover,
 .v2-dialog,
-.v2-inspector-drawer,
+.v2-detail-drawer,
 .v2-workspace-dock,
 .v2-high-risk-dialog { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--prayu-surface-solid); }
   .v2-high-risk-overlay { backdrop-filter: none; background: rgb(24 24 24 / 42%); }

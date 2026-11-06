@@ -27,6 +27,23 @@ import {
 } from "./workspace-tabs";
 
 describe("workspace-tabs store", () => {
+  it("keeps a single records tab per task and restores it alongside file tabs", () => {
+    openWorkspaceFile("records-task", { path: "README.md", line: 4 }, "historical-run");
+    focusWorkspaceSingletonTab("records-task", "records");
+    focusWorkspaceSingletonTab("records-task", "records");
+    resetWorkspaceTabsMemoryCache();
+    expect(getThreadWorkspaceState("records-task")).toMatchObject({
+      activeTabID: "records", open: true, lastFileTabID: "file:1",
+      tabs: [{ id: "file:1", kind: "file", path: "README.md", line: 4, runID: "historical-run" },
+        { id: "records", kind: "records" }],
+    });
+    expect(getThreadWorkspaceState("other-task").tabs).toEqual([]);
+    toggleWorkspaceSingletonTab("records-task", "records");
+    expect(getThreadWorkspaceState("records-task").open).toBe(false);
+    focusWorkspaceFiles("records-task");
+    expect(getThreadWorkspaceState("records-task").activeTabID).toBe("file:1");
+  });
+
   it("preserves open file location when switching to terminal and returning via top Files trigger", () => {
     openWorkspaceFile("thread-1", { path: "web/src/main.tsx", line: 28 }, "run-1");
     expect(getThreadWorkspaceState("thread-1")).toMatchObject({

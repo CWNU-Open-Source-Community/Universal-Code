@@ -312,6 +312,10 @@ func (b *Bundle) serveHTTP(writer http.ResponseWriter, request *http.Request, st
 		http.Error(writer, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
+	if request.URL.Path == "/legacy" || strings.HasPrefix(request.URL.Path, "/legacy/") {
+		http.NotFound(writer, request)
+		return
+	}
 	if request.URL.Path == "/" {
 		serveIndex(writer, request, b.index, styleNonce)
 		return

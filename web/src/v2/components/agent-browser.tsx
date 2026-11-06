@@ -19,7 +19,7 @@ function stateText(status: AgentBrowserStatus, t: LocaleText): string {
     case "ready": return t("浏览器正在运行", "Browser running");
     case "loading": return t("正在加载网页…", "Loading page…");
     case "busy": return t("正在操作网页…", "Interacting with page…");
-    case "waiting_user": return t("网页需要人工处理；当前版本暂不支持人工接管", "The page needs attention; manual takeover is not available yet");
+    case "waiting_user": return t("网页需要人工处理；以接管模式（CYBERAGENT_BROWSER_HEADED=1）启动后可在可见窗口人工处理", "The page needs attention; start with takeover mode (CYBERAGENT_BROWSER_HEADED=1) to handle it in the visible window");
     case "failed": return t("浏览器操作未完成", "Browser action incomplete");
     case "closing": return t("正在停止浏览器…", "Stopping browser…");
     case "cleanup_pending": return t("会话已停止，仍在清理临时进程或资料", "Session stopped; cleaning up temporary processes or data");

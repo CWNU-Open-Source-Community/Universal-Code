@@ -4,6 +4,10 @@ allowed_profiles: [code, review]
 budget:
   max_turns: 20
   max_tool_calls: 10
+browser_limits:
+  max_origins: 4
+  max_requests: 200
+  timeout_ms: 180000
 exclude_paths:
   - fixtures
   - "secrets/**"

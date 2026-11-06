@@ -1,0 +1,30 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "b58f8981db87dd983e221839283e43f145b92b03",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/thread-cli-metadata/README.md",
+    "docs/reviews/thread-cli-metadata/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：CLI 子命令实现、测试、文档与端到端冒烟",
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含 store/HTTP/domain 三层语义交叉核对"
+  ],
+  "summary": {
+    "total_git_changed_files": 6,
+    "review_scope_files": 4,
+    "ocr_selected_production": 2,
+    "manually_added_tests": 1,
+    "docs_verified_by_primary": 1,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/app/thread_command.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/app/app.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/app/thread_command_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "docs/usage.md", "coverage": "full", "reviewer": "primary" }
+  ]
+}
