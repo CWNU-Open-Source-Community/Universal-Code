@@ -163,7 +163,9 @@ func (s *SQLiteStore) CheckpointWorkflowExecution(ctx context.Context, e domain.
 	}
 	defer tx.Rollback()
 	now := ts(time.Now().UTC())
-	result, err := tx.ExecContext(ctx, `UPDATE workflow_executions SET status=?,reason=?,state_json=?,version=version+1,updated_at=? WHERE id=? AND version=? AND claim_owner=? AND claim_until>? AND status IN ('running','waiting','waiting_approval')`, e.Status, e.Reason, string(state), now, e.ID, e.Version, owner, now)
+	// Run controls can commit after final verification. Only completion requires
+	// a still-running Run; waiting and failure checkpoints must remain writable.
+	result, err := tx.ExecContext(ctx, `UPDATE workflow_executions SET status=?,reason=?,state_json=?,version=version+1,updated_at=? WHERE id=? AND version=? AND claim_owner=? AND claim_until>? AND status IN ('running','waiting','waiting_approval') AND (?<>'completed' OR EXISTS(SELECT 1 FROM runs WHERE runs.id=workflow_executions.run_id AND runs.status='running'))`, e.Status, e.Reason, string(state), now, e.ID, e.Version, owner, now, e.Status)
 	if err != nil {
 		return e, err
 	}
