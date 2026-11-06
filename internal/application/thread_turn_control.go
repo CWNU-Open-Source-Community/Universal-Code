@@ -337,7 +337,15 @@ func (s *ThreadTurnService) drainThreadTurnQueue(ctx context.Context, threadID s
 ) (ExecuteThreadTurnResult, error, bool) {
 	for {
 		s.turnMu.Lock()
-		if automaticOwner && s.hostContext != nil && !active.stopping && active.context.Err() == nil && (executionErr == nil || ctx.Err() != nil) {
+		canHandoff := executionErr == nil
+		if callerErr := ctx.Err(); !canHandoff && callerErr != nil {
+			// Sealed failures retain an application code, not the original context
+			// error. A late caller cancellation must not erase another failure.
+			code := apperror.CodeOf(apperror.Normalize(executionErr))
+			canHandoff = code == apperror.CodeCancelled ||
+				(callerErr == context.DeadlineExceeded && code == apperror.CodeDeadlineExceeded)
+		}
+		if automaticOwner && s.hostContext != nil && !active.stopping && active.context.Err() == nil && canHandoff {
 			hostWork := len(active.approvals) > 0
 			for _, next := range active.queue {
 				if !next.automatic {

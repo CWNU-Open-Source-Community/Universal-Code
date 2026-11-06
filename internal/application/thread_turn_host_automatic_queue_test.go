@@ -17,10 +17,14 @@ import (
 )
 
 type automaticQueueOptions struct {
-	attachment      bool
-	cancelAtCommit  bool
-	blockSettlement bool
-	failOrdinary    bool
+	attachment            bool
+	cancelAtCommit        bool
+	blockSettlement       bool
+	failOrdinary          bool
+	failAutomatic         bool
+	failAutomaticDeadline bool
+	cancelAtFailure       bool
+	callerTimeout         time.Duration
 }
 
 type automaticQueueFixture struct {
@@ -58,6 +62,14 @@ func newAutomaticQueueFixture(t *testing.T, options automaticQueueOptions) *auto
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
+			if options.failAutomaticDeadline {
+				providerDeadline, stop := context.WithDeadline(ctx, time.Now().Add(-time.Millisecond))
+				defer stop()
+				return nil, providerDeadline.Err()
+			}
+			if options.failAutomatic {
+				return nil, apperror.New(apperror.CodeFailedPrecondition, "injected automatic provider failure")
+			}
 		case 2:
 			close(ordinaryStarted)
 			if options.failOrdinary {
@@ -74,7 +86,13 @@ func newAutomaticQueueFixture(t *testing.T, options automaticQueueOptions) *auto
 	state, _, automatic, _, _ := threadFilesFixture(t, f.provider)
 	automatic.Files, automatic.RequestedBy = nil, "pr_followup"
 	f.state = state
-	caller, cancel := context.WithCancel(t.Context())
+	var caller context.Context
+	var cancel context.CancelFunc
+	if options.callerTimeout > 0 {
+		caller, cancel = context.WithTimeout(t.Context(), options.callerTimeout)
+	} else {
+		caller, cancel = context.WithCancel(t.Context())
+	}
 	f.cancelAutomatic = cancel
 	ordinaryCaller, cancelOrdinary := context.WithCancel(t.Context())
 	f.cancelOrdinary = cancelOrdinary
@@ -101,6 +119,9 @@ func newAutomaticQueueFixture(t *testing.T, options automaticQueueOptions) *auto
 		threadStore = fault
 		f.settlementStarted = fault.started
 		f.releaseSettlement = sync.OnceFunc(func() { close(fault.release) })
+	}
+	if options.cancelAtFailure {
+		threadStore = &automaticFailureCancelStore{SQLiteStore: state, cancel: cancel}
 	}
 	router := llm.NewRouter(llm.ModelRef{Provider: f.provider.Name(), Model: "model"})
 	router.RegisterProvider(f.provider)

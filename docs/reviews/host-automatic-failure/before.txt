@@ -1,0 +1,17 @@
+=== RUN   TestHostOwnedAutomaticCallerDeadlineHandsOrdinaryQueueToHost
+    thread_turn_host_automatic_failure_test.go:28: caller deadline returned=*application.ThreadTurnFailedError code=DEADLINE_EXCEEDED sealed_code=DEADLINE_EXCEEDED errors.Is(deadline)=false errors.Is(cancelled)=false
+--- PASS: TestHostOwnedAutomaticCallerDeadlineHandsOrdinaryQueueToHost (5.47s)
+=== RUN   TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels
+=== RUN   TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels/caller_live
+    thread_turn_host_automatic_failure_test.go:82: failure=FAILED_PRECONDITION original_attempt=attempt-20261106204028-0ee85c827692 returned=*application.ThreadTurnFailedError model_calls=1 late_caller_cancel=false
+=== RUN   TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels/caller_cancelled_after_failure_commit
+    thread_turn_host_automatic_failure_test.go:74: late caller cancellation bypassed provider failure and ran ordinary inputs: model_calls=3 want=1
+    thread_turn_host_automatic_failure_test.go:79: failed automatic boundary consumed accepted input: observation={Kind:turn State:completed Settled:true WorkspaceID:ws-thread-files ThreadID:thread-run-20261106204029-2f04ba7d8b9b RunID:run-20261106204029-2f04ba7d8b9b SessionID:sess-20261106204029-d1601b8dd3dd MessageID:steer-20261106204029-401ebb63ff47 MessageStatus:committed RequestFingerprint:5b7a92759224f7c300e4f718fcc0d61907f2300144d3025fba52522460d501b3 Failure:<nil>} err=<nil>
+    thread_turn_host_automatic_failure_test.go:79: failed automatic boundary consumed accepted input: observation={Kind:turn State:completed Settled:true WorkspaceID:ws-thread-files ThreadID:thread-run-20261106204029-2f04ba7d8b9b RunID:run-20261106204029-2f04ba7d8b9b SessionID:sess-20261106204029-d1601b8dd3dd MessageID:steer-20261106204029-5728fb3fa434 MessageStatus:committed RequestFingerprint:ba2a1c44d2b81a4941b0af92422a2a87d25a2a7e029047f9ba978bfca6221a0c Failure:<nil>} err=<nil>
+    thread_turn_host_automatic_failure_test.go:82: failure=FAILED_PRECONDITION original_attempt=attempt-20261106204029-93e373e3fa81 returned=*application.ThreadTurnFailedError model_calls=3 late_caller_cancel=true
+--- FAIL: TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels (1.03s)
+    --- PASS: TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels/caller_live (0.48s)
+    --- FAIL: TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels/caller_cancelled_after_failure_commit (0.54s)
+FAIL
+FAIL	cyberagent-workbench/internal/application	6.581s
+FAIL

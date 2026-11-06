@@ -1,0 +1,13 @@
+=== RUN   TestHostOwnedAutomaticCallerDeadlineHandsOrdinaryQueueToHost
+    thread_turn_host_automatic_failure_test.go:28: caller deadline returned=*application.ThreadTurnFailedError code=DEADLINE_EXCEEDED sealed_code=DEADLINE_EXCEEDED errors.Is(deadline)=false errors.Is(cancelled)=false
+--- PASS: TestHostOwnedAutomaticCallerDeadlineHandsOrdinaryQueueToHost (5.52s)
+=== RUN   TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels
+=== RUN   TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels/caller_live
+    thread_turn_host_automatic_failure_test.go:82: failure=FAILED_PRECONDITION original_attempt=attempt-20261106204234-66779ac5316b returned=*application.ThreadTurnFailedError model_calls=1 late_caller_cancel=false
+=== RUN   TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels/caller_cancelled_after_failure_commit
+    thread_turn_host_automatic_failure_test.go:82: failure=FAILED_PRECONDITION original_attempt=attempt-20261106204234-2e19af27c154 returned=*application.ThreadTurnFailedError model_calls=1 late_caller_cancel=true
+--- PASS: TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels (0.90s)
+    --- PASS: TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels/caller_live (0.45s)
+    --- PASS: TestHostOwnedAutomaticSealedFailureKeepsOrdinaryQueueWhenCallerCancels/caller_cancelled_after_failure_commit (0.46s)
+PASS
+ok  	cyberagent-workbench/internal/application	6.509s
