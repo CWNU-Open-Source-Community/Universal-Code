@@ -60,6 +60,6 @@
     "dompurify": "3.4.17",
     "nanoid": "3.3.18",
     "postcss": "8.5.25",
-    "undici": "7.30.1"
+    "undici": "8.12.4"
   }
 }
