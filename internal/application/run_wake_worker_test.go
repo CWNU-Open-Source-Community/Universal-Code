@@ -11,15 +11,17 @@ import (
 )
 
 type wakeWorkerDueFake struct {
-	mu     sync.Mutex
-	values []domain.RunWakeIntent
-	limits []int
+	mu       sync.Mutex
+	values   []domain.RunWakeIntent
+	limits   []int
+	maxSteps []int
 }
 
-func (f *wakeWorkerDueFake) Due(_ context.Context, limit int) ([]domain.RunWakeIntent, error) {
+func (f *wakeWorkerDueFake) Due(_ context.Context, limit, maxSteps int) ([]domain.RunWakeIntent, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.limits = append(f.limits, limit)
+	f.maxSteps = append(f.maxSteps, maxSteps)
 	if len(f.values) == 0 {
 		return nil, nil
 	}
@@ -77,6 +79,7 @@ func TestRunWakeWorkerHardBoundsDueAndSupervisorHandoff(t *testing.T) {
 		t.Fatalf("worker did not consume due intent: worked=%t err=%v", worked, err)
 	}
 	if len(due.limits) != 1 || due.limits[0] != RunWakeWorkerConcurrency ||
+		len(due.maxSteps) != 1 || due.maxSteps[0] != RunWakeWorkerMaxSteps ||
 		len(consumer.requests) != 1 ||
 		consumer.requests[0].Version != domain.RunWakeConsumerProtocolVersion ||
 		consumer.requests[0].MaxSteps != RunWakeWorkerMaxSteps ||

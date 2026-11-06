@@ -45,7 +45,7 @@ func TestRunWakeDueSkipsUnavailableRunsBeforeLimit(t *testing.T) {
 				lease = acquireTestRunExecutionLease(t, ctx, state, blocked.ID)
 			}
 			dueAt := now.Add(2 * time.Second)
-			due, err := state.ListDueRunWakeIntents(ctx, dueAt, 1)
+			due, err := state.ListDueRunWakeIntents(ctx, dueAt, 1, 1)
 			if err != nil || len(due) != 1 || due[0].ID != healthyWake.ID {
 				t.Fatalf("unavailable Run hid healthy wake: due=%#v err=%v", due, err)
 			}
@@ -57,7 +57,7 @@ func TestRunWakeDueSkipsUnavailableRunsBeforeLimit(t *testing.T) {
 				if _, _, err := state.ReleaseRunExecutionLease(ctx, lease); err != nil {
 					t.Fatal(err)
 				}
-				due, err := state.ListDueRunWakeIntents(ctx, dueAt, 1)
+				due, err := state.ListDueRunWakeIntents(ctx, dueAt, 1, 1)
 				if err != nil || len(due) != 1 || due[0].ID != blockedWake.ID {
 					t.Fatalf("released lease did not unblock original wake: due=%#v err=%v", due, err)
 				}
@@ -87,7 +87,7 @@ func TestRunWakeDueRetainsExpiredPausedWakeForExhaustion(t *testing.T) {
 			if _, err := application.NewRunService(state).Pause(ctx, run.ID); err != nil {
 				t.Fatal(err)
 			}
-			due, err := state.ListDueRunWakeIntents(ctx, intent.DeadlineAt, 1)
+			due, err := state.ListDueRunWakeIntents(ctx, intent.DeadlineAt, 1, 1)
 			if err != nil || len(due) != 1 || due[0].ID != intent.ID {
 				t.Fatalf("expired paused wake hidden from cleanup: due=%#v err=%v", due, err)
 			}
@@ -96,7 +96,7 @@ func TestRunWakeDueRetainsExpiredPausedWakeForExhaustion(t *testing.T) {
 			if err != nil || acquired || settled.Status != domain.RunWakeExhausted || settled.AttemptCount != attempts {
 				t.Fatalf("expired wake did not settle without execution: %#v acquired=%t err=%v", settled, acquired, err)
 			}
-			due, err = state.ListDueRunWakeIntents(ctx, intent.DeadlineAt, 1)
+			due, err = state.ListDueRunWakeIntents(ctx, intent.DeadlineAt, 1, 1)
 			if err != nil || len(due) != 0 {
 				t.Fatalf("settled wake remained due: due=%#v err=%v", due, err)
 			}

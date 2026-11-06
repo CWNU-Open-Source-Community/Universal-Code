@@ -111,7 +111,7 @@ func TestRunWakeCoordinatorClaimsMetadataOnlyOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	coordinator := application.NewRunWakeCoordinator(state)
-	due, err := coordinator.Due(ctx, 8)
+	due, err := coordinator.Due(ctx, 8, 1)
 	if err != nil || len(due) != 1 || due[0].ID != scheduled.Intent.ID {
 		t.Fatalf("due intents=%#v err=%v", due, err)
 	}

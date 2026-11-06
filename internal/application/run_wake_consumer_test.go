@@ -280,7 +280,7 @@ func TestRunWakeDueRetainsStoredHandoffForPausedRunAfterRestart(t *testing.T) {
 	defer state.Close()
 	// Advance only the due projection's clock beyond lease and total deadline.
 	// The real handoff and model response above are already committed in SQLite.
-	due, err := state.ListDueRunWakeIntents(ctx, before.DeadlineAt.Add(time.Second), 1)
+	due, err := state.ListDueRunWakeIntents(ctx, before.DeadlineAt.Add(time.Second), 1, 1)
 	if err != nil || len(due) != 1 || due[0].ID != before.ID {
 		t.Fatalf("paused Run hid completed handoff from settlement: due=%#v err=%v", due, err)
 	}

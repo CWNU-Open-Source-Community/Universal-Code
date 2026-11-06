@@ -101,14 +101,23 @@ func TestPreparedRunWakeConsumptionPreventsExpiredLeaseReclaim(t *testing.T) {
 	if _, err := application.NewRunService(state).Pause(ctx, run.ID); err != nil {
 		t.Fatal(err)
 	}
-	if due, err := state.ListDueRunWakeIntents(ctx, afterExpiry, 1); err != nil || len(due) != 0 {
+	if due, err := state.ListDueRunWakeIntents(ctx, afterExpiry, 1, 1); err != nil || len(due) != 0 {
 		t.Fatalf("paused unresolved handoff remained runnable: due=%#v err=%v", due, err)
 	}
 	if _, err := application.NewRunService(state).Resume(ctx, run.ID); err != nil {
 		t.Fatal(err)
 	}
-	if due, err := state.ListDueRunWakeIntents(ctx, afterExpiry, 1); err != nil || len(due) != 1 || due[0].ID != intent.ID || due[0].AttemptCount != lease.Generation {
+	if due, err := state.ListDueRunWakeIntents(ctx, afterExpiry, 1, 1); err != nil || len(due) != 1 || due[0].ID != intent.ID || due[0].AttemptCount != lease.Generation {
 		t.Fatalf("resumed prepared generation was hidden or replaced: due=%#v err=%v", due, err)
+	}
+	// Retry must not detach a prepared generation from the lease needed to
+	// settle its exact handoff, even when called before that lease expires.
+	if _, err := state.ReleaseRunWakeForRetry(ctx, lease, cancelAt); apperror.CodeOf(err) != apperror.CodeConflict {
+		t.Fatalf("retry abandoned prepared consumption: err=%v", err)
+	}
+	stored, err := state.GetRunWakeIntent(ctx, intent.ID)
+	if err != nil || stored.Status != domain.RunWakeLeased || stored.ActiveLeaseID != lease.ID || stored.AttemptCount != lease.Generation {
+		t.Fatalf("retry changed prepared ownership: %#v err=%v", stored, err)
 	}
 }
 
