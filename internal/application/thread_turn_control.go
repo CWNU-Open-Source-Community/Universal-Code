@@ -39,8 +39,6 @@ type activeThreadTurn struct {
 	stopping      bool
 	queue         []queuedThreadTurn
 	approvals     []ApprovalContinuationRequest
-	hostContext   context.Context
-	done          chan struct{}
 }
 
 // Execute retains the caller's lifetime unless the host opts into owning
@@ -62,6 +60,11 @@ func (s *ThreadTurnService) SubmitCurrentSteering(ctx context.Context,
 		return SubmitSessionMessageResult{}, apperror.New(apperror.CodeFailedPrecondition,
 			"Thread turn control is required for current-task correction")
 	}
+	ctx, finish, err := s.beginHostOperation(ctx)
+	if err != nil {
+		return SubmitSessionMessageResult{}, err
+	}
+	defer finish()
 	reader, ok := s.threads.store.(interface {
 		GetThreadBySession(context.Context, string) (domain.Thread, error)
 	})
@@ -111,9 +114,11 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeFailedPrecondition,
 			"Thread turn dependencies are required")
 	}
-	if s.hostContext != nil && s.hostContext.Err() != nil {
-		return ExecuteThreadTurnResult{}, apperror.New(apperror.CodeUnavailable, "Thread execution host is shutting down")
+	ctx, finish, err := s.beginHostOperation(ctx)
+	if err != nil {
+		return ExecuteThreadTurnResult{}, err
 	}
+	defer finish()
 	normalized, err := normalizeSubmitThreadMessageRequest(SubmitThreadMessageRequest{
 		Version: request.Version, ThreadID: request.ThreadID, Content: request.Content,
 		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy,
@@ -263,12 +268,12 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 		parent = s.hostContext
 	}
 	turnCtx, cancel := context.WithCancel(parent)
-	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: normalized.OperationKey, cancel: cancel, preparingPlan: prepare != nil, done: make(chan struct{})}
+	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: normalized.OperationKey, cancel: cancel, preparingPlan: prepare != nil}
 	preparationCtx := turnCtx
 	if !request.automatic && s.hostContext != nil {
-		active.hostContext = turnCtx
 		var cancelPreparation context.CancelFunc
 		preparationCtx, cancelPreparation = context.WithCancel(ctx)
+		preparationCtx = context.WithValue(preparationCtx, acceptedThreadTurnContextKey{}, turnCtx)
 		stopHostCancellation := context.AfterFunc(turnCtx, cancelPreparation)
 		defer func() { stopHostCancellation(); cancelPreparation() }()
 	}
@@ -284,7 +289,6 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 			active.stopping = true
 			delete(s.activeTurns, request.ThreadID)
 		}
-		close(active.done)
 		s.turnMu.Unlock()
 	}()
 	if prepare != nil {

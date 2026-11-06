@@ -44,6 +44,11 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 	if !validControlIdentity(request.RunID) || !validControlIdentity(request.ProposalID) || (request.Kind != "file_edit" && request.Kind != "host_command" && request.Kind != "agent_browser" && request.Kind != "mcp" && request.Kind != "command_runtime") {
 		return approvalContinuationFailed(apperror.New(apperror.CodeInvalidArgument, "Approval continuation identity is invalid"))
 	}
+	ctx, finish, beginErr := s.beginHostOperation(ctx)
+	if beginErr != nil {
+		return approvalContinuationFailed(beginErr)
+	}
+	defer finish()
 	thread, err := s.threads.store.GetThreadByRun(ctx, request.RunID)
 	if err != nil {
 		return approvalContinuationFailed(err)
@@ -73,7 +78,7 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 		return ApprovalContinuationResult{State: "queued"}
 	}
 	turnCtx, cancel := context.WithCancel(ctx)
-	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: "approval:" + request.Kind + ":" + request.ProposalID, cancel: cancel, done: make(chan struct{})}
+	active := &activeThreadTurn{id: idgen.New("thread-execution"), operationKey: "approval:" + request.Kind + ":" + request.ProposalID, cancel: cancel}
 	if s.activeTurns == nil {
 		s.activeTurns = make(map[string]*activeThreadTurn)
 	}
@@ -86,7 +91,6 @@ func (s *ThreadTurnService) ResumeApproval(ctx context.Context, request Approval
 			active.stopping = true
 			delete(s.activeTurns, thread.ID)
 		}
-		close(active.done)
 		s.turnMu.Unlock()
 	}()
 	result := s.resumeApprovalWithOwner(turnCtx, request)
