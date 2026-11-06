@@ -8,6 +8,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/toolgateway"
 )
 
@@ -130,7 +131,7 @@ func (a *API) serveApprovalDecisionControl(writer http.ResponseWriter,
 			UsesRemaining: result.Grant.UsesRemaining, UseOrdinal: result.Consumption.UseOrdinal,
 			ExpiresAt: *result.Grant.ExpiresAt, EachCommandRequiresReview: true}
 	}
-	if result.Approval.ToolName == toolgateway.AgentBrowserApprovalTool {
+	if result.Approval.ToolName == toolgateway.AgentBrowserApprovalTool && !strings.HasPrefix(result.Approval.ProposalID, domain.BrowserNetworkRequestPrefix) {
 		continuation = a.resumeReviewedProposal(request.Context(), result.Approval.RunID, "agent_browser", result.Approval.ProposalID)
 	}
 	if result.Approval.ToolName == string(toolgateway.MCPToolCallTool) {

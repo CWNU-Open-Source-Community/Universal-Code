@@ -21,6 +21,9 @@ type agentBrowserApprovalStore interface {
 }
 
 func recheckAgentBrowserApproval(ctx context.Context, base ApprovalControlStore, record approval.Record) error {
+	if strings.HasPrefix(record.ProposalID, domain.BrowserNetworkRequestPrefix) {
+		return recheckBrowserNetworkApproval(ctx, base, record)
+	}
 	if strings.HasPrefix(record.ProposalID, "specialist-tool-") {
 		return recheckWorkerBrowserApproval(ctx, base, record)
 	}

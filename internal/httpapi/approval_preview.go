@@ -272,6 +272,29 @@ func (a *API) runApprovalPreview(request *http.Request, runID, approvalID string
 		}
 		view.Redacted = view.Redacted || value.SecretsRedacted
 	case toolgateway.AgentBrowserApprovalTool:
+		if strings.HasPrefix(record.ProposalID, domain.BrowserNetworkRequestPrefix) {
+			source, ok := a.store.(interface {
+				GetBrowserNetworkRequest(context.Context, string) (domain.BrowserNetworkRequest, error)
+			})
+			if !ok {
+				return stale()
+			}
+			v, err := source.GetBrowserNetworkRequest(ctx, record.ProposalID)
+			if err != nil {
+				return nil, nil, err
+			}
+			if v.RunID != record.RunID || v.SessionID != record.SessionID || v.WorkspaceID != record.WorkspaceID || v.Fingerprint != record.RequestFingerprint {
+				return stale()
+			}
+			view.Effect = "browser_sensitive_action"
+			view.SourceCurrent = view.SourceCurrent && v.Status == "paused" && v.ExpiresAt.After(time.Now())
+			add("operation", v.Method)
+			add("url", v.DisplayURL)
+			add("body_bytes", strconv.Itoa(v.BodyBytes))
+			add("body_sha256", v.BodySHA256)
+			add("expires_at", v.ExpiresAt.Format(time.RFC3339))
+			break
+		}
 		source, ok := a.store.(interface {
 			GetSupervisorApprovalCall(context.Context, string, string) (domain.SupervisorToolCall, bool, error)
 		})

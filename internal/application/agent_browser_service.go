@@ -138,6 +138,13 @@ func NewAgentBrowserService(st AgentBrowserStore, options AgentBrowserOptions) *
 		return value, nil
 	}
 	s.available = browserruntime.AgentBrowserPlatformAvailable() && filepath.IsAbs(options.HomePath) && options.Capabilities.Validate() == nil
+	if st, ok := st.(browserNetworkRequestStore); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := st.InvalidateOldBrowserNetworkRequests(ctx, s.boot); err != nil {
+			s.available = false
+		}
+		cancel()
+	}
 	return s
 }
 func agentBrowserUnavailable(message string) error {
