@@ -50,7 +50,7 @@ func TestAgentBrowserNetworkContinuationWaitsForProtocolError(t *testing.T) {
 	defer cdp.close()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	await, err := cdp.send(ctx, "session", "Fetch.continueRequest", map[string]any{"requestId": "gone"})
+	await, err := cdp.send(ctx, "", "Fetch.continueRequest", map[string]any{"requestId": "gone"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestAgentBrowserRealScopedNetworkOrigins(t *testing.T) {
 	if os.Getenv("TRAVERSE_TEST_AGENT_BROWSER") != "1" {
 		t.Skip("opt-in real installed browser")
 	}
-	var undeclaredHits, declaredReads, workerReads atomic.Int32
+	var undeclaredHits, declaredReads, workerReads, sharedWorkerReads atomic.Int32
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		undeclaredHits.Add(1)
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -74,11 +74,18 @@ func TestAgentBrowserRealScopedNetworkOrigins(t *testing.T) {
 	defer other.Close()
 	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/worker.js":
+		case "/worker.js", "/sharedworker.js":
 			w.Header().Set("Content-Type", "text/javascript")
-			fmt.Fprintf(w, `fetch('/worker-read');fetch(%q,{method:'POST',mode:'no-cors',body:'worker-write'}).catch(()=>{});`, other.URL+"/worker")
+			readPath := "/worker-read"
+			if r.URL.Path == "/sharedworker.js" {
+				readPath = "/sharedworker-read"
+			}
+			fmt.Fprintf(w, `fetch(%q);fetch(%q,{method:'POST',mode:'no-cors',body:'worker-write'}).catch(()=>{});fetch(%q,{method:'POST',headers:{'Content-Type':'application/json','X-Test':'preflight'},body:'{}'}).catch(()=>{});`, readPath, other.URL+"/worker", other.URL+"/worker-preflight")
 		case "/worker-read":
 			workerReads.Add(1)
+			w.WriteHeader(204)
+		case "/sharedworker-read":
+			sharedWorkerReads.Add(1)
 			w.WriteHeader(204)
 		case "/redirect":
 			http.Redirect(w, r, other.URL+"/redirect-destination", 302)
@@ -93,6 +100,7 @@ func TestAgentBrowserRealScopedNetworkOrigins(t *testing.T) {
     fetch(%q,{method:'POST',headers:{'Content-Type':'application/json','X-Test':'preflight'},body:'{}'}).catch(()=>{});
     fetch('/redirect').catch(()=>{});
 				new Worker('/worker.js');
+				window.sharedWorker=new SharedWorker('/sharedworker.js');
 				</script>`, other.URL, other.URL+"/write", other.URL+"/preflight")
 		}
 	}))
@@ -131,18 +139,26 @@ func TestAgentBrowserRealScopedNetworkOrigins(t *testing.T) {
 	if workerReads.Load() != 2 {
 		t.Fatalf("declared worker reads=%d", workerReads.Load())
 	}
+	if sharedWorkerReads.Load() != 2 {
+		t.Fatalf("declared SharedWorker reads=%d", sharedWorkerReads.Load())
+	}
 }
 
 func TestAgentBrowserRealScopedWriteExactApproval(t *testing.T) {
 	const body = "exact approved page body"
 	expected := sha256.Sum256([]byte(body))
-	for _, outcome := range []string{"approve", "deny", "navigate", "close"} {
+	for _, outcome := range []string{"approve", "approve_worker", "approve_shared_worker", "deny", "navigate", "close"} {
 		t.Run(outcome, func(t *testing.T) {
 			received := make(chan string, 4)
 			proposals := make(chan AgentBrowserNetworkRequest, 4)
 			decide := make(chan bool, 1)
 			completed := make(chan error, 1)
 			site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/worker.js" {
+					w.Header().Set("Content-Type", "text/javascript")
+					fmt.Fprint(w, `fetch('/write',{method:'POST',body:'`+body+`'})`)
+					return
+				}
 				if r.Method == "POST" {
 					data, _ := io.ReadAll(r.Body)
 					received <- string(data)
@@ -154,7 +170,13 @@ func TestAgentBrowserRealScopedWriteExactApproval(t *testing.T) {
 					fmt.Fprint(w, `<!doctype html><h1>Other document</h1>`)
 					return
 				}
-				fmt.Fprint(w, `<!doctype html><title>Write approval</title><h1>Read works</h1><button onclick="fetch('/write',{method:'POST',body:'`+body+`'}).then(()=>document.body.append('sent'))">Send</button>`)
+				if outcome == "approve_shared_worker" {
+					fmt.Fprint(w, `<!doctype html><title>Write approval</title><h1>Read works</h1><button onclick="window.worker=new SharedWorker('/worker.js')">Send</button>`)
+				} else if outcome == "approve_worker" {
+					fmt.Fprint(w, `<!doctype html><title>Write approval</title><h1>Read works</h1><button onclick="new Worker('/worker.js')">Send</button>`)
+				} else {
+					fmt.Fprint(w, `<!doctype html><title>Write approval</title><h1>Read works</h1><button onclick="fetch('/write',{method:'POST',body:'`+body+`'}).then(()=>document.body.append('sent'))">Send</button>`)
+				}
 			}))
 			defer site.Close()
 			r, _ := agentBrowserTestRuntimeWithCheck(t, nil, func(req *AgentBrowserStartRequest) {
@@ -190,6 +212,8 @@ func TestAgentBrowserRealScopedWriteExactApproval(t *testing.T) {
 			var proposal AgentBrowserNetworkRequest
 			select {
 			case proposal = <-proposals:
+			case got := <-received:
+				t.Fatalf("write bypassed approval: %s", got)
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
@@ -202,7 +226,7 @@ func TestAgentBrowserRealScopedWriteExactApproval(t *testing.T) {
 			case <-time.After(100 * time.Millisecond):
 			}
 			switch outcome {
-			case "approve":
+			case "approve", "approve_worker", "approve_shared_worker":
 				decide <- true
 			case "deny":
 				decide <- false
@@ -217,13 +241,13 @@ func TestAgentBrowserRealScopedWriteExactApproval(t *testing.T) {
 			}
 			select {
 			case err := <-completed:
-				if outcome == "approve" && err != nil {
+				if strings.HasPrefix(outcome, "approve") && err != nil {
 					t.Fatal(err)
 				}
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
-			if outcome == "approve" {
+			if strings.HasPrefix(outcome, "approve") {
 				select {
 				case got := <-received:
 					if got != body {

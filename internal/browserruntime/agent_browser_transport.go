@@ -75,7 +75,7 @@ var agentBrowserCDPMethods = map[string]bool{
 	"Browser.cancelDownload": false,
 	"Page.enable":            true, "DOM.enable": true, "Runtime.enable": true, "Accessibility.enable": true,
 	"Network.enable": true, "Network.setBlockedURLs": true, "Network.setBypassServiceWorker": true,
-	"Fetch.enable": true, "Fetch.continueRequest": true, "Fetch.failRequest": true,
+	"Fetch.enable": false, "Fetch.continueRequest": false, "Fetch.failRequest": false,
 	"Page.getFrameTree": true, "Page.createIsolatedWorld": true, "Page.navigate": true, "Page.captureScreenshot": true,
 	"Page.setLifecycleEventsEnabled": true,
 	"DOM.getDocument":                true, "DOM.resolveNode": true, "DOM.scrollIntoViewIfNeeded": true, "DOM.focus": true,
@@ -95,7 +95,7 @@ var agentBrowserCDPMethods = map[string]bool{
 // send writes under the document invalidation fence. Its returned waiter must
 // run after releasing that fence so the reader can process events and replies.
 func (c *agentBrowserCDP) send(ctx context.Context, session, method string, params any) (func() error, error) {
-	if target, ok := agentBrowserCDPMethods[method]; !ok || !target || session == "" {
+	if target, ok := agentBrowserCDPMethods[method]; !ok || (target && session == "") || (!target && session != "") {
 		return nil, ErrBrowserRuntimeBoundary
 	}
 	if err := ctx.Err(); err != nil {

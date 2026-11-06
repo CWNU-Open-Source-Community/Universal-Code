@@ -7,49 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
-	"net"
-	"net/http"
-	"net/url"
 	"time"
 )
 
-// Chromium silently ignores unknown command parameters. Read the owned
-// browser's protocol before relying on the ordered URL allow patterns.
-func agentBrowserScopedNetworkSupported(ctx context.Context, endpoint *url.URL) error {
-	if endpoint == nil || endpoint.Hostname() != "127.0.0.1" {
-		return ErrBrowserRuntimeBoundary
-	}
-	address := endpoint.Host
-	transport := &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if network != "tcp" || addr != address {
-			return nil, ErrBrowserRuntimeBoundary
-		}
-		return (&net.Dialer{}).DialContext(ctx, network, addr)
-	}}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://"+address+"/json/protocol", nil)
-	if err != nil {
-		return err
-	}
-	response, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return errors.New("browser scoped network protocol unavailable")
-	}
-	raw, err := io.ReadAll(io.LimitReader(response.Body, 8*1024*1024+1))
-	if err != nil {
-		return err
-	}
-	if len(raw) > 8*1024*1024 {
-		return ErrBrowserRuntimeBoundary
-	}
-	return validateAgentBrowserNetworkProtocol(raw)
-}
 func validateAgentBrowserNetworkProtocol(raw []byte) error {
 	var protocol struct {
 		Domains []struct {
@@ -98,6 +58,7 @@ func validateAgentBrowserNetworkProtocol(raw []byte) error {
 }
 
 func (r *AgentBrowserRuntime) initializeScopedNetwork(ctx context.Context) error {
+
 	// Network's ordered allow patterns run before Chromium creates a CORS
 	// preflight. Fetch alone does not see all browser-generated OPTIONS traffic.
 	patterns := make([]map[string]any, 0, len(r.scope.Origins)+1)
@@ -112,9 +73,8 @@ func (r *AgentBrowserRuntime) initializeScopedNetwork(ctx context.Context) error
 		{"Network.enable", map[string]any{}},
 		{"Network.setBlockedURLs", map[string]any{"urlPatterns": patterns}},
 		{"Network.setBypassServiceWorker", map[string]any{"bypass": true}},
-		{"Fetch.enable", map[string]any{"patterns": []map[string]any{{"urlPattern": "*", "requestStage": "Request"}}}},
 	} {
-		if err := r.call(ctx, command.method, command.params, nil); err != nil {
+		if err := r.cdp.call(ctx, r.session, command.method, command.params, nil); err != nil {
 			return err
 		}
 	}
@@ -147,7 +107,11 @@ func (r *AgentBrowserRuntime) handleScopedRequestLocked(event cdpWireMessage) {
 
 func (r *AgentBrowserRuntime) reviewScopedRequest(ctx context.Context, cancel context.CancelFunc, request AgentBrowserNetworkRequest, paused agentBrowserPausedRequest) {
 	defer cancel()
-	defer func() { r.mu.Lock(); delete(r.networkPending, request.ID); r.mu.Unlock() }()
+	defer func() {
+		r.mu.Lock()
+		delete(r.networkPending, request.ID)
+		r.mu.Unlock()
+	}()
 	continued := false
 	defer func() {
 		if !continued {
@@ -155,13 +119,15 @@ func (r *AgentBrowserRuntime) reviewScopedRequest(ctx context.Context, cancel co
 			defer stop()
 			// Navigation and Network's origin rule can already have ended the
 			// interception. The write's source is invalidated independently.
-			_ = r.cdp.call(abortCtx, r.session, "Fetch.failRequest", map[string]any{"requestId": request.RequestID, "errorReason": "BlockedByClient"}, nil)
+			_ = r.cdp.call(abortCtx, "", "Fetch.failRequest", map[string]any{"requestId": request.RequestID, "errorReason": "BlockedByClient"}, nil)
 		}
 	}()
 	if err := r.scope.AuthorizeNavigation(ctx, request.URL); err != nil {
 		if paused.ResourceType == "Document" {
 			r.mu.Lock()
-			r.networkDocumentError = err
+			if request.FrameID == r.frame {
+				r.networkDocumentError = err
+			}
 			r.mu.Unlock()
 		}
 		return
@@ -179,7 +145,7 @@ func (r *AgentBrowserRuntime) reviewScopedRequest(ctx context.Context, cancel co
 			r.mu.Unlock()
 			return errors.New("browser network request already consumed")
 		}
-		await, err := r.cdp.send(ctx, r.session, "Fetch.continueRequest", map[string]any{"requestId": request.RequestID})
+		await, err := r.cdp.send(ctx, "", "Fetch.continueRequest", map[string]any{"requestId": request.RequestID})
 		r.mu.Unlock()
 		if err != nil {
 			return err
@@ -189,7 +155,7 @@ func (r *AgentBrowserRuntime) reviewScopedRequest(ctx context.Context, cancel co
 		return err
 	}
 	switch request.Method {
-	case http.MethodGet, http.MethodHead, http.MethodOptions:
+	case "GET", "HEAD", "OPTIONS":
 		_ = dispatch()
 	default:
 		// CDP omits bytes for files/blobs it cannot serialize. Never approve a

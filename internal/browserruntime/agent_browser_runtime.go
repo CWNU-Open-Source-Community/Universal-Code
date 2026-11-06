@@ -48,6 +48,18 @@ type AgentBrowserRuntime struct {
 }
 
 func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
+	r.mu.Lock()
+	r.networkRuntimeID = agentBrowserToken()
+	r.networkPending = map[string]context.CancelFunc{}
+	r.mu.Unlock()
+	if r.scope != nil {
+		// A browser-level Fetch handler is installed before any owned page or
+		// worker creates its URLLoaderFactory. Attaching after a SharedWorker
+		// starts cannot update its already-created factory.
+		if err := r.cdp.call(ctx, "", "Fetch.enable", map[string]any{"patterns": []map[string]any{{"urlPattern": "*", "requestStage": "Request"}}}, nil); err != nil {
+			return err
+		}
+	}
 	var bc struct {
 		ID string `json:"browserContextId"`
 	}
@@ -84,8 +96,6 @@ func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
 	}
 	r.mu.Lock()
 	r.session = attached.ID
-	r.networkRuntimeID = agentBrowserToken()
-	r.networkPending = map[string]context.CancelFunc{}
 	r.mu.Unlock()
 	if r.scope != nil {
 		if err := r.initializeScopedNetwork(ctx); err != nil {
@@ -125,6 +135,10 @@ func (r *AgentBrowserRuntime) invalidateNetworkLocked() {
 func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if event.Method == "Fetch.requestPaused" && event.SessionID == "" && r.scope != nil {
+		r.handleScopedRequestLocked(event)
+		return
+	}
 	if event.Method == "Target.detachedFromTarget" {
 		var detached struct{ SessionID string }
 		if json.Unmarshal(event.Params, &detached) == nil && detached.SessionID == r.session && r.session != "" {
