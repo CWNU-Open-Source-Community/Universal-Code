@@ -508,7 +508,8 @@ func migrationPlan() []migration {
 		migration{Version: 218, Name: "Pinned conversations", Statements: threadPinStatements},
 		migration{Version: 219, Name: "npm workspace preparation binds the shared installation root", Statements: npmWorkspacePreparationStatements()},
 		migration{Version: 220, Name: "Authority-bound Agent browser workspace upload tool", Statements: agentBrowserUploadSupervisorLedgerStatements(), DisableForeignKeys: true},
-		migration{Version: 221, Name: "Durable workflow completion notification recovery", Statements: workflowCompletionNotificationStatements})
+		migration{Version: 221, Name: "Durable workflow completion notification recovery", Statements: workflowCompletionNotificationStatements},
+		migration{Version: 222, Name: "Exact paused browser network request approvals", Statements: browserNetworkRequestStatements})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

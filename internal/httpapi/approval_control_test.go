@@ -23,6 +23,32 @@ type cancelAfterWebApprovalController struct {
 	cancel context.CancelFunc
 }
 
+type browserNetworkDecisionController struct{}
+
+func (browserNetworkDecisionController) Decide(_ context.Context, r application.DecideApprovalControlRequest) (application.DecideApprovalControlResult, error) {
+	return application.DecideApprovalControlResult{Approval: approval.Record{ID: r.ApprovalID, ProposalID: domain.BrowserNetworkRequestPrefix + "live-request", RunID: r.RunID, ToolName: toolgateway.AgentBrowserApprovalTool, Status: approval.StatusApproved}, Action: r.Action}, nil
+}
+
+func TestBrowserNetworkHTTPDecisionDoesNotReplayBrowserTool(t *testing.T) {
+	continuation := &reviewedProposalContinuationStub{}
+	api := &API{controlEnabled: true, approvalControlEnabled: true, controlTokenHash: sha256.Sum256([]byte(testControlToken)), approvalController: browserNetworkDecisionController{}, runExecutionEnabled: true, threadTurnController: continuation, appVersion: "browser-network-test"}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runs/run-network/approvals/approval-network/decision", strings.NewReader(`{"version":"approval_control.v1","action":"approve_once"}`))
+	req.Header.Set("Authorization", "Bearer "+testControlToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "browser-network-http-approve-once")
+	res := httptest.NewRecorder()
+	api.serveApprovalDecisionControl(res, req, "network-review", "run-network", "approval-network")
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+	if continuation.request.ProposalID != "" {
+		t.Fatalf("request approval replayed a tool: %+v", continuation.request)
+	}
+	if strings.Contains(res.Body.String(), `"continuation":{`) {
+		t.Fatal(res.Body.String())
+	}
+}
+
 func (c cancelAfterWebApprovalController) Decide(_ context.Context,
 	request application.DecideApprovalControlRequest,
 ) (application.DecideApprovalControlResult, error) {
