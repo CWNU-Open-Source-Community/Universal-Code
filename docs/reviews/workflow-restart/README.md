@@ -22,9 +22,11 @@ No timestamps are changed in this regression.
 Logs: [before](short-workflow-before.txt), [after](short-workflow-after.txt).
 
 Renewal changes only `claim_until`, preserving checkpoint version and `updated_at`.
-It requires the same owner and an unexpired claim. A renewal failure cancels the
-current interpreter context; exit stops and joins the renewer before releasing
-the original owner's claim. Renewal and release errors are returned. Claim,
+It requires the same owner and an unexpired claim. Owner loss and non-timeout
+renewal errors cancel the current interpreter context. A renewal deadline can be
+retried within the last confirmed claim window, as described below. Exit stops
+and joins the renewer before releasing the original owner's claim. Renewal and
+release errors are returned. Claim,
 renewal and release store calls use two-second context deadlines.
 The claim renewer and interpreter share the same ten-minute deadline, applied
 before the first wake read. Caller cancellation or that deadline stops both
@@ -85,13 +87,63 @@ the same database. It verifies zero replacement model calls, one original
 old interpreter finally drains. This models delayed provider cleanup after
 cancellation.
 
+## Connection contention follow-up
+
+The real SQLite comparison uses `efc99242` (before the claim renewer) and
+`2ea09f25` (the renewed claim with the shared interpreter deadline). A test store
+waits three seconds after the real `PrepareWorkflowStep` commit to separate the
+claim and Run heartbeat phases. It occupies SQLite's sole pooled connection
+from claim +9s through +12.5s, including a real `SELECT 1`. The deterministic
+provider is due to finish at +15s. This arranges actual pool contention; it does
+not measure a production transaction taking 3.5 seconds.
+
+| Version | Observed result |
+| --- | --- |
+| Before claim renewal, `efc99242` | Existing Run renewal begins at +13.016s after the connection is free; one model call completes one job. |
+| Claim renewal, `2ea09f25` | New claim renewal begins at +10.001s and times out after 2.003s; it cancels the healthy model before any Run heartbeat. Zero jobs complete. |
+| Bounded renewal retry | First call times out; the retry acquires the connection at +12.5s. The original model call completes one job without cancellation. |
+
+The fix retries only returned `context.DeadlineExceeded`, with a cancellable
+100ms pause, while the parent context remains active. Owner loss and other
+storage errors still stop immediately. Both `Advance` and `RunDue` capture time
+before their initial claim call. Initial expiry is that start +30s; confirmed
+renewals move it to renewal-call start +30s. Time spent waiting for SQLite never
+extends either estimate. A retry needs room for its delay and a full two-second
+call before the last confirmed expiry. A separate expiry timer cancels the
+interpreter if a call returns late, and an already-expired claim cannot enter
+the wake read or interpreter. Exit still joins the renewer and releases only
+the original owner.
+
+During the first implementation, requiring both the returned deadline error and
+`renewCtx.Err()` to agree made this test intermittently fail. Real SQLite
+returned `DeadlineExceeded` with the outer deadline already 305 microseconds in
+the past but `renewCtx.Err()` still nil, causing premature cancellation at
++16.202s in the probe. The final classification uses the returned error, and the
+persistent-case assertion now rejects cancellation before +26s. The healthy
+regression also observes this ordering while successfully retrying.
+
+The persistent-contention case keeps the claim's actual SQLite pool occupied
+and renews the independent Run lease through a second real pool on the same
+database. This isolates claim retry expiry from the existing Run heartbeat's
+own timeout policy. It requires cancellation after +26s and before +30s; the
+focused run cancels at +28.808s after nine deadline failures. A separate case
+cancels the parent after the first timeout and requires no second call. Existing
+owner-replacement and non-timeout failures require exactly one renewal call.
+The initial-expiry probe covers both expiry during a blocked wake read and
+expiry before entry; release runs in both cases.
+
+Comparison logs: [old successful control](claim-contention-control.txt),
+[renewed-claim failure](claim-contention-before-fix.txt),
+[outer-context ordering probe](claim-timeout-ordering-probe.txt).
+
 ## Verification
 
 ```powershell
 go test ./internal/application -run '^TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline$' -count=1 -v -timeout=65s
-go test ./internal/application -run '^TestWorkflowClaim' -count=1 -v -timeout=120s
+go test ./internal/application ./internal/store -run '^TestWorkflowClaim' -count=1 -v -timeout=150s
 go test ./internal/application -run '^TestWorkflowClaimExpiryDuringLongDrainDoesNotReplayAttempt$' -count=1 -v -timeout=90s
-go test -race ./internal/application ./internal/store -run '^TestWorkflowClaim' -count=1 -timeout=120s
+go test -race ./internal/application ./internal/store -run '^TestWorkflowClaim' -count=1 -v -timeout=150s
+go test -race ./internal/store -run '^TestWorkflowClaim(Contention|PersistentContention)' -count=3 -v -timeout=120s
 go test ./internal/store -run '^TestWorkflowClaimRenewal' -count=1 -v -timeout=30s
 go test ./internal/application -run '^(TestWorkflowRestartProcess|TestWorkflowHostContinuesPausedCheckpointAfterDatabaseReopen|TestWorkflowHostDoesNotReplayUnfinishedAttemptAfterDatabaseReopen|TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt|TestScheduledAutomaticWorkflowLostResponseObservesOriginalAcrossRestart)' -skip '^TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline$' -count=1 -v -timeout=90s
 go test ./internal/application ./internal/store -run '^TestWorkflow' -skip '^TestWorkflow(Claim|RestartProcess)' -count=1 -timeout=240s
@@ -117,3 +169,17 @@ Independent review logs: [long drain](long-drain-review-output.txt),
 The child-only entry point skips during
 direct enumeration; the parent test actually executes it five times and checks
 each exit code. Unknown attempts still fail as `worker_lost` without model replay.
+
+The contention follow-up passes the focused Claim group in 76.338s for application
+and 30.382s for store. The same group with `-race` passes in 88.122s / 39.150s,
+including the long-drain, initial-expiry, shared-deadline and error cases. Three
+additional race repetitions of all three contention cases pass in 113.945s;
+persistent contention cancels at +28.879s, +28.983s and +28.807s. Logs:
+[focused](claim-contention-focused.txt), [race](claim-contention-race.txt),
+[repeated contention race](claim-contention-repeat-race.txt).
+
+OCR delegate selected the three production Go files and resolved their Go rules.
+All three diffs and the complete renewer, `Advance` / `runClaimed`, and `RunDue`
+paths were read; the unrelated remainder of `workflow.go` was not reread in full.
+The three affected test files were read in full in addition to the default OCR
+selection. No additional finding remained. No generated files changed.
