@@ -580,6 +580,9 @@ type commandRuntimeEntry struct {
 	inputGate   chan struct{}
 	record      CommandRuntimeJob
 	process     commandRuntimeProcess
+	processDone chan struct{}
+	exitCode    int
+	waitErr     error
 	ring        commandRuntimeRing
 	done        chan struct{}
 	notify      chan struct{}
@@ -897,24 +900,12 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 	running.StartedAt = &started
 	running.Version++
 	running.UpdatedAt = started
-	// Process ownership is established. Finish the bounded ownership
-	// handoff even if the caller cancels between the SQL update and readback;
-	// otherwise an owned process can lose its terminal-receipt collector.
-	// Foreground cancellation is handled after this Job is registered.
-	handoffCtx, cancelHandoff := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	updated, err := m.store.UpdateCommandRuntimeJob(handoffCtx, running, stored.Version)
-	cancelHandoff()
-	if err != nil {
-		_ = process.Kill()
-		_ = process.Close()
-		return CommandRuntimeJobSnapshot{}, false, err
-	}
 	entry := &commandRuntimeEntry{
-		record: updated, process: process,
+		record: running, process: process, processDone: make(chan struct{}),
 		authorityContext:   context.WithoutCancel(ctx),
 		operatorInvocation: request.Scope.AttributionSource == domain.AgentAttributionOperatorRoot,
 		discardOutput:      request.DiscardOutput,
-		ring:               commandRuntimeRing{capacity: updated.InlineLimitBytes},
+		ring:               commandRuntimeRing{capacity: running.InlineLimitBytes},
 		done:               make(chan struct{}), notify: make(chan struct{}, 1),
 		stdoutDone: make(chan struct{}), stderrDone: make(chan struct{}),
 		stdoutHash: sha256.New(), stderrHash: sha256.New(),
@@ -925,15 +916,40 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 		entry.ring.frames = []CommandRuntimeFrame{}
 	}
 	entry.inputGate <- struct{}{}
+	// The process is already executing. Drain output and enforce its deadline
+	// while the durable ownership handoff waits for the database. Wait has one
+	// owner; receipt persistence starts only after that handoff succeeds.
+	go m.collect(entry, CommandRuntimeStdout, process.Stdout(), entry.stdoutDone)
+	go m.collect(entry, CommandRuntimeStderr, process.Stderr(), entry.stderrDone)
+	go func() {
+		entry.exitCode, entry.waitErr = process.Wait()
+		close(entry.processDone)
+	}()
+	go m.enforceTimeout(entry, time.Until(started.Add(time.Duration(running.TimeoutMilliseconds)*time.Millisecond)))
+	// Finish the bounded handoff even if the caller cancels between the SQL
+	// update and readback. Foreground cancellation follows Job registration.
+	handoffCtx, cancelHandoff := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	updated, err := m.store.UpdateCommandRuntimeJob(handoffCtx, running, stored.Version)
+	cancelHandoff()
+	if err != nil {
+		killErr := process.Kill()
+		<-entry.processDone
+		closeErr := process.Close()
+		<-entry.stdoutDone
+		<-entry.stderrDone
+		return CommandRuntimeJobSnapshot{}, false, errors.Join(err, killErr, closeErr)
+	}
+	entry.mu.Lock()
+	// Keep output and stopping state captured during the handoff.
+	entry.record.Version = updated.Version
+	entry.record.UpdatedAt = updated.UpdatedAt
+	entry.mu.Unlock()
 	m.mu.Lock()
 	m.entries[jobID] = entry
 	m.mu.Unlock()
 
-	go m.collect(entry, CommandRuntimeStdout, process.Stdout(), entry.stdoutDone)
-	go m.collect(entry, CommandRuntimeStderr, process.Stderr(), entry.stderrDone)
 	go m.maintainOwnership(entry)
 	go m.wait(entry)
-	go m.enforceTimeout(entry, time.Duration(updated.TimeoutMilliseconds)*time.Millisecond)
 	if request.Spec.Spec.StdinPolicy == CommandRuntimeStdinPipe &&
 		(request.Spec.Spec.InitialStdin != "" || request.Spec.Spec.CloseInitialStdin) {
 		<-entry.inputGate
@@ -1482,7 +1498,8 @@ func (m *CommandRuntimeManager) renewOwnership(ctx context.Context,
 }
 
 func (m *CommandRuntimeManager) wait(entry *commandRuntimeEntry) {
-	exitCode, waitErr := entry.process.Wait()
+	<-entry.processDone
+	exitCode, waitErr := entry.exitCode, entry.waitErr
 	if waitErr != nil {
 		// An adapter/transport failure supplies no trustworthy program exit.
 		// Preserve that distinction durably: bisect must not interpret an
@@ -1571,9 +1588,14 @@ func (m *CommandRuntimeManager) enforceTimeout(entry *commandRuntimeEntry,
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 	select {
-	case <-entry.done:
+	case <-entry.processDone:
 		return
 	case <-timer.C:
+		select {
+		case <-entry.processDone:
+			return
+		default:
+		}
 		if entry.setDesired(CommandRuntimeJobTimedOut) {
 			_ = entry.process.Kill()
 		}
