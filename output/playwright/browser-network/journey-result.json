@@ -1,0 +1,61 @@
+{
+  "phase": "after",
+  "platform": "win32",
+  "product_revision": "b81618365f4f5d883f52342121eb0a2d2a6878c8",
+  "harness_revision": "b81618365f4f5d883f52342121eb0a2d2a6878c8",
+  "backend": "production app.ExecuteContext",
+  "frontend": "production Vite build",
+  "provider": "controlled offline fixture",
+  "provider_reply_held_for_capture": true,
+  "full_permission_confirmed_in_ui": false,
+  "browser_network_enabled_in_ui": true,
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "observed": {
+    "version": "agent_browser_status.v1",
+    "run_id": "run-20261106154702-8d45106467d4",
+    "session_id": "agent-browser-20261106154702-b5eb24665695",
+    "generation": 1,
+    "state": "ready",
+    "available": true,
+    "can_start": false,
+    "product": "chrome",
+    "headless": true,
+    "url": "http://127.0.0.1:56686/",
+    "title": "Owned Agent Browser check",
+    "document_epoch": 7,
+    "last_action": "browser_screenshot",
+    "updated_at": "2026-11-06T15:47:04.0081229Z",
+    "screenshot": {
+      "locator": "workspace:///.cyberagent-workbench/browser-artifacts/run-20261106154702-8d45106467d4/0d370cd9a9f545c7082f8d0dd3a59e185716ead6bafcf0e7606fd891f4b33eb7.png",
+      "sha256": "1caabbcbf77b317544d9040675eb72da092e7163b769ec64f6e218622f2562b8",
+      "byte_size": 36058,
+      "mime_type": "image/png"
+    },
+    "cleanup_pending": false,
+    "tree_reaped": false,
+    "profile_removed": false,
+    "process_scope_verified": false
+  },
+  "closed": {
+    "version": "agent_browser_status.v1",
+    "run_id": "run-20261106154702-8d45106467d4",
+    "session_id": "agent-browser-20261106154702-b5eb24665695",
+    "generation": 1,
+    "state": "closed",
+    "available": true,
+    "can_start": true,
+    "product": "chrome",
+    "headless": true,
+    "url": "http://127.0.0.1:56686/",
+    "document_epoch": 10,
+    "last_action": "browser_screenshot",
+    "updated_at": "2026-11-06T15:47:06.2665086Z",
+    "cleanup_pending": false,
+    "tree_reaped": true,
+    "profile_removed": true,
+    "process_scope_verified": false
+  }
+}
