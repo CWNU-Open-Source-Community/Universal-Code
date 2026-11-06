@@ -27,14 +27,14 @@
 .shared-skill-confirmation label { display: flex; gap: 8px; align-items: flex-start; }
 .shared-skill-confirmation input { flex-shrink: 0; margin-top: 5px; }
 .v2-skill-settings-card,
-.v2-inspector-preferences { display: grid; gap: 20px; min-width: 0; padding: 20px; }
+.v2-record-preferences { display: grid; gap: 20px; min-width: 0; padding: 20px; }
 .v2-skill-settings-card { justify-items: start; gap: 16px; }
 .v2-skill-settings-card > p { margin: 0; overflow-wrap: anywhere; }
 .v2-skill-settings-card > *,
-.v2-inspector-preferences > * { min-width: 0; max-width: 100%; }
-.v2-inspector-preferences > .settings-action { justify-self: start; }
-.v2-inspector-preferences > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.v2-inspector-preferences strong { overflow-wrap: anywhere; }
+.v2-record-preferences > * { min-width: 0; max-width: 100%; }
+.v2-record-preferences > .settings-action { justify-self: start; }
+.v2-record-preferences > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.v2-record-preferences strong { overflow-wrap: anywhere; }
 .v2-setting-segmented { display: flex; flex-wrap: wrap; gap: 6px; }
 .v2-setting-segmented button[aria-pressed="true"] { border-color: var(--v2-accent); background: color-mix(in srgb, var(--v2-accent) 10%, var(--v2-control)); }
 .v2-settings-diagnostics { margin-top: 24px; border-top: 1px solid var(--v2-border); padding-top: 16px; }
@@ -54,8 +54,8 @@
 .v2-shared-settings .shortcut-list kbd { font-size: 13px; }
 @media (max-width: 760px) {
   .v2-skill-settings-card,
-  .v2-inspector-preferences { padding: 16px; }
-  .v2-inspector-preferences > div { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .v2-record-preferences { padding: 16px; }
+  .v2-record-preferences > div { align-items: flex-start; flex-direction: column; gap: 10px; }
   .v2-shared-settings .extension-heading { flex-wrap: wrap; }
   .v2-shared-settings .extension-facts { grid-template-columns: minmax(0, 1fr); }
   .v2-shared-settings .model-route-row { grid-template-columns: minmax(0, 1fr) auto; }

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "b58f8981db87dd983e221839283e43f145b92b03",
+  "reviewed_head": "dbeb302b + 本修复提交",
+  "review_metadata_excluded": [
+    "docs/reviews/builtin-init-skill/README.md",
+    "docs/reviews/builtin-init-skill/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：SKILL.md/manifest/registry_test 全文阅读、manifest 完整性验证、CodeRabbit 4 条意见处置核实",
+    "review_delegate：OCR delegate 规则检查与独立全文复审，含幽灵工具回归测试的标签派生修复"
+  ],
+  "summary": {
+    "total_git_changed_files": 7,
+    "review_scope_files": 6,
+    "ocr_selected_production": 1,
+    "manually_added_review_files": 5,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/skills/builtins/init/SKILL.md", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/skills/builtins/init/manifest.json", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/skills/registry_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "docs/builtin-skills.md", "coverage": "quick", "reviewer": "primary" },
+    { "path": "docs/usage.md", "coverage": "quick", "reviewer": "primary" },
+    { "path": "internal/approval/bounded_grant_test.go", "coverage": "scope-check", "reviewer": "primary_and_delegate" }
+  ]
+}

@@ -147,7 +147,7 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 	}
 	fullTools := desktopSourceWiringToolsByName(captured[0].Tools)
 	restrictedTools := desktopSourceWiringToolsByName(captured[1].Tools)
-	for _, name := range []string{"browser_navigate", "browser_scroll", "browser_key"} {
+	for _, name := range []string{"browser_navigate", "browser_scroll", "browser_key", "browser_upload"} {
 		_, fullFound := fullTools[name]
 		_, restrictedFound := restrictedTools[name]
 		if browserruntime.AgentBrowserPlatformAvailable() && !fullFound {

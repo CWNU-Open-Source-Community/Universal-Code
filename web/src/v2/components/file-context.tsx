@@ -74,9 +74,9 @@ export function V2FileContext({ client, workspaceID, files, onChange, disabled, 
           onChange((current) => current.filter(({ id }) => id !== file.id))} type="button">
           <X aria-hidden="true" size={13} /></button></span>)}
     </div>}
-    {open && createPortal(<div className="v2-inspector-backdrop" role="presentation"
+    {open && createPortal(<div className="v2-detail-backdrop" role="presentation"
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section aria-label={t("选择项目文件", "Choose project files")} aria-modal="true" className="v2-inspector-drawer v2-file-picker"
+      <section aria-label={t("选择项目文件", "Choose project files")} aria-modal="true" className="v2-detail-drawer v2-file-picker"
         ref={dialog} role="dialog" tabIndex={-1}>
         <header><strong>{t("引用项目文件", "Reference project files")}</strong><button aria-label={t("关闭文件选择", "Close file picker")} onClick={onClose}
           ref={close} type="button"><X aria-hidden="true" size={17} /></button></header>

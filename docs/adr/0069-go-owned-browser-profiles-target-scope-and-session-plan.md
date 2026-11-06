@@ -45,6 +45,16 @@ resolve an explicitly approved target to private space, but cloud metadata, link
 multicast, unspecified, and reserved address classes remain blocked. Literal-IP targets
 must resolve to the identical address.
 
+Operator narrowing adds optional `max_origins` and `max_url_bytes` to the target scope.
+Zero/absent fields retain the builtin ceiling and keep existing v1 JSON and fingerprints
+unchanged. Positive bounds cannot exceed the builtin ceiling and enter the scope digest;
+construction, validation, navigation, redirects, and intercepted requests enforce them.
+The URL byte bound covers both the supplied URL and its canonical form. A session plan
+requires its scope bounds to match its effective limits. Older readers discard the new
+fields and reject narrowed scopes on fingerprint mismatch; new readers accept existing
+default scopes. Previously built plans with narrowed origin/URL limits but no matching
+scope bounds must be rebuilt. The builtin profile descriptor and fingerprint stay fixed.
+
 `browser_session_plan.v1` binds Session, Run, Workspace, fixed profile fingerprint, target
 scope fingerprint, proxy endpoint, optional system credential reference, requested tooling,
 isolation, evidence class, limits, backend class, and sorted launch blockers. Proxy URL

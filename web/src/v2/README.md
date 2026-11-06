@@ -64,7 +64,7 @@ Thread Turn Facade
   ↓
 Existing Harness Core（Run、Tools、Events、Approval、Recovery）
   ↓
-Inspector（旧 Run/Session/Event 页面，用户主动进入）
+历史记录、运行详情、会话详情、自动化（按功能独立进入）
 ```
 
 后端龙骨不拆，驾驶舱重做。不得重写 Run Engine、Event Store、Approval、Sandbox、Checkpoint 或 Delivery Truth。
@@ -72,7 +72,7 @@ Inspector（旧 Run/Session/Event 页面，用户主动进入）
 ## 强制产品抽象
 
 1. 默认产品对象只有 Thread（中文 UI 使用“对话/任务”）。Mission、Run、Session、Event、Receipt、sequence、stage、policy revision、capability generation 全部退出默认工作面。
-2. 已删除不再挂载的旧 Thread 工作面、侧栏、Run 创建和设置入口；仍在使用的 `thread-transcript.tsx` 与 Run/Session 页面保留为 Inspector，不继续堆叠产品功能。
+2. 执行记录属于当前任务的工作台标签；历史记录、运行详情、会话详情和自动化使用独立页面。Run/Session 页面继续复用现有安全投影与权限控制。
 3. React 发送消息时只调用一个产品入口：`POST /threads/{thread_id}/turns`。它不得判断 Run 是 created/paused/running，不得调用 start/resume，不得传 `max_steps`。
 4. Go Application Service 负责：接收用户消息、获取/创建 active Run、必要时 start/resume、连续执行 Supervisor turn，直到 finish、wait、approval、cancel、budget 或 fatal error。
 5. 新建对话没有 Run 创建向导。用户选择/继承工作区后直接看到空白对话；第一句话创建 Thread + Run 并自动工作。
@@ -87,11 +87,11 @@ Inspector（旧 Run/Session/Event 页面，用户主动进入）
 - 连续公开 commentary/final → 一段自然的助手消息。
 - 同一类连续 search/read/edit/execute/verify → 一个可展开的工具活动组。
 - tool request、arguments、start、output、completion、command receipt、verification receipt 不得逐条占据时间线，但不得因此隐藏执行事实。活动组收起时显示安全摘要；展开后按需读取由 Go 脱敏投影出的命令、工作目录、Agent、执行环境、状态、退出码、耗时以及有界 stdout/stderr。搜索/抓取、文件读写、验证、MCP 与浏览器动作使用同一惰性详情入口，但只返回工具类别允许公开的类型化事实，绝不下发原始工具 JSON。
-- 连续命令继续聚合；运行中直接读取当前进程持有的有界输出 ring tail，失去进程所有权后才回退到持久快照。失败项默认展开错误摘要；截断输出通过 Thread 与活动双重绑定的 opaque artifact 引用按需加载完整脱敏产物。普通对话不得接收原始 `payload_json`、环境变量值、凭证、stdin 或隐藏推理；完整审计事实继续留存在 durable ledger 与用户主动触发的完整导出中，Inspector 的 JSON 视图只能接收 Go 端严格白名单化的元数据投影。
+- 连续命令继续聚合；运行中直接读取当前进程持有的有界输出 ring tail，失去进程所有权后才回退到持久快照。失败项默认展开错误摘要；截断输出通过 Thread 与活动双重绑定的 opaque artifact 引用按需加载完整脱敏产物。普通对话不得接收原始 `payload_json`、环境变量值、凭证、stdin 或隐藏推理；完整审计事实继续留存在 durable ledger 与用户主动触发的完整导出中，运行详情的 JSON 视图只能接收 Go 端严格白名单化的元数据投影。
 - approval request/resolution → 只有需要用户动作时才挂载可操作 Approval Card。
 - Run boundary、Harness checkpoint、selection drained、普通 started/running 等内部噪声默认隐藏。
 - 失败、阻塞、交付和验证结论保留为人类可理解的 notice。
-- 原始 transcript、Run/Event/Receipt 留在 Inspector。
+- 完整 transcript、Run/Event/Receipt 通过执行记录及运行详情按需查看。
 
 产品叙事示例：
 
@@ -121,7 +121,7 @@ Inspector（旧 Run/Session/Event 页面，用户主动进入）
 - Thread 列表；
 - 设置。
 
-“接入模型”是本轮用户明确要求的唯一主导航例外，并与设置中的“模型”指向同一产品页。Pull Request、插件、定时任务等仍不得和“新对话”同级占据主导航；它们进入设置、命令面板或 Inspector。
+“接入模型”与设置中的“模型”指向同一产品页。历史记录和自动化使用侧栏底部的独立入口；Pull Request、插件等从相应设置或运行工具进入。
 
 主工作面：
 
@@ -131,7 +131,7 @@ Inspector（旧 Run/Session/Event 页面，用户主动进入）
 - 权限 popover 锚定 Composer 权限 chip；状态来自真实 Thread permission API，不能根据 Run 状态自行猜测。
 - archive/restore/delete 使用真实 Thread lifecycle API，并按 `hasThreadControl` 禁用写操作。
 - Approval Card 仅在 active Run 真实处于 `waiting_approval` 且 queue 非空时出现。
-- Inspector 由标题菜单或设置主动打开，显示 Thread/Mission/Run ID 和旧控制面入口。
+- 执行记录由任务标题菜单打开，宽屏与聊天和输入框并列；全局历史记录不继承当前任务身份。运行与会话详情始终绑定指定记录 ID。
 
 ## Apple 式材质与交互约束
 
@@ -170,10 +170,11 @@ Inspector（旧 Run/Session/Event 页面，用户主动进入）
 - Composer 发送按钮左侧提供线程级模型路由切换器。第一层显示模型、推理强度、速度与重置默认；模型第二层按供应商分组列出 `provider + exact model`，不可选择项原位显示凭据或 Harness 未就绪原因，底部固定“管理模型供应商…”并返回设置中的模型模块。
 - 新对话选择的 `provider + model` 必须随 `thread_creation.v1` 原子固化，保证首轮就使用所选路由；不得先创建后补写。已有 Thread 的切换只写入 successor/next Run，当前正在运行的 Run 保持不变，并在 Composer 明确标注“下一轮”。
 
-## Inspector、任务权限与调试运行时
+## 记录页面、任务权限与调试运行时
 
-- 完整 Inspector 使用无查询参数的 Legacy SPA 命名空间：`/legacy`、`/legacy/threads/{id}`、`/legacy/runs/{id}` 与 `/legacy/sessions/{id}`。旧的 `?legacy=1` 不再是导航协议；UI 请求继续拒绝全部查询参数。
-- v2 到完整 Inspector 的内部跳转必须使用同一文档内的 History API 导航，保留仅驻留内存的连接凭据，禁止把 bearer 写入 URL、`localStorage` 或 `sessionStorage`。用户主动刷新或从外部深链进入时，仍由 Wails bootstrap 恢复连接，普通浏览器则重新连接。
+- 功能路由为 `#/history`、`#/runs/{id}`、`#/sessions/{id}`、`#/automations`；任务内执行记录为 `#/threads/{id}/records`。带来源任务的资源地址以 `#/threads/{thread_id}/` 开头，运行详情可附 `context`、`checkpoints`、`tools`、`ui-evidence` 页签；设置附在来源路由后，返回时恢复精确资源。
+- 旧 `/inspector` hash 和 `/legacy` 路径已移除，不保留别名、跳转或兼容解析。UI 请求继续拒绝全部查询参数。
+- 功能页面之间使用同一文档内的 History API 导航，保留仅驻留内存的连接凭据，禁止把 bearer 写入 URL、`localStorage` 或 `sessionStorage`。用户主动刷新或从外部深链进入时，由 Wails bootstrap 恢复连接，普通浏览器重新连接。
 - Full Access 是当前 Thread 的权限档位：React 显示 Codex 风格风险清单，确认后通过 Thread permission API 即时生效，不重启应用、不改变其他 Thread；切到低档位必须能够立即撤销后续高风险授权。
 - Debug 继承 Full Access，并额外开放持久终端、后台进程与单独限时授权的 Agent 终端输入。只有这些长生命周期调试能力需要应用级初始化，因此 Debug 保留“确认并重启”入口；该入口不依赖已选 Thread。
 - 完整 CDP 是 Full Access/Debug 下的可选子开关，不是同级权限档。进入 Full Access 或 Debug 时默认开启；权限页可立即关闭，重新开启必须确认 Cookie、请求捕获/修改/重放和任意 CDP 方法风险；保守、工作区访问与逐次审批不得开启。它只约束 Traverse 管理的隔离浏览器，不接管系统浏览器或 Wails WebView，选择本身也不会启动浏览器。
@@ -197,7 +198,7 @@ Inspector（旧 Run/Session/Event 页面，用户主动进入）
 | 浮层 | 权限 menu、线程 menu、确认 dialog 支持点击、Escape、焦点与取消 |
 | 归档 | 侧栏归档后消失；设置归档页可真实恢复/删除，并回读持久状态 |
 | 窗口缩短 | Composer 始终可见 |
-| 查看审计 | 通过 Inspector 主动进入旧 Run/Event/Receipt 页面 |
+| 查看审计 | 当前任务打开执行记录；全局历史按精确 ID 打开运行或会话详情 |
 | UI PR | 包含真实截图、diff/metrics、黑盒流程和 Wails 构建，不只合同测试 |
 
 ## 测试合同

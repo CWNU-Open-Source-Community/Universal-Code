@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-11-05T06:57:05.4762194Z",
+  "period": "30d",
+  "utc_offset_minutes": 480,
+  "start_date": "2026-10-07",
+  "end_date": "2026-11-05",
+  "totals": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0,
+    "calls": 0,
+    "usage_reported_calls": 0,
+    "cache_usage_reported_calls": 0
+  },
+  "cost": {
+    "currency": "USD",
+    "known_cost_micros": 125000,
+    "priced_calls": 1,
+    "unpriced_calls": 0,
+    "untracked_calls": 0
+  },
+  "unassigned_calls": 0,
+  "models": [],
+  "recent_sessions": [],
+  "days": [],
+  "activity_start_date": "2026-05-08",
+  "activity_end_date": "2026-11-05",
+  "activity_days": []
+}

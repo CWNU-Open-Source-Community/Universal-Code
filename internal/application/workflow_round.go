@@ -170,6 +170,31 @@ func (s *WorkflowService) failWorkflowRoundBudget(ctx context.Context, e domain.
 			return err
 		}
 		if child.Terminal() {
+			job.Status, job.Reason, job.Output = "failed", cause.Error(), json.RawMessage(`null`)
+			completion, found, err := s.store.GetAgentCompletion(ctx, child.ID)
+			if err != nil {
+				return err
+			}
+			if found {
+				d, err := s.store.GetWorkflowDefinition(ctx, e.DefinitionID)
+				if err != nil {
+					return err
+				}
+				step, ok := d.Spec.Step(job.StepID)
+				if !ok {
+					return apperror.New(apperror.CodeConflict, "workflow task definition changed")
+				}
+				if !step.RequiresCodeVerification() {
+					job.Status, job.Reason = "completed", ""
+				}
+				job.Output, err = json.Marshal(completion.Report)
+				if err != nil {
+					return err
+				}
+			}
+			if err = s.store.CompleteWorkflowStep(ctx, job, owner); err != nil {
+				return err
+			}
 			continue
 		}
 		var expected domain.AgentAttempt
@@ -216,41 +241,4 @@ func (s *WorkflowService) rejectWorkflowBudget(ctx context.Context, e domain.Wor
 		return apperror.Wrap(apperror.CodeInternal, "workflow budget cleanup is incomplete", err)
 	}
 	return err
-}
-
-// A dormant approval wait can reach the workflow deadline without entering a
-// worker round. Read this execution's durable pending rows so legacy checkpoints
-// without Maps retain the same fenced cleanup before terminal failure.
-func (s *WorkflowService) expireWorkflowPending(ctx context.Context, e *domain.WorkflowExecution, owner string) error {
-	steps, err := s.store.ListWorkflowVerificationSteps(ctx, e.ID, owner, e.Version)
-	if err != nil {
-		return err
-	}
-	jobs := []domain.WorkflowStepExecution{}
-	for _, job := range steps {
-		if job.Status == "pending" {
-			jobs = append(jobs, job)
-		}
-	}
-	if len(jobs) > 0 {
-		if err := s.rejectWorkflowBudget(ctx, *e, owner, jobs, apperror.New(apperror.CodeResourceExhausted, "workflow deadline exceeded")); err != nil {
-			return err
-		}
-	}
-	for key, group := range e.State.Maps {
-		for i, item := range group.Items {
-			if item.Status != "pending" {
-				continue
-			}
-			job, found, err := s.store.GetWorkflowStep(ctx, item.StepExecutionID)
-			if err != nil {
-				return err
-			}
-			if found && job.Status == "failed" {
-				group.Items[i].Status, group.Items[i].Reason = job.Status, job.Reason
-			}
-		}
-		e.State.Maps[key] = group
-	}
-	return nil
 }

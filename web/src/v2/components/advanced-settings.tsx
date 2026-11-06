@@ -79,8 +79,8 @@ export function V2SkillSettings({ client, desktop }: { client: APIClient; deskto
   </>;
 }
 
-export function V2InspectorPreferences({ onOpenInspector }: {
-  onOpenInspector: (returnFocus?: HTMLElement | null) => void;
+export function V2RecordPreferences({ onOpenHistory }: {
+  onOpenHistory: (returnFocus?: HTMLElement | null) => void;
 }) {
   const { t } = useLocale();
   const [density, setDensity] = useState(readDensity);
@@ -94,10 +94,10 @@ export function V2InspectorPreferences({ onOpenInspector }: {
     setNavigation(value);
     applyRunNavigationMode(value);
   };
-  return <><h1>{t("Inspector 偏好与诊断", "Inspector preferences & diagnostics")}</h1><p className="v2-settings-lead">
+  return <><h1>{t("记录显示", "Record preferences")}</h1><p className="v2-settings-lead">
     {t("选择适合你的列表间距与运行记录导航，偏好会保存在本机。任务权限与执行状态在任务设置中管理。", "Choose list spacing and run navigation preferences, saved on this device. Manage task permissions and execution state in task settings.")}
-  </p><section className="v2-settings-section v2-shared-settings"><div className="v2-settings-card v2-inspector-preferences">
-    <div><strong>{t("Inspector 内容间距", "Inspector spacing")}</strong><div className="v2-setting-segmented" role="group" aria-label={t("Inspector 内容间距", "Inspector spacing")}>
+  </p><section className="v2-settings-section v2-shared-settings"><div className="v2-settings-card v2-record-preferences">
+    <div><strong>{t("记录间距", "Record spacing")}</strong><div className="v2-setting-segmented" role="group" aria-label={t("记录间距", "Record spacing")}>
       {(["comfortable", "compact"] as const).map((value) => <button aria-pressed={density === value}
         key={value} onClick={() => changeDensity(value)} type="button">{value === "compact" ? t("紧凑", "Compact") : t("舒展", "Comfortable")}</button>)}
     </div></div>
@@ -105,7 +105,7 @@ export function V2InspectorPreferences({ onOpenInspector }: {
       {(["compact", "diagnostic"] as const).map((value) => <button aria-pressed={navigation === value}
         key={value} onClick={() => changeNavigation(value)} type="button">{value === "compact" ? t("精简", "Compact") : t("完整诊断", "Full diagnostics")}</button>)}
     </div></div>
-    <button className="settings-action" onClick={(event) => onOpenInspector(event.currentTarget)} type="button">{t("打开 Inspector", "Open Inspector")}</button>
+    <button className="settings-action" onClick={(event) => onOpenHistory(event.currentTarget)} type="button">{t("打开历史记录", "Open history")}</button>
   </div></section></>;
 }
 

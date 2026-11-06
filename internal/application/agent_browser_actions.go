@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -213,6 +215,12 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 		value, e = r.Click(ctx, p.SnapshotID, p.ElementRef)
 	case toolgateway.BrowserTypeTool:
 		value, e = r.Type(ctx, p.SnapshotID, p.ElementRef, p.Value, p.Mode == "replace")
+	case toolgateway.BrowserUploadTool:
+		var absolutePath string
+		absolutePath, e = s.resolveAgentBrowserUpload(ctx, a.WorkspaceID, p.WorkspacePath)
+		if e == nil {
+			value, e = r.Upload(ctx, p.SnapshotID, p.ElementRef, absolutePath)
+		}
 	case toolgateway.BrowserScrollTool:
 		value, e = r.Scroll(ctx, *p.DeltaX, *p.DeltaY)
 	case toolgateway.BrowserKeyTool:
@@ -297,6 +305,70 @@ func normalizeAgentBrowserActionError(err error) error {
 	}
 	return apperror.Wrap(apperror.CodeFailedPrecondition, "Agent browser action failed", err)
 }
+
+// AgentBrowserMaxUploadBytes bounds one upload capture; it matches the
+// download quarantine budget so neither direction can move more bytes than the
+// browser session budget allows.
+const AgentBrowserMaxUploadBytes = 16 << 20
+
+// resolveAgentBrowserUpload verifies the requested upload is a real, regular,
+// size-bounded file inside the exact workspace root, following symlinks to
+// their destination and rejecting any resolution that escapes the root. The
+// returned absolute path is what the browser process itself will read. This is
+// a check-then-act boundary: a concurrent workspace writer can still swap or
+// grow the file between verification and the browser opening it, which is an
+// accepted residual within the approved external_write effect. Same-volume
+// hardlinks are not detected either: their resolved path always stays inside
+// the root, so containing them relies on the same host sandbox assumption that
+// already bounds this residual.
+func (s *AgentBrowserService) resolveAgentBrowserUpload(ctx context.Context, workspaceID, relative string) (string, error) {
+	st, ok := s.store.(fullCDPWorkspaceInfoStore)
+	if !ok {
+		return "", agentBrowserUnavailable("browser upload workspace unavailable")
+	}
+	workspace, e := st.GetWorkspaceInfo(ctx, workspaceID)
+	if e != nil {
+		return "", e
+	}
+	if workspace.ID != workspaceID || !filepath.IsAbs(workspace.RootPath) {
+		return "", agentBrowserUnavailable("browser upload workspace mismatch")
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(workspace.RootPath)
+	if err != nil {
+		return "", agentBrowserUnavailable("browser upload workspace is unavailable")
+	}
+	target := filepath.Join(resolvedRoot, filepath.FromSlash(relative))
+	resolved, err := filepath.EvalSymlinks(target)
+	if err != nil || resolved == resolvedRoot || !withinResolvedWorkspace(resolvedRoot, resolved) {
+		return "", agentBrowserUnavailable("browser upload file is unavailable or escapes the workspace")
+	}
+	info, err := os.Lstat(resolved)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", agentBrowserUnavailable("browser upload file is unavailable")
+	}
+	if info.Size() <= 0 {
+		return "", agentBrowserUnavailable("browser upload file is empty")
+	}
+	if info.Size() > AgentBrowserMaxUploadBytes {
+		return "", agentBrowserUnavailable("browser upload file exceeds the size bound")
+	}
+	return resolved, nil
+}
+
+func withinResolvedWorkspace(resolvedRoot, resolved string) bool {
+	separator := string(filepath.Separator)
+	// A resolved drive root such as C:\ already ends in the separator; appending
+	// another one would reject every file on that drive.
+	root := resolvedRoot
+	if !strings.HasSuffix(root, separator) {
+		root += separator
+	}
+	if runtime.GOOS == "windows" {
+		return strings.HasPrefix(strings.ToLower(resolved), strings.ToLower(root))
+	}
+	return strings.HasPrefix(resolved, root)
+}
+
 func (s *AgentBrowserService) persistAgentBrowserScreenshot(ctx context.Context, workspaceID, runID, key string, c browserruntime.AgentBrowserScreenshot) (string, error) {
 	actual, e := imageattachment.Validate(c.PNG, c.MediaType, "")
 	if e != nil || actual.SHA256 != c.SHA256 || actual.ByteSize != c.Bytes || c.DocumentEpoch == 0 {

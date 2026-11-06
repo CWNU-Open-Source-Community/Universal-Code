@@ -115,7 +115,7 @@ export function projectThreadActivityDetail(
       status: tool.status } } : {}) };
 }
 
-/** Shared safe renderer for both the v2 conversation and the Legacy Inspector.
+/** Shared safe renderer for both the v2 conversation and the execution record details.
  * It accepts only the Go-owned closed activity union; raw durable payload JSON
  * is deliberately not part of this component's props. */
 export function ThreadActivityToolDetailPanel({ activityRef, client, runID, threadID, tool }: {

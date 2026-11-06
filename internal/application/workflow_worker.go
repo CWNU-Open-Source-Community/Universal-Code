@@ -39,8 +39,7 @@ func (s *WorkflowService) RunDue(ctx context.Context, owner string, now time.Tim
 	}
 	var afterTime time.Time
 	var afterID string
-	var attempted bool
-	var failures error
+	attempted, failures := s.runDueWorkflowSummary(ctx, now)
 	for {
 		candidates, err := s.store.ListWorkflowCandidates(ctx, afterTime, afterID, now, 32)
 		if err != nil || len(candidates) == 0 {
@@ -54,7 +53,16 @@ func (s *WorkflowService) RunDue(ctx context.Context, owner string, now time.Tim
 				continue
 			}
 			expired := !now.Before(execution.CreatedAt.Add(time.Duration(definition.Spec.Limits.TimeoutMillis) * time.Millisecond))
-			if !expired {
+			terminalRun := false
+			if execution.Status != "running" && !expired {
+				run, err := s.store.GetRun(ctx, execution.RunID)
+				if err != nil {
+					failures = errors.Join(failures, err)
+					continue
+				}
+				terminalRun = run.Terminal()
+			}
+			if !expired && !terminalRun {
 				lease, found, err := s.store.GetRunExecutionLease(ctx, execution.RunID)
 				if err != nil {
 					failures = errors.Join(failures, err)
@@ -65,7 +73,7 @@ func (s *WorkflowService) RunDue(ctx context.Context, owner string, now time.Tim
 				}
 			}
 			if execution.Status != "running" && execution.State.WaitFingerprint != "" {
-				if !expired {
+				if !expired && !terminalRun {
 					wake, err := s.store.WorkflowWakeFingerprint(ctx, execution.RunID, now)
 					if err != nil {
 						failures = errors.Join(failures, err)
@@ -87,11 +95,13 @@ func (s *WorkflowService) RunDue(ctx context.Context, owner string, now time.Tim
 			if !acquired {
 				continue
 			}
-			_, err = s.runClaimed(ctx, claimed, claimOwner, execution.Version)
+			advanced, err := s.runClaimed(ctx, claimed, claimOwner, execution.Version)
 			attempted = true
-			if err == nil || ctx.Err() != nil {
+			if err == nil && advanced.Version != claimed.Version || ctx.Err() != nil {
 				return true, errors.Join(failures, err)
 			}
+			// A busy cleanup can retain its checkpoint. Continue past it so that
+			// an expired execution cannot starve other Runs.
 			// A storage failure has no durable wake signal. Leave the execution
 			// retryable and give later candidates a chance during this same tick.
 			failures = errors.Join(failures, err)

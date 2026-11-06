@@ -17,7 +17,7 @@ const (
 )
 
 // publicRunEventJSON is the only event-payload projection allowed to cross the
-// legacy Inspector HTTP boundary. Event payloads are an internal audit format:
+// execution record HTTP boundary. Event payloads are an internal audit format:
 // they can contain prompts, commands, tool arguments, paths, output, provider
 // data, and extension-defined fields. Consequently this projection is an
 // allowlist, not a best-effort secret scrubber. Unknown fields are omitted and

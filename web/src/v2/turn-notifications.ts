@@ -54,7 +54,7 @@ export function notifyTurnReply(result: ThreadMessageControlView | SessionMessag
     result.thread.composer_state === "waiting_approval") return;
   const route = readV2Route(window.location.hash, window.location.pathname);
   if (mode === "background" && document.visibilityState === "visible" && document.hasFocus() &&
-    route.threadID === result.thread.id && !route.section && !route.view) return;
+    route.kind === "thread" && route.threadID === result.thread.id && !route.section) return;
   const english = readPrayuLocale() === "en-US";
   showTurnNotification(english ? "Universal-Code · Reply ready" : "Universal-Code · 新回复已就绪",
     result.thread.title, result.thread.id);

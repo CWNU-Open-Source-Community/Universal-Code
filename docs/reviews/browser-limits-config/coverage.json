@@ -1,0 +1,35 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "6a10b7c8",
+  "reviewed_head": "HEAD",
+  "review_metadata_excluded": [
+    "docs/reviews/browser-limits-config/README.md",
+    "docs/reviews/browser-limits-config/coverage.json"
+  ],
+  "reviewers": [
+    "主 agent：四层实现（plan 窄化+验证器、projectconfig、三调用方接线、schema/example）与测试",
+    "review_delegate：OCR delegate 规则检查（Rule Group 1 system Go）与独立全文复审，含指纹篡改信任模型与 schema/Go 语义一致性专项"
+  ],
+  "summary": {
+    "total_git_changed_files": 11,
+    "review_scope_files": 10,
+    "ocr_selected_production": 7,
+    "manually_added_tests": 2,
+    "review_metadata_excluded_count": 2,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    { "path": "internal/browserruntime/plan.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/projectconfig/projectconfig.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/browser_runtime.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/full_cdp_runtime_service.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/application/full_cdp_service.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "configs/project-config.schema.json", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "configs/project-config.example.yaml", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/browserruntime/plan_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "internal/projectconfig/projectconfig_test.go", "coverage": "full", "reviewer": "primary_and_delegate" },
+    { "path": "docs/usage.md", "coverage": "full", "reviewer": "primary_and_delegate" }
+  ]
+}

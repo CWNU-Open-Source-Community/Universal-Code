@@ -1,0 +1,22 @@
+.workspace-tabs.resource-workspace-navigation { display: flex; flex-wrap: wrap; align-items: center; overflow: visible; gap: 8px; }
+.resource-workspace-common { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.workspace-tabs.resource-workspace-navigation button { min-height: 34px; padding: 5px 10px; }
+.workspace-tabs.resource-workspace-navigation .resource-workspace-expand { margin-left: auto; font-weight: 400; }
+.resource-workspace-groups { display: grid; flex-basis: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; max-height: min(42vh, 380px); overflow: auto; padding: 12px 0; border-top: 1px solid var(--prayu-border); }
+.resource-workspace-groups[hidden] { display: none; }
+.resource-workspace-groups > div { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; }
+.resource-workspace-groups > div > span { font-size: 12px; color: var(--prayu-muted); padding: 4px 8px; }
+.workspace-tabs .resource-workspace-groups button { text-align: left; white-space: normal; justify-content: start; }
+.resource-workspace-input { border-top: 1px solid var(--prayu-border); padding: 12px 18px; flex-shrink: 0; }
+.resource-workspace-input > summary, .resource-workspace-section > summary { cursor: pointer; font-size: 14px; line-height: 1.6; padding: 5px 0; }
+.resource-workspace-input > p, .resource-repository-heading > p { font-size: 13px; line-height: 1.65; color: var(--prayu-muted); }
+.workspace-view > .resource-workspace-input > .session-composer { padding-inline: 0; border: 0; margin: 12px 0 0; }
+.resource-session-run-state { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 18px; font-size: 13px; }
+.resource-repository-heading h2 { font-size: 17px; font-weight: 600; margin: 0; }
+.resource-workspace-section { border-top: 1px solid var(--prayu-border); padding-top: 8px; min-width: 0; }
+.resource-workspace-section[open] > summary { margin-bottom: 12px; }
+.resource-workspace-input > summary:focus-visible, .resource-workspace-section > summary:focus-visible { outline: 2px solid var(--prayu-focus); outline-offset: 3px; }
+@media (max-width: 700px) {
+  .resource-workspace-groups { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .workspace-tabs.resource-workspace-navigation .resource-workspace-expand { margin-left: 0; }
+}

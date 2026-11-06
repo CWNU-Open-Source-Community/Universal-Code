@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, ChevronDown, Cpu, FolderInput, MessagesSquare, MoreHorizontal, Pin, RefreshCw,
+import { ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, CalendarClock, ChevronDown, Cpu, FolderInput, MessagesSquare, MoreHorizontal, Pin, RefreshCw,
   Info, Keyboard, PackageSearch, Palette, PlugZap, Search, Settings, ShieldCheck, SquarePen, X } from "lucide-react";
 import type { ThreadSearchResultView, ThreadView, WorkspaceView } from "../../api/types";
 import type { APIClient } from "../../api/client";
@@ -17,7 +17,7 @@ function projectPinIDs(value: unknown): string[] {
 
 export type V2SettingsSection = "general" | "permissions" | "appearance" | "voice" |
   "models" | "plugins" | "browser" | "hooks" | "git" | "environment" |
-  "worktrees" | "keyboard" | "inspector" | "archived" | "extensions" | "skills" |
+  "worktrees" | "keyboard" | "records" | "archived" | "extensions" | "skills" |
   "advanced-models" | "about" | "shortcuts" | "connections" | "task-configuration" | "configuration" | "usage";
 
 const executionLabels = {
@@ -38,7 +38,7 @@ function executionStatus(thread: ThreadView, readFailed: boolean, t: (chinese: s
 
 export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, onSearchOpen,
   onNewConversation, onOpenModels, onSelectThread, onVisibleChatOrder, onOpenSettings, onArchive,
-  onOpenInspector, inspectorActive = false, onOpenConnections,
+  onOpenHistory, historyActive = false, onOpenConnections, onOpenAutomations, automationsActive = false,
   search = "", appliedSearch = "", searchPending = false, searchTooLong = false, onSearchChange, onSearchCompositionChange,
   searchResults = [], includeArchived = false, onIncludeArchivedChange, onSelectSearchResult,
   searchCurrentThread = false, onSearchCurrentThreadChange,
@@ -59,9 +59,11 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   onVisibleChatOrder?: (threadIDs: readonly string[]) => void;
   onOpenSettings: () => void;
   onArchive: (thread: ThreadView) => void;
-  onOpenInspector?: () => void;
+  onOpenHistory?: () => void;
   onOpenConnections?: () => void;
-  inspectorActive?: boolean;
+  historyActive?: boolean;
+  onOpenAutomations?: () => void;
+  automationsActive?: boolean;
   search?: string; appliedSearch?: string; searchPending?: boolean; searchTooLong?: boolean;
   onSearchChange?: (value: string) => void;
   onSearchCompositionChange?: (composing: boolean) => void;
@@ -289,8 +291,10 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           : searching ? t("加载更多匹配记录", "Load more matches") : t("加载更早对话", "Load earlier conversations")}</button>}
     </div>
     <div className="v2-sidebar-footer">
-      {onOpenInspector && <button aria-pressed={inspectorActive} onClick={onOpenInspector} type="button">
-        <Box aria-hidden="true" size={16} />{t("观察与记录", "Observation and records")}</button>}
+      {onOpenAutomations && <button aria-pressed={automationsActive} onClick={onOpenAutomations} type="button">
+        <CalendarClock aria-hidden="true" size={16} />{t("自动化", "Automations")}</button>}
+      {onOpenHistory && <button aria-pressed={historyActive} onClick={onOpenHistory} type="button">
+        <Box aria-hidden="true" size={16} />{t("历史记录", "History")}</button>}
       {onOpenConnections && <button onClick={onOpenConnections} type="button">
         <PlugZap aria-hidden="true" size={16} />{t("连接与环境", "Connections and environment")}</button>}
       <button onClick={onOpenSettings} type="button"><Settings aria-hidden="true" size={16} />{t("设置", "Settings")}</button>
@@ -318,10 +322,10 @@ const settingsGroups: Array<{ label: [string, string]; items: Array<{
     { id: "skills", label: ["Skill 包", "Skill packages"], icon: PackageSearch },
     { id: "environment", label: ["执行环境", "Execution environment"], icon: Box, keywords: "终端 terminal shell powershell pwsh cmd 授权" },
   ] },
-  { label: ["任务与观察", "Tasks and observation"], items: [
+  { label: ["任务与记录", "Tasks and records"], items: [
     { id: "task-configuration", label: ["任务预算与项目配置", "Task budget and project configuration"], icon: Settings },
     { id: "permissions", label: ["当前任务权限", "Current task permissions"], icon: ShieldCheck },
-    { id: "inspector", label: ["观察视图偏好", "Inspector preferences"], icon: Box },
+    { id: "records", label: ["记录显示", "Record preferences"], icon: Box },
   ] },
 ];
 

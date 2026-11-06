@@ -1,0 +1,31 @@
+{
+  "protocol": "skill.v1",
+  "name": "init",
+  "version": "1.0.0",
+  "description": "Initialize or refresh AGENTS.md project instructions from repository evidence and observed build, test, and convention commands.",
+  "profiles": [
+    "code"
+  ],
+  "surfaces": [
+    "code"
+  ],
+  "phases": [
+    "plan",
+    "deliver"
+  ],
+  "roles": [
+    "root"
+  ],
+  "user_invocable": true,
+  "model_invocable": true,
+  "explicit_only": false,
+  "tool_dependencies": [
+    "list_workspace",
+    "read_file",
+    "replace_file"
+  ],
+  "content_path": "SKILL.md",
+  "content_sha256": "399ea87eeb4b5016827820e38fa4064f3445668362b89f4d3973a985bf1781fd",
+  "content_bytes": 3760,
+  "content_token_upper_bound": 3760
+}
