@@ -231,8 +231,11 @@ that path remains unavailable.
    replaces the other. Every runtime CheckAuthority consumer
    (monitor, `begin`, `check`) reads the atomic holder. Lock ordering: the
    transition runs under the slot action lock (an origin-add is itself an action, so
-   no browser action is in flight) and takes `s.mu` inside it; the monitor reads the
-   holder and flag without the action lock. Slot-side authority reads and writes
+   no browser action is in flight) and takes `s.mu` inside it. Before publishing the
+   new scope, it checks under `s.mu` that the service and slot remain open and that
+   the slot is still current, and holds that lock through publication. Close or
+   replacement aborts the transition. The monitor reads the holder and flag without
+   the action lock. Slot-side authority reads and writes
    stay under `s.mu` everywhere, including the `CloseWorker` session-id snapshot.
 3. Fencing old generations. The durable call row binds the exact pre-mutation
    `AuthorityJSON`, and the dispatch fence is `s.agentBrowser.check` — at
@@ -284,8 +287,10 @@ that path remains unavailable.
    the same call ("no changes were made" wording — a replay must never read as the
    origin having been added); a second, new origin-add call for an already-declared
    origin is a set-membership no-op receipt under the post-mutation authority.
-   A cold-slot rotation inherits the slot's declared set into the successor slot, so
-   an approved addition survives mode or permission rotation. The service
+   A cold-slot rotation for a mode or permission change inherits the slot's declared
+   set into the successor slot. Explicit session close ends that inheritance: a new
+   session starts from the run's declared origins and needs fresh approval for any
+   additional origin. The service
    `Capabilities.SupportedActions` gains the operation; the runtime `Status`
    action table does not (it lists runtime-executed actions only). The desktop
    approval panel gains a label mapping for the new action class.
