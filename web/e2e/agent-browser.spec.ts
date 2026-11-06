@@ -88,9 +88,12 @@ test("native Agent Browser uses the production API and visible workbench", async
     }, { timeout: nativeMac ? 240_000 : 60_000 }).toBe(true);
     expect(await readStatus(), "browser journey must reach screenshot capture")
       .toMatchObject({ last_action: "browser_screenshot" });
-    const image = card.getByRole("img", { name: /Agent 浏览器页面：Owned Agent Browser check/u });
+    await card.getByRole("button", { name: "查看浏览器截图原图", exact: true }).click();
+    const original = page.getByRole("dialog", { name: /^图片预览 agent-browser-/u });
+    const image = original.getByRole("img", { name: /^agent-browser-/u });
     await expect(image).toBeVisible();
     expect(await image.evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    await original.getByRole("button", { name: "关闭图片预览", exact: true }).click();
   }
   const observed = await readStatus();
   await card.scrollIntoViewIfNeeded();
