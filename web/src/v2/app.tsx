@@ -256,7 +256,6 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const { t } = useLocale();
   useV2RestoreTurns();
   const recovery = useV2RecoveryStore();
-  const persistenceWarning = useV2PersistenceWarning();
   const scopeID = useConnectionStore((state) => state.health?.data_store_id);
   const unread = useV2ThreadUnread(client, scopeID);
   const [readRequest, setReadRequest] = useState({ threadID: "", revision: 0 });
@@ -343,6 +342,9 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const projectID = typeof storedWorkspace === "string" ? storedWorkspace : "";
   const localWorkspace = useProjectlessWorkspace(client, route.kind === "new" && !route.section && !projectID);
   const workspaceID = projectID || (client.hasProjectlessWorkspaces ? localWorkspace.workspaceID : "");
+  // The new conversation mounts this exact draft's image discard controls.
+  const persistenceWarning = useV2PersistenceWarning(route.kind === "new" && !route.section && workspaceID
+    ? `image-upload:${JSON.stringify([workspaceID, ""])}:` : undefined);
   const [savedPhase, setSavedPhase] = useV2PersistentState<unknown>(`new-thread-phase:${workspaceID}`, "deliver");
   const phase: V2WorkPhase = savedPhase === "plan" ? "plan" : "deliver";
   const draftTaskConfiguration = useV2DraftTaskConfiguration(workspaceID);
