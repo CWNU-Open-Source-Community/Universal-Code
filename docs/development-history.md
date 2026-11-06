@@ -290,5 +290,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v219 | 允许 npm 工作区将依赖安装绑定到共享根目录，保留原有授权、准确 Job 目录和不可变收据约束 | admit npm workspace installation at its shared root while preserving existing authorization, exact Job directories and immutable receipt guards |
 | v220 | 将工作区文件上传接入 Agent 浏览器工具账本，保留已有调用行、执行身份和授权约束 | admit workspace file uploads to the Agent browser tool ledger while preserving existing call rows, execution identities and authority constraints |
 | v221 | 将工作流完成与待通知义务同事务保存，支持宿主重试和独立租约，保留已交付历史与完成输出 | atomically persist workflow completion notifications for host retries and independent claims, preserving delivered history and completed outputs |
+| v222 | 保存暂停的浏览器网页请求及审批来源，记录摘要、有效期和发送状态，支持过期与重启清理 | persist paused browser page requests and their approval source, including digests, expiry and dispatch state for expiry and restart cleanup |
 
 </details>
