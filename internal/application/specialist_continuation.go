@@ -224,6 +224,12 @@ func (s *SpecialistExecutionService) completeSpecialistSummary(ctx context.Conte
 		result.SummaryStatus = "cancelled"
 		return
 	}
+	// Workflow retries can replace an exhausted, never-executed wake while
+	// retaining the original inbox operation and its completion evidence.
+	wakeDigest := digest
+	if len(workflowNotification) > 1 {
+		wakeDigest = workflowNotification[1]
+	}
 	// Deliver FIFO batches until the summary's own queued message is reached.
 	// Each wake has a durable identity so retry never reexecutes earlier input.
 	for batch := 0; batch < domain.MaxPendingOperatorSteering; batch++ {
@@ -231,7 +237,7 @@ func (s *SpecialistExecutionService) completeSpecialistSummary(ctx context.Conte
 			setError(err)
 			return
 		}
-		wakeKey := fmt.Sprintf("specialist-summary-wake-%s-%d", digest, batch)
+		wakeKey := fmt.Sprintf("specialist-summary-wake-%s-%d", wakeDigest, batch)
 		_, ownWake, err := st.GetRunWakeOperation(ctx, runmutation.RunWakeOperationDigest(result.RunID, wakeKey))
 		if err != nil {
 			setError(err)
