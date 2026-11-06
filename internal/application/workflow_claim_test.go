@@ -50,7 +50,8 @@ func (s *workflowClaimProbeStore) ReleaseWorkflowExecution(ctx context.Context, 
 }
 
 // A model fixture can observe cancellation while retaining the runner until its
-// drain gate opens. That proves the independent Run lease covers cleanup too.
+// drain gate opens. Short-drain cases check the independent live Run lease;
+// the long-drain review separately checks expiry and unknown-attempt settlement.
 type workflowClaimProvider struct {
 	*specialistTestProvider
 	entered, release, cancelled, drain chan struct{}

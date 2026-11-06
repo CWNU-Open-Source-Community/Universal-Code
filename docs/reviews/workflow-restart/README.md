@@ -26,6 +26,11 @@ It requires the same owner and an unexpired claim. A renewal failure cancels the
 current interpreter context; exit stops and joins the renewer before releasing
 the original owner's claim. Renewal and release errors are returned. Claim,
 renewal and release store calls use two-second context deadlines.
+The claim renewer and interpreter share the same ten-minute deadline, applied
+before the first wake read. Caller cancellation or that deadline stops both
+renewal and worker execution. The deadline regression observes the context at
+the first claimed read; it does not wait ten wall-clock minutes. A shorter
+caller deadline remains in force.
 
 The independent Run execution lease fences worker execution and side effects
 while live. Cancellation stops renewal; an old worker that drains beyond the
