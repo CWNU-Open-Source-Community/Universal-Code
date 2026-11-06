@@ -26,6 +26,7 @@ An image that forms the final, standalone Markdown paragraph is dropped during p
 Windows, Node 24.22.1 (official SHA256-verified toolchain), npm 11.19.1:
 
 ```powershell
+cd web
 npm ci --no-audit --no-fund
 npm test -- --maxWorkers=2
 npm run build
