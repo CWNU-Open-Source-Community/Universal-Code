@@ -40,7 +40,7 @@ type RunWakeWorkerHealth struct {
 }
 
 type RunWakeDueSource interface {
-	Due(context.Context, int) ([]domain.RunWakeIntent, error)
+	Due(context.Context, int, int) ([]domain.RunWakeIntent, error)
 }
 
 type RunWakeIntentConsumer interface {
@@ -161,7 +161,7 @@ func (w *RunWakeWorker) RunOnce(ctx context.Context) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	due, err := w.due.Due(ctx, RunWakeWorkerConcurrency)
+	due, err := w.due.Due(ctx, RunWakeWorkerConcurrency, RunWakeWorkerMaxSteps)
 	if err != nil {
 		return false, err
 	}
