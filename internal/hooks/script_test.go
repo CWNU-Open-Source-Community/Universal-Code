@@ -370,3 +370,21 @@ func TestEngineScriptActionWithMissingExecutorAndContinuePolicySkips(t *testing.
 		t.Fatalf("missing executor with continue policy result=%#v err=%v", result, err)
 	}
 }
+
+func TestEngineOutputLimitExcludesEchoedPayload(t *testing.T) {
+	engine := NewEngine(nil)
+	if err := engine.Replace([]Registration{{PluginID: "plugin-a",
+		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "annotate", Event: PreTool,
+			Action: ActionAnnotate, FailurePolicy: FailureContinue, TimeoutMillis: 100,
+			Message: "reviewed"}}}); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"content":"` + strings.Repeat("x", MaxPayloadBytes-64) + `"}`
+	result, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "file_write",
+		Payload: json.RawMessage(payload)})
+	if err != nil || result.Denied || len(result.Annotations) != 1 ||
+		string(result.Payload) != payload {
+		t.Fatalf("large payload failed hook execution: len=%d err=%v", len(result.Payload), err)
+	}
+}

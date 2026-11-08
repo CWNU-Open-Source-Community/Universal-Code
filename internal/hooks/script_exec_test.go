@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -156,12 +157,19 @@ func TestProcessScriptExecutorRejectsDriftedDigestAndLinks(t *testing.T) {
 		t.Fatal("executor accepted drifted script content")
 	}
 	if runtime.GOOS != "windows" {
-		if err := os.Symlink(filepath.Join(dir, scriptFileNameForTest()), filepath.Join(dir, "link.ext")); err != nil {
+		linkedDir := filepath.Join(dir, "linked")
+		if err := os.MkdirAll(linkedDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		linkName := scriptFileNameForTest()
+		if err := os.Symlink(filepath.Join("..", linkName),
+			filepath.Join(linkedDir, linkName)); err != nil {
 			t.Skipf("symlink creation is unavailable: %v", err)
 		}
-		invocation.RelativePath = "link.script"
-		if _, err := executor.ExecuteScript(t.Context(), invocation); err == nil {
-			t.Fatal("executor accepted a symlinked script path")
+		invocation.RelativePath = "linked/" + linkName
+		if _, linkErr := executor.ExecuteScript(t.Context(), invocation); linkErr == nil ||
+			!strings.Contains(linkErr.Error(), "not a regular file") {
+			t.Fatalf("executor did not reject a symlinked script path: %v", linkErr)
 		}
 	}
 }
@@ -254,5 +262,32 @@ func TestProcessScriptExecutorRejectsPathEscapes(t *testing.T) {
 		SHA256: testHookDigest("escape"), TimeoutMillis: 1_000}
 	if _, err := executor.ExecuteScript(t.Context(), invocation); err == nil {
 		t.Fatal("script path escaping the hooks directory was accepted")
+	}
+}
+
+func TestProcessScriptExecutorTruncatesOversizedStderrWithoutFailing(t *testing.T) {
+	interpreter := scriptInterpreterForTest(t)
+	dir := t.TempDir()
+	var body string
+	if runtime.GOOS == "windows" {
+		body = "$bytes = New-Object byte[] 40000\n" +
+			"[Console]::Error.Write([System.Text.Encoding]::ASCII.GetString($bytes))\n" +
+			"Write-Output '{\"protocol_version\":\"restricted-hooks.v1\",\"denied\":false}'\n"
+	} else {
+		body = "#!/bin/sh\nhead -c 40000 /dev/zero | tr '\\0' 'w' >&2\n" +
+			"printf '%s\\n' '{\"protocol_version\":\"restricted-hooks.v1\",\"denied\":false}'\n"
+	}
+	spec := writeScriptForTest(t, dir, scriptFileNameForTest(), body)
+	spec.Interpreter = interpreter
+	executor := newExecutorForTest(t, dir)
+	invocation := ScriptInvocation{HookID: "guard", Event: PreTool,
+		RelativePath: spec.Path, Interpreter: spec.Interpreter, SHA256: spec.SHA256,
+		TimeoutMillis: 5_000}
+	output, err := executor.ExecuteScript(t.Context(), invocation)
+	if err != nil {
+		t.Fatalf("oversized stderr failed the execution: %v", err)
+	}
+	if output.Denied {
+		t.Fatalf("unexpected denial: %#v", output)
 	}
 }

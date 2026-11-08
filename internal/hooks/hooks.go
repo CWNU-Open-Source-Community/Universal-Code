@@ -404,7 +404,13 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 		if len(result.Annotations) > MaxAnnotations {
 			return Result{}, errors.New("hook annotation output exceeds its limit")
 		}
-		encoded, _ := json.Marshal(result)
+		// The input payload is bounded independently by Input.Validate and is
+		// echoed back unchanged (narrowing only ever shrinks it); the output
+		// limit governs hook-produced content only, so a legitimately large
+		// tool payload does not fail every matching hook.
+		hookProduced := result
+		hookProduced.Payload = nil
+		encoded, _ := json.Marshal(hookProduced)
 		if len(encoded) > MaxOutputBytes {
 			return Result{}, errors.New("hook output exceeds its limit")
 		}

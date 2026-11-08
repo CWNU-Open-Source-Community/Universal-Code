@@ -162,8 +162,8 @@ func TestLoadOperatorScriptHooksRejectsOversizedAndDriftedContent(t *testing.T) 
 func TestLoadOperatorScriptHooksBoundsDeclarationCount(t *testing.T) {
 	root := t.TempDir()
 	writeOperatorScript(t, root, "s.script", validBodyPlaceholder)
+	digest := scriptDigest([]byte(validBodyPlaceholder))
 	for index := 0; index <= MaxScriptDeclarations; index++ {
-		digest := testHookDigest(fmt.Sprintf("script-%d", index))
 		declaration := fmt.Sprintf(`{"protocol_version":%q,"id":"h-%d","event":"run_started",
 			"action":"script","failure_policy":"deny","timeout_ms":100,
 			"script":{"interpreter":"python","path":"s.script","sha256":%q}}`,

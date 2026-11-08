@@ -75,7 +75,9 @@ func (x *ProcessScriptExecutor) ExecuteScript(ctx context.Context,
 	cmd.Env = scriptEnvironmentVars()
 	cmd.Stdin = bytes.NewReader(stdin)
 	stdout := &boundedBuffer{Limit: MaxOutputBytes}
-	stderr := &boundedBuffer{Limit: MaxOutputBytes}
+	// Stderr is diagnostic only: truncate instead of failing the execution, so
+	// a script that prints verbose warnings does not fail closed.
+	stderr := &truncatingBuffer{Limit: MaxOutputBytes}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Cancel = func() error { return cmd.Process.Kill() }
@@ -125,6 +127,30 @@ type boundedBuffer struct {
 	buffer     bytes.Buffer
 	overflowed bool
 }
+
+// truncatingBuffer captures at most Limit bytes and discards the rest while
+// the child keeps writing, so oversized diagnostics never break the pipe.
+type truncatingBuffer struct {
+	Limit     int
+	buffer    bytes.Buffer
+	truncated bool
+}
+
+func (t *truncatingBuffer) Write(payload []byte) (int, error) {
+	if room := t.Limit - t.buffer.Len(); room > 0 {
+		if len(payload) > room {
+			t.buffer.Write(payload[:room])
+			t.truncated = true
+		} else {
+			t.buffer.Write(payload)
+		}
+	} else {
+		t.truncated = true
+	}
+	return len(payload), nil
+}
+
+func (t *truncatingBuffer) Bytes() []byte { return t.buffer.Bytes() }
 
 func (b *boundedBuffer) Write(payload []byte) (int, error) {
 	if b.overflowed || b.buffer.Len()+len(payload) > b.Limit {
