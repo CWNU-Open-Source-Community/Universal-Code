@@ -131,16 +131,30 @@ not-found 错误。两个命令都会输出新的 `version`——它单调不减
 `cyberagent exec` runs one non-interactive prompt against a registered
 Workspace and prints the final assistant reply — the same Thread turn
 machinery an interactive session uses, driven in-process, with every
-permission, approval, and budget rule of the underlying Run unchanged:
+permission, approval, and budget rule of the underlying Run unchanged.
+`--continue <thread-id>` appends a prompt to an existing Thread (a successor
+Run is created automatically when the previous one is terminal), enabling
+scripts to chain multi-turn conversations. v1 continue mode uses the base
+runtime — no command runtime, drydocks, MCP client, project hooks, code
+intel, web fetch scheduler, browser, or lifecycle hook events on the
+supervisor side (all are additive omissions, never authority expansion).
+File read/write and analysis tools work; shell commands require a fresh
+exec. Threads whose Runs carry a drydock or standard-code preset fail closed
+on continue (the drydock service cannot be resolved without a foreground
+runtime). Permission-related flags (`--enable-permission-control`,
+`--enable-danger-full-access`, `--confirm-full`) are ignored — the
+continuation always runs at the Thread's existing permission level.
 
 ```powershell
 cyberagent exec --workspace demo "Fix the flaky parser test and run the suite"
 cyberagent exec --workspace demo --json --timeout 30m --stdin < task.md
 ```
 
-`--workspace` is required; `--profile` (default `code`), `--route`,
-`--max-turns`, `--max-tokens`, `--max-tool-calls`, and `--max-cost-usd` map
-onto the ordinary Run creation contract. `--timeout` carries a durable
+`--workspace` is required for fresh runs; with `--continue <thread-id>` the
+Thread carries its own workspace, profile, and budget, and those flags are
+ignored. `--profile` (default `code`), `--route`, `--max-turns`,
+`--max-tokens`, `--max-tool-calls`, and `--max-cost-usd` map onto the
+ordinary Run creation contract for fresh runs. `--timeout` carries a durable
 `Budget.TimeoutSeconds` on the Run and also bounds the process wall clock;
 network stays disabled unless the Run's mode grants it, so web-dependent
 tasks are out of scope for v1. The command creates a
@@ -153,9 +167,19 @@ grants the same way you would for any Run.
 
 `cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
 回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
-权限、审批与预算规则原样生效。`--workspace` 必填；`--profile`（默认 `code`）、
-`--route`、`--max-turns`、`--max-tokens`、`--max-tool-calls`、`--max-cost-usd`
-与 `--timeout` 对应普通 Run 创建契约。命令创建全新的 Run 与 Thread、同步执行
+权限、审批与预算规则原样生效。`--continue <thread-id>` 在既有 Thread 上追加
+prompt（Run 终结时自动创建 successor），支持脚本串联多轮对话。v1 的 continue
+模式使用基础运行时——无命令 runtime、drydocks、MCP client、project hooks、
+code intel、web fetch 调度器、browser 或 supervisor 侧生命周期 hook 事件
+（均为减法，无权限扩大）。文件读写与分析工具可用，shell 命令需 fresh exec。
+持有 drydock 或 standard-code preset 的 Thread continue 时 fail-closed
+（前台运行时缺失，drydock 服务无法解析）。权限相关 flags
+（`--enable-permission-control` 等）被忽略——续聊始终以 Thread 既有权限
+级别运行。`--workspace` 对 fresh run 必填；使用 `--continue <thread-id>` 时
+Thread 自带 workspace、profile 与 budget，上述 flags 被忽略。
+`--profile`（默认 `code`）、`--route`、`--max-turns`、`--max-tokens`、
+`--max-tool-calls`、`--max-cost-usd` 与 `--timeout` 对应普通 Run 创建契约
+（fresh run）。命令创建全新的 Run 与 Thread、同步执行
 agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 supervisor 以
 `turn_finish` 结束任务（等待审批、继续等待与预算耗尽都会报告其停止原因）
 否则以非零码退出。`--json` 输出

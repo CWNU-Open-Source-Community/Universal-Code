@@ -18,18 +18,20 @@ import (
 	"cyberagent-workbench/internal/workspace"
 )
 
-// execCommand implements `cyberagent exec`: one non-interactive prompt, one
-// fresh Run, the ordinary Thread turn machinery executing the agent loop in
-// this process, the final assistant reply on stdout. Approval waits, budget
-// exhaustion, and failures surface as a non-zero exit with the run status;
-// pre-arranged execution permissions are the operator's responsibility, and
-// no flag here can widen them.
+// execCommand implements `cyberagent exec`: one non-interactive prompt
+// executed through the ordinary Thread turn machinery, the final assistant
+// reply on stdout. With --continue, the prompt continues an existing Thread —
+// the turn machinery creates a successor Run when the previous one is
+// terminal — so scripts can chain multiple prompts in one conversation.
+// Approval waits, budget exhaustion, and failures surface as a non-zero exit
+// with the run status; pre-arranged execution permissions are the operator's
+// responsibility, and no flag here can widen them.
 func (a *App) execCommand(ctx context.Context, args []string) error {
 	if err := a.ensureStore(); err != nil {
 		return err
 	}
 	fs := newFlagSet("exec", a.errOut)
-	workspaceName := fs.String("workspace", "", "workspace name (required)")
+	workspaceName := fs.String("workspace", "", "workspace name (required for fresh runs)")
 	profile := fs.String("profile", string(domain.ProfileCode), "mission profile")
 	route := fs.String("route", "", "model route; empty selects the profile's default route")
 	maxTurns := fs.Int("max-turns", domain.DefaultBudget().MaxTurns, "maximum agent turns")
@@ -38,6 +40,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	maxCostUSD := fs.Float64("max-cost-usd", 0, "maximum model cost in USD; zero means unset")
 	timeout := fs.Duration("timeout", 0, "whole-execution deadline; zero means no deadline")
 	stdin := fs.Bool("stdin", false, "read the prompt from stdin instead of the positional argument")
+	continueThread := fs.String("continue", "", "continue an existing Thread by id; the Thread carries its own Run, workspace, profile, and permission selection")
 	jsonOutput := fs.Bool("json", false, "emit a structured JSON result")
 	enablePermissionControl := fs.Bool("enable-permission-control", false,
 		"enable the operator-approval runtime for this process")
@@ -49,6 +52,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"workspace": true, "profile": true, "route": true,
 		"max-turns": true, "max-tokens": true, "max-tool-calls": true,
 		"max-cost-usd": true, "timeout": true, "stdin": false, "json": false,
+		"continue":                  true,
 		"enable-permission-control": false, "enable-danger-full-access": false,
 		"confirm-full": false,
 	})); err != nil {
@@ -64,10 +68,11 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return errors.New(`usage: cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--timeout 30m] [--json]`)
+		return errors.New(`usage: cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--timeout 30m] [--json] [--continue <thread-id>]`)
 	}
-	if strings.TrimSpace(*workspaceName) == "" {
-		return errors.New("exec requires --workspace <name>")
+	continueID := strings.TrimSpace(*continueThread)
+	if continueID == "" && strings.TrimSpace(*workspaceName) == "" {
+		return errors.New("exec requires --workspace <name> (or --continue <thread-id>)")
 	}
 	if *timeout > 0 {
 		var cancel context.CancelFunc
@@ -75,86 +80,108 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		defer cancel()
 	}
 
-	selectedProfile, err := domain.ParseProfile(*profile)
-	if err != nil {
-		return err
-	}
-	workspaceRecord, err := a.store.GetWorkspaceByName(ctx, workspace.Slug(*workspaceName))
-	if err != nil {
-		return err
-	}
-	budget := domain.Budget{MaxTurns: *maxTurns, MaxToolCalls: *maxToolCalls}
-	effective, rejections, err := projectconfig.ResolveWorkspace(ctx, workspaceRecord.RootPath,
-		selectedProfile, budget, toolgateway.TypedActionIDs())
-	if err != nil {
-		return fmt.Errorf("project config fail-closed: %w", err)
-	}
-	if len(rejections) != 0 {
-		return fmt.Errorf("project config rejection: field=%s reason=%s",
-			rejections[0].Field, rejections[0].Reason)
-	}
-	discovered, err := projectconfig.DiscoverInstructions(ctx, workspaceRecord.RootPath, ".")
-	if err != nil {
-		return fmt.Errorf("project instruction discovery fail-closed: %w", err)
-	}
+	var threadID string
+	var turns *application.ThreadTurnService
 
-	capabilities := cliExecutionPermissionCapabilities(*enablePermissionControl, *enableFullAccess)
-	_, run, err := application.NewRunService(a.store).
-		WithLifecycleHooks(a.newLifecycleHookEngine()).Create(ctx, application.CreateRunRequest{
-		Goal:        clipExecGoal(prompt),
-		Profile:     *profile,
-		WorkspaceID: workspaceRecord.ID,
-		ModelRoute:  *route,
-		Interactive: true,
-		Budget: domain.Budget{MaxTurns: *maxTurns, MaxTokens: *maxTokens,
-			MaxToolCalls: *maxToolCalls, MaxCostUSD: *maxCostUSD,
-			TimeoutSeconds: int64(timeout.Seconds())},
-		ProjectConfig:       effective,
-		ProjectInstructions: &discovered,
-		RequestedBy:         "cli_exec_operator",
-	})
-	if err != nil {
-		return err
-	}
-	// The same foreground runtime contract the other in-process CLI surfaces
-	// use (approval continuation, run wake): the invocation owns its adapters,
-	// the Run's durable permission selection never changes, and the capability
-	// ceiling comes from the Run's Ask/Auto/Full snapshot.
-	releaseFull, err := a.activateCLIInvocationFull(ctx, run.ID, capabilities, *confirmFull)
-	if err != nil {
-		return err
-	}
-	runtime, err := a.newCLIExecutionRuntime(ctx, capabilities, true)
-	if err != nil {
-		releaseFull()
-		return err
-	}
-	defer func() {
-		releaseFull()
-		_ = runtime.close()
-	}()
-	dependencies := runtime.dependencies(a)
-	drydocks, err := a.newRunFileDrydockService(ctx, run.ID)
-	if err != nil {
-		return err
-	}
-	dependencies.Drydocks = drydocks
-	if _, configured, err := a.store.GetConfiguredStandardCodePresetOperation(ctx, run.ID); err != nil {
-		return err
-	} else if configured {
-		delivery, err := application.NewStandardCodeDeliveryService(a.store, drydocks)
+	if continueID != "" {
+		// Continue mode: the existing Thread carries its own Run, workspace,
+		// profile, and permission selection. The turn machinery creates a
+		// successor Run automatically when the previous one is terminal.
+		// v1 uses the base runtime (no command runtime): the successor Run
+		// does not exist yet, so per-Run drydocks and the command runtime
+		// cannot be resolved before the turn creates it. File read/write and
+		// analysis tools work; shell commands require a fresh exec.
+		if _, err := a.store.GetThread(ctx, continueID); err != nil {
+			return fmt.Errorf("continue thread: %w", err)
+		}
+		threadID = continueID
+		turns = application.NewThreadTurnService(a.store,
+			application.NewRunLifecycleControlService(a.store).WithLifecycleHooks(a.newLifecycleHookEngine()),
+			application.NewRunExecutionHandoffService(a.store, a.router, a.checker))
+	} else {
+		selectedProfile, err := domain.ParseProfile(*profile)
 		if err != nil {
 			return err
 		}
-		dependencies.StandardCodeDelivery = delivery
+		workspaceRecord, err := a.store.GetWorkspaceByName(ctx, workspace.Slug(*workspaceName))
+		if err != nil {
+			return err
+		}
+		budget := domain.Budget{MaxTurns: *maxTurns, MaxToolCalls: *maxToolCalls}
+		effective, rejections, err := projectconfig.ResolveWorkspace(ctx, workspaceRecord.RootPath,
+			selectedProfile, budget, toolgateway.TypedActionIDs())
+		if err != nil {
+			return fmt.Errorf("project config fail-closed: %w", err)
+		}
+		if len(rejections) != 0 {
+			return fmt.Errorf("project config rejection: field=%s reason=%s",
+				rejections[0].Field, rejections[0].Reason)
+		}
+		discovered, err := projectconfig.DiscoverInstructions(ctx, workspaceRecord.RootPath, ".")
+		if err != nil {
+			return fmt.Errorf("project instruction discovery fail-closed: %w", err)
+		}
+
+		capabilities := cliExecutionPermissionCapabilities(*enablePermissionControl, *enableFullAccess)
+		_, run, err := application.NewRunService(a.store).
+			WithLifecycleHooks(a.newLifecycleHookEngine()).Create(ctx, application.CreateRunRequest{
+			Goal:        clipExecGoal(prompt),
+			Profile:     *profile,
+			WorkspaceID: workspaceRecord.ID,
+			ModelRoute:  *route,
+			Interactive: true,
+			Budget: domain.Budget{MaxTurns: *maxTurns, MaxTokens: *maxTokens,
+				MaxToolCalls: *maxToolCalls, MaxCostUSD: *maxCostUSD,
+				TimeoutSeconds: int64(timeout.Seconds())},
+			ProjectConfig:       effective,
+			ProjectInstructions: &discovered,
+			RequestedBy:         "cli_exec_operator",
+		})
+		if err != nil {
+			return err
+		}
+		threadID = domain.InitialThreadID(run.ID)
+		// The same foreground runtime contract the other in-process CLI surfaces
+		// use (approval continuation, run wake): the invocation owns its adapters,
+		// the Run's durable permission selection never changes, and the capability
+		// ceiling comes from the Run's Ask/Auto/Full snapshot.
+		releaseFull, err := a.activateCLIInvocationFull(ctx, run.ID, capabilities, *confirmFull)
+		if err != nil {
+			return err
+		}
+		runtime, err := a.newCLIExecutionRuntime(ctx, capabilities, true)
+		if err != nil {
+			releaseFull()
+			return err
+		}
+		defer func() {
+			releaseFull()
+			_ = runtime.close()
+		}()
+		dependencies := runtime.dependencies(a)
+		drydocks, err := a.newRunFileDrydockService(ctx, run.ID)
+		if err != nil {
+			return err
+		}
+		dependencies.Drydocks = drydocks
+		if _, configured, err := a.store.GetConfiguredStandardCodePresetOperation(ctx, run.ID); err != nil {
+			return err
+		} else if configured {
+			delivery, err := application.NewStandardCodeDeliveryService(a.store, drydocks)
+			if err != nil {
+				return err
+			}
+			dependencies.StandardCodeDelivery = delivery
+		}
+		turns = application.NewThreadTurnService(a.store,
+			application.NewRunLifecycleControlService(a.store).WithLifecycleHooks(a.newLifecycleHookEngine()),
+			application.NewRunExecutionHandoffWithRuntime(a.store, a.router, a.checker, dependencies))
 	}
-	turns := application.NewThreadTurnService(a.store,
-		application.NewRunLifecycleControlService(a.store).WithLifecycleHooks(a.newLifecycleHookEngine()),
-		application.NewRunExecutionHandoffWithRuntime(a.store, a.router, a.checker, dependencies))
+
 	oneShot := application.NewOneShotService(a.store, turns)
 	result, err := oneShot.Run(ctx, application.OneShotRequest{
 		Version:      domain.ThreadMessageProtocolVersion,
-		ThreadID:     domain.InitialThreadID(run.ID),
+		ThreadID:     threadID,
 		Content:      prompt,
 		OperationKey: idgen.New("cli-exec"),
 		RequestedBy:  "cli_exec_operator",

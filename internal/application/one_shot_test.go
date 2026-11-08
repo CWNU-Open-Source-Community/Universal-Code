@@ -150,3 +150,69 @@ func TestOneShotRunDetectsSupervisorPause(t *testing.T) {
 		t.Fatalf("unfinished supervisor turn reported finish: %#v", result)
 	}
 }
+
+func TestOneShotRunContinuesExistingThread(t *testing.T) {
+	_, service, run := oneShotFixture(t, []string{
+		rootActionResponse(domain.RootActionFinish, "First task done.", "done", ""),
+		rootActionResponse(domain.RootActionFinish, "Second task done.", "done", ""),
+	})
+	ctx := t.Context()
+	// First turn executes to completion; the run stays running (Finish does
+	// not transition to a terminal state).
+	if _, err := service.Run(ctx, application.OneShotRequest{
+		Version:      domain.ThreadMessageProtocolVersion,
+		ThreadID:     domain.InitialThreadID(run.ID),
+		Content:      "First prompt.",
+		OperationKey: "one-shot-continue-1",
+		RequestedBy:  "cli_exec_operator",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Second turn continues the same thread — the turn machinery creates a
+	// successor Run when the previous one is terminal.
+	result, err := service.Run(ctx, application.OneShotRequest{
+		Version:      domain.ThreadMessageProtocolVersion,
+		ThreadID:     domain.InitialThreadID(run.ID),
+		Content:      "Second prompt.",
+		OperationKey: "one-shot-continue-2",
+		RequestedBy:  "cli_exec_operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The run stays running after a Finish action; the follow-up prompt is
+	// executed in the same Run (no successor needed for a non-terminal run).
+	if result.TurnStatus != string(domain.RunExecutionHandoffCompleted) {
+		t.Fatalf("continued turn status %q", result.TurnStatus)
+	}
+	if strings.TrimSpace(result.Reply) != "Second task done." {
+		t.Fatalf("continued reply %q", result.Reply)
+	}
+}
+
+func TestOneShotRunContinueUnknownThreadFails(t *testing.T) {
+	base, err := store.Open(filepath.Join(t.TempDir(), "one-shot-unknown.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	provider := &lifecycleProvider{responses: []string{
+		rootActionResponse(domain.RootActionFinish, "unused", "done", ""),
+	}}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	turns := application.NewThreadTurnService(base,
+		application.NewRunLifecycleControlService(base),
+		application.NewRunExecutionHandoffService(base, router, policy.NewDefaultChecker()))
+	service := application.NewOneShotService(base, turns)
+	_, err = service.Run(t.Context(), application.OneShotRequest{
+		Version:      domain.ThreadMessageProtocolVersion,
+		ThreadID:     "thread-nonexistent-0001",
+		Content:      "prompt",
+		OperationKey: "one-shot-unknown-key",
+		RequestedBy:  "cli_exec_operator",
+	})
+	if err == nil {
+		t.Fatal("unknown thread was accepted")
+	}
+}
