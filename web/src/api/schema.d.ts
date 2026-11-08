@@ -10219,6 +10219,7 @@ export interface components {
             /** Format: int32 */
             timeout_ms: number;
             tool_names: string[];
+            tool_pattern: string;
         };
         HookDiagnosticsView: {
             declarations: components["schemas"]["HookDeclarationView"][];

@@ -22,6 +22,7 @@ import (
 	"cyberagent-workbench/internal/fileattachment"
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/githubreview"
+	"cyberagent-workbench/internal/hooks"
 	"cyberagent-workbench/internal/imageattachment"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/mcp"
@@ -4484,6 +4485,7 @@ var openAPIFieldMaximums = map[string]float64{
 }
 
 var openAPIFieldMaxLengths = map[string]int{
+	"HookDeclarationView.tool_pattern":                           hooks.MaxToolPatternBytes,
 	"HostCommandProposalView.network_purpose":                    runner.MaxRiskEscalationReasonRunes,
 	"HostCommandProposalView.policy_reason":                      runner.MaxRiskEscalationReasonRunes,
 	"HostCommandProposalView.other_risk_reason":                  runner.MaxRiskEscalationReasonRunes,

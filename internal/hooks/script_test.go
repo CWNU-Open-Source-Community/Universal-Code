@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -386,5 +388,149 @@ func TestEngineOutputLimitExcludesEchoedPayload(t *testing.T) {
 	if err != nil || result.Denied || len(result.Annotations) != 1 ||
 		string(result.Payload) != payload {
 		t.Fatalf("large payload failed hook execution: len=%d err=%v", len(result.Payload), err)
+	}
+}
+
+func TestDeclarationToolPatternValidation(t *testing.T) {
+	valid := Declaration{ProtocolVersion: ProtocolVersion, ID: "mcp-guard",
+		Event: PreTool, Action: ActionDeny, FailurePolicy: FailureDeny,
+		TimeoutMillis: 100, ToolPattern: `^mcp_github_.*`,
+		Message: "github tools disabled by reviewed plugin"}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid tool pattern was rejected: %v", err)
+	}
+	cases := []struct {
+		name        string
+		toolNames   []string
+		toolPattern string
+	}{
+		{"pattern with exact names", []string{"shell"}, "^mcp_.*"},
+		{"oversized pattern", nil, "^" + strings.Repeat("a", MaxToolPatternBytes+1)},
+		{"uncompilable pattern", nil, "^mcp_([a-z"},
+		{"pattern with NUL", nil, "mcp\x00"},
+		{"pattern with byte order mark", nil, "\uFEFF^mcp_.*"},
+		{"pattern on non-tool event", nil, "^mcp_.*"},
+	}
+	for _, testCase := range cases {
+		declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "guard",
+			Event: PreTool, Action: ActionDeny, FailurePolicy: FailureDeny,
+			TimeoutMillis: 100, ToolNames: testCase.toolNames,
+			ToolPattern: testCase.toolPattern, Message: "blocked"}
+		if testCase.name == "pattern on non-tool event" {
+			declaration.Event = RunStarted
+		}
+		if err := declaration.Validate(); err == nil {
+			t.Fatalf("%s: invalid tool pattern declaration was accepted", testCase.name)
+		}
+	}
+}
+
+func TestEngineToolPatternMatchesUnanchored(t *testing.T) {
+	engine := NewEngine(nil)
+	if err := engine.Replace([]Registration{{PluginID: "plugin-a",
+		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "deny-mcp-writes", Event: PreTool,
+			Action: ActionDeny, FailurePolicy: FailureDeny, TimeoutMillis: 100,
+			ToolPattern: `mcp_github_(create|delete)_`,
+			Message:     "github write tools disabled"}}}); err != nil {
+		t.Fatal(err)
+	}
+	denied, err := engine.Execute(t.Context(), Input{Event: PreTool,
+		ToolName: "mcp_github_create_issue", Payload: json.RawMessage(`{}`)})
+	if err != nil || !denied.Denied {
+		t.Fatalf("pattern did not deny a matching tool: %#v err=%v", denied, err)
+	}
+	allowed, err := engine.Execute(t.Context(), Input{Event: PreTool,
+		ToolName: "mcp_github_read_issue", Payload: json.RawMessage(`{}`)})
+	if err != nil || allowed.Denied || len(allowed.Executed) != 0 {
+		t.Fatalf("pattern denied a non-matching tool: %#v err=%v", allowed, err)
+	}
+	nonTool, err := engine.Execute(t.Context(), Input{Event: PreTool,
+		ToolName: "shell", Payload: json.RawMessage(`{}`)})
+	if err != nil || nonTool.Denied {
+		t.Fatalf("pattern denied an unrelated tool: %#v err=%v", nonTool, err)
+	}
+}
+
+func TestEngineToolPatternChangesRegistryGeneration(t *testing.T) {
+	engine := NewEngine(nil)
+	registration := Registration{PluginID: "plugin-a",
+		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "annotate", Event: PreTool,
+			Action: ActionAnnotate, FailurePolicy: FailureContinue, TimeoutMillis: 100,
+			ToolPattern: `^mcp_.*`, Message: "reviewed"}}
+	if err := engine.Replace([]Registration{registration}); err != nil {
+		t.Fatal(err)
+	}
+	generation := engine.Generation()
+	registration.Declaration.ToolPattern = `^mcp_github_.*`
+	if err := engine.Replace([]Registration{registration}); err != nil {
+		t.Fatal(err)
+	}
+	if engine.Generation() == generation {
+		t.Fatal("tool pattern change did not advance the registry generation")
+	}
+	// An invalid pattern that slips past validation fails closed at Replace.
+	registration.Declaration.ToolPattern = "^mcp_([a-z"
+	if err := engine.Replace([]Registration{registration}); err == nil {
+		t.Fatal("uncompilable tool pattern was accepted by the registry")
+	}
+}
+
+func TestEngineToolPatternOnPostToolAnnotates(t *testing.T) {
+	engine := NewEngine(&scriptedAuditSink{})
+	if err := engine.Replace([]Registration{{PluginID: "plugin-a",
+		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "annotate-writes", Event: PostTool,
+			Action: ActionAnnotate, FailurePolicy: FailureContinue, TimeoutMillis: 100,
+			ToolPattern: `mcp_github_(create|delete)_`,
+			Message:     "github write completed"}}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(t.Context(), Input{Event: PostTool, ToolName: "mcp_github_delete_branch",
+		Payload: json.RawMessage(`{"status":"completed"}`)})
+	if err != nil || result.Denied || len(result.Annotations) != 1 {
+		t.Fatalf("post_tool pattern annotate result=%#v err=%v", result, err)
+	}
+	skipped, err := engine.Execute(t.Context(), Input{Event: PostTool, ToolName: "shell",
+		Payload: json.RawMessage(`{"status":"completed"}`)})
+	if err != nil || len(skipped.Annotations) != 0 {
+		t.Fatalf("post_tool pattern matched an unrelated tool: %#v err=%v", skipped, err)
+	}
+}
+
+func TestLoadOperatorScriptHooksAcceptsToolPatternDeclarations(t *testing.T) {
+	root := t.TempDir()
+	digest := writeOperatorScript(t, root, "scripts/check.py", "# operator script\n")
+	declaration := fmt.Sprintf(`{"protocol_version":%q,"id":"mcp-guard","event":"pre_tool",
+		"action":"script","failure_policy":"deny","timeout_ms":2000,
+		"tool_pattern":"^mcp_github_(create|delete)_",
+		"script":{"interpreter":"python","path":"scripts/check.py","sha256":%q}}`,
+		ProtocolVersion, digest)
+	if err := os.WriteFile(filepath.Join(root, "guard.json"), []byte(declaration), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	registrations, err := LoadOperatorScriptHooks(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registrations) != 1 || registrations[0].Declaration.ToolPattern != `^mcp_github_(create|delete)_` {
+		t.Fatalf("operator pattern declaration did not load: %#v", registrations)
+	}
+}
+
+func TestEngineLoaderFailsClosedOnUncompilablePattern(t *testing.T) {
+	registration := Registration{PluginID: "plugin-a",
+		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "annotate", Event: PreTool,
+			Action: ActionAnnotate, FailurePolicy: FailureContinue, TimeoutMillis: 100,
+			ToolPattern: "^mcp_([a-z", Message: "reviewed"}}
+	engine := NewEngine(nil).WithLoader(func(context.Context) ([]Registration, error) {
+		return []Registration{registration}, nil
+	})
+	_, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "mcp_github_read",
+		Payload: json.RawMessage(`{}`)})
+	if err == nil {
+		t.Fatal("loader-provided uncompilable pattern did not fail the boundary closed")
 	}
 }
