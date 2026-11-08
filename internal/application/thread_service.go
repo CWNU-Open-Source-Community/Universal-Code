@@ -14,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
+	"cyberagent-workbench/internal/hooks"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/toolgateway"
@@ -49,10 +50,20 @@ type threadModelRoutePreferenceReader interface {
 }
 
 type ThreadService struct {
-	store        ThreadStore
-	capabilities domain.ExecutionPermissionRuntimeCapabilities
-	modelRoutes  ThreadModelRouteRegistry
-	drydocks     *RunWorktreeService
+	store          ThreadStore
+	capabilities   domain.ExecutionPermissionRuntimeCapabilities
+	modelRoutes    ThreadModelRouteRegistry
+	drydocks       *RunWorktreeService
+	lifecycleHooks *hooks.Engine
+}
+
+// WithLifecycleHooks wires the restricted lifecycle hook engine. A nil engine
+// leaves every hook boundary a no-op.
+func (s *ThreadService) WithLifecycleHooks(engine *hooks.Engine) *ThreadService {
+	if s != nil {
+		s.lifecycleHooks = engine
+	}
+	return s
 }
 
 func (s *ThreadService) WithRunWorktree(service *RunWorktreeService) *ThreadService {
@@ -87,17 +98,18 @@ type threadRunExecutionPermissionReader interface {
 }
 
 type SubmitThreadMessageRequest struct {
-	peer          bool
-	plan          *threadPlanCommitBinding
-	Version       string
-	ThreadID      string
-	Content       string
-	OperationKey  string
-	RequestedBy   string
-	Files         []domain.WorkspaceFileReference
-	Images        []domain.ImageReference
-	Attachments   []domain.FileAttachmentReference
-	MCPReferences []domain.MCPReference
+	peer           bool
+	plan           *threadPlanCommitBinding
+	skipPromptHook bool
+	Version        string
+	ThreadID       string
+	Content        string
+	OperationKey   string
+	RequestedBy    string
+	Files          []domain.WorkspaceFileReference
+	Images         []domain.ImageReference
+	Attachments    []domain.FileAttachmentReference
+	MCPReferences  []domain.MCPReference
 }
 
 type threadMessageIntentStore interface {
@@ -201,6 +213,17 @@ func (s *ThreadService) Submit(ctx context.Context,
 	}
 	if len(request.Files) != 0 || len(request.Images) != 0 || len(request.Attachments) != 0 || len(request.MCPReferences) != 0 {
 		return SubmitThreadMessageResult{}, apperror.New(apperror.CodeInvalidArgument, "File references require the Thread turn endpoint")
+	}
+	// The user_prompt_submit boundary fires before any persistence: a deny
+	// rejects the submission cleanly and reserves no message intent. The run
+	// and workspace bindings do not exist yet, so their identity stays empty.
+	if !request.skipPromptHook && strings.TrimSpace(request.Content) != "" {
+		if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.UserPromptSubmit,
+			"", "", hooks.BuildUserPromptSubmitPayload(
+				hooks.UserPromptSubmitPayload{ThreadID: request.ThreadID,
+					Content: request.Content})); err != nil {
+			return SubmitThreadMessageResult{}, err
+		}
 	}
 	intent, err := s.reserveMessage(ctx, request)
 	if err != nil {

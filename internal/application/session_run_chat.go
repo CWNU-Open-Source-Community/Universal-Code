@@ -23,9 +23,10 @@ type SessionRunStore interface {
 }
 
 type SessionRunChatExecutor struct {
-	store      SessionRunStore
-	runs       *RunService
-	supervisor *AgentRunner
+	store          SessionRunStore
+	runs           *RunService
+	supervisor     *AgentRunner
+	lifecycleHooks *hooks.Engine
 }
 
 func NewSessionRunChatExecutor(store SessionRunStore, router *llm.Router, checker policy.Checker) *SessionRunChatExecutor {
@@ -50,6 +51,7 @@ func (e *SessionRunChatExecutor) WithCodeIntel(manager *codeintel.Manager) *Sess
 
 func (e *SessionRunChatExecutor) WithLifecycleHooks(engine *hooks.Engine) *SessionRunChatExecutor {
 	if e != nil {
+		e.lifecycleHooks = engine
 		if e.runs != nil {
 			e.runs.WithLifecycleHooks(engine)
 		}
@@ -101,6 +103,22 @@ func (e *SessionRunChatExecutor) ExecuteSessionTurnWithOptions(ctx context.Conte
 	}
 	if run.SessionID != sess.ID {
 		return session.RunChatResult{}, true, apperror.New(apperror.CodeConflict, "run and session binding changed")
+	}
+	// The user_prompt_submit boundary fires before steering queueing or run
+	// state transitions; a deny rejects the submission with nothing recorded.
+	// The workspace identity comes from the run's mission, the same source
+	// the run_started boundary uses.
+	if strings.TrimSpace(input) != "" {
+		mission, missionErr := e.store.GetMission(ctx, run.MissionID)
+		if missionErr != nil {
+			return session.RunChatResult{}, true, apperror.Normalize(missionErr)
+		}
+		if err := executeLifecycleBoundary(ctx, e.lifecycleHooks, hooks.UserPromptSubmit,
+			run.ID, mission.WorkspaceID, hooks.BuildUserPromptSubmitPayload(
+				hooks.UserPromptSubmitPayload{SessionID: sess.ID, RunID: run.ID,
+					Content: input})); err != nil {
+			return session.RunChatResult{}, true, err
+		}
 	}
 	options.OperationKey = strings.TrimSpace(options.OperationKey)
 	if options.OperationKey != "" {
