@@ -457,7 +457,9 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		_ = stateStore.Close()
 		return nil, err
 	}
-	hookEngine := hooks.NewEngine(stateStore).WithLoader(pluginService.ActiveHooks)
+	hookEngine := hooks.NewEngine(stateStore).
+		WithLoader(hookRegistrations(pluginService, operatorScriptHooksDir(home))).
+		WithScriptExecutor(newScriptHookExecutor(operatorScriptHooksDir(home)))
 	extensionControl, err := application.NewExtensionControlService(stateStore,
 		mcpClient, pluginService)
 	if err != nil {

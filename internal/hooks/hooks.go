@@ -1,5 +1,8 @@
 // Package hooks implements the declarative, Go-owned lifecycle hook runtime.
 // Plugin packages can contribute rules, never executable handlers or scripts.
+// Operator-owned script hooks are the one bounded exception: they are installed
+// by the operator outside any plugin or repository surface, are hash-pinned and
+// re-verified on every execution, and can only deny or annotate.
 package hooks
 
 import (
@@ -62,10 +65,12 @@ const (
 	ActionAnnotate Action = "annotate"
 	ActionNarrow   Action = "narrow"
 	ActionRecord   Action = "record"
+	ActionScript   Action = "script"
 )
 
 func (a Action) Valid() bool {
-	return a == ActionDeny || a == ActionAnnotate || a == ActionNarrow || a == ActionRecord
+	return a == ActionDeny || a == ActionAnnotate || a == ActionNarrow ||
+		a == ActionRecord || a == ActionScript
 }
 
 type FailurePolicy string
@@ -87,12 +92,17 @@ type Declaration struct {
 	ToolNames       []string      `json:"tool_names,omitempty"`
 	RemoveFields    []string      `json:"remove_fields,omitempty"`
 	Message         string        `json:"message,omitempty"`
+	Script          *ScriptSpec   `json:"script,omitempty"`
 }
 
 func (d Declaration) Validate() error {
+	maxTimeout := MaxHookTimeoutMillis
+	if d.Action == ActionScript {
+		maxTimeout = MaxScriptTimeoutMillis
+	}
 	if d.ProtocolVersion != ProtocolVersion || !validIdentity(d.ID) || !d.Event.Valid() ||
 		!d.Action.Valid() || !d.FailurePolicy.Valid() || d.TimeoutMillis < 1 ||
-		d.TimeoutMillis > MaxHookTimeoutMillis || len(d.ToolNames) > 64 ||
+		d.TimeoutMillis > maxTimeout || len(d.ToolNames) > 64 ||
 		len(d.RemoveFields) > 32 || !validText(d.Message, MaxAnnotationBytes, true) {
 		return errors.New("hook declaration identity, event, action, or bounds are invalid")
 	}
@@ -109,6 +119,20 @@ func (d Declaration) Validate() error {
 	}
 	if d.Action == ActionDeny && d.Event == PostTool {
 		return errors.New("post_tool hooks cannot retroactively deny a completed call")
+	}
+	if d.Action == ActionScript {
+		if d.Script == nil {
+			return errors.New("script hooks require a script specification")
+		}
+		if d.Event == PostTool {
+			return errors.New("post_tool hooks cannot run scripts because execution is already complete")
+		}
+		if err := d.Script.Validate(); err != nil {
+			return err
+		}
+	}
+	if d.Action != ActionScript && d.Script != nil {
+		return errors.New("only script hooks may declare a script specification")
 	}
 	if d.Event == PostTool && d.FailurePolicy == FailureDeny {
 		return errors.New("post_tool hooks require continue failure policy because execution is already complete")
@@ -133,6 +157,20 @@ func (r Registration) Validate() error {
 		return errors.New("hook registration plugin binding is invalid")
 	}
 	return r.Declaration.Validate()
+}
+
+// ValidateDeclarative validates a declaration that must not execute scripts.
+// Plugin packages contribute declarative rules only: script hooks are
+// operator-owned, and plugin manifests cannot bind the operator's script
+// executor or pre-compute a digest for one.
+func ValidateDeclarative(d Declaration) error {
+	if d.Action == ActionScript {
+		return errors.New("plugin hooks cannot execute scripts")
+	}
+	if d.Script != nil {
+		return errors.New("plugin hooks cannot declare a script specification")
+	}
+	return d.Validate()
 }
 
 type Input struct {
@@ -239,11 +277,21 @@ type Engine struct {
 	sink          AuditSink
 	now           func() time.Time
 	loader        func(context.Context) ([]Registration, error)
+	scriptRunner  ScriptExecutor
 }
 
 func NewEngine(sink AuditSink) *Engine {
 	return &Engine{sink: sink, now: func() time.Time { return time.Now().UTC() },
 		generation: emptyGeneration()}
+}
+
+// WithScriptExecutor wires the host-owned script execution adapter. Without it,
+// script declarations fail closed at every boundary.
+func (e *Engine) WithScriptExecutor(runner ScriptExecutor) *Engine {
+	if e != nil {
+		e.scriptRunner = runner
+	}
+	return e
 }
 
 // WithLoader refreshes the enabled declarative registry at each hook boundary.
@@ -268,6 +316,9 @@ func (e *Engine) Replace(registrations []Registration) error {
 	for _, value := range values {
 		if err := value.Validate(); err != nil {
 			return err
+		}
+		if value.Declaration.Action == ActionScript && value.PluginID != OperatorPluginID {
+			return errors.New("script hooks are reserved for the operator source")
 		}
 		key := value.PluginID + "\x00" + value.Declaration.ID
 		if _, found := seen[key]; found {
@@ -329,13 +380,15 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 			if declaration.FailurePolicy == FailureDeny {
 				result.Denied = true
 				result.Reason = "hook " + declaration.ID + " failed closed"
-				_ = e.record(context.WithoutCancel(ctx), registration, input, "failed_closed")
+				_ = e.record(context.WithoutCancel(ctx), registration, input, "failed_closed", true)
 				return result, nil
 			}
-			_ = e.record(context.WithoutCancel(ctx), registration, input, "failed_continue")
+			_ = e.record(context.WithoutCancel(ctx), registration, input, "failed_continue", false)
 			continue
 		}
-		if err := e.record(context.WithoutCancel(ctx), registration, input, "completed"); err != nil {
+		rejected := declaration.Action == ActionDeny ||
+			declaration.Action == ActionScript && result.Denied
+		if err := e.record(context.WithoutCancel(ctx), registration, input, "completed", rejected); err != nil {
 			if declaration.FailurePolicy == FailureDeny {
 				result.Denied = true
 				result.Reason = "hook " + declaration.ID + " audit failed closed"
@@ -390,6 +443,28 @@ func (e *Engine) apply(ctx context.Context, registration Registration, input Inp
 			return errors.New("narrow hook attempted to expand its payload")
 		}
 		result.Payload = narrowed
+	case ActionScript:
+		if e.scriptRunner == nil {
+			return errors.New("script hook executor is unavailable")
+		}
+		invocation := ScriptInvocation{HookID: declaration.ID, Event: declaration.Event,
+			RunID: input.RunID, WorkspaceID: input.WorkspaceID, ToolName: input.ToolName,
+			Payload:      append(json.RawMessage(nil), result.Payload...),
+			RelativePath: declaration.Script.Path, Interpreter: declaration.Script.Interpreter,
+			Args:   slices.Clone(declaration.Script.Args),
+			SHA256: declaration.Script.SHA256, TimeoutMillis: declaration.TimeoutMillis}
+		output, err := e.scriptRunner.ExecuteScript(ctx, invocation)
+		if err != nil {
+			return err
+		}
+		if output.Denied {
+			result.Denied = true
+			result.Reason = output.Reason
+		}
+		for _, annotation := range output.Annotations {
+			result.Annotations = append(result.Annotations, Annotation{PluginID: registration.PluginID,
+				HookID: declaration.ID, Message: annotation.Message})
+		}
 	case ActionRecord:
 		// The audit record emitted by Execute is the only side effect.
 	default:
@@ -399,7 +474,7 @@ func (e *Engine) apply(ctx context.Context, registration Registration, input Inp
 }
 
 func (e *Engine) record(ctx context.Context, registration Registration, input Input,
-	outcome string,
+	outcome string, rejected bool,
 ) error {
 	if e.sink == nil {
 		return nil
@@ -408,7 +483,7 @@ func (e *Engine) record(ctx context.Context, registration Registration, input In
 	defer cancel()
 	return e.sink.RecordHookAudit(recordCtx, AuditRecord{PluginID: registration.PluginID,
 		PluginFingerprint: registration.PluginFingerprint, Action: registration.Declaration.Action,
-		Rejected: boolPointer(outcome == "failed_closed" || registration.Declaration.Action == ActionDeny && outcome == "completed"),
+		Rejected: boolPointer(rejected),
 		HookID:   registration.Declaration.ID, Event: input.Event, RunID: input.RunID,
 		WorkspaceID: input.WorkspaceID, ToolName: input.ToolName, Outcome: outcome,
 		CreatedAt: e.now()})
