@@ -126,6 +126,42 @@ never decreases and increases on every actual change, so identical retries are s
 not-found 错误。两个命令都会输出新的 `version`——它单调不减、每次实际变更都会递增，
 因此同样的重试是安全的。
 
+### One-shot execution / 一键式执行
+
+`cyberagent exec` runs one non-interactive prompt against a registered
+Workspace and prints the final assistant reply — the same Thread turn
+machinery an interactive session uses, driven in-process, with every
+permission, approval, and budget rule of the underlying Run unchanged:
+
+```powershell
+cyberagent exec --workspace demo "Fix the flaky parser test and run the suite"
+cyberagent exec --workspace demo --json --timeout 30m --stdin < task.md
+```
+
+`--workspace` is required; `--profile` (default `code`), `--route`,
+`--max-turns`, `--max-tokens`, `--max-tool-calls`, and `--max-cost-usd` map
+onto the ordinary Run creation contract. `--timeout` carries a durable
+`Budget.TimeoutSeconds` on the Run and also bounds the process wall clock;
+network stays disabled unless the Run's mode grants it, so web-dependent
+tasks are out of scope for v1. The command creates a
+fresh Run and Thread, executes the agent loop synchronously, prints the last
+committed assistant reply on stdout, and exits non-zero unless the supervisor
+finished the task (`turn_finish`; approval waits, continuation stops, and
+budget exhaustion report their stop reason). `--json` emits `{run_id, thread_id, status, reply}` instead of the
+bare reply. Unattended runs cannot widen permissions: pre-arrange execution
+grants the same way you would for any Run.
+
+`cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
+回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
+权限、审批与预算规则原样生效。`--workspace` 必填；`--profile`（默认 `code`）、
+`--route`、`--max-turns`、`--max-tokens`、`--max-tool-calls`、`--max-cost-usd`
+与 `--timeout` 对应普通 Run 创建契约。命令创建全新的 Run 与 Thread、同步执行
+agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 supervisor 以
+`turn_finish` 结束任务（等待审批、继续等待与预算耗尽都会报告其停止原因）
+否则以非零码退出。`--json` 输出
+`{run_id, thread_id, status, reply}` 取代纯回复文本。无人值守运行不能放宽
+权限：执行授权需要与任何 Run 一样预先安排。
+
 ### 补充消息与排队 / Follow-up messages and queue
 
 任务运行中，发送的补充消息会排到输入框上方，当前执行结束后依次处理。文字消息可点击
