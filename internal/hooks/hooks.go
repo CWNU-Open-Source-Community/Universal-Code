@@ -34,21 +34,22 @@ const (
 type Event string
 
 const (
-	PreTool       Event = "pre_tool"
-	PostTool      Event = "post_tool"
-	RunStarted    Event = "run_started"
-	RunCompleted  Event = "run_completed"
-	SessionOpened Event = "session_opened"
-	SessionClosed Event = "session_closed"
-	Compaction    Event = "compaction"
-	Subagent      Event = "subagent"
-	Checkpoint    Event = "checkpoint"
+	PreTool           Event = "pre_tool"
+	PostTool          Event = "post_tool"
+	RunStarted        Event = "run_started"
+	RunCompleted      Event = "run_completed"
+	SessionOpened     Event = "session_opened"
+	SessionClosed     Event = "session_closed"
+	ApprovalRequested Event = "approval_requested"
+	Compaction        Event = "compaction"
+	Subagent          Event = "subagent"
+	Checkpoint        Event = "checkpoint"
 )
 
 func (e Event) Valid() bool {
 	switch e {
 	case PreTool, PostTool, RunStarted, RunCompleted, SessionOpened, SessionClosed,
-		Compaction, Subagent, Checkpoint:
+		ApprovalRequested, Compaction, Subagent, Checkpoint:
 		return true
 	default:
 		return false
@@ -112,6 +113,16 @@ func (d Declaration) Validate() error {
 	}
 	if d.Event == PostTool && d.FailurePolicy == FailureDeny {
 		return errors.New("post_tool hooks require continue failure policy because execution is already complete")
+	}
+	if d.Event == ApprovalRequested {
+		// The approval decision belongs to the operator: hooks at this
+		// boundary observe and record, they never auto-deny, annotate a
+		// pending human decision, or rewrite anything. Whitelist form on
+		// purpose: a future action type fails closed here instead of silently
+		// gaining approval-gate authority.
+		if d.Action != ActionRecord {
+			return errors.New("approval_requested hooks may only record observations")
+		}
 	}
 	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")
@@ -431,7 +442,8 @@ func matchesTool(values []string, toolName string) bool {
 
 func eventOrder(value Event) int {
 	for index, current := range []Event{PreTool, PostTool, RunStarted, RunCompleted,
-		SessionOpened, SessionClosed, Compaction, Subagent, Checkpoint} {
+		SessionOpened, SessionClosed, ApprovalRequested, Compaction, Subagent,
+		Checkpoint} {
 		if current == value {
 			return index
 		}

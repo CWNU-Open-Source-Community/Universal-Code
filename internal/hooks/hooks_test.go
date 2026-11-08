@@ -125,3 +125,34 @@ func testHookDigest(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
 }
+
+func TestApprovalRequestedEventRules(t *testing.T) {
+	if !ApprovalRequested.Valid() {
+		t.Fatal("approval_requested event is not valid")
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "approval-tap",
+		Event: ApprovalRequested, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100}).Validate(); err != nil {
+		t.Fatalf("record hook on approval_requested was rejected: %v", err)
+	}
+	for _, broken := range []struct {
+		name   string
+		action Action
+	}{
+		{"auto-deny", ActionDeny},
+		{"annotation", ActionAnnotate},
+		{"narrow", ActionNarrow},
+	} {
+		declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "approval",
+			Event: ApprovalRequested, Action: broken.action, FailurePolicy: FailureDeny,
+			TimeoutMillis: 100, Message: "hook-controlled text"}
+		if err := declaration.Validate(); err == nil {
+			t.Fatalf("%s was accepted on approval_requested", broken.name)
+		}
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "approval-tool",
+		Event: ApprovalRequested, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, ToolNames: []string{"shell"}}).Validate(); err == nil {
+		t.Fatal("approval_requested declaration accepted tool filters")
+	}
+}
