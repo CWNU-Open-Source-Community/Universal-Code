@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -233,6 +235,43 @@ func TestEngineScriptActionIntegrityFailureFailsClosedRegardlessOfPolicy(t *test
 		sink.records[0].Outcome != "failed_closed" ||
 		sink.records[0].Rejected == nil || !*sink.records[0].Rejected {
 		t.Fatalf("integrity failure with continue policy did not fail closed: result=%#v records=%#v err=%v", result, sink.records, err)
+	}
+}
+
+func TestEngineScriptActionDeletedScriptFailsClosedWithContinuePolicy(t *testing.T) {
+	dir := t.TempDir()
+	spec := writeScriptForTest(t, dir, "guard.ps1", echoScriptBody(t, `{"protocol_version":"restricted-hooks.v1","denied":false}`))
+	spec.Interpreter = scriptInterpreterForTest(t)
+	executor, err := NewProcessScriptExecutor(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &scriptedAuditSink{}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+	reg := Registration{
+		PluginID:          OperatorPluginID,
+		PluginFingerprint: testHookDigest("plugin"),
+		Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion,
+			ID:              "deleted-script-guard",
+			Event:           PreTool,
+			Action:          ActionScript,
+			FailurePolicy:   FailureContinue,
+			TimeoutMillis:   5_000,
+			Script:          &spec,
+		},
+	}
+	if err := engine.Replace([]Registration{reg}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, spec.Path)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell", Payload: json.RawMessage(`{}`)})
+	if err != nil || !result.Denied || len(result.Executed) != 0 ||
+		len(sink.records) == 0 || sink.records[0].Outcome != "failed_closed" ||
+		sink.records[0].Rejected == nil || !*sink.records[0].Rejected {
+		t.Fatalf("deleted script with continue policy did not fail closed: result=%#v records=%#v err=%v", result, sink.records, err)
 	}
 }
 

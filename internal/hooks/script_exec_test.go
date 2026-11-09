@@ -291,3 +291,47 @@ func TestProcessScriptExecutorTruncatesOversizedStderrWithoutFailing(t *testing.
 		t.Fatalf("unexpected denial: %#v", output)
 	}
 }
+
+func TestProcessScriptExecutorNodeResolvesRelativeModulesInHookDirectory(t *testing.T) {
+	if _, _, err := resolveInterpreterFn("node"); err != nil {
+		t.Skip("node interpreter is not available")
+	}
+	dir := t.TempDir()
+	helperPath := filepath.Join(dir, "helper.js")
+	if err := os.WriteFile(helperPath, []byte(`module.exports = { denied: true, reason: "denied from hook dir helper" };`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeHelperPath := filepath.Join(os.TempDir(), "helper.js")
+	_ = os.WriteFile(fakeHelperPath, []byte(`module.exports = { denied: false, reason: "fake helper" };`), 0o644)
+	t.Cleanup(func() { _ = os.Remove(fakeHelperPath) })
+
+	hookBody := `const helper = require('./helper');
+console.log(JSON.stringify({ protocol_version: "restricted-hooks.v1", denied: helper.denied, reason: helper.reason }));`
+	spec := writeScriptForTest(t, dir, "hook.js", hookBody)
+	spec.Interpreter = "node"
+
+	executor := newExecutorForTest(t, dir)
+	invocation := ScriptInvocation{
+		HookID: "node-guard", Event: PreTool,
+		RelativePath: spec.Path, Interpreter: "node", SHA256: spec.SHA256,
+		TimeoutMillis: 5_000,
+	}
+	output, err := executor.ExecuteScript(t.Context(), invocation)
+	if err != nil {
+		t.Fatalf("ExecuteScript failed: %v", err)
+	}
+	if !output.Denied || output.Reason != "denied from hook dir helper" {
+		t.Fatalf("expected denial from hook directory helper, got %#v", output)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".operator-hook-") {
+			t.Fatalf("temporary snapshot file was not removed: %s", entry.Name())
+		}
+	}
+}

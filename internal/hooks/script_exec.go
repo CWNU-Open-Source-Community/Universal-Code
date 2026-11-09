@@ -47,7 +47,7 @@ func (x *ProcessScriptExecutor) ExecuteScript(ctx context.Context,
 	}
 	root, err := os.OpenRoot(x.hooksDir)
 	if err != nil {
-		return ScriptOutput{}, fmt.Errorf("open script hook directory: %w", err)
+		return ScriptOutput{}, fmt.Errorf("%w: open script hook directory: %v", ErrScriptIntegrity, err)
 	}
 	defer root.Close()
 	content, err := verifyScriptContent(root, invocation.RelativePath)
@@ -66,13 +66,14 @@ func (x *ProcessScriptExecutor) ExecuteScript(ctx context.Context,
 		return ScriptOutput{}, err
 	}
 
+	scriptDir := filepath.Dir(filepath.Join(x.hooksDir, invocation.RelativePath))
 	ext := filepath.Ext(invocation.RelativePath)
-	snapshot, err := os.CreateTemp("", "operator-hook-*"+ext)
+	snapshot, err := os.CreateTemp(scriptDir, ".operator-hook-*.tmp"+ext)
 	if err != nil {
 		return ScriptOutput{}, fmt.Errorf("create script snapshot: %w", err)
 	}
 	snapshotPath := snapshot.Name()
-	defer os.Remove(snapshotPath)
+	defer func() { _ = os.Remove(snapshotPath) }()
 	if _, err := snapshot.Write(content); err != nil {
 		_ = snapshot.Close()
 		return ScriptOutput{}, fmt.Errorf("write script snapshot: %w", err)

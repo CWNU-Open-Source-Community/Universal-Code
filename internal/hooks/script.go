@@ -261,26 +261,26 @@ func scriptEnvironmentEntries() []string {
 
 // verifyScriptContent re-reads the pinned script through the held root and
 // confirms it is a regular, non-link file whose exact bytes still match the
-// declared digest. Any drift, replacement, or link substitution fails closed.
+// declared digest. Any drift, replacement, missing file, or link substitution fails closed.
 func verifyScriptContent(root *os.Root, relative string) ([]byte, error) {
 	info, err := root.Lstat(relative)
 	if err != nil {
-		return nil, fmt.Errorf("script hook file is not accessible: %w", err)
+		return nil, fmt.Errorf("%w: script hook file is not accessible: %v", ErrScriptIntegrity, err)
 	}
 	if info.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0 || !info.Mode().IsRegular() {
-		return nil, errors.New("script hook path is not a regular file")
+		return nil, fmt.Errorf("%w: script hook path is not a regular file", ErrScriptIntegrity)
 	}
 	if info.Size() > MaxScriptFileBytes {
-		return nil, fmt.Errorf("script hook file exceeds %d bytes", MaxScriptFileBytes)
+		return nil, fmt.Errorf("%w: script hook file exceeds %d bytes", ErrScriptIntegrity, MaxScriptFileBytes)
 	}
 	content, err := root.ReadFile(relative)
 	if err != nil {
-		return nil, fmt.Errorf("script hook file is not readable: %w", err)
+		return nil, fmt.Errorf("%w: script hook file is not readable: %v", ErrScriptIntegrity, err)
 	}
 	digest := sha256.Sum256(content)
 	reRead, err := root.ReadFile(relative)
 	if err != nil || sha256.Sum256(reRead) != digest {
-		return nil, errors.New("script hook file changed while reading")
+		return nil, fmt.Errorf("%w: script hook file changed while reading", ErrScriptIntegrity)
 	}
 	return content, nil
 }
