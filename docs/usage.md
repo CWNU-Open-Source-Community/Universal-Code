@@ -221,6 +221,29 @@ workspace 并固定到本次调用的消息上。存储层套用与所有上传�
 附件内容永不授予权威。fresh 与 `--continue` 模式均可用（continue 导入到
 Thread 的 workspace）；可与 `--stdin`、`--json` 自由组合。
 
+#### Attaching images / 附加图片
+
+`--image <path>` (repeatable, at most 4) imports a PNG, JPEG, or WebP image
+into the Run's workspace and pins it to the invocation's message. The store
+decodes and bounds every upload (5 MiB, 8192 px per side, 16 Mpx total), and
+the selected model must have an established vision capability — the turn
+refuses with an explicit error otherwise, before any model call. Image bytes
+are delivered to the vision model as untrusted data with their exact
+provenance; images never grant authority. Combine freely with `--attach`,
+`--stdin`, and `--json`.
+
+```powershell
+cyberagent exec --workspace demo --image screenshot.png "What does this error dialog say?"
+cyberagent exec --continue thread-run-20261111-a1b2c3d4e5f6 --image chart.png --json "Compare with the numbers you reported"
+```
+
+`--image <路径>`（可重复，最多 4 张）把 PNG、JPEG 或 WebP 图片导入 Run 的
+workspace 并固定到本次调用的消息上。存储层解码并限制每次上传（5 MiB、单边
+8192 px、总 16 Mpx），且所选模型必须具备已确认的 vision 能力——否则 turn
+在任何模型调用之前以明确错误拒绝。图片字节以不可信数据连同精确来源交付给
+vision 模型；图片永不授予权威。可与 `--attach`、`--stdin`、`--json` 自由
+组合。
+
 ### 补充消息与排队 / Follow-up messages and queue
 
 任务运行中，发送的补充消息会排到输入框上方，当前执行结束后依次处理。文字消息可点击

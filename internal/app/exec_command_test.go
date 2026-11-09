@@ -3,8 +3,13 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -468,5 +473,174 @@ func TestExecAttachRejectsBadInput(t *testing.T) {
 		"--attach", oversized, "Any task"})
 	if err == nil || !strings.Contains(err.Error(), "5 MiB") {
 		t.Fatalf("oversized attachment must fail with the size cap, got: %v", err)
+	}
+}
+
+// imageRecordingProvider records model requests and claims vision support,
+// so the image evidence delivery can be asserted end to end.
+type imageRecordingProvider struct {
+	execTestProvider
+	mu       sync.Mutex
+	requests []llm.ChatRequest
+}
+
+func (p *imageRecordingProvider) record(ctx context.Context, request llm.ChatRequest) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	request.Messages = append([]llm.Message(nil), request.Messages...)
+	p.requests = append(p.requests, request)
+}
+
+func (p *imageRecordingProvider) imageParts() []llm.ImagePart {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var parts []llm.ImagePart
+	for _, request := range p.requests {
+		for _, message := range request.Messages {
+			parts = append(parts, message.Images...)
+		}
+	}
+	return parts
+}
+
+func (p *imageRecordingProvider) SupportsVision(string) bool { return true }
+
+// DescribeVision satisfies the VisionDescriber contract: protocol support
+// alone is not evidence of model vision support, so the capability check
+// consults this exact-provenance describer rather than SupportsVision.
+func (p *imageRecordingProvider) DescribeVision(string) llm.VisionCapability {
+	return llm.VisionCapability{State: llm.VisionSupported, Source: "provider_metadata"}
+}
+
+func (p *imageRecordingProvider) Chat(ctx context.Context,
+	request llm.ChatRequest) (*llm.ChatResponse, error) {
+	p.record(ctx, request)
+	return p.execTestProvider.Chat(ctx, request)
+}
+
+func (p *imageRecordingProvider) StreamChat(ctx context.Context,
+	request llm.ChatRequest) (<-chan llm.ChatChunk, error) {
+	p.record(ctx, request)
+	return p.execTestProvider.StreamChat(ctx, request)
+}
+
+func writeTinyPNG(t *testing.T) ([]byte, string) {
+	t.Helper()
+	picture := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			picture.Set(x, y, color.RGBA{R: uint8(x * 31), G: uint8(y * 31), B: 200, A: 255})
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, picture); err != nil {
+		t.Fatal(err)
+	}
+	return encoded.Bytes(), "image/png"
+}
+
+func newExecImageTestApp(t *testing.T) (*App, *imageRecordingProvider, *store.SQLiteStore) {
+	t.Helper()
+	home := t.TempDir()
+	st, err := store.Open(filepath.Join(home, "exec-image-test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{
+		ID:        "exec-ws",
+		Name:      "exec-ws",
+		RootPath:  t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &imageRecordingProvider{execTestProvider: execTestProvider{
+		response: execFinishResponse("image reply")}}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	a := &App{home: home, out: &bytes.Buffer{}, errOut: &bytes.Buffer{}, store: st,
+		router: router, checker: policy.NewDefaultChecker()}
+	return a, provider, st
+}
+
+func TestExecImageDeliversBytesToVisionModel(t *testing.T) {
+	a, provider, _ := newExecImageTestApp(t)
+	pngBytes, _ := writeTinyPNG(t)
+	imagePath := filepath.Join(t.TempDir(), "diagram.png")
+	if err := os.WriteFile(imagePath, pngBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	a.out = &out
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--image", imagePath, "--json", "Read the diagram and describe it"}); err != nil {
+		t.Fatalf("exec with image failed: %v", err)
+	}
+	var result struct {
+		Reply string `json:"reply"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse exec JSON: %v, raw: %s", err, out.String())
+	}
+	if result.Reply != "image reply" {
+		t.Fatalf("unexpected reply: %+v", result)
+	}
+	digest := sha256.Sum256(pngBytes)
+	found := false
+	for _, part := range provider.imageParts() {
+		if part.SHA256 == hex.EncodeToString(digest[:]) && bytes.Equal(part.Data, pngBytes) &&
+			part.MediaType == "image/png" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("the attached image bytes were never delivered to the vision model")
+	}
+}
+
+func TestExecImageRejectsUnsupportedFormat(t *testing.T) {
+	a, provider, _ := newExecImageTestApp(t)
+	plain := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(plain, []byte("not an image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--image", plain, "Any task"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported format") {
+		t.Fatalf("non-image attachment must fail with a clear format error, got: %v", err)
+	}
+}
+
+func TestExecImageRequiresVisionCapability(t *testing.T) {
+	// The recording provider does NOT implement DescribeVision, so the
+	// machinery classifies the model as vision-unsupported; the recording
+	// also turns "refused before any model call" into an enforced assertion.
+	provider := &attachRecordingProvider{execTestProvider: execTestProvider{
+		response: execFinishResponse("should never be reached")}}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	a, _, _ := newExecContinueTestApp(t)
+	a.router = router
+	pngBytes, _ := writeTinyPNG(t)
+	imagePath := filepath.Join(t.TempDir(), "diagram.png")
+	if err := os.WriteFile(imagePath, pngBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--image", imagePath, "Any task"})
+	if err == nil || !strings.Contains(err.Error(), "vision") {
+		t.Fatalf("image without a vision-capable model must fail loudly, got: %v", err)
+	}
+	provider.mu.Lock()
+	calls := len(provider.requests)
+	provider.mu.Unlock()
+	if calls != 0 {
+		t.Fatalf("the vision gate must refuse before any model call, got %d", calls)
 	}
 }

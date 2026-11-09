@@ -49,6 +49,8 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	continueThread := fs.String("continue", "", "continue an existing Thread by id; the Thread carries its own Run, workspace, profile, and permission selection")
 	var attachPaths repeatedString
 	fs.Var(&attachPaths, "attach", "attach a file to the prompt; repeatable, at most 4, each at most 5 MiB")
+	var imagePaths repeatedString
+	fs.Var(&imagePaths, "image", "attach an image to the prompt; repeatable, at most 4, PNG/JPEG/WebP only")
 	jsonOutput := fs.Bool("json", false, "emit a structured JSON result")
 	enablePermissionControl := fs.Bool("enable-permission-control", false,
 		"enable the operator-approval runtime for this process")
@@ -60,7 +62,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"workspace": true, "profile": true, "route": true,
 		"max-turns": true, "max-tokens": true, "max-tool-calls": true,
 		"max-cost-usd": true, "timeout": true, "stdin": false, "json": false,
-		"continue": true, "attach": true,
+		"continue": true, "attach": true, "image": true,
 		"enable-permission-control": false, "enable-danger-full-access": false,
 		"confirm-full": false,
 	})); err != nil {
@@ -90,6 +92,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 
 	var threadID, runID, workspaceID string
 	var attachmentRefs []domain.FileAttachmentReference
+	var imageRefs []domain.ImageReference
 	var err error
 
 	if continueID != "" {
@@ -116,6 +119,10 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		// the command runtime's fixed attachments directory) with no new
 		// authority.
 		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
+		if err != nil {
+			return err
+		}
+		imageRefs, err = a.importExecImages(ctx, workspaceID, imagePaths)
 		if err != nil {
 			return err
 		}
@@ -149,6 +156,10 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		// text excerpts, or the saved original bytes for the command
 		// runtime's fixed attachments directory) with no new authority.
 		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
+		if err != nil {
+			return err
+		}
+		imageRefs, err = a.importExecImages(ctx, workspaceID, imagePaths)
 		if err != nil {
 			return err
 		}
@@ -219,6 +230,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		OperationKey: idgen.New("cli-exec"),
 		RequestedBy:  "cli_exec_operator",
 		Attachments:  attachmentRefs,
+		Images:       imageRefs,
 	})
 	if err != nil {
 		return err
@@ -346,6 +358,65 @@ func (a *App) importExecAttachments(ctx context.Context,
 		})
 	}
 	return references, nil
+}
+
+// importExecImages reads each requested image and imports it into the Run's
+// workspace before the turn starts. Only the store's published operator
+// upload formats are accepted (PNG, JPEG, WebP); the store decodes and
+// bounds the image (5 MiB, 8192px, 16 Mpx). The references are
+// workspace-scoped observations with no authority: the turn machinery
+// delivers image bytes only to models with an established vision
+// capability, and the evidence projection marks them as untrusted data.
+func (a *App) importExecImages(ctx context.Context,
+	workspaceID string, paths []string,
+) ([]domain.ImageReference, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if len(paths) > domain.MaxThreadMessageImages {
+		return nil, fmt.Errorf("exec supports at most %d images, got %d",
+			domain.MaxThreadMessageImages, len(paths))
+	}
+	references := make([]domain.ImageReference, 0, len(paths))
+	for index, rawPath := range paths {
+		path := strings.TrimSpace(rawPath)
+		if path == "" {
+			return nil, fmt.Errorf("exec --image requires a file path (empty value at position %d)", index+1)
+		}
+		mediaType := imageMimeTypeForPath(path)
+		if mediaType == "" {
+			return nil, fmt.Errorf("exec --image %s: unsupported format; use PNG, JPEG, or WebP", path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("exec --image %s: %w", path, err)
+		}
+		image, err := a.store.SaveWorkspaceImage(ctx, workspaceID,
+			idgen.New("cli-exec-image"), mediaType, filepath.Base(path), data)
+		if err != nil {
+			return nil, fmt.Errorf("exec --image %s: %w", path, err)
+		}
+		references = append(references, domain.ImageReference{
+			ID: image.ID, SHA256: image.SHA256,
+		})
+	}
+	return references, nil
+}
+
+// imageMimeTypeForPath maps a file extension to one of the operator image
+// upload formats; unknown extensions return empty and fail with a clear
+// message instead of relying on content sniffing.
+func imageMimeTypeForPath(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".webp":
+		return "image/webp"
+	default:
+		return ""
+	}
 }
 
 // resolveRunWorkspaceID resolves the workspace a Run belongs to, so continue
