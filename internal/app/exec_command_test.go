@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -65,6 +66,74 @@ func (p *execTestProvider) SupportsTools(string) bool    { return false }
 func (p *execTestProvider) SupportsVision(string) bool   { return false }
 func (p *execTestProvider) SupportsJSONMode(string) bool { return true }
 
+func TestExecJSONOutputWithUnfinishedTurnExitsNonZero(t *testing.T) {
+	home := t.TempDir()
+	st, err := store.Open(filepath.Join(home, "exec-test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{
+		ID:        "exec-ws",
+		Name:      "exec-ws",
+		RootPath:  t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	encoded, err := json.Marshal(domain.RootAction{
+		Version: domain.RootLifecycleVersion,
+		Kind:    domain.RootActionContinue,
+		Message: "Incomplete task message",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provider := &execTestProvider{response: string(encoded)}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+
+	var out, errOut bytes.Buffer
+	checker := policy.NewDefaultChecker()
+	a := &App{
+		home:    home,
+		out:     &out,
+		errOut:  &errOut,
+		store:   st,
+		router:  router,
+		checker: checker,
+	}
+
+	err = a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws",
+		"--route", provider.Name() + "/model",
+		"--max-turns", "1",
+		"--json",
+		"Do something incomplete",
+	})
+	if err == nil {
+		t.Fatal("execCommand with unfinished turn returned nil error for --json mode")
+	}
+
+	if !strings.Contains(err.Error(), "exec turn did not finish") {
+		t.Fatalf("expected 'exec turn did not finish' error, got: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse emitted JSON output: %v, raw output: %s", err, out.String())
+	}
+	if result["stop_reason"] == "turn_finish" {
+		t.Fatalf("stop_reason should not be turn_finish, got: %v", result["stop_reason"])
+	}
+	if fmt.Sprint(result["reply"]) != "Incomplete task message" {
+		t.Fatalf("expected reply 'Incomplete task message', got: %v", result["reply"])
+	}
+}
+
 func TestExecJSONOutputIncludesUsage(t *testing.T) {
 	home := t.TempDir()
 	st, err := store.Open(filepath.Join(home, "exec-usage.db"))
@@ -81,7 +150,13 @@ func TestExecJSONOutputIncludesUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider := &execTestProvider{response: "Task completed successfully."}
+	encoded, err := json.Marshal(domain.RootAction{
+		Version: domain.RootLifecycleVersion, Kind: domain.RootActionFinish,
+		Message: "Task completed successfully.", Summary: "Done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &execTestProvider{response: string(encoded)}
 	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
 	router.RegisterProvider(provider)
 
@@ -121,7 +196,7 @@ func TestExecJSONOutputIncludesUsage(t *testing.T) {
 	if result["reply"] != "Task completed successfully." {
 		t.Fatalf("reply mismatch: %v", result["reply"])
 	}
-	if result["stop_reason"] == "" {
-		t.Fatal("stop_reason is empty")
+	if result["stop_reason"] != "turn_finish" {
+		t.Fatalf("a finished turn must report turn_finish, got: %v", result["stop_reason"])
 	}
 }

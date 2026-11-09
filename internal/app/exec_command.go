@@ -162,9 +162,12 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Both output modes emit the structured result / reply to stdout first,
+	// then the exit code reflects the outcome: a turn that stops without
+	// turn_finish must not be reported as success in either mode.
 	if *jsonOutput {
 		encoder := json.NewEncoder(a.out)
-		return encoder.Encode(map[string]any{"run_id": result.RunID,
+		if err := encoder.Encode(map[string]any{"run_id": result.RunID,
 			"thread_id": result.ThreadID, "status": result.RunStatus,
 			"stop_reason": result.StopReason, "turn_status": result.TurnStatus,
 			"reply": result.Reply,
@@ -174,9 +177,12 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 				"total_tokens":  result.TotalTokens,
 				"duration_ms":   result.DurationMs,
 				"turns":         result.TurnCount,
-			}})
+			}}); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintln(a.out, result.Reply)
 	}
-	fmt.Fprintln(a.out, result.Reply)
 	// The supervisor's turn_finish stop reason is the completion signal for a
 	// one-shot task; waiting_approval, root_wait, and failures exit non-zero
 	// with the reason and run status.

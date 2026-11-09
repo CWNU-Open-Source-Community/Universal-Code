@@ -86,19 +86,24 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 		out.StopReason = result.Execution.Handoff.Result.StopReason
 	}
 	// Aggregate token usage across all supervisor steps in this invocation.
-	for _, step := range result.Execution.Execution.Steps {
-		out.InputTokens += int64(step.Usage.InputTokens)
-		out.OutputTokens += int64(step.Usage.OutputTokens)
-		out.TotalTokens += int64(step.Usage.TotalTokens)
-		if step.Turn > out.TurnCount {
-			out.TurnCount = step.Turn
+	// Execution is nil when the turn reached a boundary before any execution
+	// batch (for example an approval wait), so both aggregations share one
+	// nil guard.
+	if result.Execution != nil {
+		for _, step := range result.Execution.Execution.Steps {
+			out.InputTokens += int64(step.Usage.InputTokens)
+			out.OutputTokens += int64(step.Usage.OutputTokens)
+			out.TotalTokens += int64(step.Usage.TotalTokens)
+			if step.Turn > out.TurnCount {
+				out.TurnCount = step.Turn
+			}
 		}
-	}
-	// Duration comes from the checkpoint's execution clock, which tracks
-	// wall-clock time spent in the agent loop.
-	if result.Execution != nil && len(result.Execution.Execution.Steps) > 0 {
-		last := result.Execution.Execution.Steps[len(result.Execution.Execution.Steps)-1]
-		out.DurationMs = last.Checkpoint.ExecutionMillis
+		// Duration comes from the checkpoint's execution clock, which tracks
+		// wall-clock time spent in the agent loop.
+		if len(result.Execution.Execution.Steps) > 0 {
+			last := result.Execution.Execution.Steps[len(result.Execution.Execution.Steps)-1]
+			out.DurationMs = last.Checkpoint.ExecutionMillis
+		}
 	}
 	reply, replyErr := s.lastAssistantReply(ctx, submission.Session.ID)
 	if replyErr != nil {
