@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -45,6 +47,8 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	timeout := fs.Duration("timeout", 0, "whole-execution deadline; zero means no deadline")
 	stdin := fs.Bool("stdin", false, "read the prompt from stdin instead of the positional argument")
 	continueThread := fs.String("continue", "", "continue an existing Thread by id; the Thread carries its own Run, workspace, profile, and permission selection")
+	var attachPaths repeatedString
+	fs.Var(&attachPaths, "attach", "attach a file to the prompt; repeatable, at most 4, each at most 5 MiB")
 	jsonOutput := fs.Bool("json", false, "emit a structured JSON result")
 	enablePermissionControl := fs.Bool("enable-permission-control", false,
 		"enable the operator-approval runtime for this process")
@@ -56,7 +60,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"workspace": true, "profile": true, "route": true,
 		"max-turns": true, "max-tokens": true, "max-tool-calls": true,
 		"max-cost-usd": true, "timeout": true, "stdin": false, "json": false,
-		"continue":                  true,
+		"continue": true, "attach": true,
 		"enable-permission-control": false, "enable-danger-full-access": false,
 		"confirm-full": false,
 	})); err != nil {
@@ -84,7 +88,8 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		defer cancel()
 	}
 
-	var threadID, runID string
+	var threadID, runID, workspaceID string
+	var attachmentRefs []domain.FileAttachmentReference
 	var err error
 
 	if continueID != "" {
@@ -100,6 +105,20 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		workspaceID, err = a.resolveRunWorkspaceID(ctx, runID)
+		if err != nil {
+			return err
+		}
+		// Import the requested files before anything else runs, so a
+		// rejected attachment fails before the turn machinery starts. The
+		// turn machinery pins the references to the message and projects the
+		// evidence (readable text excerpts, or the saved original bytes for
+		// the command runtime's fixed attachments directory) with no new
+		// authority.
+		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
+		if err != nil {
+			return err
+		}
 	} else {
 		selectedProfile, err := domain.ParseProfile(*profile)
 		if err != nil {
@@ -109,6 +128,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		workspaceID = workspaceRecord.ID
 		budget := domain.Budget{MaxTurns: *maxTurns, MaxToolCalls: *maxToolCalls}
 		effective, rejections, err := projectconfig.ResolveWorkspace(ctx, workspaceRecord.RootPath,
 			selectedProfile, budget, toolgateway.TypedActionIDs())
@@ -122,6 +142,15 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		discovered, err := projectconfig.DiscoverInstructions(ctx, workspaceRecord.RootPath, ".")
 		if err != nil {
 			return fmt.Errorf("project instruction discovery fail-closed: %w", err)
+		}
+		// Import before Run creation: a rejected attachment then fails with
+		// no Run, Mission, or Session to clean up. The turn machinery pins
+		// the references to the message and projects the evidence (readable
+		// text excerpts, or the saved original bytes for the command
+		// runtime's fixed attachments directory) with no new authority.
+		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
+		if err != nil {
+			return err
 		}
 		_, run, err := application.NewRunService(a.store).
 			WithLifecycleHooks(a.newLifecycleHookEngine()).Create(ctx, application.CreateRunRequest{
@@ -189,6 +218,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		Content:      prompt,
 		OperationKey: idgen.New("cli-exec"),
 		RequestedBy:  "cli_exec_operator",
+		Attachments:  attachmentRefs,
 	})
 	if err != nil {
 		return err
@@ -261,4 +291,74 @@ func clipExecGoal(prompt string) string {
 		clipped = clipped[:len(clipped)-1]
 	}
 	return clipped
+}
+
+// importExecAttachments reads each requested file and imports it into the
+// Run's workspace as an immutable attachment before the turn starts. The
+// store applies the same contract as every upload surface (5 MiB cap,
+// bounded filename, MIME validation, whole-token redaction of readable
+// text); each invocation creates its own attachment records, and the
+// returned references carry no authority: attachment content is untrusted
+// evidence, never instructions.
+func (a *App) importExecAttachments(ctx context.Context,
+	workspaceID string, paths []string,
+) ([]domain.FileAttachmentReference, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if len(paths) > domain.MaxThreadMessageAttachments {
+		return nil, fmt.Errorf("exec supports at most %d attachments, got %d",
+			domain.MaxThreadMessageAttachments, len(paths))
+	}
+	service := application.NewFileAttachmentService(a.store)
+	references := make([]domain.FileAttachmentReference, 0, len(paths))
+	for index, rawPath := range paths {
+		path := strings.TrimSpace(rawPath)
+		if path == "" {
+			return nil, fmt.Errorf("exec --attach requires a file path (empty value at position %d)", index+1)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("exec --attach %s: %w", path, err)
+		}
+		name := filepath.Base(path)
+		mediaType := ""
+		if declared := mime.TypeByExtension(strings.ToLower(filepath.Ext(path))); declared != "" {
+			// The store's validation rejects media types with parameters, and
+			// the Windows MIME registry commonly appends "; charset=utf-8".
+			if parsed, _, parseErr := mime.ParseMediaType(declared); parseErr == nil {
+				mediaType = parsed
+			}
+		}
+		attachment, err := service.Import(ctx, application.FileAttachmentImportRequest{
+			WorkspaceID:  workspaceID,
+			OperationKey: idgen.New("cli-exec-attach"),
+			Name:         name,
+			MIMEType:     mediaType,
+			Data:         data,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("exec --attach %s: %w", path, err)
+		}
+		references = append(references, domain.FileAttachmentReference{
+			ID: attachment.ID, WorkspaceID: attachment.WorkspaceID,
+			SHA256: attachment.SHA256, ByteSize: attachment.ByteSize,
+		})
+	}
+	return references, nil
+}
+
+// resolveRunWorkspaceID resolves the workspace a Run belongs to, so continue
+// mode can import attachments into the same workspace scope the Thread's
+// runs already use.
+func (a *App) resolveRunWorkspaceID(ctx context.Context, runID string) (string, error) {
+	run, err := a.store.GetRun(ctx, runID)
+	if err != nil {
+		return "", fmt.Errorf("continue Run lookup: %w", err)
+	}
+	mission, err := a.store.GetMission(ctx, run.MissionID)
+	if err != nil {
+		return "", fmt.Errorf("continue mission lookup: %w", err)
+	}
+	return mission.WorkspaceID, nil
 }

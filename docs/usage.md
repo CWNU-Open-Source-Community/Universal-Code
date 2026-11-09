@@ -193,6 +193,34 @@ continue 模式下被忽略——Thread 自带配置。进程本地的运行时�
 永不放宽 Run 的持久权限选择、也不会被持久化——后续 turn 需要授权时请重新
 出示。输出与退出码契约与 fresh 模式相同。
 
+#### Attaching files / 附加文件
+
+`--attach <path>` (repeatable, at most 4 files, each at most 5 MiB) imports a
+file into the Run's workspace and pins it to the invocation's message. The
+store applies the same contract as every upload surface: bounded filename,
+validated MIME type, whole-token redaction of readable text, and a
+content-based readability classification. Readable UTF-8 files are delivered
+to the model as bounded text excerpts marked as untrusted evidence; other
+files are saved with exact bytes and listed in an original-file inventory the
+command runtime exposes through its fixed attachments directory. Attachment
+content never grants authority. Works in both fresh and `--continue` mode
+(continue imports into the Thread's workspace); combine freely with
+`--stdin` and `--json`.
+
+```powershell
+cyberagent exec --workspace demo --attach build-output.txt --attach notes.md "Diagnose the failure and propose a fix"
+cyberagent exec --continue thread-run-20261111-a1b2c3d4e5f6 --attach retry-matrix.md "Extend the analysis with this data"
+```
+
+`--attach <路径>`（可重复，最多 4 个文件，每个最大 5 MiB）把文件导入 Run 的
+workspace 并固定到本次调用的消息上。存储层套用与所有上传面相同的契约：受限
+文件名、校验 MIME 类型、可读文本的整词脱敏，以及基于内容的可读性分类。可读
+的 UTF-8 文件以有界文本摘录的形式交付给模型并标记为不可信证据；其他文件
+（含被 MIME 注册表归为二进制的类型，如 Windows 上的 .csv）以精确字节保存，
+并列入 command runtime 通过固定附件目录暴露的原始文件清单。
+附件内容永不授予权威。fresh 与 `--continue` 模式均可用（continue 导入到
+Thread 的 workspace）；可与 `--stdin`、`--json` 自由组合。
+
 ### 补充消息与排队 / Follow-up messages and queue
 
 任务运行中，发送的补充消息会排到输入框上方，当前执行结束后依次处理。文字消息可点击

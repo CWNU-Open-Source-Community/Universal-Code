@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -279,5 +281,192 @@ func TestExecContinueUnknownThreadFailsClearly(t *testing.T) {
 	}
 	if strings.Contains(message, "sql: no rows") {
 		t.Fatalf("raw SQL error leaked to the operator: %v", err)
+	}
+}
+
+// attachRecordingProvider records every model request so the attachment
+// delivery can be asserted on the actual model input. It is deliberately a
+// separate type from execTestProvider: the sibling exec branches extend that
+// fixture independently, and keeping this recording local avoids stacked
+// merge conflicts.
+type attachRecordingProvider struct {
+	execTestProvider
+	mu       sync.Mutex
+	requests []llm.ChatRequest
+}
+
+func (p *attachRecordingProvider) record(ctx context.Context, request llm.ChatRequest) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	request.Messages = append([]llm.Message(nil), request.Messages...)
+	p.requests = append(p.requests, request)
+}
+
+func (p *attachRecordingProvider) deliveredText() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var visible strings.Builder
+	for _, request := range p.requests {
+		for _, message := range request.Messages {
+			visible.WriteString(message.Content)
+			visible.WriteString("\n")
+		}
+	}
+	return visible.String()
+}
+
+func (p *attachRecordingProvider) Chat(ctx context.Context,
+	request llm.ChatRequest) (*llm.ChatResponse, error) {
+	p.record(ctx, request)
+	return p.execTestProvider.Chat(ctx, request)
+}
+
+func (p *attachRecordingProvider) StreamChat(ctx context.Context,
+	request llm.ChatRequest) (<-chan llm.ChatChunk, error) {
+	p.record(ctx, request)
+	return p.execTestProvider.StreamChat(ctx, request)
+}
+
+func TestExecAttachDeliversAttachmentToModelContext(t *testing.T) {
+	home := t.TempDir()
+	st, err := store.Open(filepath.Join(home, "exec-attach-test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{
+		ID:        "exec-ws",
+		Name:      "exec-ws",
+		RootPath:  t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	logFile := filepath.Join(t.TempDir(), "build-output.txt")
+	const logBody = "FAILED: TestParserHandlesUnicode expected 42 got 41"
+	if err := os.WriteFile(logFile, []byte(logBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider := &attachRecordingProvider{execTestProvider: execTestProvider{
+		response: execFinishResponse("attachment reply")}}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	a := &App{home: home, out: &bytes.Buffer{}, errOut: &bytes.Buffer{}, store: st,
+		router: router, checker: policy.NewDefaultChecker()}
+
+	var out bytes.Buffer
+	a.out = &out
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--attach", logFile, "--json", "Diagnose the attached build log"}); err != nil {
+		t.Fatalf("exec with attachment failed: %v", err)
+	}
+	var result struct {
+		RunID string `json:"run_id"`
+		Reply string `json:"reply"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse exec JSON: %v, raw: %s", err, out.String())
+	}
+	if result.Reply != "attachment reply" {
+		t.Fatalf("unexpected reply: %+v", result)
+	}
+	// The attachment's readable text must reach the model context as
+	// untrusted evidence, not only sit in workspace storage.
+	if !strings.Contains(provider.deliveredText(), logBody) {
+		t.Fatal("attached file content was never delivered to the model context")
+	}
+}
+
+func TestExecAttachContinueResolvesWorkspaceFromRun(t *testing.T) {
+	home := t.TempDir()
+	st, err := store.Open(filepath.Join(home, "exec-attach-cont-test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{
+		ID:        "exec-ws",
+		Name:      "exec-ws",
+		RootPath:  t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &attachRecordingProvider{execTestProvider: execTestProvider{
+		response: execFinishResponse("first reply")}}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	a := &App{home: home, out: &bytes.Buffer{}, errOut: &bytes.Buffer{}, store: st,
+		router: router, checker: policy.NewDefaultChecker()}
+
+	var first, second bytes.Buffer
+	a.out = &first
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--json", "First task"}); err != nil {
+		t.Fatalf("fresh exec failed: %v", err)
+	}
+	var created struct {
+		ThreadID string `json:"thread_id"`
+	}
+	if err := json.Unmarshal(first.Bytes(), &created); err != nil {
+		t.Fatalf("failed to parse fresh exec JSON: %v", err)
+	}
+
+	notesFile := filepath.Join(t.TempDir(), "notes.md")
+	const notesBody = "Retry matrix: run the parser suite three times before concluding flakiness."
+	if err := os.WriteFile(notesFile, []byte(notesBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider.response = execFinishResponse("second reply")
+	a.out = &second
+	if err := a.execCommand(t.Context(), []string{
+		"--continue", created.ThreadID, "--route", provider.Name() + "/model",
+		"--attach", notesFile, "--json", "Second task with notes attached"}); err != nil {
+		t.Fatalf("continue exec with attachment failed: %v", err)
+	}
+	if !strings.Contains(provider.deliveredText(), notesBody) {
+		t.Fatal("attachment on a continued Thread was never delivered to the model context")
+	}
+}
+
+func TestExecAttachRejectsBadInput(t *testing.T) {
+	a, provider, _ := newExecContinueTestApp(t)
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--attach", filepath.Join(t.TempDir(), "missing.txt"), "Any task"}); err == nil ||
+		!strings.Contains(err.Error(), "missing.txt") {
+		t.Fatalf("missing attachment must fail with the path named, got: %v", err)
+	}
+	tooMany := []string{"--workspace", "exec-ws", "--route", provider.Name() + "/model", "Any task"}
+	for i := 0; i < domain.MaxThreadMessageAttachments+1; i++ {
+		path := filepath.Join(t.TempDir(), fmt.Sprintf("f%d.txt", i))
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		tooMany = append(tooMany, "--attach", path)
+	}
+	err := a.execCommand(t.Context(), tooMany)
+	if err == nil || !strings.Contains(err.Error(), "at most") {
+		t.Fatalf("more than the attachment cap must fail loudly, got: %v", err)
+	}
+
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--attach", "", "Any task"}); err == nil ||
+		!strings.Contains(err.Error(), "requires a file path") {
+		t.Fatalf("empty --attach value must fail loudly, got: %v", err)
+	}
+
+	oversized := filepath.Join(t.TempDir(), "huge.bin")
+	if err := os.WriteFile(oversized, make([]byte, 5*1024*1024+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--attach", oversized, "Any task"})
+	if err == nil || !strings.Contains(err.Error(), "5 MiB") {
+		t.Fatalf("oversized attachment must fail with the size cap, got: %v", err)
 	}
 }
