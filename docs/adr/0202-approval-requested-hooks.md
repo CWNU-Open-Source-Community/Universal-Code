@@ -48,12 +48,18 @@ durably waiting Run.
    if more hosts appear. Only `AgentRunner.Execute` implements the re-entry
    half today — thread-turn refresh, handoff continuation re-entries, drain
    loop heads, and session chat rejections do not fire, by design.
-3. **Fail closed, stay recoverable.** A hook or loader failure at the
-   boundary propagates as an error from the settlement/re-entry call. The
-   turn-level settlement deliberately skips `recordFailure` so the
-   checkpoint stays in `SupervisorTurnStarted` and
-   `resumePendingToolApproval` can still resume the exact pending action —
-   fail-closed for the hook, recoverable for the Run.
+3. **Fail closed, stay recoverable (governed by failure_policy).**
+   Failure policy follows standard hook semantics: when a declared hook
+   specifies `failure_policy: "deny"`, an audit sink or hook error fails
+   the settlement closed (propagating the error and halting settlement).
+   When configured with `failure_policy: "continue"`, audit sink errors
+   do not block the human approval wait, permitting the turn to settle into
+   `waiting_approval`. Loader failures (e.g. storage unavailability while
+   reading declarations) fail closed unconditionally. When a failure halts
+   settlement, the turn deliberately skips `recordFailure` so the checkpoint
+   stays in `SupervisorTurnStarted` and `resumePendingToolApproval` can still
+   resume the exact pending action — fail-closed for the boundary, recoverable
+   for the Run.
 4. **Go-owned bounded payload.** `{run_id, state: "waiting_approval"}`.
    Deliberately minimal: no session id, pending approval id, or tool name,
    because the pending decision is the operator's input, not model-visible
