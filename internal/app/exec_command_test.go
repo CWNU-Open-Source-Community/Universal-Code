@@ -281,3 +281,46 @@ func TestExecContinueUnknownThreadFailsClearly(t *testing.T) {
 		t.Fatalf("raw SQL error leaked to the operator: %v", err)
 	}
 }
+
+func TestExecContinueArchivedThreadFailsClearly(t *testing.T) {
+	a, provider, st := newExecContinueTestApp(t)
+
+	var first bytes.Buffer
+	a.out = &first
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--json", "First task"}); err != nil {
+		t.Fatalf("fresh exec failed: %v", err)
+	}
+	var created struct {
+		RunID    string `json:"run_id"`
+		ThreadID string `json:"thread_id"`
+	}
+	if err := json.Unmarshal(first.Bytes(), &created); err != nil {
+		t.Fatalf("failed to parse fresh exec JSON: %v", err)
+	}
+
+	// Archive the Thread via the same store the exec used.
+	threadRecord, threadErr := st.GetThread(t.Context(), created.ThreadID)
+	if threadErr != nil {
+		t.Fatal(threadErr)
+	}
+	_, transitionErr := application.NewThreadService(st).Transition(t.Context(), created.ThreadID,
+		domain.ThreadLifecycleAction("archive"), threadRecord.Version, "test_operator", "test-archive-0001")
+	if transitionErr != nil {
+		t.Fatalf("archive failed: %v", transitionErr)
+	}
+
+	continueErr := a.execCommand(t.Context(), []string{
+		"--continue", created.ThreadID, "--route", provider.Name() + "/model",
+		"Any task"})
+	if continueErr == nil {
+		t.Fatal("continuing an archived Thread must fail")
+	}
+	if !strings.Contains(continueErr.Error(), "archived") {
+		t.Fatalf("archived Thread error must mention the status, got: %v", continueErr)
+	}
+	if strings.Contains(continueErr.Error(), "sql: no rows") {
+		t.Fatalf("raw SQL error leaked: %v", continueErr)
+	}
+}

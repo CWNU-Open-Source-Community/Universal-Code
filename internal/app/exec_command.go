@@ -233,6 +233,11 @@ func (a *App) resolveContinueThread(ctx context.Context,
 		}
 		return "", "", fmt.Errorf("continue thread: %w", err)
 	}
+	if thread.Status != domain.ThreadActive {
+		return "", "", apperror.New(apperror.CodeFailedPrecondition,
+			fmt.Sprintf("continue thread %s: status is %s; only active threads can be continued",
+				thread.ID, thread.Status))
+	}
 	runLookupID := thread.ActiveRunID
 	if runLookupID == "" {
 		runLookupID = thread.LastRunID
