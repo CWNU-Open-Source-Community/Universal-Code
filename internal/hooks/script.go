@@ -30,6 +30,10 @@ const (
 	MaxScriptFileBytes     = 1024 * 1024
 )
 
+// ErrScriptIntegrity signals that a script file does not match its pinned SHA256 digest.
+// Integrity failures must fail closed regardless of the hook's FailurePolicy.
+var ErrScriptIntegrity = errors.New("script hook content does not match its pinned digest")
+
 // Interpreter names accepted in ScriptSpec. Availability is resolved by the
 // executor on every execution and an unavailable interpreter fails closed.
 const (

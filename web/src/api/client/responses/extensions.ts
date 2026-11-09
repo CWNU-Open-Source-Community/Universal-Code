@@ -382,7 +382,7 @@ export const pluginCapabilities = ["skills", "mcp", "ui", "hooks"];
 
 export const hookEvents = ["pre_tool", "post_tool", "run_started", "run_completed", "session_opened", "session_closed", "compaction", "subagent", "checkpoint"];
 
-export const hookActions = ["deny", "annotate", "narrow", "record"];
+export const hookActions = ["deny", "annotate", "narrow", "record", "script"];
 
 export function parsePluginPublisher(value: unknown): PluginPublisherTrustView {
   if (!hasExactKeys(value, ["fingerprint", "publisher", "state", "generation", "reviewed_at"]) ||

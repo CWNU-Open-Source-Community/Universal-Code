@@ -220,6 +220,22 @@ func TestEngineScriptActionFollowsFailurePolicyOnExecutorError(t *testing.T) {
 	}
 }
 
+func TestEngineScriptActionIntegrityFailureFailsClosedRegardlessOfPolicy(t *testing.T) {
+	sink := &scriptedAuditSink{}
+	executor := &stubScriptExecutor{err: ErrScriptIntegrity}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+	if err := engine.Replace([]Registration{scriptRegistration(PreTool, FailureContinue, 100)}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell",
+		Payload: json.RawMessage(`{}`)})
+	if err != nil || !result.Denied || len(result.Executed) != 0 ||
+		sink.records[0].Outcome != "failed_closed" ||
+		sink.records[0].Rejected == nil || !*sink.records[0].Rejected {
+		t.Fatalf("integrity failure with continue policy did not fail closed: result=%#v records=%#v err=%v", result, sink.records, err)
+	}
+}
+
 func TestEngineScriptActionTimeoutFollowsFailurePolicy(t *testing.T) {
 	engine := NewEngine(nil).WithScriptExecutor(waitingScriptExecutor{})
 	if err := engine.Replace([]Registration{scriptRegistration(PreTool, FailureDeny, 80)}); err != nil {

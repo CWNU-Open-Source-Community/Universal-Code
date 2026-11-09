@@ -55,7 +55,7 @@ func (x *ProcessScriptExecutor) ExecuteScript(ctx context.Context,
 		return ScriptOutput{}, err
 	}
 	if scriptDigest(content) != invocation.SHA256 {
-		return ScriptOutput{}, errors.New("script hook content does not match its pinned digest")
+		return ScriptOutput{}, ErrScriptIntegrity
 	}
 	executable, prefix, err := resolveInterpreterFn(invocation.Interpreter)
 	if err != nil {
@@ -65,9 +65,26 @@ func (x *ProcessScriptExecutor) ExecuteScript(ctx context.Context,
 	if err != nil {
 		return ScriptOutput{}, err
 	}
+
+	ext := filepath.Ext(invocation.RelativePath)
+	snapshot, err := os.CreateTemp("", "operator-hook-*"+ext)
+	if err != nil {
+		return ScriptOutput{}, fmt.Errorf("create script snapshot: %w", err)
+	}
+	snapshotPath := snapshot.Name()
+	defer os.Remove(snapshotPath)
+	if _, err := snapshot.Write(content); err != nil {
+		_ = snapshot.Close()
+		return ScriptOutput{}, fmt.Errorf("write script snapshot: %w", err)
+	}
+	if err := snapshot.Close(); err != nil {
+		return ScriptOutput{}, fmt.Errorf("close script snapshot: %w", err)
+	}
+	_ = os.Chmod(snapshotPath, 0500)
+
 	argv := make([]string, 0, len(prefix)+2+len(invocation.Args))
 	argv = append(argv, prefix...)
-	argv = append(argv, filepath.Join(x.hooksDir, invocation.RelativePath))
+	argv = append(argv, snapshotPath)
 	argv = append(argv, invocation.Args...)
 
 	cmd := exec.CommandContext(ctx, executable, argv...)
