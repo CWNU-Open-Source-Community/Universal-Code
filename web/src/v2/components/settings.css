@@ -154,8 +154,8 @@
 .v2-provider-row:active { background: var(--v2-control-hover); }
 .v2-provider-mark { align-items: center; background: color-mix(in srgb, var(--v2-accent) 9%, var(--v2-control)); border: 1px solid color-mix(in srgb, var(--v2-accent) 16%, var(--v2-border)); border-radius: 12px; color: var(--v2-accent); display: flex; height: 34px; justify-content: center; width: 34px; }
 .v2-provider-row-copy { display: grid; flex: 1 1 auto; gap: 4px; min-width: 0; }
-.v2-provider-row-copy strong { font-weight: 600; overflow-wrap: break-word; white-space: normal; }
-.v2-provider-row-copy small { color: var(--v2-muted); overflow-wrap: break-word; white-space: normal; }
+.v2-provider-row-copy strong { font-weight: 600; overflow-wrap: anywhere; white-space: normal; }
+.v2-provider-row-copy small { color: var(--v2-muted); overflow-wrap: anywhere; white-space: normal; }
 .v2-provider-tags { align-items: center; display: flex; flex: 0 0 auto; gap: 6px; }
 .v2-provider-tags i,
 .v2-provider-status { background: var(--v2-control); border: 1px solid color-mix(in srgb, var(--v2-border) 70%, transparent); border-radius: 999px; color: var(--v2-muted); font-size: 11px; font-style: normal; padding: 4px 8px; white-space: nowrap; }
@@ -405,8 +405,13 @@
 .v2-archive-list article { align-items: center; display: flex; gap: 7px; min-height: 63px; padding: 9px 12px 9px 15px; position: relative; }
 .v2-archive-list article + article::before { background: var(--v2-border); content: ""; height: 1px; left: 15px; position: absolute; right: 15px; top: 0; }
 .v2-archive-list article > div { display: grid; flex: 1; gap: 3px; min-width: 0; }
-.v2-archive-list article > div strong { overflow-wrap: break-word; white-space: normal; }
+.v2-archive-list article > div strong { overflow-wrap: anywhere; white-space: normal; }
 .v2-archive-list article > div span { color: var(--v2-muted); font-size: 12px; }
+.v2-archive-list button.link-button {
+  height: auto;
+  white-space: normal;
+  text-align: left;
+}
 .v2-archive-list button.danger { color: var(--v2-danger); }
 .v2-archive-empty { color: var(--v2-muted); padding: 40px; text-align: center; }
 .v2-license-dialog { display: flex; flex-direction: column; max-height: min(760px, calc(100dvh - 32px)); width: min(760px, calc(100vw - 32px)); }
@@ -573,7 +578,7 @@
 }
 .v2-model-card-copy strong,
 .v2-model-card-copy span {
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   white-space: normal;
 }
 .v2-model-card-copy strong {
