@@ -6,8 +6,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 )
+
+type scriptedAuditSink struct {
+	mu      sync.Mutex
+	records []AuditRecord
+}
+
+func (s *scriptedAuditSink) RecordHookAudit(_ context.Context, record AuditRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, record)
+	return nil
+}
 
 func TestEngineOrdersDeclarativeHooksAndOnlyNarrowsPayload(t *testing.T) {
 	engine := NewEngine(nil)
@@ -124,4 +137,59 @@ func TestEngineAppliesFailurePolicyWhenAuditCannotCommit(t *testing.T) {
 func testHookDigest(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
+}
+
+func TestPostToolFailureEventRules(t *testing.T) {
+	if !PostToolFailure.Valid() {
+		t.Fatal("post_tool_failure event is not valid")
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "failure-tap",
+		Event: PostToolFailure, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, ToolNames: []string{"shell"}}).Validate(); err != nil {
+		t.Fatalf("record hook with tool filter on post_tool_failure was rejected: %v", err)
+	}
+	// Deny is rejected (same rule as post_tool)
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "failure-deny",
+		Event: PostToolFailure, Action: ActionDeny, FailurePolicy: FailureDeny,
+		TimeoutMillis: 100, Message: "retroactive"}).Validate(); err == nil {
+		t.Fatal("deny on post_tool_failure was accepted")
+	}
+	// FailurePolicy=deny is rejected (same rule as post_tool)
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "failure-policy",
+		Event: PostToolFailure, Action: ActionRecord, FailurePolicy: FailureDeny,
+		TimeoutMillis: 100}).Validate(); err == nil {
+		t.Fatal("FailureDeny on post_tool_failure was accepted")
+	}
+	// Tool filter works (same as post_tool)
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "failure-narrow",
+		Event: PostToolFailure, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, ToolNames: []string{"shell"}}).Validate(); err != nil {
+		t.Fatalf("tool filter on post_tool_failure was rejected: %v", err)
+	}
+}
+
+func TestEnginePostToolFailureFiresOnlyForFailures(t *testing.T) {
+	sink := &scriptedAuditSink{}
+	engine := NewEngine(sink)
+	if err := engine.Replace([]Registration{{PluginID: "plugin-a",
+		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "failure-tap", Event: PostToolFailure,
+			Action: ActionRecord, FailurePolicy: FailureContinue, TimeoutMillis: 100}}}); err != nil {
+		t.Fatal(err)
+	}
+	// A successful tool call fires post_tool but NOT post_tool_failure.
+	successInput := Input{Event: PostTool, ToolName: "shell", Payload: json.RawMessage(`{"status":"completed"}`)}
+	result, err := engine.Execute(t.Context(), successInput)
+	if err != nil || len(result.Executed) != 0 {
+		t.Fatalf("post_tool_failure fired for a successful call: %#v err=%v", result, err)
+	}
+	// A failed tool call fires post_tool_failure.
+	failureInput := Input{Event: PostToolFailure, ToolName: "shell", Payload: json.RawMessage(`{"status":"failed"}`)}
+	result, err = engine.Execute(t.Context(), failureInput)
+	if err != nil || len(result.Executed) != 1 {
+		t.Fatalf("post_tool_failure did not fire for a failed call: %#v err=%v", result, err)
+	}
+	if len(sink.records) != 1 || sink.records[0].Event != PostToolFailure {
+		t.Fatalf("audit records=%#v", sink.records)
+	}
 }

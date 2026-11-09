@@ -226,6 +226,12 @@ func (g *Gateway) Invoke(ctx context.Context, call ToolCall) (outcome Outcome, r
 				Event: hooks.PostTool, RunID: normalized.RunID,
 				WorkspaceID: normalized.WorkspaceID, ToolName: string(normalized.Name),
 				Payload: postPayload})
+			if status == "failed" {
+				_, _ = g.lifecycleHooks.Execute(context.WithoutCancel(ctx), hooks.Input{
+					Event: hooks.PostToolFailure, RunID: normalized.RunID,
+					WorkspaceID: normalized.WorkspaceID, ToolName: string(normalized.Name),
+					Payload: postPayload})
+			}
 		}()
 	}
 	if normalized.InvocationID != "" {

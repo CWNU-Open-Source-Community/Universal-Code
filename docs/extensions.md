@@ -132,6 +132,7 @@ cyberagent plugin show <new-installation-id>
 | 事件 | Go-owned 边界 |
 |---|---|
 | `pre_tool` / `post_tool` | 统一 Tool Gateway 调用前/后 |
+| `post_tool_failure` | 工具调用失败后额外触发（与 post_tool 互补）；deny 不可用 |
 | `run_started` | Run 从 created 进入首次运行 |
 | `run_completed` | completed/failed/cancelled 或 Supervisor finalize 写入前 |
 | `session_opened` | 新 Session 与 Run 原子创建前 |
@@ -164,6 +165,6 @@ Schemas v120-v121 introduced the low-trust extension runtime; Universal Code add
 
 The MCP state flow is `staged -> approve_discovery -> capabilities_pending -> enable_capabilities -> enabled`. Disable and revoke are immediate; capability or restart ambiguity quarantines the server. A connection, discovery, or tool-call failure during invocation marks it unavailable and removes it from model-visible capabilities until an explicit refresh succeeds. Plugin installation is independently `staged -> approved -> enabled`, with capability-by-capability enablement, publisher trust/revocation, atomic upgrade/rollback, and a separate MCP review for contributed server descriptors. HTTPS import requires an exact archive SHA-256 and rejects every redirect. Git import accepts only a credential-free HTTPS repository, a full commit SHA, and a safe repository-relative ZIP path; it fetches into a temporary bare repository with system/global Git config, URL rewrites, credential helpers, hooks, redirects, and non-HTTPS protocols disabled, performs no checkout or submodule load, and reads only the exact ordinary blob. A revoked publisher cannot be bypassed with untrusted confirmation, and the database permits at most one enabled version of each Plugin ID. Enabling a Plugin's `skills` capability never auto-selects, injects, or authorizes those inert resources for a Run; the existing explicit Skill installation, selection, and mode-compatibility path remains authoritative.
 
-Actual hook boundaries are Tool pre/post, initial Run start, terminal Run finalization, Session creation/archive, real compaction immediately before summary persistence, operator-authorized Specialist scheduling, and continuity/manual Workspace Checkpoint persistence. Ordering, time, input/output, annotation, reentry, and failure-policy limits are enforced by Go and every execution writes a metadata-only audit.
+Actual hook boundaries are Tool pre/post (with a separate `post_tool_failure` event fired additionally when a tool call fails), initial Run start, terminal Run finalization, Session creation/archive, real compaction immediately before summary persistence, operator-authorized Specialist scheduling, and continuity/manual Workspace Checkpoint persistence. Ordering, time, input/output, annotation, reentry, and failure-policy limits are enforced by Go and every execution writes a metadata-only audit.
 
 The Desktop **MCP & Plugins** settings view and authenticated HTTP projection show scoped source, health, review state, capabilities, fingerprints, and metadata-only receipts. A control bearer can immediately disable one exact server or plugin generation. Credential values, MCP arguments/results, plugin archives, and publisher public keys are never returned by these surfaces.

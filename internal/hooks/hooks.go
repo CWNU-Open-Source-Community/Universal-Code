@@ -34,20 +34,21 @@ const (
 type Event string
 
 const (
-	PreTool       Event = "pre_tool"
-	PostTool      Event = "post_tool"
-	RunStarted    Event = "run_started"
-	RunCompleted  Event = "run_completed"
-	SessionOpened Event = "session_opened"
-	SessionClosed Event = "session_closed"
-	Compaction    Event = "compaction"
-	Subagent      Event = "subagent"
-	Checkpoint    Event = "checkpoint"
+	PreTool         Event = "pre_tool"
+	PostTool        Event = "post_tool"
+	PostToolFailure Event = "post_tool_failure"
+	RunStarted      Event = "run_started"
+	RunCompleted    Event = "run_completed"
+	SessionOpened   Event = "session_opened"
+	SessionClosed   Event = "session_closed"
+	Compaction      Event = "compaction"
+	Subagent        Event = "subagent"
+	Checkpoint      Event = "checkpoint"
 )
 
 func (e Event) Valid() bool {
 	switch e {
-	case PreTool, PostTool, RunStarted, RunCompleted, SessionOpened, SessionClosed,
+	case PreTool, PostTool, PostToolFailure, RunStarted, RunCompleted, SessionOpened, SessionClosed,
 		Compaction, Subagent, Checkpoint:
 		return true
 	default:
@@ -107,13 +108,13 @@ func (d Declaration) Validate() error {
 	if d.Action == ActionNarrow && (d.Event != PreTool || len(d.RemoveFields) == 0) {
 		return errors.New("narrow hooks require pre_tool and at least one field")
 	}
-	if d.Action == ActionDeny && d.Event == PostTool {
+	if d.Action == ActionDeny && (d.Event == PostTool || d.Event == PostToolFailure) {
 		return errors.New("post_tool hooks cannot retroactively deny a completed call")
 	}
-	if d.Event == PostTool && d.FailurePolicy == FailureDeny {
+	if (d.Event == PostTool || d.Event == PostToolFailure) && d.FailurePolicy == FailureDeny {
 		return errors.New("post_tool hooks require continue failure policy because execution is already complete")
 	}
-	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
+	if d.Event != PreTool && d.Event != PostTool && d.Event != PostToolFailure && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")
 	}
 	if duplicatesOrInvalid(d.ToolNames, false) || duplicatesOrInvalid(d.RemoveFields, true) {
@@ -153,7 +154,7 @@ func (i Input) Validate() error {
 	if len(i.Payload) > 0 && (!utf8.Valid(i.Payload) || !json.Valid(i.Payload)) {
 		return errors.New("hook input payload must be bounded UTF-8 JSON")
 	}
-	if (i.Event == PreTool || i.Event == PostTool) && i.ToolName == "" {
+	if (i.Event == PreTool || i.Event == PostTool || i.Event == PostToolFailure) && i.ToolName == "" {
 		return errors.New("tool hook input requires a tool name")
 	}
 	return nil
@@ -430,7 +431,7 @@ func matchesTool(values []string, toolName string) bool {
 }
 
 func eventOrder(value Event) int {
-	for index, current := range []Event{PreTool, PostTool, RunStarted, RunCompleted,
+	for index, current := range []Event{PreTool, PostTool, PostToolFailure, RunStarted, RunCompleted,
 		SessionOpened, SessionClosed, Compaction, Subagent, Checkpoint} {
 		if current == value {
 			return index
