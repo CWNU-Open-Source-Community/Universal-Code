@@ -34,21 +34,22 @@ const (
 type Event string
 
 const (
-	PreTool       Event = "pre_tool"
-	PostTool      Event = "post_tool"
-	RunStarted    Event = "run_started"
-	RunCompleted  Event = "run_completed"
-	SessionOpened Event = "session_opened"
-	SessionClosed Event = "session_closed"
-	Compaction    Event = "compaction"
-	Subagent      Event = "subagent"
-	Checkpoint    Event = "checkpoint"
+	PreTool        Event = "pre_tool"
+	PostTool       Event = "post_tool"
+	RunStarted     Event = "run_started"
+	RunCompleted   Event = "run_completed"
+	SessionOpened  Event = "session_opened"
+	SessionClosed  Event = "session_closed"
+	Compaction     Event = "compaction"
+	PostCompaction Event = "post_compaction"
+	Subagent       Event = "subagent"
+	Checkpoint     Event = "checkpoint"
 )
 
 func (e Event) Valid() bool {
 	switch e {
 	case PreTool, PostTool, RunStarted, RunCompleted, SessionOpened, SessionClosed,
-		Compaction, Subagent, Checkpoint:
+		Compaction, PostCompaction, Subagent, Checkpoint:
 		return true
 	default:
 		return false
@@ -112,6 +113,12 @@ func (d Declaration) Validate() error {
 	}
 	if d.Event == PostTool && d.FailurePolicy == FailureDeny {
 		return errors.New("post_tool hooks require continue failure policy because execution is already complete")
+	}
+	if d.Event == PostCompaction {
+		// Compaction has already completed: hooks observe the outcome.
+		if d.Action != ActionRecord {
+			return errors.New("post_compaction hooks may only record observations")
+		}
 	}
 	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")
@@ -431,7 +438,8 @@ func matchesTool(values []string, toolName string) bool {
 
 func eventOrder(value Event) int {
 	for index, current := range []Event{PreTool, PostTool, RunStarted, RunCompleted,
-		SessionOpened, SessionClosed, Compaction, Subagent, Checkpoint} {
+		SessionOpened, SessionClosed, Compaction, PostCompaction, Subagent,
+		Checkpoint} {
 		if current == value {
 			return index
 		}
