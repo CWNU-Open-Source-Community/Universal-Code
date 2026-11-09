@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/application"
@@ -166,6 +167,15 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	if fixedInstructions != "" {
 		if err := pinExecInstructions(ctx, turns, domain.InitialThreadID(run.ID),
 			fixedInstructions); err != nil {
+			// A created Run with a failed pin would sit idle until its budget
+			// expires. Cancel it on a bounded detached context so the
+			// operator gets a terminal Run, and report the Run ID if even
+			// the cancellation fails. The pin error stays primary.
+			cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			if _, cancelErr := application.NewRunService(a.store).Cancel(cancelCtx, run.ID); cancelErr != nil {
+				err = fmt.Errorf("%w (run %s could not be cancelled: %v)", err, run.ID, cancelErr)
+			}
+			cancel()
 			return err
 		}
 	}
