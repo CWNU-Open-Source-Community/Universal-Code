@@ -119,10 +119,6 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		// evidence (readable text excerpts, or the saved original bytes for
 		// the command runtime's fixed attachments directory) with no new
 		// authority.
-		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
-		if err != nil {
-			return err
-		}
 		if len(imagePaths) > 0 {
 			run, runErr := a.store.GetRun(ctx, runID)
 			if runErr != nil {
@@ -131,6 +127,10 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 			if err := a.checkExecVisionCapability(ctx, run.Config.ModelRoute); err != nil {
 				return err
 			}
+		}
+		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
+		if err != nil {
+			return err
 		}
 		imageRefs, err = a.importExecImages(ctx, workspaceID, imagePaths)
 		if err != nil {
@@ -165,14 +165,14 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		// the references to the message and projects the evidence (readable
 		// text excerpts, or the saved original bytes for the command
 		// runtime's fixed attachments directory) with no new authority.
-		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
-		if err != nil {
-			return err
-		}
 		if len(imagePaths) > 0 {
 			if err := a.checkExecVisionCapability(ctx, *route); err != nil {
 				return err
 			}
+		}
+		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
+		if err != nil {
+			return err
 		}
 		imageRefs, err = a.importExecImages(ctx, workspaceID, imagePaths)
 		if err != nil {
