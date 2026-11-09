@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/idgen"
@@ -20,13 +22,14 @@ import (
 
 // execCommand implements `cyberagent exec`: one non-interactive prompt
 // executed through the ordinary Thread turn machinery, the final assistant
-// reply on stdout. With --continue, the prompt continues an existing Thread —
-// the turn machinery creates a successor Run when the previous one is
-// terminal — and the foreground runtime is resolved from the existing Run's
-// workspace and permission, so continued runs get the same tool surface as
-// fresh ones. Approval waits, budget exhaustion, and failures surface as a
-// non-zero exit with the run status; pre-arranged execution permissions are
-// the operator's responsibility, and no flag here can widen them.
+// reply on stdout. With --continue, the prompt continues an existing Thread:
+// the turn machinery delivers it as a follow-up turn on the Thread's still
+// running Run, or creates a successor Run inheriting workspace, permission,
+// and budget when the previous one is terminal. Process-local runtime
+// capabilities come from the operator's fresh permission flags in both
+// modes; the Run's durable Ask/Auto/Full selection still governs every
+// dispatch, and no flag here can widen it. Approval waits, budget
+// exhaustion, and failures surface as a non-zero exit with the run status.
 func (a *App) execCommand(ctx context.Context, args []string) error {
 	if err := a.ensureStore(); err != nil {
 		return err
@@ -82,20 +85,21 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	}
 
 	var threadID, runID string
-	var capabilities domain.ExecutionPermissionRuntimeCapabilities
 	var err error
 
 	if continueID != "" {
-		// Continue mode: resolve the Thread's latest Run and derive the
-		// foreground runtime from its durable permission selection. The turn
-		// machinery creates a successor Run automatically when the previous
-		// one is terminal; the successor inherits the same workspace and
-		// permission, so the runtime adapters resolved here remain valid.
-		runID, capabilities, err = a.resolveContinueContext(ctx, continueID)
+		// Continue mode: resolve the Thread's latest Run. Process-local
+		// runtime capabilities come from the operator's fresh flags exactly
+		// as in fresh mode — the flags enable this process's adapters and
+		// never widen the Run's durable permission selection, which still
+		// governs every dispatch. The turn machinery creates a successor Run
+		// when the previous one is terminal (inheriting workspace,
+		// permission, and budget) or delivers the message as a follow-up
+		// turn on the still running Run.
+		threadID, runID, err = a.resolveContinueThread(ctx, continueID)
 		if err != nil {
 			return err
 		}
-		threadID = continueID
 	} else {
 		selectedProfile, err := domain.ParseProfile(*profile)
 		if err != nil {
@@ -119,7 +123,6 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("project instruction discovery fail-closed: %w", err)
 		}
-		capabilities = cliExecutionPermissionCapabilities(*enablePermissionControl, *enableFullAccess)
 		_, run, err := application.NewRunService(a.store).
 			WithLifecycleHooks(a.newLifecycleHookEngine()).Create(ctx, application.CreateRunRequest{
 			Goal:        clipExecGoal(prompt),
@@ -144,7 +147,10 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	// The same foreground runtime contract the other in-process CLI surfaces
 	// use (approval continuation, run wake): the invocation owns its adapters,
 	// the Run's durable permission selection never changes, and the capability
-	// ceiling comes from the Run's Ask/Auto/Full snapshot.
+	// ceiling comes from the Run's Ask/Auto/Full snapshot. The operator's
+	// fresh flags enable this process's adapters in both modes; they never
+	// widen the durable selection.
+	capabilities := cliExecutionPermissionCapabilities(*enablePermissionControl, *enableFullAccess)
 	releaseFull, err := a.activateCLIInvocationFull(ctx, runID, capabilities, *confirmFull)
 	if err != nil {
 		return err
@@ -210,18 +216,22 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	return nil
 }
 
-// resolveContinueContext looks up an existing Thread and its latest Run to
-// derive the foreground runtime context for --continue mode. The Run's
-// durable permission selection determines the capability ceiling; fresh
-// permission flags are not consulted because the continuation cannot widen
-// the Run's authority.
-func (a *App) resolveContinueContext(ctx context.Context,
+// resolveContinueThread looks up an existing Thread and its latest Run for
+// --continue mode. It returns identities only: the process-local runtime
+// capabilities come from the operator's fresh flags exactly as in fresh
+// mode — the flags enable this process's adapters and never widen the Run's
+// durable permission selection, which still governs every dispatch.
+func (a *App) resolveContinueThread(ctx context.Context,
 	threadID string,
-) (string, domain.ExecutionPermissionRuntimeCapabilities, error) {
+) (string, string, error) {
 	thread, err := a.store.GetThread(ctx, strings.TrimSpace(threadID))
 	if err != nil {
-		return "", domain.ExecutionPermissionRuntimeCapabilities{},
-			fmt.Errorf("continue thread: %w", err)
+		if apperror.CodeOf(err) == apperror.CodeNotFound ||
+			errors.Is(err, sql.ErrNoRows) {
+			return "", "", apperror.New(apperror.CodeNotFound,
+				fmt.Sprintf("continue thread %s: not found", strings.TrimSpace(threadID)))
+		}
+		return "", "", fmt.Errorf("continue thread: %w", err)
 	}
 	runLookupID := thread.ActiveRunID
 	if runLookupID == "" {
@@ -229,17 +239,14 @@ func (a *App) resolveContinueContext(ctx context.Context,
 	}
 	run, err := a.store.GetRun(ctx, runLookupID)
 	if err != nil {
-		return "", domain.ExecutionPermissionRuntimeCapabilities{},
-			fmt.Errorf("continue thread Run lookup: %w", err)
+		if apperror.CodeOf(err) == apperror.CodeNotFound ||
+			errors.Is(err, sql.ErrNoRows) {
+			return "", "", apperror.New(apperror.CodeNotFound,
+				fmt.Sprintf("continue thread %s: no Run to continue", thread.ID))
+		}
+		return "", "", fmt.Errorf("continue thread Run lookup: %w", err)
 	}
-	permission, err := a.store.GetRunExecutionPermission(ctx, run.ID)
-	if err != nil {
-		return "", domain.ExecutionPermissionRuntimeCapabilities{},
-			fmt.Errorf("continue thread permission lookup: %w", err)
-	}
-	return run.ID, domain.ExecutionPermissionRuntimeCapabilities{
-		OperatorApprovalEnabled: permission.Mode.IsApprovalMode(),
-	}, nil
+	return thread.ID, run.ID, nil
 }
 
 // clipExecGoal clips the prompt to the run-creation goal limit without

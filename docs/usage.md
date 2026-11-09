@@ -162,6 +162,37 @@ agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 
 `{run_id, thread_id, status, reply}` 取代纯回复文本。无人值守运行不能放宽
 权限：执行授权需要与任何 Run 一样预先安排。
 
+#### Continuing a Thread / 继续既有 Thread
+
+`--continue <thread-id>` continues an existing Thread instead of creating a
+fresh one: the message becomes a follow-up turn on the Thread's still running
+Run, or — when the previous Run is terminal — creates a successor Run that
+inherits the workspace, permission selection, and budget. The fresh-run flags
+(`--workspace`, `--profile`, `--route`, `--max-turns`, `--max-tokens`,
+`--max-tool-calls`, `--max-cost-usd`) are ignored in continue mode because
+the Thread carries its own configuration. Process-local runtime capabilities
+still come from the operator's fresh flags
+(`--enable-permission-control`, `--enable-danger-full-access`,
+`--confirm-full`) exactly as in fresh mode: they enable this process's
+adapters, never widen the Run's durable permission selection, and are not
+persisted — re-present a grant when a continuation turn needs it. The output
+and exit-code contract is identical to fresh mode.
+
+```powershell
+cyberagent exec --continue thread-run-20261110-a1b2c3d4e5f6 "Now run the suite and report"
+cyberagent exec --continue thread-run-20261110-a1b2c3d4e5f6 --json --enable-permission-control --enable-danger-full-access "Apply the fix you proposed"
+```
+
+`--continue <thread-id>` 继续既有 Thread 而非创建新 Run：消息成为仍在运行的
+Run 的后续 turn；前一个 Run 已终结时则创建继承 workspace、权限选择与预算的
+后继 Run。fresh-run 专用旗标（`--workspace`、`--profile`、`--route`、
+`--max-turns`、`--max-tokens`、`--max-tool-calls`、`--max-cost-usd`）在
+continue 模式下被忽略——Thread 自带配置。进程本地的运行时能力仍来自操作者
+的全新旗标（`--enable-permission-control`、`--enable-danger-full-access`、
+`--confirm-full`），与 fresh 模式完全一致：这些旗标启用本进程的适配器、
+永不放宽 Run 的持久权限选择、也不会被持久化——后续 turn 需要授权时请重新
+出示。输出与退出码契约与 fresh 模式相同。
+
 ### 补充消息与排队 / Follow-up messages and queue
 
 任务运行中，发送的补充消息会排到输入框上方，当前执行结束后依次处理。文字消息可点击
