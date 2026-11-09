@@ -164,15 +164,19 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	}
 	if *jsonOutput {
 		encoder := json.NewEncoder(a.out)
-		if err := encoder.Encode(map[string]any{"run_id": result.RunID,
+		return encoder.Encode(map[string]any{"run_id": result.RunID,
 			"thread_id": result.ThreadID, "status": result.RunStatus,
 			"stop_reason": result.StopReason, "turn_status": result.TurnStatus,
-			"reply": result.Reply}); err != nil {
-			return err
-		}
-	} else {
-		fmt.Fprintln(a.out, result.Reply)
+			"reply": result.Reply,
+			"usage": map[string]any{
+				"input_tokens":  result.InputTokens,
+				"output_tokens": result.OutputTokens,
+				"total_tokens":  result.TotalTokens,
+				"duration_ms":   result.DurationMs,
+				"turns":         result.TurnCount,
+			}})
 	}
+	fmt.Fprintln(a.out, result.Reply)
 	// The supervisor's turn_finish stop reason is the completion signal for a
 	// one-shot task; waiting_approval, root_wait, and failures exit non-zero
 	// with the reason and run status.

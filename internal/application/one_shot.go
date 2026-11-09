@@ -44,12 +44,17 @@ type OneShotRequest struct {
 // run status at return, and the last committed assistant reply (empty when
 // the run paused before producing one).
 type OneShotResult struct {
-	ThreadID   string
-	RunID      string
-	RunStatus  string
-	TurnStatus string
-	StopReason string
-	Reply      string
+	ThreadID     string
+	RunID        string
+	RunStatus    string
+	TurnStatus   string
+	StopReason   string
+	Reply        string
+	InputTokens  int64
+	OutputTokens int64
+	TotalTokens  int64
+	DurationMs   int64
+	TurnCount    int
 }
 
 // Run executes one prompt to its turn boundary. A run that ends paused —
@@ -79,6 +84,21 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 	if result.Execution != nil && result.Execution.Handoff.Result != nil {
 		out.TurnStatus = string(result.Execution.Handoff.Result.Status)
 		out.StopReason = result.Execution.Handoff.Result.StopReason
+	}
+	// Aggregate token usage across all supervisor steps in this invocation.
+	for _, step := range result.Execution.Execution.Steps {
+		out.InputTokens += int64(step.Usage.InputTokens)
+		out.OutputTokens += int64(step.Usage.OutputTokens)
+		out.TotalTokens += int64(step.Usage.TotalTokens)
+		if step.Turn > out.TurnCount {
+			out.TurnCount = step.Turn
+		}
+	}
+	// Duration comes from the checkpoint's execution clock, which tracks
+	// wall-clock time spent in the agent loop.
+	if result.Execution != nil && len(result.Execution.Execution.Steps) > 0 {
+		last := result.Execution.Execution.Steps[len(result.Execution.Execution.Steps)-1]
+		out.DurationMs = last.Checkpoint.ExecutionMillis
 	}
 	reply, replyErr := s.lastAssistantReply(ctx, submission.Session.ID)
 	if replyErr != nil {
