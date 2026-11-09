@@ -12,14 +12,14 @@ require (
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/mattn/go-sqlite3 v1.14.52
+	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/tidwall/jsonc v0.3.3
 	github.com/wailsapp/go-webview2 v1.0.23
-	github.com/wailsapp/wails/v2 v2.17.0
+	github.com/wailsapp/wails/v2 v2.17.1
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.org/x/image v0.47.0
 	golang.org/x/mod v0.42.0

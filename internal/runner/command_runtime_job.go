@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/outputsafe"
@@ -699,14 +700,26 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 		return CommandRuntimeJobSnapshot{}, false, ErrCommandRuntimeBoundary
 	}
 	m.mu.Lock()
-	if m.closed || len(m.entries) >= MaxCommandRuntimeActiveJobs {
+	if m.closed {
 		m.mu.Unlock()
 		return CommandRuntimeJobSnapshot{}, false, ErrCommandRuntimeUnavailable
 	}
+	atCapacity := len(m.entries) >= MaxCommandRuntimeActiveJobs
 	m.mu.Unlock()
 
 	operationDigest, jobID := CommandRuntimeOperationIdentity(request.Scope.RunID,
 		request.Scope.OperationKey)
+	if atCapacity {
+		// Existing operations do not acquire a process slot. Preserve their
+		// normal replay and attribution checks without preparing a new Job that
+		// cannot launch while the manager is full.
+		if _, err := m.store.GetCommandRuntimeJob(ctx, jobID); err != nil {
+			if errors.Is(err, ErrCommandRuntimeJobNotFound) || apperror.CodeOf(err) == apperror.CodeNotFound {
+				return CommandRuntimeJobSnapshot{}, false, ErrCommandRuntimeUnavailable
+			}
+			return CommandRuntimeJobSnapshot{}, false, err
+		}
+	}
 	fingerprint := CommandRuntimeSpecFingerprint(request.Spec)
 	requestParts := []string{
 		request.Scope.RunID, request.Scope.MissionID, request.Scope.SessionID,

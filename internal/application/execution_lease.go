@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -38,15 +39,46 @@ func withRunExecutionLease(ctx context.Context, store RunExecutionLeaseStore,
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	heartbeatErr := make(chan error, 1)
+	expired := make(chan struct{})
+	expiryErr := apperror.Wrap(apperror.CodeDeadlineExceeded,
+		"run execution lease reached its confirmed expiry", context.DeadlineExceeded)
+	var (
+		opMu        sync.Mutex
+		opCompleted bool
+	)
+	expiry := time.AfterFunc(time.Until(acquired.Lease.ExpiresAt), func() {
+		defer close(expired)
+		opMu.Lock()
+		completed := opCompleted
+		if !completed {
+			select {
+			case heartbeatErr <- expiryErr:
+			default:
+			}
+			cancelLease()
+		}
+		opMu.Unlock()
+	})
 	go func() {
 		defer close(done)
 		renewRunExecutionLease(leaseCtx, store, acquired.Lease, leasePolicy,
-			stop, heartbeatErr, cancelLease)
+			stop, heartbeatErr, cancelLease, expiry, expired)
 	}()
-	operationErr := operation(leaseCtx, acquired.Lease)
+	var operationErr error
+	if !acquired.Lease.ActiveAt(time.Now()) {
+		operationErr = expiryErr
+	} else {
+		operationErr = operation(leaseCtx, acquired.Lease)
+	}
+	opMu.Lock()
+	opCompleted = true
+	opMu.Unlock()
 	close(stop)
 	cancelLease()
 	<-done
+	if !expiry.Stop() {
+		<-expired
+	}
 	var renewalErr error
 	select {
 	case renewalErr = <-heartbeatErr:
@@ -63,7 +95,7 @@ func withRunExecutionLease(ctx context.Context, store RunExecutionLeaseStore,
 
 func renewRunExecutionLease(ctx context.Context, store RunExecutionLeaseStore,
 	lease domain.RunExecutionLease, policy RunExecutionLeasePolicy, stop <-chan struct{},
-	heartbeatErr chan<- error, cancel context.CancelFunc,
+	heartbeatErr chan<- error, cancel context.CancelFunc, expiry *time.Timer, expired <-chan struct{},
 ) {
 	ticker := time.NewTicker(policy.RenewInterval)
 	defer ticker.Stop()
@@ -74,11 +106,44 @@ func renewRunExecutionLease(ctx context.Context, store RunExecutionLeaseStore,
 		case <-stop:
 			return
 		case <-ticker.C:
-			timeout := runExecutionLeaseRenewalTimeout(policy)
-			renewCtx, cancelRenew := context.WithTimeout(context.WithoutCancel(ctx), timeout)
-			_, err := store.RenewRunExecutionLease(renewCtx, lease, policy.TTL)
-			cancelRenew()
-			if err != nil {
+			for {
+				if ctx.Err() != nil {
+					return
+				}
+				timeout := minDuration(runExecutionLeaseRenewalTimeout(policy), time.Until(lease.ExpiresAt))
+				renewCtx, cancelRenew := context.WithTimeout(ctx, timeout)
+				renewed, err := store.RenewRunExecutionLease(renewCtx, lease, policy.TTL)
+				cancelRenew()
+				if ctx.Err() != nil {
+					return
+				}
+				if err == nil && !time.Now().Before(lease.ExpiresAt) {
+					err = context.DeadlineExceeded
+				}
+				if err == nil {
+					// Only the store's confirmed expiry extends our renewal budget.
+					lease = renewed
+					// A late reply cannot undo cancellation at the previous expiry.
+					if !expiry.Stop() {
+						<-expired
+						return
+					}
+					expiry.Reset(time.Until(lease.ExpiresAt))
+					break
+				}
+				if errors.Is(err, context.DeadlineExceeded) && time.Now().Before(lease.ExpiresAt) {
+					pause := time.NewTimer(minDuration(250*time.Millisecond, time.Until(lease.ExpiresAt)))
+					select {
+					case <-ctx.Done():
+						pause.Stop()
+						return
+					case <-stop:
+						pause.Stop()
+						return
+					case <-pause.C:
+					}
+					continue
+				}
 				select {
 				case heartbeatErr <- err:
 				default:
