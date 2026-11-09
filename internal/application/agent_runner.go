@@ -1413,7 +1413,11 @@ func (s *AgentRunner) Execute(ctx context.Context, runID string, maxSteps int) (
 		// The workspace identity comes from the Run's mission, the same source
 		// the turn-level settlement uses.
 		workspaceID := ""
-		if mission, missionErr := s.store.GetMission(ctx, run.MissionID); missionErr == nil {
+		if s.lifecycleHooks != nil {
+			mission, missionErr := s.store.GetMission(ctx, run.MissionID)
+			if missionErr != nil {
+				return result, apperror.Normalize(missionErr)
+			}
 			workspaceID = mission.WorkspaceID
 		}
 		if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.ApprovalRequested,

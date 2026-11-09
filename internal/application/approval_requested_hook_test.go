@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/hooks"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
@@ -194,4 +196,69 @@ func (failingApprovalAuditSink) RecordHookAudit(context.Context,
 	hooks.AuditRecord,
 ) error {
 	return errors.New("audit ledger unavailable")
+}
+
+func TestAgentRunnerApprovalRequestedDurableReentryFiresHookAndPropagatesMissionError(t *testing.T) {
+	base, err := store.Open(filepath.Join(t.TempDir(), "approval-hook-reentry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	ctx := context.Background()
+	runService := application.NewRunService(base)
+	mission, run, err := runService.Create(ctx, application.CreateRunRequest{
+		Goal: "test durable re-entry hook firing", Profile: "review",
+		Surface: "code", Phase: "deliver", ModelRoute: "tool-loop/model",
+		NetworkMode: "disabled",
+		Budget:      domain.Budget{MaxTurns: 3, MaxToolCalls: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runService.Start(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	run, err = base.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := run.Status
+	if err := run.Transition(domain.RunWaitingApproval, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	evt, err := events.New(run.ID, mission.ID, events.RunStatusChangedEvent,
+		"approval_test", run.ID, map[string]any{"from": expected, "to": domain.RunWaitingApproval})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := base.TransitionRun(ctx, run, expected, evt); err != nil {
+		t.Fatal(err)
+	}
+	sink := &approvalHookAuditSink{}
+	engine := hooks.NewEngine(sink)
+	if err := engine.Replace([]hooks.Registration{{PluginID: "watch-plugin",
+		PluginFingerprint: approvalTestDigest("plugin"), Declaration: hooks.Declaration{
+			ProtocolVersion: hooks.ProtocolVersion, ID: "approval-tap",
+			Event: hooks.ApprovalRequested, Action: hooks.ActionRecord,
+			FailurePolicy: hooks.FailureContinue, TimeoutMillis: 100}}}); err != nil {
+		t.Fatal(err)
+	}
+	router := llm.NewRouter(llm.ModelRef{Provider: "provider", Model: "model"})
+	supervisor := application.NewAgentRunner(base, router, policy.NewDefaultChecker()).
+		WithLifecycleHooks(engine)
+
+	res, execErr := supervisor.Execute(ctx, run.ID, 1)
+	if execErr != nil {
+		t.Fatalf("unexpected execute error: %v", execErr)
+	}
+	if res.StopReason != "waiting_approval" {
+		t.Fatalf("expected stop reason waiting_approval, got %q", res.StopReason)
+	}
+	records := sink.snapshot()
+	if len(records) != 1 || records[0].Event != hooks.ApprovalRequested {
+		t.Fatalf("expected 1 approval_requested record, got %#v", records)
+	}
+	if records[0].WorkspaceID != mission.WorkspaceID {
+		t.Fatalf("expected workspace ID %q, got %q", mission.WorkspaceID, records[0].WorkspaceID)
+	}
 }
