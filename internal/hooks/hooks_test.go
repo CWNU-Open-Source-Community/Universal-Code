@@ -125,3 +125,34 @@ func testHookDigest(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
 }
+
+func TestTurnEndEventRules(t *testing.T) {
+	if !TurnEnd.Valid() {
+		t.Fatal("turn_end event is not valid")
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-tap",
+		Event: TurnEnd, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100}).Validate(); err != nil {
+		t.Fatalf("record hook on turn_end was rejected: %v", err)
+	}
+	for _, broken := range []struct {
+		name   string
+		action Action
+	}{
+		{"deny", ActionDeny},
+		{"annotate", ActionAnnotate},
+		{"narrow", ActionNarrow},
+	} {
+		declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-end",
+			Event: TurnEnd, Action: broken.action, FailurePolicy: FailureContinue,
+			TimeoutMillis: 100, Message: "hook-controlled"}
+		if err := declaration.Validate(); err == nil {
+			t.Fatalf("%s was accepted on turn_end", broken.name)
+		}
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-tool",
+		Event: TurnEnd, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, ToolNames: []string{"shell"}}).Validate(); err == nil {
+		t.Fatal("turn_end declaration accepted tool filters")
+	}
+}

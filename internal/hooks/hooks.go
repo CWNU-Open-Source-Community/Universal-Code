@@ -40,6 +40,7 @@ const (
 	RunCompleted  Event = "run_completed"
 	SessionOpened Event = "session_opened"
 	SessionClosed Event = "session_closed"
+	TurnEnd       Event = "turn_end"
 	Compaction    Event = "compaction"
 	Subagent      Event = "subagent"
 	Checkpoint    Event = "checkpoint"
@@ -48,7 +49,7 @@ const (
 func (e Event) Valid() bool {
 	switch e {
 	case PreTool, PostTool, RunStarted, RunCompleted, SessionOpened, SessionClosed,
-		Compaction, Subagent, Checkpoint:
+		TurnEnd, Compaction, Subagent, Checkpoint:
 		return true
 	default:
 		return false
@@ -112,6 +113,13 @@ func (d Declaration) Validate() error {
 	}
 	if d.Event == PostTool && d.FailurePolicy == FailureDeny {
 		return errors.New("post_tool hooks require continue failure policy because execution is already complete")
+	}
+	if d.Event == TurnEnd {
+		// The turn has already completed when this boundary fires: hooks
+		// observe the outcome, they cannot deny, annotate, or narrow it.
+		if d.Action != ActionRecord {
+			return errors.New("turn_end hooks may only record observations")
+		}
 	}
 	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")
@@ -431,7 +439,8 @@ func matchesTool(values []string, toolName string) bool {
 
 func eventOrder(value Event) int {
 	for index, current := range []Event{PreTool, PostTool, RunStarted, RunCompleted,
-		SessionOpened, SessionClosed, Compaction, Subagent, Checkpoint} {
+		SessionOpened, SessionClosed, TurnEnd, Compaction, Subagent,
+		Checkpoint} {
 		if current == value {
 			return index
 		}
