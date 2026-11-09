@@ -65,11 +65,29 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	}
 	prompt := strings.Join(fs.Args(), " ")
 	if *stdin {
-		raw, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("read prompt from stdin: %w", err)
+		// Cancellation must unblock an idle stdin read: Ctrl-C while waiting
+		// for piped input should exit with the cancelled code instead of
+		// hanging until input arrives — io.ReadAll alone never observes the
+		// context. The abandoned reader goroutine may stay blocked on EOF;
+		// the process is exiting anyway.
+		type stdinRead struct {
+			data []byte
+			err  error
 		}
-		prompt = string(raw)
+		read := make(chan stdinRead, 1)
+		go func() {
+			raw, readErr := io.ReadAll(os.Stdin)
+			read <- stdinRead{data: raw, err: readErr}
+		}()
+		select {
+		case result := <-read:
+			if result.err != nil {
+				return fmt.Errorf("read prompt from stdin: %w", result.err)
+			}
+			prompt = string(result.data)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
