@@ -669,3 +669,37 @@ func TestExecImageEarlyVisionCheck(t *testing.T) {
 	}
 	_ = st
 }
+
+func TestExecAttachRejectsNonRegularFiles(t *testing.T) {
+	a, provider, _ := newExecContinueTestApp(t)
+
+	// A directory is not a regular file.
+	dir := t.TempDir()
+	err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--attach", dir, "Any task"})
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("directory must be rejected as non-regular, got: %v", err)
+	}
+
+	// A nonexistent path is also rejected (by os.Stat).
+	err = a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--attach", filepath.Join(dir, "missing.txt"), "Any task"})
+	if err == nil || !strings.Contains(err.Error(), "missing.txt") {
+		t.Fatalf("missing file must fail with the path named, got: %v", err)
+	}
+}
+
+func TestExecImageRejectsNonRegularFiles(t *testing.T) {
+	a, provider, _ := newExecImageTestApp(t)
+
+	// A directory is not a regular file.
+	dir := t.TempDir()
+	err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--image", dir, "Any task"})
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("directory must be rejected as non-regular, got: %v", err)
+	}
+}

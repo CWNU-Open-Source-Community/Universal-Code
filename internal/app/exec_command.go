@@ -344,6 +344,13 @@ func (a *App) importExecAttachments(ctx context.Context,
 		if path == "" {
 			return nil, fmt.Errorf("exec --attach requires a file path (empty value at position %d)", index+1)
 		}
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			return nil, fmt.Errorf("exec --attach %s: %w", path, statErr)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("exec --attach %s: not a regular file", path)
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("exec --attach %s: %w", path, err)
@@ -397,6 +404,13 @@ func (a *App) importExecImages(ctx context.Context,
 		path := strings.TrimSpace(rawPath)
 		if path == "" {
 			return nil, fmt.Errorf("exec --image requires a file path (empty value at position %d)", index+1)
+		}
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			return nil, fmt.Errorf("exec --image %s: %w", path, statErr)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("exec --image %s: not a regular file", path)
 		}
 		mediaType := imageMimeTypeForPath(path)
 		if mediaType == "" {
