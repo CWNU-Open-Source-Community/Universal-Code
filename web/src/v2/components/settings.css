@@ -4,9 +4,7 @@
 .v2-settings-toolbar { background: color-mix(in srgb, var(--v2-control) 28%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--v2-border) 72%, transparent); }
 .v2-settings-scroll { min-height: 0; overflow: auto; }
 .v2-settings-content { margin: 0 auto; max-width: var(--v2-content-width); padding: 66px 0 78px; width: calc(100% - 40px); }
-.v2-settings-content > h1 { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 11px; }
-.v2-settings-content > h1:not(:has(+ .v2-settings-lead)) { margin-bottom: 31px; }
-.v2-settings-lead { color: var(--v2-muted); font-size: var(--prayu-prose-size); line-height: var(--prayu-prose-leading); max-width: 68ch; margin: 0 0 31px; overflow-wrap: anywhere; }
+.v2-settings-content > h1 { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 31px; }
 .v2-settings-section + .v2-settings-section { margin-top: 49px; }
 .v2-settings-section > h2 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 17px; }
 .v2-execution-settings > .permission-control-card { margin-top: 16px; min-width: 0; }
@@ -75,7 +73,6 @@
 .v2-shortcut-row button:disabled { cursor: default; opacity: .4; }
 .v2-shortcut-row button[data-shortcut-recorder] { outline: 2px solid var(--prayu-focus); outline-offset: 2px; }
 .v2-shortcut-binding { justify-content: center; }
-.v2-shortcut-list + .v2-settings-lead { margin-top: 16px; }
 .v2-switch { background: var(--prayu-primary-bg); border-radius: 999px; display: inline-flex; height: 20px; padding: 2px; width: 32px; }
 .v2-switch i { background: var(--prayu-primary-fg); border-radius: 50%; box-shadow: 0 1px 3px var(--prayu-primary-shadow); height: 16px; margin-left: auto; width: 16px; }
 .v2-setting-value .v2-switch { background: var(--prayu-primary-bg); height: 20px; padding: 2px; width: 32px; }
