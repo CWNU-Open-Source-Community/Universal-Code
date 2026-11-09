@@ -100,11 +100,16 @@ func TestWindowsFixedCommandRuntimeUsesRestrictedNativeProcess(t *testing.T) {
 			if err := windows.GetTokenInformation(token, windows.TokenHasRestrictions, (*byte)(unsafe.Pointer(&restricted)), uint32(unsafe.Sizeof(restricted)), &size); err != nil || restricted != 1 {
 				t.Fatal("native token is not restricted", restricted, err)
 			}
-			label := make([]byte, 1024)
-			if err := windows.GetTokenInformation(token, windows.TokenIntegrityLevel, &label[0], uint32(len(label)), &size); err != nil {
+			// The native label contains a pointer and needs struct alignment;
+			// reserve the trailing storage for the SID returned with it.
+			var integrity struct {
+				label windows.Tokenmandatorylabel
+				sid   [1024]byte
+			}
+			if err := windows.GetTokenInformation(token, windows.TokenIntegrityLevel, (*byte)(unsafe.Pointer(&integrity)), uint32(unsafe.Sizeof(integrity)), &size); err != nil {
 				t.Fatal(err)
 			}
-			if got := (*windows.Tokenmandatorylabel)(unsafe.Pointer(&label[0])).Label.Sid.String(); got != "S-1-16-4096" {
+			if got := integrity.label.Label.Sid.String(); got != "S-1-16-4096" {
 				t.Fatal("native integrity is not Low", got)
 			}
 			var limits windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION

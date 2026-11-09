@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/outputsafe"
@@ -580,10 +581,14 @@ type commandRuntimeEntry struct {
 	inputGate   chan struct{}
 	record      CommandRuntimeJob
 	process     commandRuntimeProcess
+	processDone chan struct{}
+	exitCode    int
+	waitErr     error
 	ring        commandRuntimeRing
 	done        chan struct{}
 	notify      chan struct{}
 	desired     CommandRuntimeJobState
+	outputFault chan struct{}
 	stdoutDone  chan struct{}
 	stderrDone  chan struct{}
 	stdoutHash  hash.Hash
@@ -695,14 +700,26 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 		return CommandRuntimeJobSnapshot{}, false, ErrCommandRuntimeBoundary
 	}
 	m.mu.Lock()
-	if m.closed || len(m.entries) >= MaxCommandRuntimeActiveJobs {
+	if m.closed {
 		m.mu.Unlock()
 		return CommandRuntimeJobSnapshot{}, false, ErrCommandRuntimeUnavailable
 	}
+	atCapacity := len(m.entries) >= MaxCommandRuntimeActiveJobs
 	m.mu.Unlock()
 
 	operationDigest, jobID := CommandRuntimeOperationIdentity(request.Scope.RunID,
 		request.Scope.OperationKey)
+	if atCapacity {
+		// Existing operations do not acquire a process slot. Preserve their
+		// normal replay and attribution checks without preparing a new Job that
+		// cannot launch while the manager is full.
+		if _, err := m.store.GetCommandRuntimeJob(ctx, jobID); err != nil {
+			if errors.Is(err, ErrCommandRuntimeJobNotFound) || apperror.CodeOf(err) == apperror.CodeNotFound {
+				return CommandRuntimeJobSnapshot{}, false, ErrCommandRuntimeUnavailable
+			}
+			return CommandRuntimeJobSnapshot{}, false, err
+		}
+	}
 	fingerprint := CommandRuntimeSpecFingerprint(request.Spec)
 	requestParts := []string{
 		request.Scope.RunID, request.Scope.MissionID, request.Scope.SessionID,
@@ -897,26 +914,15 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 	running.StartedAt = &started
 	running.Version++
 	running.UpdatedAt = started
-	// Process ownership is established. Finish the bounded ownership
-	// handoff even if the caller cancels between the SQL update and readback;
-	// otherwise an owned process can lose its terminal-receipt collector.
-	// Foreground cancellation is handled after this Job is registered.
-	handoffCtx, cancelHandoff := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	updated, err := m.store.UpdateCommandRuntimeJob(handoffCtx, running, stored.Version)
-	cancelHandoff()
-	if err != nil {
-		_ = process.Kill()
-		_ = process.Close()
-		return CommandRuntimeJobSnapshot{}, false, err
-	}
 	entry := &commandRuntimeEntry{
-		record: updated, process: process,
+		record: running, process: process, processDone: make(chan struct{}),
 		authorityContext:   context.WithoutCancel(ctx),
 		operatorInvocation: request.Scope.AttributionSource == domain.AgentAttributionOperatorRoot,
 		discardOutput:      request.DiscardOutput,
-		ring:               commandRuntimeRing{capacity: updated.InlineLimitBytes},
+		ring:               commandRuntimeRing{capacity: running.InlineLimitBytes},
 		done:               make(chan struct{}), notify: make(chan struct{}, 1),
-		stdoutDone: make(chan struct{}), stderrDone: make(chan struct{}),
+		outputFault: make(chan struct{}, 1),
+		stdoutDone:  make(chan struct{}), stderrDone: make(chan struct{}),
 		stdoutHash: sha256.New(), stderrHash: sha256.New(),
 		inputs: make(map[string]commandRuntimeStdinResult), inputGate: make(chan struct{}, 1),
 	}
@@ -925,15 +931,61 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 		entry.ring.frames = []CommandRuntimeFrame{}
 	}
 	entry.inputGate <- struct{}{}
+	// The process is already executing. Drain output and enforce its deadline
+	// while the durable ownership handoff waits for the database. Wait has one
+	// owner; receipt persistence starts only after that handoff succeeds.
+	go m.collect(entry, CommandRuntimeStdout, process.Stdout(), entry.stdoutDone)
+	go m.collect(entry, CommandRuntimeStderr, process.Stderr(), entry.stderrDone)
+	go func() {
+		entry.exitCode, entry.waitErr = process.Wait()
+		close(entry.processDone)
+	}()
+	go m.enforceTimeout(entry, time.Until(started.Add(time.Duration(running.TimeoutMilliseconds)*time.Millisecond)))
+	// Finish the bounded handoff even if the caller cancels between the SQL
+	// update and readback. Foreground cancellation follows Job registration.
+	handoffCtx, cancelHandoff := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	updated, err := m.store.UpdateCommandRuntimeJob(handoffCtx, running, stored.Version)
+	cancelHandoff()
+	if err != nil {
+		// The atomic handoff did not advance the durable version. Keep live
+		// ownership until the existing waiter can save a failed, reaped receipt.
+		entry.mu.Lock()
+		entry.record.Version = stored.Version
+		entry.record.State = CommandRuntimeJobStopping
+		entry.desired = CommandRuntimeJobFailed
+		entry.mu.Unlock()
+		m.mu.Lock()
+		m.entries[jobID] = entry
+		m.mu.Unlock()
+		go m.wait(entry)
+		// Cleanup can outlive this request. Shutdown must be able to join this
+		// same entry, including retrying a Kill that failed on the first attempt.
+		m.startMu.Unlock()
+		startLocked = false
+		killErr := process.Kill()
+		if killErr != nil {
+			return entry.snapshot(), false, errors.Join(err, killErr, ErrCommandRuntimeUncertain)
+		}
+		cleanupCtx, cancelCleanup := context.WithTimeout(ctx, MaxCommandRuntimeCancelGrace)
+		defer cancelCleanup()
+		select {
+		case <-entry.done:
+			return entry.snapshot(), false, errors.Join(err, entry.persistError())
+		case <-cleanupCtx.Done():
+			return entry.snapshot(), false, errors.Join(err, cleanupCtx.Err(), ErrCommandRuntimeUncertain)
+		}
+	}
+	entry.mu.Lock()
+	// Keep output and stopping state captured during the handoff.
+	entry.record.Version = updated.Version
+	entry.record.UpdatedAt = updated.UpdatedAt
+	entry.mu.Unlock()
 	m.mu.Lock()
 	m.entries[jobID] = entry
 	m.mu.Unlock()
 
-	go m.collect(entry, CommandRuntimeStdout, process.Stdout(), entry.stdoutDone)
-	go m.collect(entry, CommandRuntimeStderr, process.Stderr(), entry.stderrDone)
 	go m.maintainOwnership(entry)
 	go m.wait(entry)
-	go m.enforceTimeout(entry, time.Duration(updated.TimeoutMilliseconds)*time.Millisecond)
 	if request.Spec.Spec.StdinPolicy == CommandRuntimeStdinPipe &&
 		(request.Spec.Spec.InitialStdin != "" || request.Spec.Spec.CloseInitialStdin) {
 		<-entry.inputGate
@@ -1240,7 +1292,7 @@ func (m *CommandRuntimeManager) Shutdown(ctx context.Context) (result error) {
 	m.startMu.Unlock()
 	defer func() { result = errors.Join(result, m.hostProxy.close()) }()
 	for _, entry := range entries {
-		if entry.setDesired(CommandRuntimeJobInterrupted) {
+		if entry.setDesired(CommandRuntimeJobInterrupted) || entry.snapshot().State == CommandRuntimeJobStopping {
 			result = errors.Join(result, entry.process.Kill())
 		}
 	}
@@ -1374,6 +1426,7 @@ func (m *CommandRuntimeManager) collect(entry *commandRuntimeEntry,
 				entry.mu.Unlock()
 			}
 			if err != nil {
+				entry.failOutput(stream, err)
 				return
 			}
 		}
@@ -1393,6 +1446,7 @@ func (m *CommandRuntimeManager) collect(entry *commandRuntimeEntry,
 		}
 		if err != nil {
 			entry.appendOutput(stream, sanitizer.Flush(), time.Now().UTC())
+			entry.failOutput(stream, err)
 			return
 		}
 	}
@@ -1482,7 +1536,8 @@ func (m *CommandRuntimeManager) renewOwnership(ctx context.Context,
 }
 
 func (m *CommandRuntimeManager) wait(entry *commandRuntimeEntry) {
-	exitCode, waitErr := entry.process.Wait()
+	<-entry.processDone
+	exitCode, waitErr := entry.exitCode, entry.waitErr
 	if waitErr != nil {
 		// An adapter/transport failure supplies no trustworthy program exit.
 		// Preserve that distinction durably: bisect must not interpret an
@@ -1568,15 +1623,28 @@ func (m *CommandRuntimeManager) wait(entry *commandRuntimeEntry) {
 func (m *CommandRuntimeManager) enforceTimeout(entry *commandRuntimeEntry,
 	duration time.Duration,
 ) {
+	const killRetryInterval = 250 * time.Millisecond
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
-	select {
-	case <-entry.done:
-		return
-	case <-timer.C:
-		if entry.setDesired(CommandRuntimeJobTimedOut) {
-			_ = entry.process.Kill()
+	for {
+		select {
+		case <-entry.processDone:
+			return
+		case <-timer.C:
+		case <-entry.outputFault:
 		}
+		select {
+		case <-entry.processDone:
+			return
+		default:
+		}
+		// Keep the first stop reason and retry until Wait confirms exit. A
+		// failed handoff has no ownership-renewal loop to retry failed Kills.
+		if !entry.setDesired(CommandRuntimeJobTimedOut) && entry.snapshot().State != CommandRuntimeJobStopping {
+			return
+		}
+		_ = entry.process.Kill()
+		timer.Reset(killRetryInterval)
 	}
 }
 
@@ -1632,6 +1700,24 @@ func (e *commandRuntimeEntry) setDesired(state CommandRuntimeJobState) bool {
 		e.signal()
 	}
 	return changed
+}
+
+func (e *commandRuntimeEntry) failOutput(stream CommandRuntimeStream, err error) {
+	if errors.Is(err, io.EOF) {
+		return
+	}
+	e.setDesired(CommandRuntimeJobInterrupted)
+	if !e.discardOutput {
+		diagnostic := "\ncommand runtime " + string(stream) + " collection failed: " + outputsafe.Sanitize([]byte(err.Error())) + "\n"
+		e.observe(CommandRuntimeStderr, len(diagnostic))
+		e.appendOutput(CommandRuntimeStderr, diagnostic, time.Now().UTC())
+	}
+	// The existing timeout worker also owns repeated termination attempts.
+	// Wake it immediately rather than running with an unobservable stream.
+	select {
+	case e.outputFault <- struct{}{}:
+	default:
+	}
 }
 
 func (e *commandRuntimeEntry) persistError() error {

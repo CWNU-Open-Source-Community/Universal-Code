@@ -7328,7 +7328,7 @@
       "get": {
         "operationId": "getRunAgentBrowser",
         "summary": "Read the Agent browser state",
-        "description": "Reads the Run's process-local Agent browser status without starting a browser or executing an action. Excludes runtime authority and profile/DevTools handles.",
+        "description": "Reads the Run's process-local Agent browser status without starting a browser or executing an action. Excludes runtime authority and profile/DevTools handles. Scoped sessions surface their operator-declared origins in declared_origins.",
         "tags": [
           "Runs"
         ],
@@ -37879,6 +37879,12 @@
           },
           "cleanup_pending": {
             "type": "boolean"
+          },
+          "declared_origins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "document_epoch": {
             "format": "int64",

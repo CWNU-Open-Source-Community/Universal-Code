@@ -1,0 +1,20 @@
+=== RUN   TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen
+=== RUN   TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen/cancel
+    workflow_late_cancel_test.go:44: old interpreter completion returned: workflow checkpoint was superseded or paused
+    workflow_late_cancel_test.go:44: after reopen: Run=cancelled workflow=failed child=completed same_report=completion-20261106185810-c5380c88bbe7 calls=1 tokens=5
+=== RUN   TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen/pause
+    workflow_late_cancel_test.go:44: old interpreter completion returned: workflow checkpoint was superseded or paused
+    workflow_late_cancel_test.go:44: after reopen: Run=paused workflow=waiting child=completed same_report=completion-20261106185811-f1b1776fd7b1 calls=1 tokens=5
+--- PASS: TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen (1.18s)
+    --- PASS: TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen/cancel (0.56s)
+    --- PASS: TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen/pause (0.61s)
+PASS
+ok  	cyberagent-workbench/internal/application	1.255s
+=== RUN   TestWorkflowCompletedCheckpointHonorsRunControl
+=== RUN   TestWorkflowCompletedCheckpointHonorsRunControl/cancel
+=== RUN   TestWorkflowCompletedCheckpointHonorsRunControl/pause
+--- PASS: TestWorkflowCompletedCheckpointHonorsRunControl (0.75s)
+    --- PASS: TestWorkflowCompletedCheckpointHonorsRunControl/cancel (0.36s)
+    --- PASS: TestWorkflowCompletedCheckpointHonorsRunControl/pause (0.39s)
+PASS
+ok  	cyberagent-workbench/internal/store	0.804s

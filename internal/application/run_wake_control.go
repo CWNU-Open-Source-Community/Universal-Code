@@ -274,7 +274,7 @@ func normalizeCancelRunWakeRequest(request CancelRunWakeRequest) (
 }
 
 type RunWakeCoordinatorStore interface {
-	ListDueRunWakeIntents(context.Context, time.Time, int) ([]domain.RunWakeIntent, error)
+	ListDueRunWakeIntents(context.Context, time.Time, int, int) ([]domain.RunWakeIntent, error)
 	AcquireRunWake(context.Context, string, string, string, time.Time) (
 		domain.RunWakeIntent, domain.RunWakeLease, bool, error)
 	ReleaseRunWakeForRetry(context.Context, domain.RunWakeLease, time.Time) (
@@ -293,7 +293,7 @@ func NewRunWakeCoordinator(store RunWakeCoordinatorStore) *RunWakeCoordinator {
 }
 
 func (c *RunWakeCoordinator) Due(ctx context.Context,
-	limit int,
+	limit, maxSteps int,
 ) ([]domain.RunWakeIntent, error) {
 	if c == nil || c.store == nil || c.now == nil {
 		return nil, apperror.New(apperror.CodeFailedPrecondition,
@@ -303,7 +303,10 @@ func (c *RunWakeCoordinator) Due(ctx context.Context,
 		return nil, apperror.New(apperror.CodeInvalidArgument,
 			"Run wake due limit must be between 1 and 64")
 	}
-	values, err := c.store.ListDueRunWakeIntents(ctx, c.now().UTC(), limit)
+	if maxSteps < 1 || maxSteps > domain.MaxRunExecutionHandoffSteps {
+		return nil, apperror.New(apperror.CodeInvalidArgument, "Run wake due step limit is invalid")
+	}
+	values, err := c.store.ListDueRunWakeIntents(ctx, c.now().UTC(), limit, maxSteps)
 	return values, apperror.Normalize(err)
 }
 

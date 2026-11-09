@@ -198,7 +198,11 @@ func (s *SQLiteStore) InspectThreadTurnRequest(ctx context.Context, threadID, ke
 		if err = validateObservedThreadImages(ctx, tx, value.WorkspaceID, message, images); err != nil {
 			return value, err
 		}
-		_, fingerprint, _, err := threadMessageIntentIdentity(domain.ThreadMessageIntentRequest{ThreadID: threadID, Content: message.OriginalContent, Files: files, Images: images, Attachments: attachments, RequestedBy: requester, OperationKey: key})
+		mcpReferences, err := observedThreadMCPReferences(ctx, tx, intent.OperationKeyDigest)
+		if err != nil {
+			return value, err
+		}
+		_, fingerprint, _, err := threadMessageIntentIdentity(domain.ThreadMessageIntentRequest{ThreadID: threadID, Content: message.OriginalContent, Files: files, Images: images, Attachments: attachments, MCPReferences: mcpReferences, RequestedBy: requester, OperationKey: key})
 		if err != nil {
 			return value, err
 		}
@@ -250,6 +254,28 @@ func (s *SQLiteStore) InspectThreadTurnRequest(ctx context.Context, threadID, ke
 		value.State, value.Settled = "completed", true
 	}
 	return value, nil
+}
+
+func observedThreadMCPReferences(ctx context.Context, tx *sql.Conn, intentDigest string) ([]domain.MCPReference, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT reference_json FROM thread_mcp_references
+		WHERE intent_digest=? ORDER BY position`, intentDigest)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var references []domain.MCPReference
+	for rows.Next() {
+		var raw string
+		var reference domain.MCPReference
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &reference); err != nil {
+			return nil, err
+		}
+		references = append(references, reference)
+	}
+	return references, rows.Err()
 }
 
 func validateObservedThreadImages(ctx context.Context, tx *sql.Conn, workspaceID string, message domain.OperatorSteeringMessage, images []domain.ImageReference) error {

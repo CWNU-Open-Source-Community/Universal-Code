@@ -106,6 +106,10 @@ type AgentBrowserStatusView struct {
 	ProfileRemoved       bool                        `json:"profile_removed"`
 	ProcessScope         string                      `json:"process_scope,omitempty"`
 	ProcessScopeVerified bool                        `json:"process_scope_verified"`
+	// DeclaredOrigins surfaces the Run's operator-declared scoped-session
+	// boundary (ADR 0195) so the live view shows exactly where the browser may
+	// operate; absent for unscoped Full sessions.
+	DeclaredOrigins []string `json:"declared_origins,omitempty"`
 }
 
 type AgentBrowserCloseRequestView struct {
@@ -216,6 +220,9 @@ func publicAgentBrowserStatus(value application.AgentBrowserView, runID string) 
 		case "platform_unsupported", "full_access_required", "runtime_unavailable", "run_unavailable", "session_unavailable":
 			view.UnavailableCode = value.Capabilities.UnavailableCode
 		}
+	}
+	if len(value.Capabilities.DeclaredOrigins) != 0 {
+		view.DeclaredOrigins = append([]string(nil), value.Capabilities.DeclaredOrigins...)
 	}
 	if value.Cleanup != nil {
 		view.CleanupPending = value.Cleanup.CleanupPending
