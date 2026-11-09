@@ -697,6 +697,10 @@ func TestEngineAsyncHooksSkipWhenConcurrencyCeilingReached(t *testing.T) {
 	}
 	// Only the ceiling-exceeded hook has settled; the eight running taps have
 	// not finished and have written nothing yet.
+	skipDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(skipDeadline) && sink.count() == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
 	settled := sink.snapshot()
 	if len(settled) != 1 || settled[0].Outcome != "failed_continue" {
 		t.Fatalf("expected exactly one skip audit row: %#v", settled)
@@ -821,5 +825,63 @@ func TestDeclarationAsyncRejectsFailClosedPolicy(t *testing.T) {
 		Event: PreTool, Action: ActionScript, FailurePolicy: FailureDeny,
 		TimeoutMillis: 100, Async: true, Script: &spec}).Validate(); err == nil {
 		t.Fatal("async script hook accepted the fail-closed policy")
+	}
+}
+
+type slowAuditSink struct {
+	delay time.Duration
+	scriptedAuditSink
+}
+
+func (s *slowAuditSink) RecordHookAudit(ctx context.Context, record AuditRecord) error {
+	select {
+	case <-time.After(s.delay):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return s.scriptedAuditSink.RecordHookAudit(ctx, record)
+}
+
+func TestEngineAsyncCeilingDoesNotBlockCallerWhenAuditSinkIsSlow(t *testing.T) {
+	executor := &gatedScriptExecutor{
+		started: make(chan struct{}, MaxAsyncConcurrent),
+		release: make(chan struct{}),
+	}
+	defer close(executor.release)
+	sink := &slowAuditSink{delay: 300 * time.Millisecond}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+	registrations := make([]Registration, 0, MaxAsyncConcurrent+1)
+	for index := 0; index < MaxAsyncConcurrent+1; index++ {
+		registrations = append(registrations, Registration{PluginID: OperatorPluginID,
+			PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+				ProtocolVersion: ProtocolVersion,
+				ID:              fmt.Sprintf("slow-audit-tap-%d", index), Event: PreTool,
+				Action: ActionScript, FailurePolicy: FailureContinue, TimeoutMillis: 5_000,
+				Async: true, Script: &ScriptSpec{Interpreter: "python",
+					Path:   fmt.Sprintf("tap-%d.py", index),
+					SHA256: testHookDigest(fmt.Sprintf("tap-%d", index))}}})
+	}
+	if err := engine.Replace(registrations); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	result, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell",
+		Payload: json.RawMessage(`{}`)})
+	elapsed := time.Since(start)
+	if err != nil || result.Denied {
+		t.Fatalf("async ceiling execute failed: %#v err=%v", result, err)
+	}
+	if elapsed >= 150*time.Millisecond {
+		t.Fatalf("async boundary blocked caller for %v (expected < 150ms)", elapsed)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && sink.count() == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	records := sink.snapshot()
+	if len(records) == 0 || records[0].Outcome != "failed_continue" {
+		t.Fatalf("expected background skip audit row, got %#v", records)
 	}
 }

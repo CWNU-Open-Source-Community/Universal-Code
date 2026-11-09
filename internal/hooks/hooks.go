@@ -34,7 +34,8 @@ const (
 	MaxHookTimeoutMillis = 2_000
 	MaxHookIdentityRunes = 256
 	MaxToolPatternBytes  = 256
-	MaxAsyncConcurrent   = 8
+	MaxAsyncConcurrent      = 8
+	MaxAsyncAuditConcurrent = MaxDeclarations
 )
 
 type Event string
@@ -315,13 +316,15 @@ type Engine struct {
 	sink          AuditSink
 	now           func() time.Time
 	loader        func(context.Context) ([]Registration, error)
-	scriptRunner  ScriptExecutor
-	asyncSlots    chan struct{}
+	scriptRunner    ScriptExecutor
+	asyncSlots      chan struct{}
+	asyncAuditSlots chan struct{}
 }
 
 func NewEngine(sink AuditSink) *Engine {
 	return &Engine{sink: sink, now: func() time.Time { return time.Now().UTC() },
-		generation: emptyGeneration(), asyncSlots: make(chan struct{}, MaxAsyncConcurrent)}
+		generation: emptyGeneration(), asyncSlots: make(chan struct{}, MaxAsyncConcurrent),
+		asyncAuditSlots: make(chan struct{}, MaxAsyncAuditConcurrent)}
 }
 
 // WithScriptExecutor wires the host-owned script execution adapter. Without it,
@@ -556,7 +559,17 @@ func (e *Engine) launchAsync(input Input, registration Registration) {
 	select {
 	case e.asyncSlots <- struct{}{}:
 	default:
-		_ = e.record(detached, registration, input, "failed_continue", false)
+		if e.asyncAuditSlots != nil {
+			select {
+			case e.asyncAuditSlots <- struct{}{}:
+				go func() {
+					defer func() { <-e.asyncAuditSlots }()
+					defer func() { _ = recover() }()
+					_ = e.record(detached, registration, input, "failed_continue", false)
+				}()
+			default:
+			}
+		}
 		return
 	}
 	go func() {
