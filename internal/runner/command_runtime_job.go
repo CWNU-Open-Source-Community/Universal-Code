@@ -588,6 +588,7 @@ type commandRuntimeEntry struct {
 	done        chan struct{}
 	notify      chan struct{}
 	desired     CommandRuntimeJobState
+	outputFault chan struct{}
 	stdoutDone  chan struct{}
 	stderrDone  chan struct{}
 	stdoutHash  hash.Hash
@@ -920,7 +921,8 @@ func (m *CommandRuntimeManager) Start(ctx context.Context,
 		discardOutput:      request.DiscardOutput,
 		ring:               commandRuntimeRing{capacity: running.InlineLimitBytes},
 		done:               make(chan struct{}), notify: make(chan struct{}, 1),
-		stdoutDone: make(chan struct{}), stderrDone: make(chan struct{}),
+		outputFault: make(chan struct{}, 1),
+		stdoutDone:  make(chan struct{}), stderrDone: make(chan struct{}),
 		stdoutHash: sha256.New(), stderrHash: sha256.New(),
 		inputs: make(map[string]commandRuntimeStdinResult), inputGate: make(chan struct{}, 1),
 	}
@@ -1424,6 +1426,7 @@ func (m *CommandRuntimeManager) collect(entry *commandRuntimeEntry,
 				entry.mu.Unlock()
 			}
 			if err != nil {
+				entry.failOutput(stream, err)
 				return
 			}
 		}
@@ -1443,6 +1446,7 @@ func (m *CommandRuntimeManager) collect(entry *commandRuntimeEntry,
 		}
 		if err != nil {
 			entry.appendOutput(stream, sanitizer.Flush(), time.Now().UTC())
+			entry.failOutput(stream, err)
 			return
 		}
 	}
@@ -1627,6 +1631,7 @@ func (m *CommandRuntimeManager) enforceTimeout(entry *commandRuntimeEntry,
 		case <-entry.processDone:
 			return
 		case <-timer.C:
+		case <-entry.outputFault:
 		}
 		select {
 		case <-entry.processDone:
@@ -1695,6 +1700,24 @@ func (e *commandRuntimeEntry) setDesired(state CommandRuntimeJobState) bool {
 		e.signal()
 	}
 	return changed
+}
+
+func (e *commandRuntimeEntry) failOutput(stream CommandRuntimeStream, err error) {
+	if errors.Is(err, io.EOF) {
+		return
+	}
+	e.setDesired(CommandRuntimeJobInterrupted)
+	if !e.discardOutput {
+		diagnostic := "\ncommand runtime " + string(stream) + " collection failed: " + outputsafe.Sanitize([]byte(err.Error())) + "\n"
+		e.observe(CommandRuntimeStderr, len(diagnostic))
+		e.appendOutput(CommandRuntimeStderr, diagnostic, time.Now().UTC())
+	}
+	// The existing timeout worker also owns repeated termination attempts.
+	// Wake it immediately rather than running with an unobservable stream.
+	select {
+	case e.outputFault <- struct{}{}:
+	default:
+	}
 }
 
 func (e *commandRuntimeEntry) persistError() error {
