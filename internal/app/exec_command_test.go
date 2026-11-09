@@ -644,3 +644,28 @@ func TestExecImageRequiresVisionCapability(t *testing.T) {
 		t.Fatalf("the vision gate must refuse before any model call, got %d", calls)
 	}
 }
+
+func TestExecImageEarlyVisionCheck(t *testing.T) {
+	// execTestProvider does not implement DescribeVision, so the router
+	// classifies the model as vision-unsupported. The early check must
+	// reject before any image is imported.
+	provider := &execTestProvider{response: execFinishResponse("should not reach here")}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	a, _, st := newExecContinueTestApp(t)
+	a.router = router
+
+	pngBytes, _ := writeTinyPNG(t)
+	imagePath := filepath.Join(t.TempDir(), "diagram.png")
+	if err := os.WriteFile(imagePath, pngBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--image", imagePath, "Any task"})
+	if err == nil || !strings.Contains(err.Error(), "image capability") {
+		t.Fatalf("non-vision model must fail at the early check, got: %v", err)
+	}
+	_ = st
+}

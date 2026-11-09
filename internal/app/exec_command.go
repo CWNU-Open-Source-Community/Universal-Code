@@ -17,6 +17,7 @@ import (
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/idgen"
+	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/workspace"
@@ -122,6 +123,15 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		if len(imagePaths) > 0 {
+			run, runErr := a.store.GetRun(ctx, runID)
+			if runErr != nil {
+				return fmt.Errorf("continue Run lookup: %w", runErr)
+			}
+			if err := a.checkExecVisionCapability(ctx, run.Config.ModelRoute); err != nil {
+				return err
+			}
+		}
 		imageRefs, err = a.importExecImages(ctx, workspaceID, imagePaths)
 		if err != nil {
 			return err
@@ -158,6 +168,11 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
 		if err != nil {
 			return err
+		}
+		if len(imagePaths) > 0 {
+			if err := a.checkExecVisionCapability(ctx, *route); err != nil {
+				return err
+			}
 		}
 		imageRefs, err = a.importExecImages(ctx, workspaceID, imagePaths)
 		if err != nil {
@@ -417,6 +432,19 @@ func imageMimeTypeForPath(path string) string {
 	default:
 		return ""
 	}
+}
+
+// checkExecVisionCapability verifies that the model referenced by route
+// supports image input before images are imported into the workspace. The
+// check prevents orphaned images: without it, a non-vision model would
+// cause the turn to fail after the images were already stored.
+func (a *App) checkExecVisionCapability(ctx context.Context, route string) error {
+	ref := a.router.Resolve(route)
+	vision := a.router.DescribeVision(ref)
+	if vision.State != llm.VisionSupported {
+		return fmt.Errorf("exec --image: selected model image capability is %s; select a confirmed vision model before sending images", vision.State)
+	}
+	return nil
 }
 
 // resolveRunWorkspaceID resolves the workspace a Run belongs to, so continue
