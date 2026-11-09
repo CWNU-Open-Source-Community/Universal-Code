@@ -337,6 +337,8 @@ func (a *App) dispatch(ctx context.Context, args []string) error {
 		return a.githubReviewCommand(ctx, args[1:])
 	case "headless":
 		return a.headlessCommand(ctx, args[1:])
+	case "exec":
+		return a.execCommand(ctx, args[1:])
 	case "run":
 		return a.runCommand(ctx, args[1:])
 	case "todo":
