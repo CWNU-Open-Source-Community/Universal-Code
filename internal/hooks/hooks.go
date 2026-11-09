@@ -120,6 +120,9 @@ func (d Declaration) Validate() error {
 		if d.Action != ActionRecord {
 			return errors.New("turn_end hooks may only record observations")
 		}
+		if d.FailurePolicy == FailureDeny {
+			return errors.New("turn_end hooks require continue failure policy because the turn is already complete")
+		}
 	}
 	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")

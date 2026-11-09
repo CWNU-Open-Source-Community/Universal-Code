@@ -68,6 +68,18 @@ func TestDeclarationRejectsRetroactivePostToolDenialPolicy(t *testing.T) {
 	}
 }
 
+func TestDeclarationRejectsTurnEndDenialPolicy(t *testing.T) {
+	declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-audit",
+		Event: TurnEnd, Action: ActionRecord, FailurePolicy: FailureDeny, TimeoutMillis: 100}
+	if err := declaration.Validate(); err == nil {
+		t.Fatal("turn_end declaration accepted a failure policy that cannot be enforced on a completed turn")
+	}
+	declaration.FailurePolicy = FailureContinue
+	if err := declaration.Validate(); err != nil {
+		t.Fatalf("turn_end continue policy was rejected: %v", err)
+	}
+}
+
 func TestExecuteBoundaryFailsClosedWithoutLeakingPluginMessage(t *testing.T) {
 	engine := NewEngine(nil)
 	if err := engine.Replace([]Registration{{PluginID: "guard",
