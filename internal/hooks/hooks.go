@@ -119,6 +119,9 @@ func (d Declaration) Validate() error {
 		if d.Action != ActionRecord {
 			return errors.New("post_compaction hooks may only record observations")
 		}
+		if d.FailurePolicy == FailureDeny {
+			return errors.New("post_compaction hooks require continue failure policy because compaction is already complete")
+		}
 	}
 	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")

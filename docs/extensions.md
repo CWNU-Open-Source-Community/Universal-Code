@@ -136,8 +136,8 @@ cyberagent plugin show <new-installation-id>
 | `run_completed` | completed/failed/cancelled 或 Supervisor finalize 写入前 |
 | `session_opened` | 新 Session 与 Run 原子创建前 |
 | `session_closed` | HTTP/Desktop Session archive 写入前 |
-| `compaction` |
-| `post_compaction` | 压缩完成且消息已被移除后；仅记录型 hook，payload 含移除消息数 | `MaybeCompact` 确认真正需要压缩后、摘要写入前 |
+| `compaction` | `MaybeCompact` 确认真正需要压缩后、摘要写入前 |
+| `post_compaction` | 压缩完成且消息已被移除后；仅记录型 hook，payload 含移除消息数 |
 | `subagent` | 经操作者授权的 Specialist schedule 获取执行租约前 |
 | `checkpoint` | 连续性或手工 Workspace Checkpoint 写入前 |
 

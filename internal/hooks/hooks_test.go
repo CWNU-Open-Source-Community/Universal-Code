@@ -125,3 +125,15 @@ func testHookDigest(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
 }
+
+func TestDeclarationRejectsPostCompactionDenialPolicy(t *testing.T) {
+	declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "post-compact-audit",
+		Event: PostCompaction, Action: ActionRecord, FailurePolicy: FailureDeny, TimeoutMillis: 100}
+	if err := declaration.Validate(); err == nil {
+		t.Fatal("post_compaction declaration accepted a failure policy that cannot be enforced after compaction")
+	}
+	declaration.FailurePolicy = FailureContinue
+	if err := declaration.Validate(); err != nil {
+		t.Fatalf("post_compaction continue policy was rejected: %v", err)
+	}
+}
