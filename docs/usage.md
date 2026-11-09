@@ -149,7 +149,12 @@ committed assistant reply on stdout, and exits non-zero unless the supervisor
 finished the task (`turn_finish`; approval waits, continuation stops, and
 budget exhaustion report their stop reason). `--json` emits `{run_id, thread_id, status, reply}` instead of the
 bare reply. Unattended runs cannot widen permissions: pre-arrange execution
-grants the same way you would for any Run.
+grants the same way you would for any Run. Ctrl-C (SIGINT; SIGTERM where the
+platform delivers it) does not kill the process mid-write: it cancels the
+invocation cleanly, the turn machinery records the durable stop through a
+detached context, the Run stays recoverable for a follow-up `thread send`,
+and exec exits non-zero — exit `7` for a cancellation, exit `9` for a
+`--timeout` deadline.
 
 `cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
 回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
@@ -160,7 +165,10 @@ agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 
 `turn_finish` 结束任务（等待审批、继续等待与预算耗尽都会报告其停止原因）
 否则以非零码退出。`--json` 输出
 `{run_id, thread_id, status, reply}` 取代纯回复文本。无人值守运行不能放宽
-权限：执行授权需要与任何 Run 一样预先安排。
+权限：执行授权需要与任何 Run 一样预先安排。Ctrl-C（SIGINT；平台支持的
+SIGTERM）不会在写入中途杀死进程：它干净地取消本次调用，turn 机制通过脱离的
+上下文记录持久停止，Run 保持可恢复状态供后续 `thread send` 继续使用，exec
+以非零码退出——取消对应退出码 `7`，`--timeout` 超时对应退出码 `9`。
 
 ### 补充消息与排队 / Follow-up messages and queue
 

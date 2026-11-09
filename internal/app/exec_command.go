@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/application"
@@ -25,6 +27,13 @@ import (
 // pre-arranged execution permissions are the operator's responsibility, and
 // no flag here can widen them.
 func (a *App) execCommand(ctx context.Context, args []string) error {
+	// SIGINT (and SIGTERM where the platform delivers it) becomes a clean
+	// cancellation instead of a hard process kill: the turn machinery records
+	// the durable handoff failure through context.WithoutCancel, the Run stays
+	// recoverable for follow-up thread sends, and exec exits non-zero
+	// (cancelled → exit 7; a --timeout deadline → exit 9).
+	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 	if err := a.ensureStore(); err != nil {
 		return err
 	}
