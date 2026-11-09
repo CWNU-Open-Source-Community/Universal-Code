@@ -159,19 +159,22 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		OperationKey: idgen.New("cli-exec"),
 		RequestedBy:  "cli_exec_operator",
 	})
-	if err != nil {
-		return err
-	}
+	// Print the reply even when the turn fails: the agent may have committed
+	// a partial result before the error, and losing it hurts more than the
+	// non-zero exit.
 	if *jsonOutput {
 		encoder := json.NewEncoder(a.out)
-		if err := encoder.Encode(map[string]any{"run_id": result.RunID,
+		if encodeErr := encoder.Encode(map[string]any{"run_id": result.RunID,
 			"thread_id": result.ThreadID, "status": result.RunStatus,
 			"stop_reason": result.StopReason, "turn_status": result.TurnStatus,
-			"reply": result.Reply}); err != nil {
-			return err
+			"reply": result.Reply}); encodeErr != nil {
+			return encodeErr
 		}
-	} else {
+	} else if result.Reply != "" {
 		fmt.Fprintln(a.out, result.Reply)
+	}
+	if err != nil {
+		return err
 	}
 	// The supervisor's turn_finish stop reason is the completion signal for a
 	// one-shot task; waiting_approval, root_wait, and failures exit non-zero

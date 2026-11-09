@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"strings"
+	"time"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/session"
@@ -66,13 +67,13 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 		return OneShotResult{}, apperror.New(apperror.CodeInvalidArgument,
 			"one-shot prompt is empty")
 	}
-	result, err := s.turns.Execute(ctx, ExecuteThreadTurnRequest{
+	result, turnErr := s.turns.Execute(ctx, ExecuteThreadTurnRequest{
 		Version: request.Version, ThreadID: request.ThreadID, Content: content,
 		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy,
 	})
-	if err != nil {
-		return OneShotResult{}, err
-	}
+	// When the turn fails mid-execution, messages committed before the error
+	// are still in the session. Extract any partial reply so the caller gets
+	// useful output alongside the error, instead of losing the agent's work.
 	submission := result.Submission
 	out := OneShotResult{ThreadID: submission.Thread.ID, RunID: submission.Run.ID,
 		RunStatus: string(submission.Run.Status)}
@@ -80,12 +81,20 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 		out.TurnStatus = string(result.Execution.Handoff.Result.Status)
 		out.StopReason = result.Execution.Handoff.Result.StopReason
 	}
-	reply, replyErr := s.lastAssistantReply(ctx, submission.Session.ID)
-	if replyErr != nil {
-		return out, replyErr
+	if submission.Session.ID != "" {
+		// Use a detached context for the partial reply lookup: the caller's
+		// ctx may already be cancelled (e.g. --timeout fired), and the reply
+		// is precisely what the caller needs in that scenario.
+		detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		reply, replyErr := s.lastAssistantReply(detached, submission.Session.ID)
+		if replyErr == nil && reply != "" {
+			out.Reply = reply
+		} else if replyErr != nil && turnErr == nil {
+			return out, replyErr
+		}
 	}
-	out.Reply = reply
-	return out, nil
+	return out, turnErr
 }
 
 // lastAssistantReply returns the newest committed assistant message. The turn
