@@ -97,9 +97,12 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 	return out, turnErr
 }
 
-// lastAssistantReply returns the newest committed assistant message. The turn
-// machinery commits replies in order, so the last assistant row is the reply
-// for this invocation.
+// lastAssistantReply returns the newest assistant message committed after
+// this invocation's input. The operator message for this turn is the last
+// committed user message in the session (it is committed before the turn
+// executes), so any assistant reply after it belongs to this turn — an
+// earlier turn's reply is never returned as this invocation's partial reply,
+// and a turn that failed before committing one yields an empty reply.
 func (s *OneShotService) lastAssistantReply(ctx context.Context,
 	sessionID string,
 ) (string, error) {
@@ -107,7 +110,13 @@ func (s *OneShotService) lastAssistantReply(ctx context.Context,
 	if err != nil {
 		return "", apperror.Normalize(err)
 	}
-	for index := len(messages) - 1; index >= 0; index-- {
+	lastInput := -1
+	for index, message := range messages {
+		if message.Role == "user" {
+			lastInput = index
+		}
+	}
+	for index := len(messages) - 1; index > lastInput; index-- {
 		if messages[index].Role == "assistant" {
 			return messages[index].Content, nil
 		}

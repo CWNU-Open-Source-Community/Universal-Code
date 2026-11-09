@@ -163,6 +163,12 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	// a partial result before the error, and losing it hurts more than the
 	// non-zero exit.
 	if *jsonOutput {
+		// A failed handoff can transition the Run after the result snapshot
+		// was taken; report the current durable status. A lookup failure
+		// keeps the snapshot and never masks the turn error below.
+		if run, runErr := a.store.GetRun(ctx, result.RunID); runErr == nil {
+			result.RunStatus = string(run.Status)
+		}
 		encoder := json.NewEncoder(a.out)
 		if encodeErr := encoder.Encode(map[string]any{"run_id": result.RunID,
 			"thread_id": result.ThreadID, "status": result.RunStatus,
