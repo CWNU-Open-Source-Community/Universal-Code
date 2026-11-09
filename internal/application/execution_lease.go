@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -41,13 +42,22 @@ func withRunExecutionLease(ctx context.Context, store RunExecutionLeaseStore,
 	expired := make(chan struct{})
 	expiryErr := apperror.Wrap(apperror.CodeDeadlineExceeded,
 		"run execution lease reached its confirmed expiry", context.DeadlineExceeded)
+	var (
+		opMu        sync.Mutex
+		opCompleted bool
+	)
 	expiry := time.AfterFunc(time.Until(acquired.Lease.ExpiresAt), func() {
 		defer close(expired)
-		select {
-		case heartbeatErr <- expiryErr:
-		default:
+		opMu.Lock()
+		completed := opCompleted
+		if !completed {
+			select {
+			case heartbeatErr <- expiryErr:
+			default:
+			}
+			cancelLease()
 		}
-		cancelLease()
+		opMu.Unlock()
 	})
 	go func() {
 		defer close(done)
@@ -60,6 +70,9 @@ func withRunExecutionLease(ctx context.Context, store RunExecutionLeaseStore,
 	} else {
 		operationErr = operation(leaseCtx, acquired.Lease)
 	}
+	opMu.Lock()
+	opCompleted = true
+	opMu.Unlock()
 	close(stop)
 	cancelLease()
 	<-done

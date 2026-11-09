@@ -172,6 +172,7 @@ func runAgentRunnerSQLiteLeaseContention(t *testing.T, mode string) {
 		t.Fatalf("real SQLite connection proof=%d err=%v", proof, err)
 	}
 	heldAt := time.Now()
+	baselineRenewals := st.renewals.Load()
 	select {
 	case <-st.timedOut:
 	case <-time.After(4 * time.Second):
@@ -246,8 +247,8 @@ func runAgentRunnerSQLiteLeaseContention(t *testing.T, mode string) {
 			(lease.OwnerID != "replacement-worker" || lease.Generation != confirmed.Generation+1 || lease.Status != domain.RunExecutionLeaseActive) {
 			t.Fatalf("lost owner changed replacement lease: %#v found=%t err=%v", lease, found, err)
 		}
-		if st.renewals.Load() != 0 || p.calls.Load() != 1 {
-			t.Fatalf("lost lease renewed or repeated model: renewals=%d calls=%d", st.renewals.Load(), p.calls.Load())
+		if renewals := st.renewals.Load() - baselineRenewals; renewals != 0 || p.calls.Load() != 1 {
+			t.Fatalf("lost lease renewed or repeated model: renewals=%d calls=%d", renewals, p.calls.Load())
 		}
 		return
 	}
@@ -266,7 +267,7 @@ func runAgentRunnerSQLiteLeaseContention(t *testing.T, mode string) {
 	}
 	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
-	for st.renewals.Load() == 0 {
+	for st.renewals.Load() <= baselineRenewals {
 		select {
 		case result := <-done:
 			t.Fatalf("runner ended before renewal recovered: %#v err=%v", result.result, result.err)

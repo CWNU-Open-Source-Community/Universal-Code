@@ -143,3 +143,29 @@ func TestRunLeaseDefinitiveRenewalFailureDoesNotRetry(t *testing.T) {
 		})
 	}
 }
+
+func TestRunLeaseShutdownDoesNotOverwriteSuccessfulOperationWithExpiry(t *testing.T) {
+	st := &runLeaseBoundaryStore{acquired: runBoundaryLease(time.Now().Add(100 * time.Millisecond))}
+	entered := make(chan struct{})
+	st.renew = func(ctx context.Context, lease domain.RunExecutionLease, _ time.Duration) (domain.RunExecutionLease, error) {
+		close(entered)
+		// Slow renewal during shutdown holds the goroutine past confirmed expiry.
+		timer := time.NewTimer(200 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			time.Sleep(120 * time.Millisecond)
+		}
+		return lease, ctx.Err()
+	}
+	err := withRunExecutionLease(t.Context(), st, st.acquired.RunID, st.acquired.OwnerID,
+		RunExecutionLeasePolicy{TTL: time.Second, RenewInterval: 25 * time.Millisecond},
+		func(context.Context, domain.RunExecutionLease) error {
+			<-entered
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("successful operation overwritten by shutdown expiry: %v", err)
+	}
+}
