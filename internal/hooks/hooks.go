@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -319,12 +320,22 @@ type Engine struct {
 	scriptRunner    ScriptExecutor
 	asyncSlots      chan struct{}
 	asyncAuditSlots chan struct{}
+	droppedAudits   atomic.Uint64
 }
 
 func NewEngine(sink AuditSink) *Engine {
 	return &Engine{sink: sink, now: func() time.Time { return time.Now().UTC() },
 		generation: emptyGeneration(), asyncSlots: make(chan struct{}, MaxAsyncConcurrent),
 		asyncAuditSlots: make(chan struct{}, MaxAsyncAuditConcurrent)}
+}
+
+// DroppedAudits reports the number of asynchronous hook audits dropped due to
+// audit pool saturation under extreme load.
+func (e *Engine) DroppedAudits() uint64 {
+	if e == nil {
+		return 0
+	}
+	return e.droppedAudits.Load()
 }
 
 // WithScriptExecutor wires the host-owned script execution adapter. Without it,
@@ -568,7 +579,10 @@ func (e *Engine) launchAsync(input Input, registration Registration) {
 					_ = e.record(detached, registration, input, "failed_continue", false)
 				}()
 			default:
+				e.droppedAudits.Add(1)
 			}
+		} else {
+			e.droppedAudits.Add(1)
 		}
 		return
 	}

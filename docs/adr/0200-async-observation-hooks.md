@@ -28,19 +28,24 @@ webhook script pays its latency on every boundary it subscribes to.
    to fail-open. A background script's entire result — including its own
    `denied` output — is discarded; the audit ledger records only the run
    outcome, never the discarded decision.
-2. **Bounded concurrency, no queueing.** The engine keeps an eight-slot
-   semaphore (the same ceiling Codex documents per session). A fire that finds
-   the ceiling occupied is skipped with a `failed_continue` audit row instead
-   of blocking or queueing; the outcome vocabulary stays unchanged so the web
-   hook diagnostics parse without drift.
-3. **The boundary never waits.** Background executions run on a detached
-   context derived from `context.Background()` (values are dropped with the
-   cancellation; the deadline comes from the declaration) after the boundary
-   has returned, and their audit rows are written on their own detached
-   contexts so a saturated engine or an expired hook deadline can never
-   suppress them. Results are discarded; only the metadata-only audit records
-   `completed` or `failed_continue` with `rejected=false`. Unfinished
-   background hooks are lost at process exit — documented, not persisted.
+2. **Bounded concurrency and bounded audit pool.** The engine keeps an
+   eight-slot semaphore for running async hooks (`MaxAsyncConcurrent = 8`). A
+   fire that finds the ceiling occupied skips execution and dispatches a
+   `failed_continue` audit row through a bounded pool of 64 concurrent slots
+   (`MaxAsyncAuditConcurrent = 64`) on a detached context without blocking the
+   caller; the outcome vocabulary stays unchanged so the web hook diagnostics
+   parse without drift.
+3. **The boundary never waits; observable audit drop under extreme saturation.**
+   Background executions run on a detached context derived from
+   `context.Background()` after the boundary has returned. Audit rows for
+   both completed hooks and skipped fires run detached so the caller is never
+   blocked. Under extreme overload where both the execution ceiling and the
+   audit pool are saturated (e.g. flood load paired with a stalled audit sink),
+   excess audit writes are dropped to prevent caller latency degradation and
+   unbounded goroutine growth. Dropped audits increment an observable engine
+   counter (`DroppedAudits()`), and the contract relaxes the guarantee of
+   durable audit recording under pathological overload. Unfinished background
+   hooks are lost at process exit — documented, not persisted.
 4. **Same trust and bounds.** Declarations validate exactly as before (script
    specs, tool filters, identity); `async` participates in the registry
    generation fingerprint. Timeouts still kill background script children at

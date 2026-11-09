@@ -885,3 +885,101 @@ func TestEngineAsyncCeilingDoesNotBlockCallerWhenAuditSinkIsSlow(t *testing.T) {
 		t.Fatalf("expected background skip audit row, got %#v", records)
 	}
 }
+
+type blockingAuditSink struct {
+	mu      sync.Mutex
+	block   chan struct{}
+	records []AuditRecord
+}
+
+func (s *blockingAuditSink) RecordHookAudit(ctx context.Context, record AuditRecord) error {
+	select {
+	case <-s.block:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, record)
+	return nil
+}
+
+func (s *blockingAuditSink) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.records)
+}
+
+func TestEngineAsyncAuditPoolOverloadTracksDroppedAudits(t *testing.T) {
+	executor := &gatedScriptExecutor{
+		started: make(chan struct{}, MaxAsyncConcurrent),
+		release: make(chan struct{}),
+	}
+	defer close(executor.release)
+	sink := &blockingAuditSink{block: make(chan struct{})}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+
+	reg := Registration{
+		PluginID:          OperatorPluginID,
+		PluginFingerprint: testHookDigest("plugin"),
+		Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion,
+			ID:              "saturated-tap",
+			Event:           PreTool,
+			Action:          ActionScript,
+			FailurePolicy:   FailureContinue,
+			TimeoutMillis:   5_000,
+			Async:           true,
+			Script: &ScriptSpec{
+				Interpreter: "python",
+				Path:        "tap.py",
+				SHA256:      testHookDigest("tap"),
+			},
+		},
+	}
+	if err := engine.Replace([]Registration{reg}); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < MaxAsyncConcurrent; i++ {
+		_, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell", Payload: json.RawMessage(`{}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < MaxAsyncConcurrent; i++ {
+		select {
+		case <-executor.started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for execution slots to fill")
+		}
+	}
+
+	for i := 0; i < MaxAsyncAuditConcurrent; i++ {
+		_, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell", Payload: json.RawMessage(`{}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(engine.asyncAuditSlots) < MaxAsyncAuditConcurrent {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	start := time.Now()
+	_, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell", Payload: json.RawMessage(`{}`)})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed >= 100*time.Millisecond {
+		t.Fatalf("overloaded execute blocked for %v (expected < 100ms)", elapsed)
+	}
+
+	if dropped := engine.DroppedAudits(); dropped != 1 {
+		t.Fatalf("expected 1 dropped audit, got %d", dropped)
+	}
+
+	close(sink.block)
+}
