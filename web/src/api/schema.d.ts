@@ -1363,7 +1363,7 @@ export interface paths {
         };
         /**
          * Read the Agent browser state
-         * @description Reads the Run's process-local Agent browser status without starting a browser or executing an action. Excludes runtime authority and profile/DevTools handles.
+         * @description Reads the Run's process-local Agent browser status without starting a browser or executing an action. Excludes runtime authority and profile/DevTools handles. Scoped sessions surface their operator-declared origins in declared_origins.
          */
         get: operations["getRunAgentBrowser"];
         put?: never;
@@ -6556,6 +6556,7 @@ export interface components {
             available: boolean;
             can_start: boolean;
             cleanup_pending: boolean;
+            declared_origins?: string[];
             /** Format: int64 */
             document_epoch: number;
             failure_code?: string;
