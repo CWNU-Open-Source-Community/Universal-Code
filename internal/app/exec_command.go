@@ -95,9 +95,10 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 			return fmt.Errorf("continue thread: %w", err)
 		}
 		threadID = continueID
+		dependencies := a.runRuntimeDependencies()
 		turns = application.NewThreadTurnService(a.store,
-			application.NewRunLifecycleControlService(a.store).WithLifecycleHooks(a.newLifecycleHookEngine()),
-			application.NewRunExecutionHandoffService(a.store, a.router, a.checker))
+			application.NewRunLifecycleControlService(a.store).WithLifecycleHooks(dependencies.LifecycleHooks),
+			application.NewRunExecutionHandoffWithRuntime(a.store, a.router, a.checker, dependencies))
 	} else {
 		selectedProfile, err := domain.ParseProfile(*profile)
 		if err != nil {
