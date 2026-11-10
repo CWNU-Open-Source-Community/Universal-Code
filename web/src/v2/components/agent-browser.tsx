@@ -55,6 +55,7 @@ function AgentBrowserView({ client, runID, running, onClose }: { client: APIClie
   const [image, setImage] = useState<{ binding: string; url: string; blob: Blob }>();
   const [failedImageBinding, setFailedImageBinding] = useState("");
   const [imageRetry, setImageRetry] = useState(0);
+  const [liveSessionID, setLiveSessionID] = useState<string | null>(null);
   const status = useQuery({ queryKey: key, queryFn: ({ signal }) => readAgentBrowser(client, runID, signal), retry: false,
     refetchOnMount: "always", refetchInterval: (query) => running && !query.state.error ? 3000 : false });
   const current = status.data;
@@ -100,14 +101,17 @@ function AgentBrowserView({ client, runID, running, onClose }: { client: APIClie
 <<<<<<< HEAD
     {current.available && !active && <p className="v2-agent-browser-note">{current.headless ? t("页面将在独立的后台浏览器中打开，通过实时画面和截图查看。", "Pages open in a separate background browser and are shown as a live view and screenshots.") : t("页面将在独立浏览器窗口中打开。", "Pages open in a separate browser window.")}</p>}
     {current.available && current.declared_origins && current.declared_origins.length > 0 && <p className="v2-agent-browser-note">{t("已声明的导航来源：", "Declared navigation origins: ")}{current.declared_origins.join(", ")}</p>}
-=======
->>>>>>> 778a088c (fix(web): show browser view only from application preview)
     {current.headless && active && current.session_id && <AgentBrowserLiveView client={client} runID={runID} sessionID={current.session_id} />}
+=======
+    {current.headless && active && current.session_id && <AgentBrowserLiveView key={current.session_id}
+      client={client} runID={runID} sessionID={current.session_id} onLiveChange={setLiveSessionID} />}
+>>>>>>> 8ac3e78d (fix(web): show browser frames only after drawing)
     {(current.title || current.url) && <div className="v2-agent-browser-page">
       {current.title && <strong>{current.title}</strong>}
       {current.url && <a href={current.url} target="_blank" rel="noreferrer">{current.url}<ExternalLink size={14} /></a>}
     </div>}
     {image?.binding === imageBinding && <BrowserScreenshot key={imageBinding} url={image.url} blob={image.blob}
+      compact={liveSessionID === current.session_id}
       name={`agent-browser-${current.screenshot!.sha256.slice(0, 12)}.png`}
       alt={t(`Agent 浏览器页面：${current.title || current.url || "当前页面"}`, `Agent browser page: ${current.title || current.url || "Current page"}`)} />}
     {failedImageBinding && failedImageBinding === imageBinding && <p role="alert">
@@ -121,16 +125,16 @@ function AgentBrowserView({ client, runID, running, onClose }: { client: APIClie
   </section>;
 }
 
-function BrowserScreenshot({ url, blob, name, alt }: { url: string; blob: Blob; name: string; alt: string }) {
+function BrowserScreenshot({ url, blob, name, alt, compact }: { url: string; blob: Blob; name: string; alt: string; compact: boolean }) {
   const { t } = useLocale();
   const trigger = useRef<HTMLButtonElement>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>();
   const [failed, setFailed] = useState(false);
   const [viewing, setViewing] = useState(false);
   return <>
-    <button ref={trigger} type="button" className="v2-agent-browser-screenshot" disabled={!dimensions || failed}
+    <button ref={trigger} type="button" className={`v2-agent-browser-screenshot${compact ? " is-compact" : ""}`} disabled={!dimensions || failed}
       aria-label={t("查看浏览器截图原图", "View original browser screenshot")} onClick={() => setViewing(true)}>
-      <img src={url} alt={alt} onLoad={({ currentTarget }) => {
+      <img src={url} alt={alt} hidden={compact} onLoad={({ currentTarget }) => {
         if (currentTarget.naturalWidth > 0 && currentTarget.naturalHeight > 0) {
           setDimensions({ width: currentTarget.naturalWidth, height: currentTarget.naturalHeight });
         }
@@ -146,7 +150,9 @@ function BrowserScreenshot({ url, blob, name, alt }: { url: string; blob: Blob; 
 // The live view is visibility only: it streams the operator-facing picture of
 // the exact session, never persists frames, and falls back to the verified
 // screenshot chain when the stream is unavailable.
-function AgentBrowserLiveView({ client, runID, sessionID }: { client: APIClient; runID: string; sessionID: string }) {
+function AgentBrowserLiveView({ client, runID, sessionID, onLiveChange }: {
+  client: APIClient; runID: string; sessionID: string; onLiveChange: (sessionID: string | null) => void;
+}) {
   const { t } = useLocale();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [live, setLive] = useState(false);
@@ -156,9 +162,9 @@ function AgentBrowserLiveView({ client, runID, sessionID }: { client: APIClient;
     let cancelled = false;
     let retry = 0;
     let timer: number | undefined;
+    onLiveChange(null);
     const draw = (frame: AgentBrowserScreencastFrame) => {
       if (frame.session_id !== sessionID) return;
-      setLive(true);
       const canvas = canvasRef.current;
       if (!canvas || typeof atob !== "function") return;
       const binary = atob(frame.data);
@@ -166,11 +172,14 @@ function AgentBrowserLiveView({ client, runID, sessionID }: { client: APIClient;
       for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
       void createImageBitmap(new Blob([bytes], { type: "image/jpeg" })).then((bitmap) => {
         if (cancelled) { bitmap.close(); return; }
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        const context = canvas.getContext("2d");
-        if (context) context.drawImage(bitmap, 0, 0);
-        bitmap.close();
+        try {
+          const context = canvas.getContext("2d");
+          if (!context || bitmap.width <= 0 || bitmap.height <= 0) return;
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          context.drawImage(bitmap, 0, 0);
+          setLive(true); onLiveChange(sessionID);
+        } finally { bitmap.close(); }
       }).catch(() => { /* keep the last good frame; the next frame redraws */ });
     };
     const connect = () => {
@@ -183,6 +192,7 @@ function AgentBrowserLiveView({ client, runID, sessionID }: { client: APIClient;
         }).catch(() => {
           if (cancelled || controller.signal.aborted) return;
           setLive(false);
+          onLiveChange(null);
           setFailed(true);
           retry = Math.min(retry + 1, 5);
           timer = window.setTimeout(connect, Math.min(1000 * 2 ** retry, 8000));
@@ -190,15 +200,16 @@ function AgentBrowserLiveView({ client, runID, sessionID }: { client: APIClient;
       } catch {
         if (!cancelled) {
           setLive(false);
+          onLiveChange(null);
           setFailed(true);
         }
       }
     };
     connect();
-    return () => { cancelled = true; controller.abort(); if (timer !== undefined) window.clearTimeout(timer); };
-  }, [client, runID, sessionID]);
+    return () => { cancelled = true; controller.abort(); onLiveChange(null); if (timer !== undefined) window.clearTimeout(timer); };
+  }, [client, runID, sessionID, onLiveChange]);
   return <figure className="v2-agent-browser-live">
-    <canvas ref={canvasRef} className={`v2-agent-browser-live-canvas${live ? " is-live" : ""}`}
+    <canvas ref={canvasRef} hidden={!live} className={`v2-agent-browser-live-canvas${live ? " is-live" : ""}`}
       role="img" aria-label={t("Agent 浏览器实时画面", "Agent browser live view")} />
     <figcaption>
       {live ? t("实时画面", "Live view")
