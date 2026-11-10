@@ -147,9 +147,17 @@ tasks are out of scope for v1. The command creates a
 fresh Run and Thread, executes the agent loop synchronously, prints the last
 committed assistant reply on stdout, and exits non-zero unless the supervisor
 finished the task (`turn_finish`; approval waits, continuation stops, and
-budget exhaustion report their stop reason). `--json` emits `{run_id, thread_id, status, reply}` instead of the
-bare reply. Unattended runs cannot widen permissions: pre-arrange execution
-grants the same way you would for any Run.
+budget exhaustion report their stop reason). `--json` emits
+`{run_id, thread_id, status, stop_reason, turn_status, reply}` instead of the
+bare reply. `--stream` streams run events to stdout as JSON lines in real
+time (headless.v1 protocol); the final reply goes to stderr, so scripts can
+pipe stdout for live monitoring while capturing the reply separately.
+`--stream` and `--json` are mutually exclusive. The stream stops
+automatically after the turn ends (no terminal state needed) —
+waiting_approval, paused, and failed outcomes all exit cleanly with their
+stop reason.
+Unattended runs cannot widen permissions: pre-arrange execution grants the
+same way you would for any Run.
 
 `cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
 回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
@@ -159,8 +167,12 @@ grants the same way you would for any Run.
 agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 supervisor 以
 `turn_finish` 结束任务（等待审批、继续等待与预算耗尽都会报告其停止原因）
 否则以非零码退出。`--json` 输出
-`{run_id, thread_id, status, reply}` 取代纯回复文本。无人值守运行不能放宽
-权限：执行授权需要与任何 Run 一样预先安排。
+`{run_id, thread_id, status, stop_reason, turn_status, reply}` 取代纯回复文本。
+`--stream` 将 run 事件实时以 JSON 行流式输出到 stdout（headless.v1 协议）；
+最终回复输出到 stderr，脚本可分别管道监控进度与捕获回复。`--stream` 与
+`--json` 互斥。流在 turn 结束后自动停止（无需 Run 达到终态），等待审批/
+暂停/失败的结局正常退出并报告停止原因。
+无人值守运行不能放宽权限：执行授权需要与任何 Run 一样预先安排。
 
 ### 补充消息与排队 / Follow-up messages and queue
 

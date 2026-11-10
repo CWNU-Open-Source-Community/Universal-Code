@@ -12,6 +12,7 @@ import (
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/headless"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/toolgateway"
@@ -39,6 +40,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	timeout := fs.Duration("timeout", 0, "whole-execution deadline; zero means no deadline")
 	stdin := fs.Bool("stdin", false, "read the prompt from stdin instead of the positional argument")
 	jsonOutput := fs.Bool("json", false, "emit a structured JSON result")
+	streamEvents := fs.Bool("stream", false, "stream run events to stdout in real time (JSON lines); reply goes to stderr")
 	enablePermissionControl := fs.Bool("enable-permission-control", false,
 		"enable the operator-approval runtime for this process")
 	enableFullAccess := fs.Bool("enable-danger-full-access", false,
@@ -49,6 +51,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"workspace": true, "profile": true, "route": true,
 		"max-turns": true, "max-tokens": true, "max-tool-calls": true,
 		"max-cost-usd": true, "timeout": true, "stdin": false, "json": false,
+		"stream":                    false,
 		"enable-permission-control": false, "enable-danger-full-access": false,
 		"confirm-full": false,
 	})); err != nil {
@@ -68,6 +71,9 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	}
 	if strings.TrimSpace(*workspaceName) == "" {
 		return errors.New("exec requires --workspace <name>")
+	}
+	if *streamEvents && *jsonOutput {
+		return errors.New("--stream and --json cannot be combined: --stream uses stdout for the event stream; --json uses stdout for the structured result")
 	}
 	if *timeout > 0 {
 		var cancel context.CancelFunc
@@ -152,6 +158,58 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		application.NewRunLifecycleControlService(a.store).WithLifecycleHooks(a.newLifecycleHookEngine()),
 		application.NewRunExecutionHandoffWithRuntime(a.store, a.router, a.checker, dependencies))
 	oneShot := application.NewOneShotService(a.store, turns)
+
+	if *streamEvents {
+		// Stream mode: events go to stdout as JSON lines in real time; the
+		// final reply goes to stderr. The headless exporter runs on a
+		// cancellable child context and is stopped after the turn ends — we
+		// never force the Run into a terminal state to stop streaming, so
+		// waiting_approval, paused, and failed outcomes all exit cleanly.
+		streamCtx, streamCancel := context.WithCancel(ctx)
+		defer streamCancel()
+		exporter := headless.NewExporter(a.store)
+		streamDone := make(chan error, 1)
+		go func() {
+			streamDone <- exporter.Export(streamCtx, a.out, headless.Request{
+				RunID: run.ID, Follow: true, MaxEvents: headless.MaxEvents,
+			})
+		}()
+
+		result, turnErr := oneShot.Run(ctx, application.OneShotRequest{
+			Version:      domain.ThreadMessageProtocolVersion,
+			ThreadID:     domain.InitialThreadID(run.ID),
+			Content:      prompt,
+			OperationKey: idgen.New("cli-exec"),
+			RequestedBy:  "cli_exec_operator",
+		})
+
+		// Stop the stream after the turn ends — do not force the Run into a
+		// terminal state. The exporter exits via ctx.Done() with a cancelled
+		// end record.
+		streamCancel()
+		streamErr := <-streamDone
+
+		// The turn result is the primary outcome; stream delivery errors are
+		// secondary. Print the reply to stderr (stdout carries events).
+		if result.Reply != "" {
+			fmt.Fprintln(a.errOut, result.Reply)
+		}
+		if turnErr != nil {
+			if streamErr != nil {
+				return fmt.Errorf("%w (stream: %v)", turnErr, streamErr)
+			}
+			return turnErr
+		}
+		if streamErr != nil {
+			return fmt.Errorf("event stream: %w", streamErr)
+		}
+		if result.StopReason != "turn_finish" {
+			return fmt.Errorf("exec turn did not finish: stop_reason=%s turn_status=%s run_status=%s",
+				result.StopReason, result.TurnStatus, result.RunStatus)
+		}
+		return nil
+	}
+
 	result, err := oneShot.Run(ctx, application.OneShotRequest{
 		Version:      domain.ThreadMessageProtocolVersion,
 		ThreadID:     domain.InitialThreadID(run.ID),
