@@ -137,3 +137,15 @@ func TestDeclarationRejectsRunCompletedDenialPolicy(t *testing.T) {
 		t.Fatalf("run_completed continue policy was rejected: %v", err)
 	}
 }
+
+func TestDeclarationRejectsSessionClosedDenialPolicy(t *testing.T) {
+	declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "session-close-audit",
+		Event: SessionClosed, Action: ActionRecord, FailurePolicy: FailureDeny, TimeoutMillis: 100}
+	if err := declaration.Validate(); err == nil {
+		t.Fatal("session_closed declaration accepted a failure policy that cannot be enforced on an already-closed session")
+	}
+	declaration.FailurePolicy = FailureContinue
+	if err := declaration.Validate(); err != nil {
+		t.Fatalf("session_closed continue policy was rejected: %v", err)
+	}
+}

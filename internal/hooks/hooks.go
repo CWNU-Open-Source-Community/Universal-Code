@@ -116,6 +116,9 @@ func (d Declaration) Validate() error {
 	if d.Event == RunCompleted && d.FailurePolicy == FailureDeny {
 		return errors.New("run_completed hooks require continue failure policy because the terminal transition is already decided")
 	}
+	if d.Event == SessionClosed && d.FailurePolicy == FailureDeny {
+		return errors.New("session_closed hooks require continue failure policy because the session is already closed")
+	}
 	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")
 	}
