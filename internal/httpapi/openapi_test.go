@@ -2022,6 +2022,16 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 					body = `{"version":"run_network_authority_control.v1",` +
 						`"expected_mode_revision":1,` +
 						`"add_allowed_targets":["search.example.org"]}`
+				} else if spec.Path == RunBrowserNetworkAccessPathTemplate || spec.Path == WorkspaceBrowserNetworkAccessPathTemplate {
+					runID, workspaceID := fixture.run.ID, ""
+					if spec.Path == WorkspaceBrowserNetworkAccessPathTemplate {
+						runID, workspaceID = "", fixture.workspace.ID
+					}
+					current, getErr := fixture.store.GetBrowserNetworkAccess(t.Context(), runID, workspaceID)
+					if getErr != nil {
+						t.Fatal(getErr)
+					}
+					body = fmt.Sprintf(`{"version":"browser_network_access.v1","expected_revision":%d,"browser_network_access":"internet"}`, current.Revision)
 				} else if spec.Path == RunWebAccessControlPathTemplate {
 					body = `{"version":"run_web_access_control.v1",` +
 						`"expected_mode_revision":1,"web_access_mode":"full"}`
