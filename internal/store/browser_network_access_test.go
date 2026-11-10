@@ -108,3 +108,73 @@ func TestBrowserNetworkProjectPreferenceSurvivesRestart(t *testing.T) {
 		t.Fatalf("remembered preference lost: %+v %v", next.Config, err)
 	}
 }
+
+func TestBrowserNetworkSuccessorMaterializesLegacySelection(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		permission domain.RunExecutionPermissionMode
+		origins    []string
+		want       domain.BrowserNetworkAccess
+	}{
+		{"full", domain.RunExecutionPermissionFull, nil, domain.BrowserNetworkInternet},
+		{"full_with_origins", domain.RunExecutionPermissionFull, []string{"https://example.org:443"}, domain.BrowserNetworkInternet},
+		{"restricted", domain.RunExecutionPermissionAsk, []string{"https://example.org:443"}, domain.BrowserNetworkRestricted},
+		{"off", domain.RunExecutionPermissionAsk, nil, domain.BrowserNetworkOff},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			st, err := Open(filepath.Join(t.TempDir(), "legacy-successor.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			_, run, err := application.NewRunService(st).Create(ctx, application.CreateRunRequest{Goal: "continue legacy browser choice", Profile: "review"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			thread, err := st.GetThreadByRun(ctx, run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			permissions := application.NewThreadExecutionPermissionService(st, domain.ExecutionPermissionRuntimeCapabilities{
+				OperatorApprovalEnabled: true, DangerFullAccessEnabled: true,
+				RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority(),
+			})
+			selectThreadPermissionForFullCDPTest(t, ctx, permissions, thread.ID, test.permission, "legacy-browser-initial-permission")
+			legacy := run.Config
+			legacy.BrowserNetworkAccess, legacy.BrowserNetworkRevision, legacy.BrowserOrigins = "", 0, test.origins
+			raw, err := json.Marshal(legacy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.db.ExecContext(ctx, `UPDATE runs SET config_json=? WHERE id=?`, string(raw), run.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := application.NewRunService(st).Cancel(ctx, run.ID); err != nil {
+				t.Fatal(err)
+			}
+			selectThreadPermissionForFullCDPTest(t, ctx, permissions, thread.ID, domain.RunExecutionPermissionAsk, "legacy-browser-next-permission")
+			continued, err := application.NewThreadService(st).Submit(ctx, application.SubmitThreadMessageRequest{
+				Version: domain.ThreadMessageProtocolVersion, ThreadID: thread.ID, Content: "continue", OperationKey: "legacy-browser-successor", RequestedBy: "operator",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if continued.Run.Config.BrowserNetworkAccess != test.want || continued.Run.Config.BrowserNetworkRevision != 1 {
+				t.Fatalf("successor browser selection was not materialized: %+v", continued.Run.Config)
+			}
+			if test.want == domain.BrowserNetworkInternet && len(continued.Run.Config.BrowserOrigins) != 0 {
+				t.Fatal("internet successor retained inactive legacy origins")
+			}
+			selectThreadPermissionForFullCDPTest(t, ctx, permissions, thread.ID, domain.RunExecutionPermissionFull, "legacy-browser-later-permission")
+			selected, err := st.GetBrowserNetworkAccess(ctx, continued.Run.ID, "")
+			if err != nil || selected.BrowserNetworkAccess != test.want {
+				t.Fatalf("permission change altered browser selection: %+v %v", selected, err)
+			}
+			historical, err := st.GetRun(ctx, run.ID)
+			if err != nil || historical.Config.BrowserNetworkAccess != "" || historical.Config.BrowserNetworkRevision != 0 {
+				t.Fatalf("predecessor was rewritten: %+v %v", historical.Config, err)
+			}
+		})
+	}
+}
