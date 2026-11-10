@@ -15,10 +15,11 @@ and file permissions. The browser needs its own network choice.
 
 ## Decision
 
-The browser offers an **Allow internet** switch, available independently of the
-task's Ask, Auto or Full approval mode. A collapsed advanced control optionally
-restricts access to specified websites. The normal browser card does not display
-an origin list.
+Settings > Permissions > Browser offers an **Allow internet** switch, available
+independently of the task's Ask, Auto or Full approval mode. A collapsed advanced
+control optionally restricts access to specified websites. Network settings do
+not appear in the conversation. The browser view opens explicitly from App
+preview; ordinary conversations do not poll its status or stream its screen.
 
 The host stores three states: `off`, `internet` and `restricted`. Internet mode
 permits ordinary HTTP(S) browser destinations, including local development
@@ -52,5 +53,5 @@ Focused checks cover project persistence and run inheritance, revision conflicts
 browser-session invalidation, Ask/Auto internet admission, cross-origin reads and
 redirects, restricted-site denial, and the existing HTTP request approval flow.
 The frontend is exercised against the production API, with screenshots of the
-browser card and permission settings before and after the change. The PR records
+conversation and permission settings before and after the change. The PR records
 the exact checks run and platform coverage.
