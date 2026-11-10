@@ -1,8 +1,8 @@
 .v2-agent-browser { min-width:0; }
-.v2-agent-browser header { min-width:0; display:flex; flex-shrink:0; align-items:flex-start; justify-content:space-between; gap:10px; padding:8px 16px 2px; }
+.v2-agent-browser header { min-width:0; display:flex; flex-shrink:0; align-items:flex-start; justify-content:space-between; gap:10px; padding:8px 0; }
 .v2-agent-browser-heading { min-width:0; min-height:30px; display:flex; align-items:center; gap:4px 8px; flex-wrap:wrap; }
 .v2-agent-browser-actions { display:flex; flex-shrink:0; align-items:center; gap:8px; }
-.v2-agent-browser-body { min-height:0; min-width:0; display:grid; gap:8px; padding:2px 16px 10px; overflow:auto; overscroll-behavior:contain; font-size:13px; }
+.v2-agent-browser-body { min-height:0; min-width:0; display:grid; gap:8px; padding:2px 0 10px; overflow:auto; overscroll-behavior:contain; font-size:13px; }
 .v2-agent-browser button { display:inline-flex; align-items:center; gap:6px; min-height:30px; padding:4px 10px; border:1px solid var(--v2-border); border-radius:8px; background:transparent; color:inherit; font:inherit; font-size:13px; cursor:pointer; }
 .v2-agent-browser .v2-agent-browser-dismiss { flex-shrink:0; justify-content:center; width:30px; height:30px; padding:0; border:0; border-radius:50%; color:var(--v2-muted); }
 .v2-agent-browser button:hover { background:var(--v2-control-hover); }
