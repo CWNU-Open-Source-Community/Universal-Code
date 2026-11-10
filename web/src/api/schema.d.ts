@@ -7252,6 +7252,7 @@ export interface components {
         BrowserNetworkAccessRequestView: {
             /** @enum {string} */
             browser_network_access: "off" | "internet" | "restricted";
+            /** @description At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength. */
             browser_origins?: string[];
             /** Format: int64 */
             expected_revision: number;
@@ -7262,6 +7263,7 @@ export interface components {
         BrowserNetworkAccessSelection: {
             /** @enum {string} */
             browser_network_access: "off" | "internet" | "restricted";
+            /** @description At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength. */
             browser_origins?: string[];
             for_next_run: boolean;
             project_preference?: components["schemas"]["BrowserNetworkPreference"];
@@ -7276,6 +7278,7 @@ export interface components {
         BrowserNetworkPreference: {
             /** @enum {string} */
             browser_network_access: "off" | "internet" | "restricted";
+            /** @description At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength. */
             browser_origins?: string[];
             /** Format: int64 */
             revision: number;
@@ -16925,6 +16928,7 @@ export interface components {
         WorkspaceBrowserNetworkAccessRequestView: {
             /** @enum {string} */
             browser_network_access: "off" | "internet" | "restricted";
+            /** @description At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength. */
             browser_origins?: string[];
             /** Format: int64 */
             expected_revision: number;

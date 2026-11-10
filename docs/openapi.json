@@ -40887,6 +40887,35 @@
       },
       "BrowserNetworkAccessRequestView": {
         "additionalProperties": false,
+        "else": {
+          "if": {
+            "properties": {
+              "browser_network_access": {
+                "const": "internet"
+              }
+            },
+            "required": [
+              "browser_network_access"
+            ]
+          },
+          "then": {
+            "properties": {
+              "browser_origins": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "browser_network_access": {
+              "const": "restricted"
+            }
+          },
+          "required": [
+            "browser_network_access"
+          ]
+        },
         "properties": {
           "browser_network_access": {
             "enum": [
@@ -40897,9 +40926,12 @@
             "type": "string"
           },
           "browser_origins": {
+            "description": "At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength.",
             "items": {
+              "minLength": 1,
               "type": "string"
             },
+            "maxItems": 8,
             "type": "array"
           },
           "expected_revision": {
@@ -40922,10 +40954,49 @@
           "expected_revision",
           "browser_network_access"
         ],
+        "then": {
+          "properties": {
+            "browser_origins": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "browser_origins"
+          ]
+        },
         "type": "object"
       },
       "BrowserNetworkAccessSelection": {
         "additionalProperties": false,
+        "else": {
+          "if": {
+            "properties": {
+              "browser_network_access": {
+                "const": "internet"
+              }
+            },
+            "required": [
+              "browser_network_access"
+            ]
+          },
+          "then": {
+            "properties": {
+              "browser_origins": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "browser_network_access": {
+              "const": "restricted"
+            }
+          },
+          "required": [
+            "browser_network_access"
+          ]
+        },
         "properties": {
           "browser_network_access": {
             "enum": [
@@ -40936,9 +41007,12 @@
             "type": "string"
           },
           "browser_origins": {
+            "description": "At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength.",
             "items": {
+              "minLength": 1,
               "type": "string"
             },
+            "maxItems": 8,
             "type": "array"
           },
           "for_next_run": {
@@ -40980,10 +41054,49 @@
           "replayed",
           "for_next_run"
         ],
+        "then": {
+          "properties": {
+            "browser_origins": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "browser_origins"
+          ]
+        },
         "type": "object"
       },
       "BrowserNetworkPreference": {
         "additionalProperties": false,
+        "else": {
+          "if": {
+            "properties": {
+              "browser_network_access": {
+                "const": "internet"
+              }
+            },
+            "required": [
+              "browser_network_access"
+            ]
+          },
+          "then": {
+            "properties": {
+              "browser_origins": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "browser_network_access": {
+              "const": "restricted"
+            }
+          },
+          "required": [
+            "browser_network_access"
+          ]
+        },
         "properties": {
           "browser_network_access": {
             "enum": [
@@ -40994,9 +41107,12 @@
             "type": "string"
           },
           "browser_origins": {
+            "description": "At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength.",
             "items": {
+              "minLength": 1,
               "type": "string"
             },
+            "maxItems": 8,
             "type": "array"
           },
           "revision": {
@@ -41015,6 +41131,16 @@
           "revision",
           "browser_network_access"
         ],
+        "then": {
+          "properties": {
+            "browser_origins": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "browser_origins"
+          ]
+        },
         "type": "object"
       },
       "BrowserSafeWebReadiness": {
@@ -79432,6 +79558,35 @@
       },
       "WorkspaceBrowserNetworkAccessRequestView": {
         "additionalProperties": false,
+        "else": {
+          "if": {
+            "properties": {
+              "browser_network_access": {
+                "const": "internet"
+              }
+            },
+            "required": [
+              "browser_network_access"
+            ]
+          },
+          "then": {
+            "properties": {
+              "browser_origins": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "browser_network_access": {
+              "const": "restricted"
+            }
+          },
+          "required": [
+            "browser_network_access"
+          ]
+        },
         "properties": {
           "browser_network_access": {
             "enum": [
@@ -79442,9 +79597,12 @@
             "type": "string"
           },
           "browser_origins": {
+            "description": "At most eight HTTP(S) targets, canonicalized to sorted, deduplicated scheme/host/port origins. Restricted access requires at least one origin; Internet access requires an empty or omitted list. Off may retain inactive origins. Each target must be valid UTF-8 and fit within 4096 UTF-8 bytes both after trimming and after URL canonicalization; this byte limit is enforced by the server, not JSON Schema maxLength.",
             "items": {
+              "minLength": 1,
               "type": "string"
             },
+            "maxItems": 8,
             "type": "array"
           },
           "expected_revision": {
@@ -79464,6 +79622,16 @@
           "expected_revision",
           "browser_network_access"
         ],
+        "then": {
+          "properties": {
+            "browser_origins": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "browser_origins"
+          ]
+        },
         "type": "object"
       },
       "WorkspaceCheckpointTimeline": {
