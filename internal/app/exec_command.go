@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/headless"
@@ -206,7 +207,14 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 			return turnErr
 		}
 		if streamErr != nil {
-			return fmt.Errorf("event stream: %w", streamErr)
+			// A max_events stop means the stream captured as many events as
+			// the buffer allows — the turn's outcome is the primary signal,
+			// not the stream truncation. The consumer can re-attach from
+			// SuggestedResume to read the remaining events. Any other stream
+			// error is a real delivery failure.
+			if apperror.CodeOf(streamErr) != apperror.CodeResourceExhausted {
+				return fmt.Errorf("event stream: %w", streamErr)
+			}
 		}
 		if result.StopReason != "turn_finish" {
 			return fmt.Errorf("exec turn did not finish: stop_reason=%s turn_status=%s run_status=%s",
