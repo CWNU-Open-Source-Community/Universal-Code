@@ -26,9 +26,11 @@ type workflowClaimProbeStore struct {
 	releaseFailure error
 	startedOnce    sync.Once
 	renewals       atomic.Int32
+	renewalCalls   atomic.Int32
 }
 
 func (s *workflowClaimProbeStore) RenewWorkflowExecutionClaim(ctx context.Context, id, owner string) (bool, error) {
+	s.renewalCalls.Add(1)
 	s.startedOnce.Do(func() { close(s.renewalStarted) })
 	select {
 	case <-s.renewalGate:
@@ -202,7 +204,18 @@ func TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease(t *testing.T) {
 			if mode != "renewal_timeout" {
 				gateOnce.Do(func() { close(gate) })
 			}
-			waitWorkflowClaimSignal(t, p.cancelled, "model cancellation after claim renewal loss")
+			if mode == "renewal_timeout" {
+				select {
+				case <-p.cancelled:
+				case <-time.After(30 * time.Second):
+					t.Fatal("renewal retries exceeded the known claim window")
+				}
+			} else {
+				waitWorkflowClaimSignal(t, p.cancelled, "model cancellation after claim renewal loss")
+				if st.renewalCalls.Load() != 1 {
+					t.Fatalf("non-timeout failure retried: mode=%s calls=%d", mode, st.renewalCalls.Load())
+				}
+			}
 			lease, found, err := raw.GetRunExecutionLease(t.Context(), run.ID)
 			if err != nil || !found || !lease.ActiveAt(time.Now()) {
 				t.Fatalf("draining execution lost its Run lease: %+v found=%t err=%v", lease, found, err)

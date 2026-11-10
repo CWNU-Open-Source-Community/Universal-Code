@@ -169,6 +169,7 @@ func (s *WorkflowService) advance(ctx context.Context, id string, revision int64
 		return domain.WorkflowExecution{}, apperror.New(apperror.CodeFailedPrecondition, "workflow requires its worker execution service")
 	}
 	owner := idgen.New("workflowclaim")
+	claimStarted := time.Now()
 	e, claimed, err := s.store.ClaimWorkflowExecution(ctx, id, owner)
 	if err != nil || !claimed {
 		if err == nil && e.Status == "completed" {
@@ -176,14 +177,14 @@ func (s *WorkflowService) advance(ctx context.Context, id string, revision int64
 		}
 		return e, err
 	}
-	return s.runClaimed(ctx, e, owner, revision)
+	return s.runClaimed(ctx, e, owner, revision, claimStarted)
 }
 
-func (s *WorkflowService) runClaimed(ctx context.Context, e domain.WorkflowExecution, owner string, revision int64) (result domain.WorkflowExecution, resultErr error) {
+func (s *WorkflowService) runClaimed(ctx context.Context, e domain.WorkflowExecution, owner string, revision int64, claimStarted time.Time) (result domain.WorkflowExecution, resultErr error) {
 	ctx, cancelTurn := context.WithTimeout(ctx, 10*time.Minute)
 	stop := make(chan struct{})
 	done := make(chan error, 1)
-	go func() { done <- s.renewWorkflowClaim(ctx, e.ID, owner, stop, cancelTurn) }()
+	go func() { done <- s.renewWorkflowClaim(ctx, e.ID, owner, claimStarted, stop, cancelTurn) }()
 	defer func() {
 		close(stop)
 		cancelTurn()
@@ -192,6 +193,9 @@ func (s *WorkflowService) runClaimed(ctx context.Context, e domain.WorkflowExecu
 		defer cancel()
 		resultErr = errors.Join(resultErr, renewErr, s.store.ReleaseWorkflowExecution(release, e.ID, owner))
 	}()
+	if !time.Now().Before(claimStarted.Add(workflowClaimTTL)) {
+		return e, fmt.Errorf("workflow execution claim expired before interpreter entry: %w", context.DeadlineExceeded)
+	}
 	if revision > 0 && e.Version != revision {
 		return e, nil
 	}
