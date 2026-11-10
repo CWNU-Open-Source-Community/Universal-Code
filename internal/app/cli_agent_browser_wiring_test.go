@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/browserruntime"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
@@ -543,6 +544,82 @@ func TestCLIExecutionRuntimeClosesAgentBrowserWithoutGrantingPersistedFullAccess
 	if err != nil || !reflect.DeepEqual(persisted, permission) {
 		t.Fatalf("CLI activation changed durable permission: %+v err=%v", persisted, err)
 	}
+}
+
+func TestCLINetworkOffRuntimePreservesOtherManagersPausedApproval(t *testing.T) {
+	home := newCanonicalCLIHome(t)
+	ownerID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionAsk, domain.BrowserNetworkInternet)
+	offID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionAsk, domain.BrowserNetworkOff)
+	ownerStore, err := store.Open(filepath.Join(home, "cyberagent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ownerStore.Close()
+	cliStore, err := store.Open(filepath.Join(home, "cyberagent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cliStore.Close()
+	owner, err := ownerStore.GetRun(t.Context(), ownerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permission, err := ownerStore.GetRunExecutionPermission(t.Context(), ownerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Seed the durable boundary of a live manager's paused HTTP request. Its
+	// browser transport is unrelated to another manager's constructor sweep.
+	a := toolgateway.AgentBrowserCallAuthority{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion,
+		RunID: owner.ID, MissionID: owner.MissionID, SessionID: owner.SessionID, WorkspaceID: "cli-agent-browser-workspace",
+		RootAgentID: "browser-owner-root", ManagerBootID: "live-owner-boot", BrowserSessionID: "live-browser-session",
+		Surface: domain.ExecutionSurfaceCode, Phase: domain.ExecutionPhaseDeliver, Role: domain.AgentRoleRoot, Profile: domain.ProfileCode,
+		PermissionMode: permission.Mode, PermissionSnapshotID: permission.ID, PermissionRevision: permission.Revision,
+		ModeRevision: 1, RunAuthorizationFence: 1, SessionGeneration: 1,
+		BrowserNetworkAccess: domain.BrowserNetworkInternet, BrowserNetworkRevision: 1}
+	a.Generation = a.Fingerprint()
+	raw, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := domain.BrowserNetworkRequest{ID: domain.BrowserNetworkRequestPrefix + "live-owner", RunID: owner.ID,
+		SessionID: owner.SessionID, WorkspaceID: a.WorkspaceID, ManagerBootID: a.ManagerBootID, RuntimeID: "live-runtime",
+		Fingerprint: strings.Repeat("a", 64), AuthorityJSON: string(raw), Method: "POST", DisplayURL: "https://example.org/write",
+		BodySHA256: strings.Repeat("b", 64), ExpiresAt: time.Now().Add(time.Minute)}
+	if err := ownerStore.CreateBrowserNetworkRequest(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	assertRequest := func(sourceStatus string, approvalStatus approval.Status) {
+		t.Helper()
+		source, err := ownerStore.GetBrowserNetworkRequest(t.Context(), request.ID)
+		if err != nil || source.Status != sourceStatus {
+			t.Fatalf("source status=%s want=%s err=%v", source.Status, sourceStatus, err)
+		}
+		record, err := ownerStore.GetApprovalByProposal(t.Context(), request.ID)
+		if err != nil || record.Status != approvalStatus {
+			t.Fatalf("approval status=%s want=%s err=%v", record.Status, approvalStatus, err)
+		}
+	}
+	assertRequest("paused", approval.StatusPending)
+	off, err := cliStore.GetRun(t.Context(), offID)
+	if err != nil || off.Config.BrowserNetworkAccess != domain.BrowserNetworkOff {
+		t.Fatalf("CLI run network=%s err=%v", off.Config.BrowserNetworkAccess, err)
+	}
+	app := &App{home: home, store: cliStore}
+	cli, err := app.newCLIExecutionRuntime(t.Context(), cliExecutionPermissionCapabilities(false, false), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.close()
+	assertRequest("paused", approval.StatusPending)
+	if err := cli.close(); err != nil {
+		t.Fatal(err)
+	}
+	assertRequest("paused", approval.StatusPending)
+	// Desktop/API callers keep their existing default restart recovery.
+	restarted := application.NewAgentBrowserService(cliStore, application.AgentBrowserOptions{HomePath: home})
+	defer restarted.Shutdown(context.Background())
+	assertRequest("invalidated", approval.StatusDenied)
 }
 
 func jsonEqualCLIAgentBrowser(left, right json.RawMessage) bool {
