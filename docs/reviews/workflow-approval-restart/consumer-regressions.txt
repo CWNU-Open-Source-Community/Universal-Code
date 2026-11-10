@@ -1,0 +1,90 @@
+panic: test timed out after 3m0s
+	running tests:
+		TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart (5s)
+		TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart/2_pending_approvals_stagger_false_turns_16_spent_true_expired_false_legacy_false (0s)
+
+goroutine 78081 [running]:
+testing.(*M).startAlarm.func1()
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2802 +0x354
+created by time.goFunc
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/time/sleep.go:215 +0x2d
+
+goroutine 1 [chan receive]:
+testing.(*T).Run(0x1c8a4adcca00, {0x7ff7529277e7?, 0x7ff74b65eece?}, 0x7ff752d467e0)
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2109 +0x4c7
+testing.runTests.func1(0x1c8a4adcca00)
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2585 +0x3e
+testing.tRunner(0x1c8a4adcca00, 0x1c8a4b87bc58)
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2036 +0xc3
+testing.runTests({0x7ff7527cf299, 0x14}, {0x7ff752866de1, 0x29}, 0x1c8a4add42b8, {0x7ff751f00fc0, 0x695, 0x695}, {0xc2b3aad5d64f3c90, 0x29eb55f25d, ...})
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2583 +0x4f0
+testing.(*M).Run(0x1c8a4b18e320)
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2443 +0x6ac
+main.main()
+	_testmain.go:3416 +0x9b
+
+goroutine 62125 [chan receive]:
+testing.(*T).Run(0x1c8a4adcce00, {0x1c8a4b512640?, 0x1c8a4b3a7ef0?}, 0x1c8a4c08a1c0)
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2109 +0x4c7
+cyberagent-workbench/internal/application_test.TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart(0x1c8a4adcce00)
+	D:/CodexProjects/worktrees/workflow-approval-restart/internal/application/workflow_map_test.go:382 +0x24a
+testing.tRunner(0x1c8a4adcce00, 0x7ff752d467e0)
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2036 +0xc3
+created by testing.(*T).Run in goroutine 1
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2101 +0x4a9
+
+goroutine 78132 [chan receive]:
+database/sql.(*Tx).awaitDone(0x1c8a4b824000)
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/database/sql/sql.go:2212 +0x29
+created by database/sql.(*DB).beginDC in goroutine 78083
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/database/sql/sql.go:1925 +0x1ef
+
+goroutine 78084 [select]:
+database/sql.(*DB).connectionOpener(0x1c8a4b6e5c70, {0x7ff752d722e0, 0x1c8a4bfba4b0})
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/database/sql/sql.go:1261 +0x89
+created by database/sql.OpenDB in goroutine 78083
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/database/sql/sql.go:841 +0x130
+
+goroutine 78083 [syscall]:
+github.com/mattn/go-sqlite3._Cfunc__sqlite3_exec_no_args(0x1b4ef294398, 0x1b4ee9eb870, 0xcbf, 0x1c8a4b7b59b0, 0x1c8a4b7b59b8, 0x1c8a4add0778)
+	_cgo_gotypes.go:330 +0x50
+github.com/mattn/go-sqlite3.(*SQLiteConn).execNoArgs.func1(...)
+	D:/Gowork/pkg/mod/github.com/mattn/go-sqlite3@v1.14.52/sqlite3.go:1031
+github.com/mattn/go-sqlite3.(*SQLiteConn).execNoArgs(0x1c8a4b1f6680, {0x7ff752c06b31?, 0x42?})
+	D:/Gowork/pkg/mod/github.com/mattn/go-sqlite3@v1.14.52/sqlite3.go:1031 +0x14b
+github.com/mattn/go-sqlite3.(*SQLiteConn).exec(0x1c8a4b1f6680, {0x7ff752d70558, 0x7ff756ba89a0}, {0x7ff752c06b31, 0xcbf}, {0x7ff756ba89a0, 0x0, 0x0})
+	D:/Gowork/pkg/mod/github.com/mattn/go-sqlite3@v1.14.52/sqlite3.go:987 +0xd6
+github.com/mattn/go-sqlite3.(*SQLiteConn).ExecContext(0x7ff74b628fbd?, {0x7ff752d70558?, 0x7ff756ba89a0?}, {0x7ff752c06b31?, 0x0?}, {0x7ff756ba89a0?, 0x1b4ec3d05a8?, 0x7ff74b539885?})
+	D:/Gowork/pkg/mod/github.com/mattn/go-sqlite3@v1.14.52/sqlite3_sql.go:31 +0x27
+database/sql.ctxDriverExec({0x7ff752d70558?, 0x7ff756ba89a0?}, {0x1b4eca64820?, 0x1c8a4b1f6680?}, {0x0?, 0x0?}, {0x7ff752c06b31?, 0x1b4c7027fa0?}, {0x7ff756ba89a0, 0x0, ...})
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/database/sql/ctxutil.go:31 +0xd7
+database/sql.(*DB).execDC.func2()
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/database/sql/sql.go:1713 +0x15c
+database/sql.withLock({0x7ff752d6a480, 0x1c8a4b1f6700}, 0x1c8a4b5d0c20)
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/database/sql/sql.go:3572 +0x71
+database/sql.(*DB).execDC(0x34?, {0x7ff752d70558, 0x7ff756ba89a0}, 0x1c8a4b1f6700, 0x6de?, {0x7ff752c06b31, 0xcbf}, {0x0, 0x0, 0x0})
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/database/sql/sql.go:1708 +0x1f6
+database/sql.(*Tx).ExecContext(0x1c8a4b824000, {0x7ff752d70558, 0x7ff756ba89a0}, {0x7ff752c06b31, 0xcbf}, {0x0, 0x0, 0x0})
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/database/sql/sql.go:2516 +0xad
+cyberagent-workbench/internal/store.(*SQLiteStore).tryCleanInstallBaselineArtifact(0x1c8a4b090510, {0x7ff752d70558, 0x7ff756ba89a0}, {0x1c8a4bb64008, 0xdf, 0x16d}, {0xdf, {0x7ff752bd4e00, 0x16e616}, {0x7ff752931e81, ...}, ...})
+	D:/CodexProjects/worktrees/workflow-approval-restart/internal/store/clean_install_baseline.go:91 +0x63a
+cyberagent-workbench/internal/store.(*SQLiteStore).tryCleanInstallBaseline(0x30?, {0x7ff752d70558?, 0x7ff756ba89a0?}, {0x1c8a4bb64008?, 0x1c8a4b5d1150?, 0x7ff74b521085?})
+	D:/CodexProjects/worktrees/workflow-approval-restart/internal/store/clean_install_baseline.go:40 +0xc5
+cyberagent-workbench/internal/store.(*SQLiteStore).Migrate(0x1c8a4b090510, {0x7ff752d70558, 0x7ff756ba89a0})
+	D:/CodexProjects/worktrees/workflow-approval-restart/internal/store/sqlite.go:149 +0x52
+cyberagent-workbench/internal/store.Open({0x1c8a4b9fe280, 0x91})
+	D:/CodexProjects/worktrees/workflow-approval-restart/internal/store/sqlite.go:84 +0x205
+cyberagent-workbench/internal/application_test.newScopedSubagentFixture({_, _}, {_, _}, {_, _, _, _, _}, _, ...)
+	D:/CodexProjects/worktrees/workflow-approval-restart/internal/application/subagent_runner_test.go:778 +0x16a
+cyberagent-workbench/internal/application_test.TestWorkflowMapApprovalCapacityAndSiblingProgressSurviveRestart.func1(0x1c8a4bd60000)
+	D:/CodexProjects/worktrees/workflow-approval-restart/internal/application/workflow_map_test.go:389 +0x3c5
+testing.tRunner(0x1c8a4bd60000, 0x1c8a4c08a1c0)
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2036 +0xc3
+created by testing.(*T).Run in goroutine 62125
+	D:/Gowork/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.windows-amd64/src/testing/testing.go:2101 +0x4a9
+FAIL	cyberagent-workbench/internal/application	180.134s
+ok  	cyberagent-workbench/internal/httpapi	39.331s
+ok  	cyberagent-workbench/internal/desktop	0.363s [no tests to run]
+ok  	cyberagent-workbench/internal/app	13.779s
+ok  	cyberagent-workbench/internal/fileedit	0.757s [no tests to run]
+FAIL

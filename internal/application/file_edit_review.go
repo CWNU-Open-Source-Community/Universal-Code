@@ -25,12 +25,11 @@ type FileEditReviewStore interface {
 	GetRun(context.Context, string) (domain.Run, error)
 	GetMission(context.Context, string) (domain.Mission, error)
 	GetApprovalByProposal(context.Context, string) (approval.Record, error)
-	DecideApproval(context.Context, approval.DecisionRequest) (approval.DecisionResult, error)
+	CommitFileEditReview(context.Context, fileedit.Edit, approval.Record, approval.DecisionRequest) (fileedit.Edit, bool, error)
 }
 
 type FileEditReviewService struct {
 	store    FileEditReviewStore
-	manager  *fileedit.Manager
 	drydocks *RunWorktreeService
 }
 
@@ -73,13 +72,13 @@ type ReviewFileEditResult struct {
 }
 
 func NewFileEditReviewService(store FileEditReviewStore) *FileEditReviewService {
-	return &FileEditReviewService{store: store, manager: fileedit.NewManager(store)}
+	return &FileEditReviewService{store: store}
 }
 
 func (s *FileEditReviewService) Review(ctx context.Context,
 	request ReviewFileEditRequest,
 ) (ReviewFileEditResult, error) {
-	if s == nil || s.store == nil || s.manager == nil {
+	if s == nil || s.store == nil {
 		return ReviewFileEditResult{}, apperror.New(
 			apperror.CodeFailedPrecondition, "file edit review dependencies are required")
 	}
@@ -142,6 +141,9 @@ func (s *FileEditReviewService) Review(ctx context.Context,
 	}
 	replayed := edit.Status == expected
 	var reviewed fileedit.Edit
+	if replayed {
+		return ReviewFileEditResult{Edit: edit, Action: request.Action, Replayed: true}, nil
+	}
 	if edit.Status == fileedit.StatusProposed {
 		record, approvalErr := s.store.GetApprovalByProposal(ctx, edit.ID)
 		if approvalErr != nil {
@@ -168,22 +170,6 @@ func (s *FileEditReviewService) Review(ctx context.Context,
 				return ReviewFileEditResult{}, apperror.New(apperror.CodeFailedPrecondition,
 					"terminal Run file edits cannot be changed")
 			}
-			decision, decisionErr := s.store.DecideApproval(ctx, approval.DecisionRequest{
-				ProposalID: edit.ID,
-				IdempotencyKey: approval.ReviewIdempotencyKey(fileedit.ApprovalToolName(edit), edit.ID,
-					approvalAction),
-				Action: approvalAction, Reason: reason, ReviewedBy: "file_edit_review",
-			})
-			if decisionErr != nil {
-				return ReviewFileEditResult{}, apperror.Normalize(decisionErr)
-			}
-			if decision.Approval.ProposalID != edit.ID ||
-				decision.Approval.Status != expectedApproval ||
-				decision.Approval.RunID != run.ID {
-				return ReviewFileEditResult{}, apperror.New(apperror.CodeInternal,
-					"file edit approval decision violated its exact binding")
-			}
-			replayed = decision.Replayed
 		case expectedApproval:
 			// The approval transaction committed before the edit-state transaction.
 			// Finish the same decision without asking the operator a second time.
@@ -192,11 +178,11 @@ func (s *FileEditReviewService) Review(ctx context.Context,
 			return ReviewFileEditResult{}, apperror.New(apperror.CodeConflict,
 				"file edit approval was already decided with a different outcome")
 		}
-	}
-	if request.Action == FileEditApproveIntent {
-		reviewed, err = s.manager.ApproveIntent(ctx, edit.ID)
-	} else {
-		reviewed, err = s.manager.Deny(ctx, edit.ID, "denied by operator")
+		reviewed, replayed, err = s.store.CommitFileEditReview(ctx, edit, record, approval.DecisionRequest{
+			ProposalID:     edit.ID,
+			IdempotencyKey: approval.ReviewIdempotencyKey(fileedit.ApprovalToolName(edit), edit.ID, approvalAction),
+			Action:         approvalAction, Reason: reason, ReviewedBy: "file_edit_review",
+		})
 	}
 	if err != nil {
 		return ReviewFileEditResult{}, apperror.Normalize(err)
