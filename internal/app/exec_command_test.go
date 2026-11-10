@@ -135,3 +135,71 @@ func TestExecJSONOutputWithUnfinishedTurnExitsNonZero(t *testing.T) {
 		t.Fatalf("expected reply 'Incomplete task message', got: %v", result["reply"])
 	}
 }
+
+func TestExecStreamCompletesGracefully(t *testing.T) {
+	home := t.TempDir()
+	st, err := store.Open(filepath.Join(home, "exec-stream.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{
+		ID:        "exec-ws",
+		Name:      "exec-ws",
+		RootPath:  t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	encoded, err := json.Marshal(domain.RootAction{
+		Version: domain.RootLifecycleVersion, Kind: domain.RootActionFinish,
+		Message: "Streamed task reply", Summary: "Done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &execTestProvider{response: string(encoded)}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+
+	var out, errOut bytes.Buffer
+	a := &App{home: home, out: &out, errOut: &errOut, store: st, router: router,
+		checker: policy.NewDefaultChecker()}
+
+	// A successful streamed invocation must exit nil (the pre-fix flow
+	// surfaced the driver's own stop as a stream failure) and deliver the
+	// reply on stderr while stdout carries the event stream ending in a
+	// completed record.
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--stream", "Any task"}); err != nil {
+		t.Fatalf("streamed exec failed: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "Streamed task reply") {
+		t.Fatalf("reply missing from stderr: %s", errOut.String())
+	}
+	end := streamEndRecord(t, out.Bytes())
+	if end["reason"] != "completed" || end["has_more"] != false ||
+		end["status"] != string(domain.RunRunning) {
+		t.Fatalf("stream end record drifted: %#v", end)
+	}
+}
+
+func streamEndRecord(t *testing.T, output []byte) map[string]any {
+	t.Helper()
+	var end map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("stream line is not JSON: %v (%q)", err, line)
+		}
+		if record["kind"] == "stream.end" {
+			end = record
+		}
+	}
+	if end == nil {
+		t.Fatalf("stream.end record missing from output: %s", string(output))
+	}
+	return end
+}
