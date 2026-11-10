@@ -270,13 +270,13 @@ func agentBrowserScopeFingerprint(scope AgentBrowserOriginScope) (string, error)
 	return hex.EncodeToString(digest[:]), nil
 }
 
-// authorizeSessionNavigation is the single runtime enforcement point: the
-// dispatched URL and the page it lands on must both stay inside the declared
-// set. Unscoped sessions admit every navigable URL, unchanged. Phase 1 scopes
-// navigation and redirects only; once a landing escape is named, inputs on the
-// escaped page are a Phase 2 boundary decision (the error already tells the
-// model to navigate back before further inputs).
+// authorizeSessionNavigation applies the independently granted network policy
+// to navigations, redirects and intercepted subresources.
 func (r *AgentBrowserRuntime) authorizeSessionNavigation(ctx context.Context, rawURL string) error {
+	if r.request.NetworkMode == AgentBrowserNetworkInternet {
+		_, err := agentBrowserURL(rawURL)
+		return err
+	}
 	if r.scope == nil {
 		return nil
 	}

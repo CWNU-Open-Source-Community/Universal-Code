@@ -30,6 +30,14 @@ type AgentBrowserAuthority struct {
 	PermissionMode        string
 }
 
+type AgentBrowserNetworkMode string
+
+const (
+	AgentBrowserNetworkOff        AgentBrowserNetworkMode = "off"
+	AgentBrowserNetworkInternet   AgentBrowserNetworkMode = "internet"
+	AgentBrowserNetworkRestricted AgentBrowserNetworkMode = "restricted"
+)
+
 type AgentBrowserStartRequest struct {
 	HomePath        string
 	Authority       AgentBrowserAuthority
@@ -37,14 +45,19 @@ type AgentBrowserStartRequest struct {
 	Product         BrowserProduct
 	Headless        bool
 	RuntimeDeadline time.Time
-	// ScopedOrigins declares the operator-approved, default-deny origin set of
-	// a scoped session (ADR 0195). Empty keeps the unscoped Full-activation
-	// session; a non-empty set requires an ask/auto permission mode and is
-	// enforced on every dispatched navigation and its landing URL.
+	// NetworkMode is granted independently from shell/filesystem permissions.
+	// Internet permits network-accessible HTTP(S) destinations, including local
+	// development sites; restricted confines requests to ScopedOrigins. Both
+	// keep HTTP request-write review and grant no filesystem or command rights.
+	// Off refuses launch. An absent mode preserves the legacy Full/scoped API.
+	NetworkMode AgentBrowserNetworkMode
+	// ScopedOrigins declares the operator-approved, exact origin set for a
+	// restricted session, enforced for redirects and subresources as well.
 	ScopedOrigins []string
-	// ReviewNetworkWrite keeps one page request paused until the operator has
-	// approved its exact method, destination and complete body. The callback
-	// must consume that decision once before calling dispatch.
+	// ReviewNetworkWrite keeps one intercepted HTTP request paused until the
+	// operator has approved its exact method, destination and complete body.
+	// The callback must consume that decision once before calling dispatch.
+	// WebSocket handshakes/messages are outside Fetch interception.
 	ReviewNetworkWrite func(context.Context, AgentBrowserNetworkRequest, func() error) error
 }
 

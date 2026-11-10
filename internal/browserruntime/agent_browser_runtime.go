@@ -52,7 +52,7 @@ func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
 	r.networkRuntimeID = agentBrowserToken()
 	r.networkPending = map[string]context.CancelFunc{}
 	r.mu.Unlock()
-	if r.scope != nil {
+	if r.interceptsNetwork() {
 		// A browser-level Fetch handler is installed before any owned page or
 		// worker creates its URLLoaderFactory. Attaching after a SharedWorker
 		// starts cannot update its already-created factory.
@@ -97,8 +97,8 @@ func (r *AgentBrowserRuntime) initialize(ctx context.Context) error {
 	r.mu.Lock()
 	r.session = attached.ID
 	r.mu.Unlock()
-	if r.scope != nil {
-		if err := r.initializeScopedNetwork(ctx); err != nil {
+	if r.interceptsNetwork() {
+		if err := r.initializeNetwork(ctx); err != nil {
 			return err
 		}
 	}
@@ -135,8 +135,8 @@ func (r *AgentBrowserRuntime) invalidateNetworkLocked() {
 func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if event.Method == "Fetch.requestPaused" && event.SessionID == "" && r.scope != nil {
-		r.handleScopedRequestLocked(event)
+	if event.Method == "Fetch.requestPaused" && event.SessionID == "" && r.interceptsNetwork() {
+		r.handleNetworkRequestLocked(event)
 		return
 	}
 	if event.Method == "Target.detachedFromTarget" {
@@ -160,8 +160,8 @@ func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 	}
 	switch event.Method {
 	case "Fetch.requestPaused":
-		if r.scope != nil {
-			r.handleScopedRequestLocked(event)
+		if r.interceptsNetwork() {
+			r.handleNetworkRequestLocked(event)
 		}
 	case "Page.frameStartedLoading":
 		var e struct{ FrameID string }
@@ -196,7 +196,7 @@ func (r *AgentBrowserRuntime) onEvent(event cdpWireMessage) {
 		if e.Frame.URL != "about:blank" && !validAgentBrowserURL(e.Frame.URL) {
 			// Chromium displays this internal error document after a refused
 			// navigation. The operator may still navigate this session back.
-			if r.scope == nil || r.networkDocumentError == nil || e.Frame.URL != "chrome-error://chromewebdata/" {
+			if !r.interceptsNetwork() || r.networkDocumentError == nil || e.Frame.URL != "chrome-error://chromewebdata/" {
 				r.cancel()
 			}
 		}
