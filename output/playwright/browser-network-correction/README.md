@@ -60,8 +60,14 @@ journey verified screenshot image decoding, then process/profile cleanup after
   expiry/restart and CLI/API/Desktop checks passed. The coordinator repeated the
   deterministic regression on the integrated checkout (0.818 seconds, exit 0).
   Desktop/API retain their default startup recovery.
+- Desktop recovery fixture `38be0ea2`: the final original Go job exposed one
+  manually built approval missing its Run's network mode/revision. Adding those
+  two fields preserved all recovery assertions. The failing test was reproduced,
+  then passed with adjacent Desktop startup and Store expiry/restart tests. The
+  coordinator repeated the repaired test after integration (0.549 seconds).
 - `go vet ./internal/app ./internal/httpapi ./internal/desktop` passed before the
-  constructor-option follow-up; its changed path has the focused checks above.
+  constructor-option follow-up; `go vet ./internal/app ./internal/application`
+  also passed on the integrated `d8007234` tree after that follow-up.
 
 The local broader Windows command test has an unrelated Git installation-path
 failure (Git is installed on D:, outside its approved candidates). Local Sandbox
@@ -80,6 +86,7 @@ this is not full-file coverage of every file. The application constructor and
 its CLI/Desktop/API callers were read to reproduce and fix cross-manager
 approval invalidation. Tests excluded by OCR's default selection were reviewed
 manually. No generated source changed in this correction.
+The later Desktop recovery fixture correction was read in full separately.
 
 The original PR's broader implementation review and external-internet check
 remain recorded in `../browser-network/README.md`. Its old permanent-card

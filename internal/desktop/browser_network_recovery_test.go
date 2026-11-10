@@ -35,6 +35,8 @@ func TestControlPlaneWithoutRunExecutionInvalidatesOldBrowserRequests(t *testing
 		t.Fatal(err)
 	}
 	authority := toolgateway.AgentBrowserCallAuthority{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, RunID: run.ID, MissionID: run.MissionID, SessionID: run.SessionID, RootAgentID: "root", Surface: domain.ExecutionSurfaceCode, Phase: domain.ExecutionPhaseDeliver, Role: domain.AgentRoleRoot, Profile: domain.ProfileCode, PermissionMode: domain.RunExecutionPermissionAsk, ModeRevision: 1, PermissionSnapshotID: "snapshot", PermissionRevision: 1, RunAuthorizationFence: 1, ManagerBootID: "old-boot", BrowserSessionID: "old-browser", SessionGeneration: 1, DeclaredOrigins: []string{"http://127.0.0.1:4321"}, ScopeFingerprint: scope.Fingerprint}
+	authority.BrowserNetworkAccess = run.Config.BrowserNetworkAccess
+	authority.BrowserNetworkRevision = run.Config.BrowserNetworkRevision
 	authority.Generation = authority.Fingerprint()
 	raw, _ := json.Marshal(authority)
 	source := domain.BrowserNetworkRequest{ID: domain.BrowserNetworkRequestPrefix + "old-process", RunID: run.ID, SessionID: run.SessionID, ManagerBootID: authority.ManagerBootID, RuntimeID: "old-runtime", Fingerprint: strings.Repeat("a", 64), AuthorityJSON: string(raw), Method: "POST", DisplayURL: "http://127.0.0.1:4321/write", BodySHA256: strings.Repeat("b", 64), ExpiresAt: time.Now().Add(2 * time.Minute)}
