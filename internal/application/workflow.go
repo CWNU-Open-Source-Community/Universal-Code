@@ -29,6 +29,7 @@ type WorkflowStore interface {
 	ListWorkflowCandidates(context.Context, time.Time, string, time.Time, int) ([]domain.WorkflowExecution, error)
 	WorkflowWakeFingerprint(context.Context, string, time.Time) (string, error)
 	ClaimWorkflowExecution(context.Context, string, string) (domain.WorkflowExecution, bool, error)
+	RenewWorkflowExecutionClaim(context.Context, string, string) (bool, error)
 	ReleaseWorkflowExecution(context.Context, string, string) error
 	CheckpointWorkflowExecution(context.Context, domain.WorkflowExecution, string) (domain.WorkflowExecution, error)
 	ListWorkflowSummaryCandidates(context.Context, time.Time, int) ([]domain.WorkflowExecution, error)
@@ -178,11 +179,18 @@ func (s *WorkflowService) advance(ctx context.Context, id string, revision int64
 	return s.runClaimed(ctx, e, owner, revision)
 }
 
-func (s *WorkflowService) runClaimed(ctx context.Context, e domain.WorkflowExecution, owner string, revision int64) (domain.WorkflowExecution, error) {
+func (s *WorkflowService) runClaimed(ctx context.Context, e domain.WorkflowExecution, owner string, revision int64) (result domain.WorkflowExecution, resultErr error) {
+	ctx, cancelTurn := context.WithCancel(ctx)
+	stop := make(chan struct{})
+	done := make(chan error, 1)
+	go func() { done <- s.renewWorkflowClaim(ctx, e.ID, owner, stop, cancelTurn) }()
 	defer func() {
+		close(stop)
+		cancelTurn()
+		renewErr := <-done
 		release, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
-		_ = s.store.ReleaseWorkflowExecution(release, e.ID, owner)
+		resultErr = errors.Join(resultErr, renewErr, s.store.ReleaseWorkflowExecution(release, e.ID, owner))
 	}()
 	if revision > 0 && e.Version != revision {
 		return e, nil

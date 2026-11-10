@@ -1,0 +1,2 @@
+ok  	cyberagent-workbench/internal/httpapi	7.574s
+ok  	cyberagent-workbench/internal/desktop	0.802s
