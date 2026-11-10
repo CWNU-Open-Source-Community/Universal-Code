@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { APIRequestError, type APIClient } from "../api/client";
 import type { PublicModelStreamSnapshot } from "../api/types";
+import { useConnectionStore } from "../state/connection";
 
 export type PublicModelStreamStatus = "waiting" | "live" | "finalizing" |
   "reconnecting" | "stopped";
@@ -14,6 +15,7 @@ export interface PublicModelStreamState {
 const livePollDelayMs = 150;
 const idlePollDelayMs = 1_000;
 const reconnectDelayMs = 500;
+const maxReconnectDelayMs = 8_000;
 const finalizingMissLimit = 2;
 
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -37,12 +39,21 @@ function callIdentity(snapshot: PublicModelStreamSnapshot): string {
 
 export function usePublicModelStream(client: APIClient, runID: string,
   enabled: boolean): PublicModelStreamState {
-  const [snapshot, setSnapshot] = useState<PublicModelStreamSnapshot | null>(null);
+  const dataStoreID = useConnectionStore((state) => state.health?.data_store_id ?? "");
+  const [snapshotState, setSnapshotState] = useState<{
+    client: APIClient; runID: string; enabled: boolean; dataStoreID: string; snapshot: PublicModelStreamSnapshot | null;
+  }>(() => ({ client, runID, enabled, dataStoreID, snapshot: null }));
   const [status, setStatus] = useState<PublicModelStreamStatus>("stopped");
   const [error, setError] = useState("");
+  const sameOwner = snapshotState.client === client && snapshotState.runID === runID &&
+    snapshotState.enabled === enabled && snapshotState.dataStoreID === dataStoreID;
 
   useEffect(() => {
     const controller = new AbortController();
+    const setSnapshot = (snapshot: PublicModelStreamSnapshot | null) =>
+      setSnapshotState((previous) => previous.client === client && previous.runID === runID &&
+        previous.enabled === enabled && previous.dataStoreID === dataStoreID && previous.snapshot === snapshot
+        ? previous : { client, runID, enabled, dataStoreID, snapshot });
     setSnapshot(null);
     setError("");
     if (!enabled || !runID) {
@@ -52,6 +63,7 @@ export function usePublicModelStream(client: APIClient, runID: string,
 
     let current: PublicModelStreamSnapshot | null = null;
     let finalizingMisses = 0;
+    let retryDelay = reconnectDelayMs;
     const poll = async () => {
       setStatus("waiting");
       while (!controller.signal.aborted) {
@@ -59,6 +71,7 @@ export function usePublicModelStream(client: APIClient, runID: string,
         try {
           const next = await client.pollPublicModelStream(runID, controller.signal);
           if (controller.signal.aborted) return;
+          retryDelay = reconnectDelayMs;
           if (next === null) {
             if (current) {
               finalizingMisses++;
@@ -89,6 +102,7 @@ export function usePublicModelStream(client: APIClient, runID: string,
         } catch (caught) {
           if (controller.signal.aborted) return;
           if (caught instanceof APIRequestError && caught.status === 404) {
+            retryDelay = reconnectDelayMs;
             if (current) {
               finalizingMisses++;
               if (finalizingMisses >= finalizingMissLimit) {
@@ -111,7 +125,8 @@ export function usePublicModelStream(client: APIClient, runID: string,
           } else {
             setStatus("reconnecting");
             setError(caught instanceof Error ? caught.message : "Model stream disconnected");
-            wait = reconnectDelayMs;
+            wait = retryDelay;
+            retryDelay = Math.min(retryDelay * 2, maxReconnectDelayMs);
           }
         }
         await delay(wait, controller.signal);
@@ -119,7 +134,8 @@ export function usePublicModelStream(client: APIClient, runID: string,
     };
     void poll();
     return () => controller.abort();
-  }, [client, enabled, runID]);
+  }, [client, dataStoreID, enabled, runID]);
 
-  return { error, snapshot, status };
+  return sameOwner ? { error, snapshot: snapshotState.snapshot, status }
+    : { error: "", snapshot: null, status: enabled && runID ? "waiting" : "stopped" };
 }
