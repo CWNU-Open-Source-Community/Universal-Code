@@ -93,7 +93,7 @@ existing map-approval fixture. That timeout has not been reproduced on the base
 revision and remains unattributed. The directly affected application group is
 green in 42.164s and recorded separately.
 
-After the shared build disks filled during linking, the affected application
+After the shared Go cache and temporary directory filled D: during linking, the affected application
 race and consumer commands were rerun with process-local `GOCACHE`, `GOTMPDIR`,
 `TEMP` and `TMP` under `C:/Users/22977/.codex/tmp/overnight-20261107/`.
 
@@ -102,3 +102,9 @@ The application race and consumer regression logs are recorded separately:
 [consumer regressions](consumer-regressions.txt),
 [focused application regressions](application-regressions.txt),
 [all-consumer compilation](compile-all.txt).
+
+The root reviewer applied this commit alone to main (`cfeee05a`) and repeated
+the new workflow reopen cases, atomic store cases and existing FileEditReview
+tests with `-race`. Application passes in 30.048s and store in 11.440s.
+The production diff, added tests and affected review callers were read before
+acceptance. [Main-base result](root-main-race.txt).
