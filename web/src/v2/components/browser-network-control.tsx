@@ -4,14 +4,10 @@ import type { APIClient } from "../../api/client";
 import { browserNetworkQueryKey, readBrowserNetwork, saveBrowserNetwork,
   type BrowserNetworkAccess, type BrowserNetworkTarget, type BrowserNetworkView } from "../../api/browser-network";
 import { agentBrowserQueryKey } from "../../api/agent-browser";
-import type { RunView, ThreadDetailView } from "../../api/types";
+import type { ThreadDetailView } from "../../api/types";
 import { useLocale } from "../../lib/locale";
 import { v2QueryKeys } from "../query-keys";
 import "./browser-network-control.css";
-
-export function browserNetworkRunFinished(status: RunView["status"] | undefined): boolean {
-  return status === "completed" || status === "failed" || status === "cancelled";
-}
 
 export function V2BrowserNetworkSettings({ client, threadID, draftWorkspaceID = "" }: {
   client: APIClient; threadID: string; draftWorkspaceID?: string;
@@ -22,7 +18,7 @@ export function V2BrowserNetworkSettings({ client, threadID, draftWorkspaceID = 
   const detail = thread.data?.thread.id === threadID ? thread.data : undefined;
   const run = detail?.active_run ?? detail?.last_run;
   const workspaceID = threadID ? detail?.thread.workspace_id ?? "" : draftWorkspaceID;
-  const target: BrowserNetworkTarget | undefined = run && !browserNetworkRunFinished(run.status)
+  const target: BrowserNetworkTarget | undefined = run
     ? { kind: "runs", id: run.id } : workspaceID ? { kind: "workspaces", id: workspaceID } : undefined;
   return <section className="v2-settings-section"><h2>{t("浏览器", "Browser")}</h2>
     {target ? <div className="v2-settings-card"><V2BrowserNetworkControl client={client} target={target} /></div>
@@ -33,13 +29,13 @@ export function V2BrowserNetworkSettings({ client, threadID, draftWorkspaceID = 
 }
 
 export function V2BrowserNetworkControl(props: {
-  client: APIClient; target: BrowserNetworkTarget; finished?: boolean;
+  client: APIClient; target: BrowserNetworkTarget;
 }) {
-  return <BrowserNetworkControl key={JSON.stringify([props.client.baseURL, props.target.kind, props.target.id, props.finished])} {...props} />;
+  return <BrowserNetworkControl key={JSON.stringify([props.client.baseURL, props.target.kind, props.target.id])} {...props} />;
 }
 
-function BrowserNetworkControl({ client, target, finished = false }: {
-  client: APIClient; target: BrowserNetworkTarget; finished?: boolean;
+function BrowserNetworkControl({ client, target }: {
+  client: APIClient; target: BrowserNetworkTarget;
 }) {
   const { t } = useLocale();
   const queries = useQueryClient();
@@ -48,22 +44,15 @@ function BrowserNetworkControl({ client, target, finished = false }: {
   const [formError, setFormError] = useState("");
   const query = useQuery({ queryKey: browserNetworkQueryKey(client.baseURL, target),
     queryFn: ({ signal }) => readBrowserNetwork(client, target, signal), retry: false, staleTime: 5_000 });
-  const workspaceTarget: BrowserNetworkTarget | undefined = target.kind === "runs" && finished && query.data?.workspace_id
-    ? { kind: "workspaces", id: query.data.workspace_id } : undefined;
-  const project = useQuery({ queryKey: workspaceTarget ? browserNetworkQueryKey(client.baseURL, workspaceTarget)
-    : ["browser-network-project", client.baseURL, target.kind, target.id],
-    queryFn: ({ signal }) => readBrowserNetwork(client, workspaceTarget!, signal), enabled: Boolean(workspaceTarget),
-    retry: false, staleTime: 5_000 });
-  const effectiveTarget = workspaceTarget ?? target;
-  const current = workspaceTarget ? project.data : query.data;
+  const current = query.data;
   const mutation = useMutation({ retry: false,
-    mutationFn: ({ mode, sites }: { mode: BrowserNetworkAccess; sites: string[] }) => saveBrowserNetwork(client, effectiveTarget, {
+    mutationFn: ({ mode, sites }: { mode: BrowserNetworkAccess; sites: string[] }) => saveBrowserNetwork(client, target, {
       version: "browser_network_access.v1", expected_revision: current!.revision,
       browser_network_access: mode, browser_origins: sites,
-      ...(effectiveTarget.kind === "runs" ? { remember_for_project: true } : {}),
+      ...(target.kind === "runs" ? { remember_for_project: true } : {}),
     }, `v2-browser-network-${globalThis.crypto.randomUUID()}`),
     onSuccess: (result) => {
-      queries.setQueryData(browserNetworkQueryKey(client.baseURL, effectiveTarget), result);
+      queries.setQueryData(browserNetworkQueryKey(client.baseURL, target), result);
       if (result.project_preference) {
         queries.setQueryData<BrowserNetworkView>(browserNetworkQueryKey(client.baseURL,
           { kind: "workspaces", id: result.workspace_id }), {
@@ -76,12 +65,12 @@ function BrowserNetworkControl({ client, target, finished = false }: {
       setFormError("");
     },
     onError: () => {
-      void queries.invalidateQueries({ queryKey: browserNetworkQueryKey(client.baseURL, effectiveTarget) });
+      void queries.invalidateQueries({ queryKey: browserNetworkQueryKey(client.baseURL, target) });
     },
   });
   const enabled = current !== undefined && current.browser_network_access !== "off";
-  const loading = query.isPending || Boolean(workspaceTarget && project.isPending);
-  const failed = query.isError || Boolean(workspaceTarget && project.isError);
+  const loading = query.isPending;
+  const failed = query.isError;
   const disabled = !client.hasControl || !current || mutation.isPending;
   const save = () => {
     const sites = restricted ? [...new Set(origins.split(/[\n,]+/u).map((site) => site.trim()).filter(Boolean))] : [];
@@ -100,7 +89,7 @@ function BrowserNetworkControl({ client, target, finished = false }: {
     </div>
     {loading && <p role="status">{t("正在读取浏览器设置…", "Loading browser settings…")}</p>}
     {failed && <p role="alert">{t("无法读取浏览器设置。", "Could not read browser settings.")} <button type="button"
-      onClick={() => { void (workspaceTarget ? project.refetch() : query.refetch()); }}>{t("重试", "Retry")}</button></p>}
+      onClick={() => { void query.refetch(); }}>{t("重试", "Retry")}</button></p>}
     {current && <details onToggle={(event) => {
       if (!event.currentTarget.open) return;
       setRestricted((current.browser_origins?.length ?? 0) > 0);

@@ -22,6 +22,12 @@ it("reads the browser policy with the read credential", async () => {
   })]);
 });
 
+it("reads the saved next-run selection from the finished run endpoint", async () => {
+  const next = { ...view, for_next_run: true };
+  serve(next);
+  expect(await readBrowserNetwork(new APIClient("read", "/api/v1", "control"), target)).toEqual(next);
+});
+
 it.each(["runs", "workspaces"] as const)("updates %s with PUT, revision and an idempotency key", async (kind) => {
   const destination = { kind, id: kind === "runs" ? "run-1" : "workspace-1" };
   const fetchMock = serve({ ...view, replayed: false });
@@ -40,7 +46,7 @@ it("rejects writes without a control credential before sending a request", async
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-it.each([{ run_id: "other" }, { browser_network_access: "full" }, { revision: -1 },
+it.each([{ run_id: "other" }, { browser_network_access: "full" }, { revision: -1 }, { for_next_run: "yes" },
   { project_preference: { ...preference, workspace_id: "other" } }])("rejects an unrelated or malformed policy %j", (change) => {
   expect(() => parseBrowserNetwork({ ...view, ...change }, target)).toThrow("response is invalid");
 });
