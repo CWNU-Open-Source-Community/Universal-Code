@@ -1,0 +1,63 @@
+{
+  "phase": "after",
+  "platform": "win32",
+  "product_revision": "8ac3e78d4c8115c0570310c82ceb12f7d9a4398d",
+  "harness_revision": "8ac3e78d4c8115c0570310c82ceb12f7d9a4398d",
+  "backend": "production app.ExecuteContext",
+  "frontend": "production Vite build",
+  "provider": "controlled offline fixture",
+  "provider_reply_held_for_capture": true,
+  "full_permission_confirmed_in_ui": false,
+  "browser_network_enabled_in_ui": true,
+  "browser_network_settings_surface": "settings/permissions",
+  "browser_view_opened_explicitly": true,
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "observed": {
+    "version": "agent_browser_status.v1",
+    "run_id": "run-20261106162128-8403f9c09b33",
+    "session_id": "agent-browser-20261106162130-f01703c1104d",
+    "generation": 1,
+    "state": "ready",
+    "available": true,
+    "can_start": false,
+    "product": "chrome",
+    "headless": true,
+    "url": "http://127.0.0.1:52231/",
+    "title": "Owned Agent Browser check",
+    "document_epoch": 7,
+    "last_action": "browser_screenshot",
+    "updated_at": "2026-11-06T16:21:31.4550271Z",
+    "screenshot": {
+      "locator": "workspace:///.cyberagent-workbench/browser-artifacts/run-20261106162128-8403f9c09b33/4b6f2c12ebe7ba332b35ec0144cb4c3ca2f2c135535b4344dd848e5200214818.png",
+      "sha256": "1caabbcbf77b317544d9040675eb72da092e7163b769ec64f6e218622f2562b8",
+      "byte_size": 36058,
+      "mime_type": "image/png"
+    },
+    "cleanup_pending": false,
+    "tree_reaped": false,
+    "profile_removed": false,
+    "process_scope_verified": false
+  },
+  "closed": {
+    "version": "agent_browser_status.v1",
+    "run_id": "run-20261106162128-8403f9c09b33",
+    "session_id": "agent-browser-20261106162130-f01703c1104d",
+    "generation": 1,
+    "state": "closed",
+    "available": true,
+    "can_start": true,
+    "product": "chrome",
+    "headless": true,
+    "url": "http://127.0.0.1:52231/",
+    "document_epoch": 10,
+    "last_action": "browser_screenshot",
+    "updated_at": "2026-11-06T16:21:34.1053109Z",
+    "cleanup_pending": false,
+    "tree_reaped": true,
+    "profile_removed": true,
+    "process_scope_verified": false
+  }
+}
