@@ -39,6 +39,9 @@ func TestListApprovalsInvalidatesExpiredBrowserRequestsWithoutRuntime(t *testing
 	}
 	defer st.Close()
 	mission, run := createStructuredToolTestRun(t, ctx, st, "browser approval expiry")
+	if _, err := application.ChangeBrowserNetworkAccess(ctx, st, nil, domain.ChangeBrowserNetworkAccessRequest{Version: domain.BrowserNetworkAccessVersion, RunID: run.ID, ExpectedRevision: 1, BrowserNetworkAccess: domain.BrowserNetworkRestricted, BrowserOrigins: []string{"http://127.0.0.1:4321"}, OperationKey: "expiry-browser-policy-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC()
 	if _, err = st.SaveToolRun(ctx, toolrun.ToolRun{ID: "unrelated-shell-approval", SessionID: run.SessionID, WorkspaceID: mission.WorkspaceID, ToolName: toolrun.ShellTool, Command: "echo pending", Status: toolrun.StatusProposed, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
@@ -48,6 +51,7 @@ func TestListApprovalsInvalidatesExpiredBrowserRequestsWithoutRuntime(t *testing
 		t.Fatal(err)
 	}
 	a := toolgateway.AgentBrowserCallAuthority{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, RunID: run.ID, MissionID: run.MissionID, SessionID: run.SessionID, WorkspaceID: mission.WorkspaceID, RootAgentID: "root", Surface: domain.ExecutionSurfaceCode, Phase: domain.ExecutionPhaseDeliver, Role: domain.AgentRoleRoot, Profile: domain.ProfileCode, PermissionMode: domain.RunExecutionPermissionAsk, ModeRevision: 1, PermissionSnapshotID: "snapshot", PermissionRevision: 1, RunAuthorizationFence: 1, ManagerBootID: "current-boot", BrowserSessionID: "browser-session", SessionGeneration: 1, DeclaredOrigins: []string{"http://127.0.0.1:4321"}, ScopeFingerprint: scope.Fingerprint}
+	a.BrowserNetworkAccess, a.BrowserNetworkRevision = domain.BrowserNetworkRestricted, 2
 	a.Generation = a.Fingerprint()
 	raw, _ := json.Marshal(a)
 	for _, name := range []string{"live", "expired"} {
@@ -88,6 +92,10 @@ func TestSchemaV222BrowserRequestsMigrateAndNeverReplayAfterRestart(t *testing.T
 	path := filepath.Join(t.TempDir(), "v221-browser.db")
 	st := openHistoricalTestDatabase(t, path, 221)
 	mission, run := createStructuredToolTestRun(t, ctx, st, "paused browser request recovery")
+	// Represent the released v221 config before explicit browser selections.
+	if _, err := st.db.Exec(`UPDATE runs SET config_json=json_set(json_remove(config_json,'$.browser_network_access','$.browser_network_revision'),'$.browser_origins',json('["http://127.0.0.1:4321"]')) WHERE id=?`, run.ID); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.applyMigration(ctx, migrationPlan()[221]); err != nil {
 		t.Fatal(err)
 	}

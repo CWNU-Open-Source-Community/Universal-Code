@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"cyberagent-workbench/internal/apperror"
 	"encoding/json"
 	"errors"
 	"sort"
@@ -109,14 +110,16 @@ func (s *AgentRunner) workerToolCatalogue(ctx context.Context, ref domain.AgentA
 			add(definition, command.Authority)
 		}
 	}
-	if s.agentBrowser != nil && s.agentBrowser.available && permission.Mode.IncludesFullAccess() {
+	if s.agentBrowser != nil && s.agentBrowser.available && w.Run.Config.EffectiveBrowserNetworkAccess(permission.Mode) != domain.BrowserNetworkOff {
 		authority, err := s.agentBrowser.WorkerToolAuthority(ctx, ref)
-		if err != nil {
+		if err != nil && apperror.CodeOf(err) != apperror.CodeFailedPrecondition {
 			return c, err
 		}
-		for _, name := range []toolgateway.ToolName{toolgateway.BrowserStatusTool, toolgateway.BrowserNavigateTool, toolgateway.BrowserSnapshotTool, toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool, toolgateway.BrowserScreenshotTool, toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool} {
-			if d, ok := toolgateway.AgentBrowserToolDefinition(name); ok {
-				add(d, authority)
+		if err == nil {
+			for _, name := range []toolgateway.ToolName{toolgateway.BrowserStatusTool, toolgateway.BrowserNavigateTool, toolgateway.BrowserSnapshotTool, toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool, toolgateway.BrowserScreenshotTool, toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool} {
+				if d, ok := toolgateway.AgentBrowserToolDefinition(name); ok {
+					add(d, authority)
+				}
 			}
 		}
 	}

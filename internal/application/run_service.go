@@ -62,22 +62,23 @@ func normalizeBrowserOrigins(raw []string) ([]string, error) {
 }
 
 type CreateRunRequest struct {
-	Goal              string
-	Profile           string
-	Surface           string
-	Phase             string
-	WorkspaceID       string
-	SessionID         string
-	ModelRoute        string
-	Interactive       bool
-	NetworkMode       string
-	AllowedTargets    []string
-	BrowserOrigins    []string
-	WebAccessMode     string
-	WebAllowedTargets []string
-	Budget            domain.Budget
-	RequestedBudget   *domain.Budget
-	RequestedBy       string
+	Goal                 string
+	Profile              string
+	Surface              string
+	Phase                string
+	WorkspaceID          string
+	SessionID            string
+	ModelRoute           string
+	Interactive          bool
+	NetworkMode          string
+	AllowedTargets       []string
+	BrowserOrigins       []string
+	BrowserNetworkAccess domain.BrowserNetworkAccess
+	WebAccessMode        string
+	WebAllowedTargets    []string
+	Budget               domain.Budget
+	RequestedBudget      *domain.Budget
+	RequestedBy          string
 	// ProjectConfig is the validated, narrowed .prayu snapshot. It can only
 	// reduce the requested budget and profiles; any widening was already
 	// rejected by the caller, and the Run pins this exact view at creation.
@@ -218,7 +219,21 @@ func (s *RunService) prepare(ctx context.Context, req CreateRunRequest) (prepare
 	if s == nil || s.store == nil {
 		return preparedRun{}, errors.New("run store is required")
 	}
-	return prepareRun(ctx, req, s.store.GetSession)
+	prepared, err := prepareRun(ctx, req, s.store.GetSession)
+	if err != nil {
+		return prepared, err
+	}
+	req.WorkspaceID = prepared.Mission.WorkspaceID
+	selected, err := inheritProjectBrowserNetworkAccess(ctx, s.store, req)
+	if err != nil {
+		return preparedRun{}, err
+	}
+	mode, origins, err := normalizeBrowserNetworkAccess(selected.BrowserNetworkAccess, selected.BrowserOrigins)
+	if err != nil {
+		return preparedRun{}, err
+	}
+	prepared.Run.Config.BrowserNetworkAccess, prepared.Run.Config.BrowserOrigins = mode, origins
+	return prepared, nil
 }
 
 func prepareRun(ctx context.Context, req CreateRunRequest,
@@ -344,7 +359,7 @@ func prepareRun(ctx context.Context, req CreateRunRequest,
 	if err != nil {
 		return preparedRun{}, err
 	}
-	browserOrigins, err := normalizeBrowserOrigins(req.BrowserOrigins)
+	browserNetworkAccess, browserOrigins, err := normalizeBrowserNetworkAccess(req.BrowserNetworkAccess, req.BrowserOrigins)
 	if err != nil {
 		return preparedRun{}, err
 	}
@@ -367,6 +382,8 @@ func prepareRun(ctx context.Context, req CreateRunRequest,
 			ModelRoute:                     route,
 			Interactive:                    req.Interactive,
 			BrowserOrigins:                 browserOrigins,
+			BrowserNetworkAccess:           browserNetworkAccess,
+			BrowserNetworkRevision:         1,
 			RequestedBudget:                req.RequestedBudget,
 			ProjectConfig:                  projectSnapshot,
 			ProjectConfigFingerprint:       projectFingerprintOf(req.ProjectConfig),

@@ -76,13 +76,17 @@ func (s *ThreadBranchService) Branch(ctx context.Context, request domain.ThreadB
 	if err != nil {
 		return ThreadBranchResult{}, err
 	}
-	prepared, err := prepareRun(ctx, CreateRunRequest{
+	creationRequest, err := inheritProjectBrowserNetworkAccess(ctx, s.store, CreateRunRequest{
 		Goal: mission.Goal, Profile: string(mission.Profile), WorkspaceID: mission.WorkspaceID,
 		Surface: string(mode.Surface), Phase: string(mode.Phase), ModelRoute: run.Config.ModelRoute,
 		Interactive: true, Budget: run.Budget, RequestedBudget: run.Config.RequestedBudget,
 		RequestedBy: request.RequestedBy, WebAccessMode: string(mode.Scope.WebAccessMode),
 		WebAllowedTargets: append([]string(nil), mode.Scope.WebAllowedTargets...),
-	}, nil)
+	})
+	if err != nil {
+		return ThreadBranchResult{}, apperror.Normalize(err)
+	}
+	prepared, err := prepareRun(ctx, creationRequest, nil)
 	if err != nil {
 		return ThreadBranchResult{}, apperror.Normalize(err)
 	}
