@@ -28,7 +28,7 @@ export interface AgentBrowserStatus {
   updated_at: string;
   screenshot?: AgentBrowserScreenshot;
   failure_code?: "action_failed" | "browser_unavailable";
-  unavailable_code?: "platform_unsupported" | "full_access_required" | "runtime_unavailable" | "run_unavailable" | "session_unavailable";
+  unavailable_code?: "platform_unsupported" | "full_access_required" | "runtime_unavailable" | "run_unavailable" | "session_unavailable" | "browser_network_off";
   cleanup_pending: boolean;
   tree_reaped: boolean;
   profile_removed: boolean;
@@ -39,7 +39,7 @@ export interface AgentBrowserStatus {
 
 const states = new Set<AgentBrowserStatus["state"]>(["unavailable", "idle", "starting", "ready", "loading", "busy", "waiting_user", "failed", "closing", "closed", "cleanup_pending"]);
 const sha256 = /^[0-9a-f]{64}$/u;
-const unavailableCodes = new Set(["platform_unsupported", "full_access_required", "runtime_unavailable", "run_unavailable", "session_unavailable"]);
+const unavailableCodes = new Set(["platform_unsupported", "full_access_required", "runtime_unavailable", "run_unavailable", "session_unavailable", "browser_network_off"]);
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

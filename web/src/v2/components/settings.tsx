@@ -32,6 +32,7 @@ import {
   type V2ConfiguredModelProviderPreset,
 } from "./model-provider-presets";
 import { V2PermissionControl } from "./permission-control";
+import { V2BrowserNetworkSettings } from "./browser-network-control";
 import { V2ProviderSettings } from "./provider-settings";
 import { V2RuntimeCapabilityControl } from "./runtime-capability-control";
 import { saveChatPreferences, useChatPreferences, type SendPreference } from "../chat-preferences";
@@ -529,6 +530,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
           <V2PermissionControl client={client} threadID={threadID} variant="settings"
             onOpenModelSettings={() => onSelectSection("models")} />
         </section>
+        <V2BrowserNetworkSettings client={client} threadID={threadID} draftWorkspaceID={draftWorkspaceID} />
         <V2CommandServiceSettings client={client} threadID={threadID} />
         <V2ExecutionSettings client={client} threadID={threadID} workspaces={workspaces} />
         <section className="v2-settings-section"><V2RuntimeCapabilityControl /></section></>}
