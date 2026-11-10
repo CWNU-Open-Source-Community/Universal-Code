@@ -127,6 +127,49 @@ describe("workspace-tabs store", () => {
     });
   });
 
+  it.each([1000, 900])("keeps unsaved workspace changes when storage fails and the clock is %i", (nextTime) => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    const threadID = `storage-failure-${nextTime}`;
+    try {
+      openWorkspaceFile(threadID, { path: "src/first.ts" }, "run-1");
+      now.mockReturnValue(nextTime);
+      const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+      try {
+        openWorkspaceFile(threadID, { path: "src/second.ts" }, "run-1");
+        expect(getThreadWorkspaceState(threadID)).toMatchObject({
+          activeTabID: "file:2",
+          tabs: [{ path: "src/first.ts" }, { path: "src/second.ts" }],
+        });
+        setWorkspaceWidth(threadID, 560);
+        expect(getThreadWorkspaceState(threadID)).toMatchObject({ activeTabID: "file:2", width: 560 });
+      } finally {
+        write.mockRestore();
+      }
+      setWorkspaceWidth(threadID, 600);
+      resetWorkspaceTabsMemoryCache();
+      expect(getThreadWorkspaceState(threadID)).toMatchObject({
+        activeTabID: "file:2", width: 600,
+        tabs: [{ path: "src/first.ts" }, { path: "src/second.ts" }],
+      });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("accepts a persisted update from another window when timestamps tie", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      const threadID = "storage-external-update";
+      openWorkspaceFile(threadID, { path: "src/first.ts" });
+      const persisted = JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!);
+      persisted.threads[threadID].width = 700;
+      localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(persisted));
+      expect(getThreadWorkspaceState(threadID).width).toBe(700);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("distinguishes collapsing panel, closing terminal tab, and clearing ended terminal session", () => {
     openWorkspaceFile("thread-term", { path: "src/app.tsx" }, "run-1");
     focusWorkspaceSingletonTab("thread-term", "terminal");
