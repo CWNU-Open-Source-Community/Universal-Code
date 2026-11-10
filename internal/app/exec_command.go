@@ -161,17 +161,21 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 
 	if *streamEvents {
 		// Stream mode: events go to stdout as JSON lines in real time; the
-		// final reply goes to stderr. The headless exporter runs on a
-		// cancellable child context and is stopped after the turn ends — we
-		// never force the Run into a terminal state to stop streaming, so
+		// final reply goes to stderr. The headless exporter follows on a
+		// cancellable child context; after the turn ends the driver closes
+		// the Stop channel so the exporter drains the durable tail and
+		// finishes with reason "completed" and a nil error — the run is
+		// never forced into a terminal state to stop streaming, so
 		// waiting_approval, paused, and failed outcomes all exit cleanly.
 		streamCtx, streamCancel := context.WithCancel(ctx)
 		defer streamCancel()
+		stop := make(chan struct{})
 		exporter := headless.NewExporter(a.store)
 		streamDone := make(chan error, 1)
 		go func() {
 			streamDone <- exporter.Export(streamCtx, a.out, headless.Request{
 				RunID: run.ID, Follow: true, MaxEvents: headless.MaxEvents,
+				Stop: stop,
 			})
 		}()
 
@@ -183,10 +187,11 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 			RequestedBy:  "cli_exec_operator",
 		})
 
-		// Stop the stream after the turn ends — do not force the Run into a
-		// terminal state. The exporter exits via ctx.Done() with a cancelled
-		// end record.
-		streamCancel()
+		// End the stream after the turn ends — do not force the Run into a
+		// terminal state. The graceful stop drains the durable tail first,
+		// so the end record cannot claim has_more:false over unread events;
+		// the deferred streamCancel only fires on the error paths below.
+		close(stop)
 		streamErr := <-streamDone
 
 		// The turn result is the primary outcome; stream delivery errors are
