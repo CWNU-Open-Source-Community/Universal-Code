@@ -1,0 +1,39 @@
+=== RUN   TestScheduledAutomaticWorkflowLostResponseObservesOriginalAcrossRestart
+--- PASS: TestScheduledAutomaticWorkflowLostResponseObservesOriginalAcrossRestart (0.51s)
+=== RUN   TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt
+=== RUN   TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt/thread
+=== RUN   TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt/workflow
+--- PASS: TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt (1.01s)
+    --- PASS: TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt/thread (0.51s)
+    --- PASS: TestScheduledAutomaticCrashBeforeReceiptIdentityRecoversWithOneAttempt/workflow (0.50s)
+=== RUN   TestWorkflowRestartProcessChild
+    workflow_restart_process_test.go:57: only run in the workflow restart subprocess
+--- SKIP: TestWorkflowRestartProcessChild (0.00s)
+=== RUN   TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt
+=== RUN   TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt/prepared/
+    workflow_restart_process_test.go:102: actual subprocess exit 87 after SQLite prepared commit
+    workflow_restart_process_test.go:193: after simulated claim/lease expiry: execution=completed step=completed attempt=attempt-e02fb11e5ae00e743251e02a93ee9d992aa384fe7ce4e7ef1d0ad11a57bf5879 turn=1 provider_calls=1 tokens=5
+=== RUN   TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt/leased/
+    workflow_restart_process_test.go:102: actual subprocess exit 87 after SQLite leased commit
+    workflow_restart_process_test.go:193: after simulated claim/lease expiry: execution=completed step=completed attempt=attempt-9a8f3e351451da3a62f2b4a62d5322105538fbe73fd2b91144c3226081a52285 turn=1 provider_calls=1 tokens=5
+=== RUN   TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt/attempt/
+    workflow_restart_process_test.go:102: actual subprocess exit 87 after SQLite attempt commit
+    workflow_restart_process_test.go:193: after simulated claim/lease expiry: execution=failed step=failed attempt=attempt-0613249389d648f4ace9eefa89c3bc0045d8c97250ae9ff51cb6eb4e41cd87b2 turn=1 provider_calls=0 tokens=0
+=== RUN   TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt/leased/pause
+    workflow_restart_process_test.go:102: actual subprocess exit 87 after SQLite leased commit
+    workflow_restart_process_test.go:171: pause survives crash reopen and claim expiry: execution=paused step=pending provider_calls=0
+=== RUN   TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt/leased/cancel
+    workflow_restart_process_test.go:102: actual subprocess exit 87 after SQLite leased commit
+    workflow_restart_process_test.go:171: cancel survives crash reopen and claim expiry: execution=failed step=failed provider_calls=0
+--- PASS: TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt (3.48s)
+    --- PASS: TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt/prepared/ (0.66s)
+    --- PASS: TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt/leased/ (0.64s)
+    --- PASS: TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt/attempt/ (0.63s)
+    --- PASS: TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt/leased/pause (0.76s)
+    --- PASS: TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt/leased/cancel (0.79s)
+=== RUN   TestWorkflowHostContinuesPausedCheckpointAfterDatabaseReopen
+--- PASS: TestWorkflowHostContinuesPausedCheckpointAfterDatabaseReopen (0.59s)
+=== RUN   TestWorkflowHostDoesNotReplayUnfinishedAttemptAfterDatabaseReopen
+--- PASS: TestWorkflowHostDoesNotReplayUnfinishedAttemptAfterDatabaseReopen (0.49s)
+PASS
+ok  	cyberagent-workbench/internal/application	6.159s
