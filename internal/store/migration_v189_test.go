@@ -191,7 +191,7 @@ func commandScopeV189Fixture(t *testing.T, state *SQLiteStore, profile string, a
 	if err != nil || registered.ID != workspace.ID || registered.Name != workspace.Name || registered.RootPath != workspace.RootPath {
 		t.Fatalf("scope fixture workspace identity was not registered: got=%+v error=%v", registered, err)
 	}
-	runs := application.NewRunService(state)
+	runs := newMigrationFixtureRunService(t, state)
 	mission, run, err := runs.Create(ctx, application.CreateRunRequest{Goal: "verify distinct command backend SQL scope", Profile: "code", Surface: "code", Phase: "deliver",
 		WorkspaceID: workspace.ID, Budget: domain.Budget{MaxTurns: 4, MaxTokens: 1000, MaxToolCalls: 8}})
 	if err != nil {
