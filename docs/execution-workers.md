@@ -198,8 +198,10 @@ An unverified code-delivery step remains failed even if its child saved a report
 Resume never resets the saved deadline, token or turn limits.
 
 After the host restarts, it can continue from committed checkpoints and approval
-stops. A clean shutdown releases the workflow claim; after an abnormal exit, the
-next host waits for the existing claim's remaining lease (at most 15 minutes).
+stops. A clean shutdown releases the workflow claim. New claims last 30 seconds,
+and an active host renews them every 10 seconds. After an abnormal exit, the next
+host waits for the claim's remaining lifetime. Claims saved by an older version
+retain their recorded expiry until an owner renews or releases them.
 If the process ended during a model/tool attempt whose result is unknown,
 the existing recovery marks that attempt interrupted and the workflow reports the
 failure rather than repeating its possible side effects. A fresh rerun remains an
