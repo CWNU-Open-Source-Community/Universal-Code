@@ -149,7 +149,14 @@ committed assistant reply on stdout, and exits non-zero unless the supervisor
 finished the task (`turn_finish`; approval waits, continuation stops, and
 budget exhaustion report their stop reason). `--json` emits `{run_id, thread_id, status, reply}` instead of the
 bare reply. Unattended runs cannot widen permissions: pre-arrange execution
-grants the same way you would for any Run.
+grants the same way you would for any Run. `--output-last-message <file>`
+additionally writes the final assistant reply to a file (created or
+truncated; Unix permission bits 0600, Windows stays ACL-controlled) before
+the standard output is produced, so cron jobs and CI steps get a reliable
+file sink for the reply regardless of the output format; a failed write
+fails the command. A paused turn records its committed reply at the pause
+point; the file is empty only when the turn failed before committing any
+reply.
 
 `cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
 回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
@@ -160,7 +167,12 @@ agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 
 `turn_finish` 结束任务（等待审批、继续等待与预算耗尽都会报告其停止原因）
 否则以非零码退出。`--json` 输出
 `{run_id, thread_id, status, reply}` 取代纯回复文本。无人值守运行不能放宽
-权限：执行授权需要与任何 Run 一样预先安排。
+权限：执行授权需要与任何 Run 一样预先安排。`--output-last-message <文件>`
+会先把最终助手回复写入文件（创建或截断；Unix 权限位 0600，Windows 由 ACL
+控制）再产出标准输出，cron
+作业与 CI 步骤因此获得与输出格式无关的可靠文件汇；写入失败将使命令失败。
+turn 在暂停点的已提交回复会写入文件；仅当 turn 在提交任何回复前失败时文
+件才为空。
 
 ### 补充消息与排队 / Follow-up messages and queue
 
