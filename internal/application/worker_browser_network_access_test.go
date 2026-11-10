@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"testing"
+	"time"
 
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/policy"
@@ -26,6 +27,11 @@ func TestWorkerCatalogueUsesIndependentBrowserNetworkSelection(t *testing.T) {
 				if _, err := NewRunExecutionPermissionService(st, caps).Change(t.Context(), ChangeRunExecutionPermissionRequest{RunID: run.ID, Mode: string(test.permission), OperationKey: "worker-browser-permission-0001", RequestedBy: "operator"}); err != nil {
 					t.Fatal(err)
 				}
+				acquired, err := st.AcquireRunExecutionLease(t.Context(), domain.AcquireRunExecutionLeaseRequest{RunID: run.ID, OwnerID: "browser-catalogue-worker", TTL: time.Minute})
+				if err != nil {
+					t.Fatal(err)
+				}
+				lease = acquired.Lease
 			}
 			if test.network != domain.BrowserNetworkOff {
 				var origins []string
