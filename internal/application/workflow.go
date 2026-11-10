@@ -180,7 +180,7 @@ func (s *WorkflowService) advance(ctx context.Context, id string, revision int64
 }
 
 func (s *WorkflowService) runClaimed(ctx context.Context, e domain.WorkflowExecution, owner string, revision int64) (result domain.WorkflowExecution, resultErr error) {
-	ctx, cancelTurn := context.WithCancel(ctx)
+	ctx, cancelTurn := context.WithTimeout(ctx, 10*time.Minute)
 	stop := make(chan struct{})
 	done := make(chan error, 1)
 	go func() { done <- s.renewWorkflowClaim(ctx, e.ID, owner, stop, cancelTurn) }()
@@ -203,8 +203,6 @@ func (s *WorkflowService) runClaimed(ctx context.Context, e domain.WorkflowExecu
 }
 
 func (s *WorkflowService) advanceClaimed(ctx context.Context, e domain.WorkflowExecution, owner, wake string) (domain.WorkflowExecution, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
 	d, err := s.store.GetWorkflowDefinition(ctx, e.DefinitionID)
 	if err != nil {
 		return e, err
