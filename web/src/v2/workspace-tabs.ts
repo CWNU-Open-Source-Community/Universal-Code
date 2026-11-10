@@ -235,7 +235,11 @@ function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWo
   const current = getThreadWorkspaceState(threadID);
   const candidate = updater(current);
   if (candidate === current) return;
-  const updated = sanitizeThreadState({ ...candidate, updatedAt: Date.now() }) ?? emptyThreadWorkspaceState();
+  // A failed storage write leaves both the persisted snapshot and this in-memory
+  // fallback. Advance past the snapshot we read even within the same millisecond
+  // or after a clock adjustment, so the new state remains authoritative.
+  const updatedAt = Math.max(Date.now(), current.updatedAt + 1);
+  const updated = sanitizeThreadState({ ...candidate, updatedAt }) ?? emptyThreadWorkspaceState();
   memoryFallback.set(threadID, updated);
   const all = { ...readAllPersisted(), [threadID]: updated };
   const entries = Object.entries(all)
