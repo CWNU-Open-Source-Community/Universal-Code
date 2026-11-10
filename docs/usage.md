@@ -170,8 +170,10 @@ agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 
 `{run_id, thread_id, status, stop_reason, turn_status, reply}` 取代纯回复文本。
 `--stream` 将 run 事件实时以 JSON 行流式输出到 stdout（headless.v1 协议）；
 最终回复输出到 stderr，脚本可分别管道监控进度与捕获回复。`--stream` 与
-`--json` 互斥。流在 turn 结束后自动停止（无需 Run 达到终态），等待审批/
-暂停/失败的结局正常退出并报告停止原因。
+`--json` 互斥。流在 turn 结束后自动收尾（无需 Run 达到终态）：exporter
+排空持久尾部并发出 reason 为 `completed` 的 `stream.end` 记录，随后命令以
+与非 stream 模式相同的 stop-reason 退出码退出——等待审批/暂停/失败的结局
+仍以非零码退出。每次调用的流上限为 10,000 个事件。
 无人值守运行不能放宽权限：执行授权需要与任何 Run 一样预先安排。
 
 ### 补充消息与排队 / Follow-up messages and queue

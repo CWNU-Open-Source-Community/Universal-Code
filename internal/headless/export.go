@@ -207,6 +207,10 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 		if run.Terminal() {
 			return finishTerminal(encoder, request, run, lastSequence, emitted)
 		}
+		if !request.Follow {
+			return finish(encoder, request, run, lastSequence, emitted,
+				"snapshot", false, nil)
+		}
 		if stopped {
 			// The driver asked Follow mode to end; the durable tail above is
 			// drained, so the record is complete for this invocation. The
@@ -215,14 +219,16 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 			return finish(encoder, request, run, lastSequence, emitted,
 				"completed", false, nil)
 		}
-		if !request.Follow {
-			return finish(encoder, request, run, lastSequence, emitted,
-				"snapshot", false, nil)
-		}
 
 		timer := time.NewTimer(request.PollInterval)
 		select {
 		case <-request.Stop:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
 			stopped = true
 		case <-ctx.Done():
 			if !timer.Stop() {
