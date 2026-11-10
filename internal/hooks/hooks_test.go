@@ -125,3 +125,15 @@ func testHookDigest(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
 }
+
+func TestDeclarationRejectsRunCompletedDenialPolicy(t *testing.T) {
+	declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "run-completed-audit",
+		Event: RunCompleted, Action: ActionRecord, FailurePolicy: FailureDeny, TimeoutMillis: 100}
+	if err := declaration.Validate(); err == nil {
+		t.Fatal("run_completed declaration accepted a failure policy that cannot be enforced on an already-decided transition")
+	}
+	declaration.FailurePolicy = FailureContinue
+	if err := declaration.Validate(); err != nil {
+		t.Fatalf("run_completed continue policy was rejected: %v", err)
+	}
+}
