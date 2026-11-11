@@ -420,7 +420,7 @@ func (s *SQLiteStore) RevokePluginPublisher(ctx context.Context,
 func (s *SQLiteStore) RecordHookAudit(ctx context.Context, audit hooks.AuditRecord) error {
 	if strings.TrimSpace(audit.PluginID) == "" || strings.TrimSpace(audit.HookID) == "" ||
 		!audit.Event.Valid() || (audit.Outcome != "completed" && audit.Outcome != "failed_closed" &&
-		audit.Outcome != "failed_continue") || audit.CreatedAt.IsZero() {
+		audit.Outcome != "failed_continue" && audit.Outcome != "output_capped") || audit.CreatedAt.IsZero() {
 		return apperror.New(apperror.CodeInvalidArgument, "plugin hook audit is invalid")
 	}
 	if (audit.PluginFingerprint != "" || audit.Action != "" || audit.Rejected != nil) &&

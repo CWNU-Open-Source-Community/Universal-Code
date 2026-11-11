@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -124,4 +126,138 @@ func TestEngineAppliesFailurePolicyWhenAuditCannotCommit(t *testing.T) {
 func testHookDigest(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
+}
+
+type recordingHookAuditSink struct{ outcomes []string }
+
+func (s *recordingHookAuditSink) RecordHookAudit(_ context.Context, record AuditRecord) error {
+	s.outcomes = append(s.outcomes, record.Outcome)
+	return nil
+}
+
+func annotateRegistrations(event Event, count, messageBytes int) []Registration {
+	fingerprint := testHookDigest("plugin")
+	values := make([]Registration, 0, count)
+	for i := 0; i < count; i++ {
+		message := fmt.Sprintf("observation %d", i)
+		if messageBytes > 0 {
+			message = strings.Repeat("x", messageBytes)
+		}
+		values = append(values, Registration{PluginID: "plugin", PluginFingerprint: fingerprint,
+			Declaration: Declaration{ProtocolVersion: ProtocolVersion,
+				ID: fmt.Sprintf("annotate-%02d", i), Event: event,
+				Action: ActionAnnotate, FailurePolicy: FailureContinue, TimeoutMillis: 100,
+				Message: message}})
+	}
+	return values
+}
+
+func TestPostOccurrenceAnnotationOverflowCapsInsteadOfFailing(t *testing.T) {
+	sink := &recordingHookAuditSink{}
+	engine := NewEngine(sink)
+	total := MaxAnnotations + 4
+	if err := engine.Replace(annotateRegistrations(RunCompleted, total, 0)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(context.Background(), Input{Event: RunCompleted, RunID: "run-1"})
+	if err != nil {
+		t.Fatalf("post-occurrence annotation overflow failed the boundary: %v", err)
+	}
+	if len(result.Annotations) != MaxAnnotations {
+		t.Fatalf("annotations were not capped: %d", len(result.Annotations))
+	}
+	if len(result.Executed) != total {
+		t.Fatalf("capped hooks did not stay executed: %d of %d", len(result.Executed), total)
+	}
+	capped := 0
+	for _, outcome := range sink.outcomes {
+		if outcome == "output_capped" {
+			capped++
+		}
+	}
+	if capped == 0 {
+		t.Fatal("no audit row recorded the cap drop")
+	}
+}
+
+func TestPostOccurrenceOutputSizeOverflowCapsInsteadOfFailing(t *testing.T) {
+	engine := NewEngine(nil)
+	// MaxAnnotations annotations of maximum message size overflow the output
+	// bound even though the annotation count stays within its own cap.
+	if err := engine.Replace(annotateRegistrations(PostTool, MaxAnnotations, MaxAnnotationBytes)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(context.Background(), Input{Event: PostTool,
+		ToolName: "shell", RunID: "run-1"})
+	if err != nil {
+		t.Fatalf("post-occurrence output overflow failed the boundary: %v", err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) > MaxOutputBytes || len(result.Annotations) == MaxAnnotations {
+		t.Fatalf("output was not capped: %d bytes, %d annotations", len(encoded), len(result.Annotations))
+	}
+}
+
+func TestSessionClosedPayloadEchoOverflowDropsPayloadOnly(t *testing.T) {
+	engine := NewEngine(nil)
+	if err := engine.Replace([]Registration{{PluginID: "plugin",
+		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "record-close", Event: SessionClosed,
+			Action: ActionRecord, FailurePolicy: FailureContinue, TimeoutMillis: 100}}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(context.Background(), Input{Event: SessionClosed, RunID: "run-1",
+		Payload: json.RawMessage("\"" + strings.Repeat("y", 20*1024) + "\"")})
+	if err != nil {
+		t.Fatalf("payload echo overflow failed the boundary: %v", err)
+	}
+	if result.Payload != nil || len(result.Executed) != 1 {
+		t.Fatalf("payload echo was not capped in place: payload=%d executed=%v",
+			len(result.Payload), result.Executed)
+	}
+}
+
+func TestPreOccurrenceAnnotationOverflowStillFailsClosed(t *testing.T) {
+	engine := NewEngine(nil)
+	if err := engine.Replace(annotateRegistrations(PreTool, MaxAnnotations+4, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Execute(context.Background(), Input{Event: PreTool, ToolName: "shell"}); err == nil {
+		t.Fatal("pre-occurrence annotation overflow must keep failing closed")
+	}
+}
+
+func TestPostOccurrenceExecutedListOverflowCapsInsteadOfFailing(t *testing.T) {
+	engine := NewEngine(nil)
+	// 64 registrations of max-length identities exceed MaxOutputBytes on the
+	// executed list alone; the registry-wide identity bound makes this the
+	// reachable worst case.
+	longID := strings.Repeat("h", MaxHookIdentityRunes-1)
+	values := make([]Registration, 0, MaxDeclarations)
+	for i := 0; i < MaxDeclarations; i++ {
+		values = append(values, Registration{PluginID: longID,
+			PluginFingerprint: testHookDigest("plugin"),
+			Declaration: Declaration{ProtocolVersion: ProtocolVersion,
+				ID:    longID[:MaxHookIdentityRunes-5] + fmt.Sprintf("%04d", i),
+				Event: RunCompleted, Action: ActionAnnotate,
+				FailurePolicy: FailureContinue, TimeoutMillis: 100,
+				Message: "m"}})
+	}
+	if err := engine.Replace(values); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(context.Background(), Input{Event: RunCompleted, RunID: "run-1"})
+	if err != nil {
+		t.Fatalf("executed-list overflow failed the post-occurrence boundary: %v", err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) > MaxOutputBytes || len(result.Executed) == MaxDeclarations {
+		t.Fatalf("executed list was not capped: %d bytes, %d entries", len(encoded), len(result.Executed))
+	}
 }

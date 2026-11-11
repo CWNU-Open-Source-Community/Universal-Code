@@ -348,6 +348,22 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 		if result.Denied {
 			break
 		}
+		// Post-occurrence boundaries observe work that already happened; an
+		// observation-output overflow there cannot retroactively fail it.
+		// Cap the output and record the drop instead of failing the boundary
+		// — otherwise a declaration set that exceeds the annotation, output,
+		// or identity bounds (each registration individually valid) would
+		// block run finalization, terminal transitions, and session
+		// archiving at every fire. Capping runs after the append so the
+		// result is within bounds at the end of every iteration.
+		if postOccurrenceEvent(input.Event) {
+			if capObservationOutput(&result) {
+				_ = e.record(context.WithoutCancel(ctx), registration, input, "output_capped")
+			}
+		}
+		// Pre-occurrence boundaries fail closed on an unbounded observation
+		// output; post-occurrence boundaries were capped above before this
+		// check could trip.
 		if len(result.Annotations) > MaxAnnotations {
 			return Result{}, errors.New("hook annotation output exceeds its limit")
 		}
@@ -357,6 +373,61 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 		}
 	}
 	return result, nil
+}
+
+// postOccurrenceEvent reports events whose boundaries observe work that has
+// already happened: post_tool observes a completed tool call, run_completed
+// and session_closed observe completed runs and sessions. An observation
+// output overflow at these boundaries cannot retroactively fail the work —
+// the same continue-only contract that keeps retroactive denial policies out
+// of these events — so the engine caps the output and records the drop.
+func postOccurrenceEvent(event Event) bool {
+	switch event {
+	case PostTool, RunCompleted, SessionClosed:
+		return true
+	default:
+		return false
+	}
+}
+
+// capObservationOutput trims a post-occurrence result until its observation
+// output fits the annotation and output bounds, reporting whether anything
+// was dropped. Annotations are dropped newest-first; a payload echo that
+// alone exceeds the output bound is dropped next — narrow hooks are
+// pre_tool-only, so a post-occurrence payload is pure observation echo; and
+// an executed list that still overflows (64 registrations of max-length
+// identities exceed the bound on their own) drops oldest entries last — the
+// audit rows keep every hook's record, the list is only a projection. The
+// caller records an output_capped outcome for the boundary fire that tripped
+// the cap, so every drop is auditable.
+func capObservationOutput(result *Result) bool {
+	capped := false
+	for len(result.Annotations) > MaxAnnotations {
+		result.Annotations = result.Annotations[:MaxAnnotations]
+		capped = true
+	}
+	for {
+		encoded, err := json.Marshal(*result)
+		if err != nil || len(encoded) <= MaxOutputBytes {
+			return capped
+		}
+		if len(result.Annotations) > 0 {
+			result.Annotations = result.Annotations[:len(result.Annotations)-1]
+			capped = true
+			continue
+		}
+		if len(result.Payload) != 0 {
+			result.Payload = nil
+			capped = true
+			continue
+		}
+		if len(result.Executed) > 0 {
+			result.Executed = result.Executed[1:]
+			capped = true
+			continue
+		}
+		return capped
+	}
 }
 
 func (e *Engine) apply(ctx context.Context, registration Registration, input Input,

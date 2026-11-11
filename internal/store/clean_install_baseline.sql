@@ -4200,10 +4200,13 @@ CREATE TABLE plugin_hook_audits (
 		workspace_id TEXT NOT NULL DEFAULT '',
 		tool_name TEXT NOT NULL DEFAULT '',
 		outcome TEXT NOT NULL,
-		created_at TEXT NOT NULL, plugin_fingerprint TEXT NOT NULL DEFAULT '' CHECK(plugin_fingerprint = '' OR (length(plugin_fingerprint) = 64 AND plugin_fingerprint NOT GLOB '*[^0-9a-f]*')), declared_action TEXT NOT NULL DEFAULT '' CHECK(declared_action IN ('', 'deny', 'annotate', 'narrow', 'record')), rejected INTEGER CHECK(rejected IS NULL OR rejected IN (0, 1)),
+		created_at TEXT NOT NULL,
+		plugin_fingerprint TEXT NOT NULL DEFAULT '' CHECK(plugin_fingerprint = '' OR (length(plugin_fingerprint) = 64 AND plugin_fingerprint NOT GLOB '*[^0-9a-f]*')),
+		declared_action TEXT NOT NULL DEFAULT '' CHECK(declared_action IN ('', 'deny', 'annotate', 'narrow', 'record')),
+		rejected INTEGER CHECK(rejected IS NULL OR rejected IN (0, 1)),
 		CHECK(event IN ('pre_tool', 'post_tool', 'run_started', 'run_completed',
 			'session_opened', 'session_closed', 'compaction', 'subagent', 'checkpoint')),
-		CHECK(outcome IN ('completed', 'failed_closed', 'failed_continue')),
+		CHECK(outcome IN ('completed', 'failed_closed', 'failed_continue', 'output_capped')),
 		CHECK(length(plugin_id) BETWEEN 1 AND 256 AND length(hook_id) BETWEEN 1 AND 256),
 		CHECK(length(run_id) <= 256 AND length(workspace_id) <= 256
 			AND length(tool_name) <= 256),
@@ -14050,7 +14053,8 @@ CREATE INDEX idx_plan_delivery_proposals_run_created
 CREATE INDEX idx_plugin_hook_audits_run_created
 		ON plugin_hook_audits(run_id, created_at DESC, id DESC);
 -- traverse-board-clean-install-object-boundary --
-CREATE INDEX idx_plugin_hook_audits_workspace_created ON plugin_hook_audits(workspace_id, created_at DESC, id DESC);
+CREATE INDEX idx_plugin_hook_audits_workspace_created
+		ON plugin_hook_audits(workspace_id, created_at DESC, id DESC);
 -- traverse-board-clean-install-object-boundary --
 CREATE UNIQUE INDEX idx_plugin_installations_one_enabled_version
 		ON plugin_installations(plugin_id) WHERE state = 'enabled';
