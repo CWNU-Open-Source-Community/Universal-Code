@@ -49,8 +49,15 @@ script-authored text as instruction-authorized operator input.
    unknown-field rejection — no protocol change beyond one field plus
    its redaction step. (The redaction placement deliberately differs
    from ADR 0209, which locates it in the stop-boundary envelope: here
-   the executor is strictly earlier, the digest then binds the redacted
-   text, and session storage re-redacts idempotently.)
+   the executor is strictly earlier. Redaction is not idempotent after
+   truncation — a marker cut at `TOKEN=[REDACTED:` re-expands on the
+   next redaction pass — so the final 8 KiB limit is enforced after the
+   final redaction, not before it: truncate the raw text, redact,
+   re-truncate if the expansion pushed it past 8 KiB, re-redact once
+   more for any marker that re-truncation cut, and seal the digest over
+   the exact post-redaction bytes handed to session storage. The digest
+   then binds the stored bytes, and storage's own re-redaction is a
+   no-op because the sealed text contains only complete markers.)
 2. **Commit atomically with the operator message as
    `SourceHookContext` provenance.** The text is stored as a session
    message of a new closed-enum source kind carrying
