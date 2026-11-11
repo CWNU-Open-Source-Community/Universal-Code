@@ -21,9 +21,12 @@
 ## Problem
 
 "Keep going until the task is actually done" is the last automation
-pattern Universal-Code cannot express inside one invocation. Today an
-orchestrator script chains `exec --continue` calls: run, inspect the
-reply, decide whether more work is needed, submit a follow-up. That works
+pattern Universal-Code cannot express inside one invocation. Today the
+only fallback is external orchestration: a script re-invokes the one-shot
+`exec` mode run by run — run, inspect the reply, decide whether more work
+is needed, start the next run (each invocation today creates a fresh Run;
+the proposed `--continue` thread flag of ADR 0205 is not yet available to
+chain turns of one Run). That works
 but moves the loop outside the agent — every iteration re-pays process
 startup, the loop logic lives in the caller, and the decision point
 cannot use the agent's own context. Claude Code's Stop hook moves the
@@ -111,7 +114,15 @@ acquiring operator authority.
    turn number, and hook ID) so the deny→enqueue pair is idempotent
    under crash-replay (replaying the same enqueue returns the same
    queued message instead of duplicating it), matching the store's
-   replay-by-key contract. The queue bound
+   replay-by-key contract. Delivery is not the only reader: both read
+   projections must recognize the marker too. `ListThreadMessagesPage`
+   projects every pending or cancelled steering row as an operator
+   message (`instruction_authorized = 1`), and the transcript projection
+   treats pending steering as operator input — hook text staged for
+   delivery would stay operator-attributed until delivery and
+   permanently after a cancellation. Both projections key off the same
+   `hook:` prefix and stamp `SourceHookContinuation` (with
+   `InstructionAuthorized: false`) for those rows. The queue bound
    (`MaxPendingOperatorSteering`) applies; if enqueueing fails, the
    stop proceeds and the failure is audited. Binding note for the exec
    loop: the ordinary operator-actor `Execute` path requires
@@ -182,8 +193,10 @@ acquiring operator authority.
 
 ## Verification (planned)
 
-- Engine validation: `stop` rejects annotate, narrow, and FailureDeny;
-  record and deny with continue policy pass.
+- Engine validation: `stop` rejects annotate, narrow, FailureDeny, and
+  the declarative `deny` action (an unconditional deny would make every
+  stop an always-continue rule, Decision 2); `record` and `script`
+  declarations pass.
 - Provenance: `SourceHookContinuation` messages carry
   `InstructionAuthorized: false`, render with hook provenance in the
   transcript, stay outside instruction-authorized history retention, and
