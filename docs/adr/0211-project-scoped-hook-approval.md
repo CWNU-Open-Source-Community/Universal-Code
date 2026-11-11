@@ -81,15 +81,20 @@ why it needs this design decision before any implementation.
    that workspace until the repository fixes the file — safe (repo
    content proposes, operator disposes; operator and plugin hooks are
    unaffected) and operator-visible in diagnostics.
+   The approval surface refuses the 65th active registration: an
+   approval that would exceed the ceiling is rejected before
+   activation, keeping existing registrations unchanged.
 5. **Approved project hooks join the engine merge under the same
    authority ceiling.** Approval gates existence only: an approved
    project hook gets the same action set, continue-only policies,
    bounds, integrity fail-closed, and per-fire re-verification as
    operator hooks, and its per-source anomalies degrade alone
-   (Decision 4). The engine merge becomes three sources — operator
-   global (active), project approved (active), project unapproved
-   (inert) — and `MergeRegistrations` extends from two sources to
-   three with the ceiling counted per Decision 4. The deterministic
+   (Decision 4). The engine merge becomes four sources — operator
+   global (active), plugin contributed (active), project approved
+   (active), project unapproved (inert proposals in staging) — and
+   `MergeRegistrations` extends from two sources to four with the
+   ceiling counted per Decision 4. Plugin hooks remain active and are
+   never displaced by project proposals. The deterministic
    execution order extends its key with the source scope as an explicit
    new requirement (the shipped sort is event, plugin ID, hook ID).
 6. **This is a real trust transfer, stated.** The shipped contract
@@ -123,6 +128,16 @@ why it needs this design decision before any implementation.
 - Secrets- or path-scoped auto-approval was rejected: a "safe" directory
   is still repository content, and scoping rules regress into policy
   parsing that the manifest-pinned approval model handles honestly.
+- Executing project scripts from a repo-external snapshot, or re-resolving
+  helper files dynamically at each fire, was rejected as the apparent
+  stronger alternative: copying scripts out of the repository at approval
+  time severs the project from its own workflow (edits would need a
+  re-import step the repository cannot perform), and dynamic helper
+  resolution reintroduces exactly the drift window the manifest closes —
+  a helper file could change between resolution and execution. The
+  manifest achieves the same guarantee honestly: every resolved file is
+  digest-pinned at approval, re-verified at each fire, and any edit
+  re-stages the declaration for review.
 - Denying project hooks entirely (the status quo) keeps the trust model
   but leaves the gap: every repository's workflow hooks depend on
   per-machine operator memory.
