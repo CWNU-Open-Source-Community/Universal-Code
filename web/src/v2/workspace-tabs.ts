@@ -51,6 +51,7 @@ export type WorkspaceTab =
 
 export const maxWorkspaceTabsLimitNotice = "已达到 12 个工作区标签上限，请先关闭暂不使用的标签。";
 export const workspaceStorageConflictNotice = "另一窗口修改了工作区标签。本窗口的未保存状态已保留，请选择要使用的版本。";
+export const workspaceStorageConflictChangedNotice = "另一窗口再次修改了工作区标签，请重新选择要使用的版本。";
 export const workspaceLegacyTabsNotice = "发现旧版工作区标签，但无法确认其所属连接。确认属于当前连接后可恢复，恢复会替换当前标签。";
 const workspaceStorageFailureNotice = "无法保存工作区标签；当前状态仅保留在本窗口。";
 
@@ -98,6 +99,7 @@ export function emptyThreadWorkspaceState(): ThreadWorkspaceState {
 
 const memoryFallback = new Map<string, ThreadWorkspaceState>();
 const failedBaselines = new Map<string, string>();
+const conflictSnapshots = new Map<string, string>();
 let cachedRaw: string | null | undefined = undefined;
 let storageReadable = true;
 let cachedParsed: Record<string, ThreadWorkspaceState> = {};
@@ -266,9 +268,12 @@ export function getThreadWorkspaceState(threadID: string): ThreadWorkspaceState 
   const persisted = persistent ? readAllPersisted()[key] : undefined;
   let fallback = memoryFallback.get(key);
   if (fallback && failedBaselines.has(key)) {
-    if (storageReadable && JSON.stringify(persisted ?? null) !== failedBaselines.get(key) && fallback.notice !== workspaceStorageConflictNotice) {
-      fallback = { ...fallback, notice: workspaceStorageConflictNotice };
-      memoryFallback.set(key, fallback);
+    if (storageReadable && JSON.stringify(persisted ?? null) !== failedBaselines.get(key)) {
+      if (!conflictSnapshots.has(key)) conflictSnapshots.set(key, JSON.stringify(persisted ?? null));
+      if (fallback.notice !== workspaceStorageConflictNotice && fallback.notice !== workspaceStorageConflictChangedNotice) {
+        fallback = { ...fallback, notice: workspaceStorageConflictNotice };
+        memoryFallback.set(key, fallback);
+      }
     }
     return fallback;
   }
@@ -305,7 +310,8 @@ function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWo
     window.dispatchEvent(new Event(changedEvent));
     return;
   }
-  if (updated.notice === workspaceStorageFailureNotice || updated.notice === workspaceStorageConflictNotice) {
+  if (updated.notice === workspaceStorageFailureNotice || updated.notice === workspaceStorageConflictNotice ||
+      updated.notice === workspaceStorageConflictChangedNotice) {
     updated = { ...updated, notice: undefined };
   }
   memoryFallback.set(key, updated);
@@ -323,6 +329,7 @@ function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWo
     cachedRaw = encoded;
     cachedParsed = payload.threads;
     failedBaselines.delete(key);
+    conflictSnapshots.delete(key);
   } catch {
     if (!failedBaselines.has(key)) failedBaselines.set(key, JSON.stringify(persisted ?? null));
     memoryFallback.set(key, { ...updated, notice: workspaceStorageFailureNotice });
@@ -348,6 +355,7 @@ function subscribeWorkspaceTabs(notify: () => void) {
 export function resetWorkspaceTabsMemoryCache() {
   memoryFallback.clear();
   failedBaselines.clear();
+  conflictSnapshots.clear();
   cachedRaw = undefined;
   cachedParsed = {};
   storageReadable = true;
@@ -360,12 +368,21 @@ export function resolveWorkspaceStorageConflict(threadID: string, choice: "local
   if (!storageReadable) return;
   if (choice === "remote") {
     failedBaselines.delete(key);
+    conflictSnapshots.delete(key);
     memoryFallback.delete(key);
     window.dispatchEvent(new Event(changedEvent));
     return;
   }
-  // The explicit choice authorizes replacing the currently observed snapshot.
-  failedBaselines.set(key, JSON.stringify(remote ?? null));
+  const latestSnapshot = JSON.stringify(remote ?? null);
+  if (conflictSnapshots.get(key) !== latestSnapshot) {
+    conflictSnapshots.set(key, latestSnapshot);
+    const local = memoryFallback.get(key);
+    if (local) memoryFallback.set(key, { ...local, notice: workspaceStorageConflictChangedNotice });
+    window.dispatchEvent(new Event(changedEvent));
+    return;
+  }
+  // The explicit choice authorizes replacing the last observed snapshot.
+  failedBaselines.set(key, latestSnapshot);
   writeThreadWorkspaceState(threadID, (state) => ({ ...state, notice: undefined }));
 }
 

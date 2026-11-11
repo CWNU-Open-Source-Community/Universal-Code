@@ -30,7 +30,7 @@ export interface V2RecoveryStore {
   subscribePrefix?(prefix: string, listener: () => void): () => void;
 }
 
-type PersistentConflict = { id: number; key: string; keepLocal: () => void; useRemote: () => void };
+type PersistentConflict = { id: number; key: string; changedAgain: boolean; keepLocal: () => void; useRemote: () => void };
 let nextPersistentBindingID = 0;
 
 function decodeRecord(raw: string): unknown {
@@ -306,8 +306,10 @@ export function V2PersistenceConflicts() {
     store?.getConflicts ?? getNoConflicts, getNoConflicts);
   if (!conflicts.length) return null;
   return <div className="v2-toast v2-persistence-conflicts" role="alert">{conflicts.map((conflict) => <div key={conflict.id}>
-    <p>{t("另一窗口修改了同一条记录。本窗口的未保存编辑已保留，请选择要保存的版本。",
-      "Another window changed the same record. Your unsaved edits are preserved; choose which version to keep.")}</p>
+    <p>{conflict.changedAgain
+      ? t("另一窗口再次修改了同一条记录，请重新选择要保存的版本。", "The other window changed this record again. Please choose which version to keep.")
+      : t("另一窗口修改了同一条记录。本窗口的未保存编辑已保留，请选择要保存的版本。",
+        "Another window changed the same record. Your unsaved edits are preserved; choose which version to keep.")}</p>
     <code>{conflict.key}</code>
     <button type="button" onClick={conflict.keepLocal}>{t("保留本窗口版本", "Keep this window's version")}</button>
     <button type="button" onClick={conflict.useRemote}>{t("使用另一窗口版本", "Use the other window's version")}</button>
@@ -328,18 +330,18 @@ export function useV2PersistentState<T>(key: string, initial: T | (() => T)): [T
     current.current = { id: ++nextPersistentBindingID, store, key, fallback, value, base: value, dirty: false, writing: false };
   }
   const binding = current.current;
-  const registerConflict = (observedRemote: T) => {
+  const registerConflict = (observedRemote: T, changedAgain = false) => {
     const target = binding.store;
     if (!target) return;
     const unsavedKey = `persistent:${binding.id}:${binding.key}`;
     target.markUnsaved(unsavedKey, WRITE_FAILED);
-    target.setConflict({ id: binding.id, key: binding.key,
+    target.setConflict({ id: binding.id, key: binding.key, changedAgain,
       keepLocal: () => {
         binding.writing = true;
         try {
           const latestRemote = target.readOrThrow(binding.key, binding.fallback);
           if (!samePersistentValue(latestRemote, observedRemote)) {
-            registerConflict(latestRemote);
+            registerConflict(latestRemote, true);
             return;
           }
           target.write(binding.key, binding.value);

@@ -49,6 +49,7 @@ import {
   workspaceScopeKey,
   workspaceSurfaceAriaLabel,
   workspaceStorageConflictNotice,
+  workspaceStorageConflictChangedNotice,
   workspaceLegacyTabsNotice,
   workspaceTabTitle,
   workspaceTabTooltip,
@@ -704,8 +705,10 @@ export function V2WorkspaceDock({
             ? t(workspaceLegacyTabsNotice, "Old workspace tabs were found, but their connection is unknown. Restore them only if they belong here; this replaces the current tabs.")
             : state.notice === workspaceStorageConflictNotice
             ? t(workspaceStorageConflictNotice, "Another window changed the workspace tabs. Your unsaved tabs are preserved; choose which version to keep.")
+            : state.notice === workspaceStorageConflictChangedNotice
+            ? t(workspaceStorageConflictChangedNotice, "Another window changed the workspace tabs again. Please choose which version to keep.")
             : localUIMessage(state.notice, t)}</span>
-          {state.notice === workspaceStorageConflictNotice ? <>
+          {state.notice === workspaceStorageConflictNotice || state.notice === workspaceStorageConflictChangedNotice ? <>
             <button type="button" onClick={() => resolveWorkspaceStorageConflict(threadID, "local")}>{t("保留本窗口标签", "Keep this window's tabs")}</button>
             <button type="button" onClick={() => resolveWorkspaceStorageConflict(threadID, "remote")}>{t("使用另一窗口标签", "Use the other window's tabs")}</button>
           </> : state.notice === workspaceLegacyTabsNotice ? <>

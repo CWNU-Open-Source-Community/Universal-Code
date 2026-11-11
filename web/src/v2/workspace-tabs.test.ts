@@ -30,6 +30,7 @@ import {
   workspaceTabsStorageKey,
   workspaceScopeKey,
   workspaceStorageConflictNotice,
+  workspaceStorageConflictChangedNotice,
   workspaceLegacyTabsNotice,
 } from "./workspace-tabs";
 
@@ -116,6 +117,25 @@ describe("workspace-tabs store", () => {
       expect(getThreadWorkspaceState("conflicted").tabs).toHaveLength(choice === "local" ? 2 : 1);
     } finally { now.mockRestore(); }
   });
+  it("requires another choice if remote tabs change again before the local version is saved", () => {
+    openWorkspaceFile("changing-conflict", { path: "first.ts" });
+    const fail = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    openWorkspaceFile("changing-conflict", { path: "local.ts" });
+    fail.mockRestore();
+    const saved = JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!);
+    const key = Object.keys(saved.threads).find((item) => JSON.parse(item).at(-1) === "changing-conflict")!;
+    saved.threads[key].width = 600;
+    localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
+    expect(getThreadWorkspaceState("changing-conflict").notice).toBe(workspaceStorageConflictNotice);
+    saved.threads[key].width = 700;
+    localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
+    resolveWorkspaceStorageConflict("changing-conflict", "local");
+    expect(JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!).threads[key].width).toBe(700);
+    expect(getThreadWorkspaceState("changing-conflict").notice).toBe(workspaceStorageConflictChangedNotice);
+    resolveWorkspaceStorageConflict("changing-conflict", "local");
+    expect(getThreadWorkspaceState("changing-conflict").tabs).toHaveLength(2);
+  });
+
   it("preserves malformed workspace storage rather than replacing it with an empty store", () => {
     localStorage.setItem(workspaceTabsStorageKey, "{broken");
     openWorkspaceFile("malformed", { path: "local.ts" });
