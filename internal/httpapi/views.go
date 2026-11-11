@@ -1505,16 +1505,19 @@ type ThreadEventView struct {
 }
 
 type ThreadExportView struct {
-	Missions        []MissionView             `json:"missions"`
-	ProtocolVersion string                    `json:"protocol_version"`
-	ExportedAt      time.Time                 `json:"exported_at"`
-	Thread          ThreadView                `json:"thread"`
-	Mission         MissionView               `json:"mission"`
-	Runs            []ThreadRunView           `json:"runs"`
-	Sessions        []SessionView             `json:"sessions"`
-	Messages        []ThreadMessageView       `json:"messages"`
-	Events          []ThreadEventView         `json:"events"`
-	AuditEvents     []ThreadRunAuditEventView `json:"audit_events"`
+	Missions             []MissionView             `json:"missions"`
+	ProtocolVersion      string                    `json:"protocol_version"`
+	ExportedAt           time.Time                 `json:"exported_at"`
+	Thread               ThreadView                `json:"thread"`
+	Mission              MissionView               `json:"mission"`
+	Runs                 []ThreadRunView           `json:"runs"`
+	Sessions             []SessionView             `json:"sessions"`
+	Messages             []ThreadMessageView       `json:"messages"`
+	Events               []ThreadEventView         `json:"events"`
+	AuditEvents          []ThreadRunAuditEventView `json:"audit_events"`
+	MessagesTruncated    bool                      `json:"messages_truncated"`
+	EventsTruncated      bool                      `json:"events_truncated"`
+	AuditEventsTruncated bool                      `json:"audit_events_truncated"`
 }
 
 type ThreadRunAuditEventView struct {

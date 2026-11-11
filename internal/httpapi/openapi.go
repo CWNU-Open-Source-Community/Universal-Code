@@ -1297,7 +1297,7 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			SuccessStatus: http.StatusOK},
 		{Path: "/api/v1/threads/{thread_id}/export", OperationID: "exportThread",
 			Summary: "Export a Thread", Tag: "Threads",
-			Description: "Returns the complete self-contained Thread, Mission, Run chain, Run-local Sessions, message provenance, and Thread/Run audit events. The HTTP response limit fails closed instead of silently truncating history.",
+			Description: "Returns the self-contained Thread, Mission, Run chain, Run-local Sessions, message provenance, and Thread/Run audit events. The messages, events, and audit-events sections each hold the first 1000 rows in chronological order and report a longer ledger through their truncated flags.",
 			DataType:    reflect.TypeOf(ThreadExportView{}), NotFound: true,
 			Parameters: []openAPIParameter{threadID}},
 		{Path: "/api/v1/runs", OperationID: "listRuns", Summary: "List Runs", Tag: "Runs",
