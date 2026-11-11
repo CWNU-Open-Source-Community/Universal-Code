@@ -291,7 +291,9 @@ func flagWasSet(fs *flag.FlagSet, name string) bool {
 }
 
 func readEditContent(path string) (string, error) {
-	path = strings.TrimSpace(path)
+	if path != strings.TrimSpace(path) {
+		return "", errors.New("content file path cannot contain surrounding whitespace")
+	}
 	if path == "" {
 		return "", errors.New("content file path is required")
 	}

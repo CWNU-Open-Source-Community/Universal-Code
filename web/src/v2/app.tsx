@@ -22,7 +22,7 @@ import { ProjectDialog, V2WorkspaceStart } from "./components/workspace-start";
 import { useV2Navigation, type V2RunPane } from "./navigation";
 import { readDensity } from "../lib/ui-density";
 import { useLocale } from "../lib/locale";
-import { V2RecoveryProvider, useV2PersistentState, useV2PersistenceWarning, useV2RecoveryStore } from "./recovery-storage";
+import { V2PersistenceConflicts, V2RecoveryProvider, useV2PersistentState, useV2PersistenceWarning, useV2RecoveryStore } from "./recovery-storage";
 import { useV2Drafts, validRecoveryTurn } from "./recovery-session";
 import { readV2Route } from "./navigation";
 import { useV2CreationRecovery } from "./recovery-creation";
@@ -853,6 +853,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       <button className="v2-retry-action" onClick={() => { void workspacesQuery.refetch(); void threadsQuery.refetch(); }} type="button">{t("重试加载", "Retry loading")}</button>
     </div>}
     {persistenceWarning && <div className="v2-toast" role={recovery ? "alert" : "status"}>{persistenceWarning}</div>}
+    <V2PersistenceConflicts />
     {unread.error && <div className="v2-toast" role="status">
       {t("未读回复暂未同步，已有标记会保留。", "Unread replies could not be refreshed. Existing markers have been kept.")}
       <button className="v2-retry-action" type="button" onClick={() => void unread.retry()}>{t("重试", "Retry")}</button>

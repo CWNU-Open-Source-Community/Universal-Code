@@ -30,6 +30,9 @@ export interface V2RecoveryStore {
   subscribePrefix?(prefix: string, listener: () => void): () => void;
 }
 
+type PersistentConflict = { id: number; key: string; keepLocal: () => void; useRemote: () => void };
+let nextPersistentBindingID = 0;
+
 function decodeRecord(raw: string): unknown {
   const record: unknown = JSON.parse(raw);
   if (!record || typeof record !== "object" || Array.isArray(record) ||
@@ -48,6 +51,8 @@ class RecoveryStorage implements V2RecoveryStore {
   private readonly warningListeners = new Set<() => void>();
   private readonly failures = new Map<string, string>();
   private readonly unsaved = new Map<string, string>();
+  private readonly conflictListeners = new Set<() => void>();
+  private conflicts: PersistentConflict[] = [];
   private warning: string | null = null;
   private warningNotificationQueued = false;
 
@@ -96,10 +101,12 @@ class RecoveryStorage implements V2RecoveryStore {
   }
 
   read<T>(key: string, fallback: T): T {
-    try {
-      const record = this.readRecord(key);
-      return record.found ? record.value as T : fallback;
-    } catch { return fallback; }
+    try { return this.readOrThrow(key, fallback); } catch { return fallback; }
+  }
+
+  readOrThrow<T>(key: string, fallback: T): T {
+    const record = this.readRecord(key);
+    return record.found ? record.value as T : fallback;
   }
 
   write<T>(key: string, value: T): void {
@@ -180,6 +187,29 @@ class RecoveryStorage implements V2RecoveryStore {
 
   unsavedWarning(key: string): string | null { return this.unsaved.get(key) ?? null; }
 
+  setConflict(conflict: PersistentConflict): void {
+    this.conflicts = [...this.conflicts.filter((item) => item.id !== conflict.id), conflict];
+    this.conflictListeners.forEach((listener) => listener());
+  }
+
+  clearConflict(id: number): void {
+    const next = this.conflicts.filter((item) => item.id !== id);
+    if (next.length === this.conflicts.length) return;
+    this.conflicts = next;
+    this.conflictListeners.forEach((listener) => listener());
+  }
+
+  discardUnsaved(key: string, failedWriteKey = key): void {
+    this.unsaved.delete(key);
+    this.clearFailure(`write:${failedWriteKey}`);
+  }
+
+  subscribeConflicts = (listener: () => void): (() => void) => {
+    this.conflictListeners.add(listener);
+    return () => { this.conflictListeners.delete(listener); };
+  };
+  getConflicts = (): PersistentConflict[] => this.conflicts;
+
   reject(key: string): void {
     // Valid JSON can still contain an invalid business payload. Do not allow
     // initial empty UI state to silently overwrite that original evidence.
@@ -257,6 +287,8 @@ export function useV2RecoveryStore(): V2RecoveryStore | null {
 
 const noSubscription = () => () => {};
 const noWarning = () => null;
+const noConflicts: PersistentConflict[] = [];
+const getNoConflicts = () => noConflicts;
 
 export function useV2PersistenceWarning(): string | null {
   const { t } = useLocale();
@@ -267,25 +299,97 @@ export function useV2PersistenceWarning(): string | null {
   return message ? localUIMessage(message, t) : null;
 }
 
+export function V2PersistenceConflicts() {
+  const { t } = useLocale();
+  const store = useContext(RecoveryContext)?.store ?? null;
+  const conflicts = useSyncExternalStore(store?.subscribeConflicts ?? noSubscription,
+    store?.getConflicts ?? getNoConflicts, getNoConflicts);
+  if (!conflicts.length) return null;
+  return <div className="v2-toast v2-persistence-conflicts" role="alert">{conflicts.map((conflict) => <div key={conflict.id}>
+    <p>{t("另一窗口修改了同一条记录。本窗口的未保存编辑已保留，请选择要保存的版本。",
+      "Another window changed the same record. Your unsaved edits are preserved; choose which version to keep.")}</p>
+    <code>{conflict.key}</code>
+    <button type="button" onClick={conflict.keepLocal}>{t("保留本窗口版本", "Keep this window's version")}</button>
+    <button type="button" onClick={conflict.useRemote}>{t("使用另一窗口版本", "Use the other window's version")}</button>
+  </div>)}</div>;
+}
+
+function samePersistentValue(left: unknown, right: unknown): boolean {
+  try { return JSON.stringify(left) === JSON.stringify(right); } catch { return false; }
+}
+
 export function useV2PersistentState<T>(key: string, initial: T | (() => T)): [T, Dispatch<SetStateAction<T>>] {
   const store = useContext(RecoveryContext)?.store ?? null;
   const [, rerender] = useReducer((version: number) => version + 1, 0);
-  const current = useRef<{ store: RecoveryStorage | null; key: string; value: T; fallback: T } | null>(null);
+  const current = useRef<{ id: number; store: RecoveryStorage | null; key: string; value: T; fallback: T; base: T; dirty: boolean; writing: boolean } | null>(null);
   if (!current.current || current.current.store !== store || current.current.key !== key) {
     const fallback = typeof initial === "function" ? (initial as () => T)() : initial;
-    current.current = { store, key, fallback, value: store ? store.read(key, fallback) : fallback };
+    const value = store ? store.read(key, fallback) : fallback;
+    current.current = { id: ++nextPersistentBindingID, store, key, fallback, value, base: value, dirty: false, writing: false };
   }
   const binding = current.current;
+  const registerConflict = (observedRemote: T) => {
+    const target = binding.store;
+    if (!target) return;
+    const unsavedKey = `persistent:${binding.id}:${binding.key}`;
+    target.markUnsaved(unsavedKey, WRITE_FAILED);
+    target.setConflict({ id: binding.id, key: binding.key,
+      keepLocal: () => {
+        binding.writing = true;
+        try {
+          const latestRemote = target.readOrThrow(binding.key, binding.fallback);
+          if (!samePersistentValue(latestRemote, observedRemote)) {
+            registerConflict(latestRemote);
+            return;
+          }
+          target.write(binding.key, binding.value);
+          binding.base = binding.value; binding.dirty = false;
+          target.discardUnsaved(unsavedKey, binding.key); target.clearConflict(binding.id);
+        } catch { /* Keep both versions available for another retry. */ }
+        finally { binding.writing = false; rerender(); }
+      },
+      useRemote: () => {
+        try {
+          target.assertReadable(binding.key);
+          binding.value = target.readOrThrow(binding.key, binding.fallback);
+          binding.base = binding.value; binding.dirty = false;
+          target.discardUnsaved(unsavedKey, binding.key); target.clearConflict(binding.id);
+          rerender();
+        } catch { /* Retain local edits when the other version cannot be read. */ }
+      },
+    });
+  };
   const setState = useCallback<Dispatch<SetStateAction<T>>>((update) => {
     const value = typeof update === "function" ? (update as (previous: T) => T)(binding.value) : update;
-    try { binding.store?.write(binding.key, value); }
-    catch { /* Drafts stay editable in this window; the store exposes the warning. */ }
     binding.value = value;
+    if (binding.store) {
+      try {
+        binding.store.assertReadable(binding.key);
+        const remote = binding.store.readOrThrow(binding.key, binding.fallback);
+        if (!samePersistentValue(remote, binding.base)) {
+          binding.dirty = true; registerConflict(remote); rerender(); return;
+        }
+        binding.writing = true;
+        binding.store.write(binding.key, value);
+        binding.base = value; binding.dirty = false;
+        binding.store.discardUnsaved(`persistent:${binding.id}:${binding.key}`, binding.key);
+        binding.store.clearConflict(binding.id);
+      } catch { binding.dirty = true; binding.store.markUnsaved(`persistent:${binding.id}:${binding.key}`, WRITE_FAILED); }
+      finally { binding.writing = false; }
+    }
     rerender();
   }, [binding]);
   useEffect(() => store?.subscribe(key, () => {
-    binding.value = store.read(key, binding.fallback);
-    rerender();
+    if (binding.writing) return;
+    try {
+      const remote = store.readOrThrow(key, binding.fallback);
+      if (binding.dirty) {
+        if (!samePersistentValue(remote, binding.base)) registerConflict(remote);
+        return;
+      }
+      binding.value = remote; binding.base = remote;
+      rerender();
+    } catch { /* A read failure must not replace the visible value with a fallback. */ }
   }), [store, key, binding]);
   return [binding.value, setState];
 }

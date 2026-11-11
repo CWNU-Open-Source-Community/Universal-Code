@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import type { HealthView } from "../api/types";
+import { useConnectionStore } from "../state/connection";
 import { DraftDocument, type DraftScope } from "./draft-document";
 import {
   addWorkspaceFileTab,
@@ -14,6 +16,8 @@ import {
   minWorkspaceWidth,
   openWorkspaceFile,
   resetWorkspaceTabsMemoryCache,
+  resolveWorkspaceStorageConflict,
+  restoreLegacyWorkspaceTabs,
   selectWorkspaceTab,
   setWorkspaceTerminalSession,
   setWorkspaceTerminalShell,
@@ -24,9 +28,130 @@ import {
   updateWorkspaceFileTabPath,
   workspaceTabsChangedEvent,
   workspaceTabsStorageKey,
+  workspaceScopeKey,
+  workspaceStorageConflictNotice,
+  workspaceLegacyTabsNotice,
 } from "./workspace-tabs";
 
 describe("workspace-tabs store", () => {
+  beforeEach(() => useConnectionStore.setState({ health: { data_store_id: "store-one" } as HealthView }));
+  afterEach(() => useConnectionStore.setState({ health: null }));
+
+  it("isolates the same Thread ID across data stores and API connections", () => {
+    openWorkspaceFile("shared-id", { path: "old-server.txt" }, "old-run");
+    useConnectionStore.setState({ health: { data_store_id: "store-two" } as HealthView });
+    expect(getThreadWorkspaceState("shared-id").tabs).toEqual([]);
+    openWorkspaceFile("shared-id", { path: "new-server.txt" }, "new-run");
+    useConnectionStore.setState({ health: { data_store_id: "store-one" } as HealthView });
+    expect(getThreadWorkspaceState("shared-id").tabs).toMatchObject([{ path: "old-server.txt" }]);
+    useConnectionStore.setState({ apiBaseURL: "/other-api" });
+    expect(getThreadWorkspaceState("shared-id").tabs).toEqual([]);
+    useConnectionStore.setState({ apiBaseURL: undefined });
+  });
+
+  it("does not reuse unscoped in-memory tabs after reconnecting", () => {
+    const noIdentity = { data_store_id: "" } as HealthView;
+    useConnectionStore.getState().connect("first", noIdentity);
+    openWorkspaceFile("unscoped", { path: "private.ts" });
+    expect(getThreadWorkspaceState("unscoped").tabs).toHaveLength(1);
+    useConnectionStore.getState().connect("second", noIdentity);
+    expect(getThreadWorkspaceState("unscoped").tabs).toEqual([]);
+    expect(localStorage.getItem(workspaceTabsStorageKey)).toBeNull();
+  });
+
+  it("ignores delayed file and terminal callbacks after the data store changes", () => {
+    openWorkspaceFile("switch", { path: "old.ts" });
+    const oldScope = workspaceScopeKey("switch");
+    useConnectionStore.setState({ health: { data_store_id: "store-two" } as HealthView });
+    openWorkspaceFile("switch", { path: "new.ts" });
+    updateWorkspaceFileTabPath("switch", "file:1", "stale.ts", oldScope);
+    setWorkspaceTerminalSession("switch", "old-session", undefined, oldScope);
+    setWorkspaceTerminalShell("switch", "old-shell", oldScope);
+    expect(getThreadWorkspaceState("switch")).toMatchObject({
+      tabs: [{ path: "new.ts" }], terminalSessionID: "",
+    });
+    expect(getThreadWorkspaceState("switch").terminalShellName).toBeUndefined();
+  });
+
+  it("preserves unscoped legacy tabs and restores them only after explicit choice", () => {
+    const legacyKey = "universal-code.workspace-tabs.v1";
+    const original = JSON.stringify({ version: 1, threads: { legacy: { tabs: [{ id: "file:1", kind: "file", path: "old.ts" }],
+      activeTabID: "file:1", lastFileTabID: "file:1", open: true, updatedAt: 1 } } });
+    localStorage.setItem(legacyKey, original);
+    try {
+      expect(getThreadWorkspaceState("legacy").tabs).toEqual([]);
+      openWorkspaceFile("legacy", { path: "new.ts" });
+      expect(getThreadWorkspaceState("legacy").notice).toBe(workspaceLegacyTabsNotice);
+      restoreLegacyWorkspaceTabs("legacy");
+      expect(getThreadWorkspaceState("legacy").tabs).toMatchObject([{ path: "old.ts" }]);
+      expect(localStorage.getItem(legacyKey)).toBe(original);
+    } finally { localStorage.removeItem(legacyKey); }
+  });
+
+  it("does not redirect a whitespace-bearing file path to a different file", () => {
+    openWorkspaceFile("exact-path", { path: " file.txt" });
+    openWorkspaceFile("exact-path", { path: "file.txt" });
+    expect(getThreadWorkspaceState("exact-path").tabs).toMatchObject([{ path: " file.txt" }, { path: "file.txt" }]);
+    resetWorkspaceTabsMemoryCache();
+    expect(getThreadWorkspaceState("exact-path").tabs).toMatchObject([{ path: " file.txt" }, { path: "file.txt" }]);
+  });
+
+  it.each(["local", "remote"] as const)("keeps failed tab writes until the %s conflict is resolved", (choice) => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      openWorkspaceFile("conflicted", { path: "first.ts" });
+      const fail = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+      openWorkspaceFile("conflicted", { path: "local.ts" });
+      fail.mockRestore();
+      const persisted = JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!);
+      const entry = Object.values(persisted.threads)[0] as { updatedAt: number; width: number };
+      entry.updatedAt = 1001; entry.width = 700;
+      localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(persisted));
+      expect(getThreadWorkspaceState("conflicted")).toMatchObject({ notice: workspaceStorageConflictNotice,
+        tabs: [{ path: "first.ts" }, { path: "local.ts" }] });
+      setWorkspaceWidth("conflicted", 600);
+      expect(JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!).threads).toEqual(persisted.threads);
+      resolveWorkspaceStorageConflict("conflicted", choice);
+      resetWorkspaceTabsMemoryCache();
+      expect(getThreadWorkspaceState("conflicted").tabs).toHaveLength(choice === "local" ? 2 : 1);
+    } finally { now.mockRestore(); }
+  });
+  it("preserves malformed workspace storage rather than replacing it with an empty store", () => {
+    localStorage.setItem(workspaceTabsStorageKey, "{broken");
+    openWorkspaceFile("malformed", { path: "local.ts" });
+    expect(localStorage.getItem(workspaceTabsStorageKey)).toBe("{broken");
+    expect(getThreadWorkspaceState("malformed").tabs).toMatchObject([{ path: "local.ts" }]);
+  });
+
+  it("retains local tabs when storage reads fail, without writing over unseen records", () => {
+    openWorkspaceFile("read-failure", { path: "existing.ts" });
+    const original = localStorage.getItem(workspaceTabsStorageKey);
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation((key) => {
+      if (key === workspaceTabsStorageKey) throw new Error("read denied");
+      return null;
+    });
+    const write = vi.spyOn(Storage.prototype, "setItem");
+    openWorkspaceFile("read-failure", { path: "local.ts" });
+    expect(write).not.toHaveBeenCalled();
+    write.mockRestore();
+    read.mockRestore();
+    expect(localStorage.getItem(workspaceTabsStorageKey)).toBe(original);
+    expect(getThreadWorkspaceState("read-failure").tabs).toMatchObject([{ path: "existing.ts" }, { path: "local.ts" }]);
+  });
+
+  it("uses the latest saved tabs even when another window's clock is behind", () => {
+    openWorkspaceFile("older-clock", { path: "local.ts" });
+    const saved = JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!);
+    const key = Object.keys(saved.threads).find((item) => JSON.parse(item).at(-1) === "older-clock")!;
+    saved.threads[key].tabs[0].path = "remote.ts";
+    saved.threads[key].updatedAt = 1;
+    localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
+    expect(getThreadWorkspaceState("older-clock").tabs).toMatchObject([{ path: "remote.ts" }]);
+    delete saved.threads[key];
+    localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
+    expect(getThreadWorkspaceState("older-clock").tabs).toEqual([]);
+  });
+
   it("keeps a single records tab per task and restores it alongside file tabs", () => {
     openWorkspaceFile("records-task", { path: "README.md", line: 4 }, "historical-run");
     focusWorkspaceSingletonTab("records-task", "records");
@@ -162,7 +287,8 @@ describe("workspace-tabs store", () => {
       const threadID = "storage-external-update";
       openWorkspaceFile(threadID, { path: "src/first.ts" });
       const persisted = JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!);
-      persisted.threads[threadID].width = 700;
+      const key = Object.keys(persisted.threads).find((value) => JSON.parse(value).at(-1) === threadID)!;
+      persisted.threads[key].width = 700;
       localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(persisted));
       expect(getThreadWorkspaceState(threadID).width).toBe(700);
     } finally {

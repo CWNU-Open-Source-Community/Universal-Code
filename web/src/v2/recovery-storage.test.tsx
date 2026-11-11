@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
-import { V2PersistenceError, V2RecoveryProvider, useV2PersistenceWarning, useV2PersistentState, useV2RecoveryStore } from "./recovery-storage";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { V2PersistenceConflicts, V2PersistenceError, V2RecoveryProvider, useV2PersistenceWarning, useV2PersistentState, useV2RecoveryStore } from "./recovery-storage";
 
 const client = { baseURL: "/api/v1" };
 function wrapper({ children }: { children: ReactNode }) {
@@ -242,6 +242,85 @@ describe("V2 scoped recovery storage", () => {
     act(() => result.current.state[1]((previous) => previous + " recovered"));
     expect(window.localStorage.getItem(storageKey("draft:a"))).toBe(envelope("unsaved 中文 recovered"));
     await waitFor(() => expect(result.current.warning).toBeNull());
+  });
+
+  it.each(["local", "remote"])("preserves failed local edits until the user resolves the %s version", (choice) => {
+    function Probe() {
+      const [value, setValue] = useV2PersistentState("draft:a", "");
+      return <><input aria-label="draft" value={value} onChange={(event) => setValue(event.target.value)} /><V2PersistenceConflicts /></>;
+    }
+    localStorage.setItem(storageKey("draft:a"), envelope("original"));
+    render(<V2RecoveryProvider client={client} scopeID="database-one"><Probe /></V2RecoveryProvider>);
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "local" } });
+    setItem.mockRestore();
+    act(() => {
+      localStorage.setItem(storageKey("draft:a"), envelope("remote"));
+      window.dispatchEvent(new StorageEvent("storage", { key: storageKey("draft:a"), newValue: envelope("remote") }));
+    });
+    expect(screen.getByRole("textbox")).toHaveValue("local");
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "local edited" } });
+    expect(localStorage.getItem(storageKey("draft:a"))).toBe(envelope("remote"));
+    fireEvent.click(screen.getByRole("button", { name: choice === "local" ? "保留本窗口版本" : "使用另一窗口版本" }));
+    expect(screen.getByRole("textbox")).toHaveValue(choice === "local" ? "local edited" : "remote");
+    expect(localStorage.getItem(storageKey("draft:a"))).toBe(envelope(choice === "local" ? "local edited" : "remote"));
+  });
+
+  it("keeps separate failed edits to the same key until each conflict is resolved", () => {
+    function Probe() {
+      const [first, setFirst] = useV2PersistentState("draft:a", "");
+      const [second, setSecond] = useV2PersistentState("draft:a", "");
+      return <><input aria-label="first" value={first} onChange={(event) => setFirst(event.target.value)} />
+        <input aria-label="second" value={second} onChange={(event) => setSecond(event.target.value)} />
+        <V2PersistenceConflicts /></>;
+    }
+    localStorage.setItem(storageKey("draft:a"), envelope("original"));
+    render(<V2RecoveryProvider client={client} scopeID="database-one"><Probe /></V2RecoveryProvider>);
+    const fail = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    fireEvent.change(screen.getByLabelText("first"), { target: { value: "local first" } });
+    fireEvent.change(screen.getByLabelText("second"), { target: { value: "local second" } });
+    fail.mockRestore();
+    act(() => {
+      localStorage.setItem(storageKey("draft:a"), envelope("remote"));
+      window.dispatchEvent(new StorageEvent("storage", { key: storageKey("draft:a") }));
+    });
+    expect(screen.getAllByRole("button", { name: "保留本窗口版本" })).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole("button", { name: "保留本窗口版本" })[0]);
+    expect(screen.getByLabelText("second")).toHaveValue("local second");
+    expect(screen.getAllByRole("button", { name: "使用另一窗口版本" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "使用另一窗口版本" }));
+    expect(screen.getByLabelText("second")).toHaveValue("local first");
+  });
+
+  it("requires a fresh choice if the other version changes before saving the local one", () => {
+    function Probe() {
+      const [value, setValue] = useV2PersistentState("draft:a", "");
+      return <><input aria-label="draft" value={value} onChange={(event) => setValue(event.target.value)} /><V2PersistenceConflicts /></>;
+    }
+    localStorage.setItem(storageKey("draft:a"), envelope("original"));
+    render(<V2RecoveryProvider client={client} scopeID="database-one"><Probe /></V2RecoveryProvider>);
+    const fail = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "local" } });
+    fail.mockRestore();
+    act(() => {
+      localStorage.setItem(storageKey("draft:a"), envelope("remote one"));
+      window.dispatchEvent(new StorageEvent("storage", { key: storageKey("draft:a") }));
+    });
+    localStorage.setItem(storageKey("draft:a"), envelope("remote two"));
+    fireEvent.click(screen.getByRole("button", { name: "保留本窗口版本" }));
+    expect(localStorage.getItem(storageKey("draft:a"))).toBe(envelope("remote two"));
+    expect(screen.getByLabelText("draft")).toHaveValue("local");
+    fireEvent.click(screen.getByRole("button", { name: "保留本窗口版本" }));
+    expect(localStorage.getItem(storageKey("draft:a"))).toBe(envelope("local"));
+  });
+
+  it("keeps a visible value when a storage notification cannot be read", () => {
+    localStorage.setItem(storageKey("draft:a"), envelope("saved"));
+    const { result } = renderHook(() => useV2PersistentState("draft:a", "fallback"), { wrapper });
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: storageKey("draft:a") })));
+    expect(result.current[0]).toBe("saved");
+    read.mockRestore();
   });
 
   it("catches unavailable storage for reads and enumeration but makes writes and removals fail", async () => {

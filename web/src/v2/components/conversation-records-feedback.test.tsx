@@ -130,7 +130,7 @@ it("collects two inline comments in the task draft while keeping review open, th
     await user.type(within(dialog).getByRole("textbox"), message);
     await user.keyboard("{Control>}{Enter}{/Control}");
     expect(dialog).toBeVisible();
-    expect(within(dialog).getByRole("status")).toHaveTextContent("尚未发送");
+    expect(within(dialog).getByText("意见已加入聊天草稿，尚未发送。可继续评论其他行。")).toHaveAttribute("role", "status");
   }
   const editor = container.querySelector<HTMLTextAreaElement>(".v2-shared-composer textarea")!;
   expect(editor.value.startsWith(`${originalDraft}\n\n`)).toBe(true);

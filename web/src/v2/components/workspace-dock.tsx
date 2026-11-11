@@ -38,13 +38,18 @@ import {
   focusWorkspaceSingletonTab,
   maxWorkspaceWidth,
   minWorkspaceWidth,
+  resolveWorkspaceStorageConflict,
+  restoreLegacyWorkspaceTabs,
   selectWorkspaceTab,
   setWorkspaceTerminalSession,
   setWorkspaceTerminalShell,
   setWorkspaceWidth,
   updateWorkspaceFileTabPath,
   workspaceCollapseAriaLabel,
+  workspaceScopeKey,
   workspaceSurfaceAriaLabel,
+  workspaceStorageConflictNotice,
+  workspaceLegacyTabsNotice,
   workspaceTabTitle,
   workspaceTabTooltip,
   type ThreadWorkspaceState,
@@ -243,6 +248,7 @@ export function V2WorkspaceDock({
   onOpenRecordUIEvidence?: () => void;
 }) {
   const { t } = useLocale();
+  const scopeKey = workspaceScopeKey(threadID);
   const leaveFileEdit = useFileEditLeave();
   const collapseButtonRef = useRef<HTMLButtonElement>(null);
   const addAnchorRef = useRef<HTMLDivElement>(null);
@@ -694,15 +700,25 @@ export function V2WorkspaceDock({
       </header>
       {state.notice && (
         <div className="v2-workspace-notice" role="status">
-          <span>{localUIMessage(state.notice, t)}</span>
-          <button
+          <span>{state.notice === workspaceLegacyTabsNotice
+            ? t(workspaceLegacyTabsNotice, "Old workspace tabs were found, but their connection is unknown. Restore them only if they belong here; this replaces the current tabs.")
+            : state.notice === workspaceStorageConflictNotice
+            ? t(workspaceStorageConflictNotice, "Another window changed the workspace tabs. Your unsaved tabs are preserved; choose which version to keep.")
+            : localUIMessage(state.notice, t)}</span>
+          {state.notice === workspaceStorageConflictNotice ? <>
+            <button type="button" onClick={() => resolveWorkspaceStorageConflict(threadID, "local")}>{t("保留本窗口标签", "Keep this window's tabs")}</button>
+            <button type="button" onClick={() => resolveWorkspaceStorageConflict(threadID, "remote")}>{t("使用另一窗口标签", "Use the other window's tabs")}</button>
+          </> : state.notice === workspaceLegacyTabsNotice ? <>
+            <button type="button" onClick={() => restoreLegacyWorkspaceTabs(threadID)}>{t("恢复旧标签", "Restore old tabs")}</button>
+            <button type="button" onClick={() => clearWorkspaceNotice(threadID)}>{t("暂不恢复", "Not now")}</button>
+          </> : <button
             aria-label={t("关闭提示", "Dismiss notice")}
             className="v2-workspace-notice-close"
             onClick={() => clearWorkspaceNotice(threadID)}
             type="button"
           >
             <X aria-hidden="true" size={13} />
-          </button>
+          </button>}
         </div>
       )}
       <div className="v2-workspace-dock-body">
@@ -728,7 +744,7 @@ export function V2WorkspaceDock({
               runID={tab.runID || currentRunID}
               initialPath={tab.path}
               initialLine={tab.line}
-              onPathChange={(nextPath) => updateWorkspaceFileTabPath(threadID, tab.id, nextPath)}
+              onPathChange={(nextPath) => updateWorkspaceFileTabPath(threadID, tab.id, nextPath, scopeKey)}
               onQuote={canQuote && onAddComment
                 ? (content) => onAddComment(`${t("任务：", "Thread: ")}${threadID}\n${content}`)
                 : undefined}
@@ -753,8 +769,8 @@ export function V2WorkspaceDock({
                     : undefined}
                   onReturnToDraft={onReturnToDraft}
                   onSession={(sessionID, expectedSessionID) =>
-                    setWorkspaceTerminalSession(threadID, sessionID, expectedSessionID)}
-                  onShellChange={(shellName) => setWorkspaceTerminalShell(threadID, shellName)}
+                    setWorkspaceTerminalSession(threadID, sessionID, expectedSessionID, scopeKey)}
+                  onShellChange={(shellName) => setWorkspaceTerminalShell(threadID, shellName, scopeKey)}
                   recoverable={state.hadTerminalSession}
                   runID={currentRunID}
                   sessionID={state.terminalSessionID}
