@@ -113,6 +113,12 @@ func NewThreadTurnServiceWithExecutionCapabilities(store ThreadStore,
 func (s *ThreadTurnService) WithLifecycleHooks(engine *hooks.Engine) *ThreadTurnService {
 	if s != nil {
 		s.lifecycleHooks = engine
+		if s.threads != nil {
+			// The busy-turn path submits follow-up messages through the
+			// embedded ThreadService; without the engine its prompt boundary
+			// would silently no-op.
+			s.threads.WithLifecycleHooks(engine)
+		}
 		if s.recovery != nil {
 			s.recovery.WithLifecycleHooks(engine)
 		}
@@ -157,6 +163,10 @@ func (s *ThreadTurnService) execute(ctx context.Context,
 	if err != nil {
 		return ExecuteThreadTurnResult{}, err
 	}
+	// The user_prompt_submit boundary fired in executeWithPreparation before
+	// any persistence; this flow's internal Submit call skips its own
+	// boundary so the turn triggers exactly once.
+	normalized.skipPromptHook = true
 	intent, err := s.threads.reserveMessage(ctx, normalized)
 	if err != nil {
 		return ExecuteThreadTurnResult{}, err

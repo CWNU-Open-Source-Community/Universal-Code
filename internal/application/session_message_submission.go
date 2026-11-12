@@ -6,18 +6,32 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/hooks"
 	"cyberagent-workbench/internal/session"
 )
 
 type SessionMessageSubmissionStore interface {
 	GetSession(context.Context, string) (session.Session, error)
 	GetRunBySession(context.Context, string) (domain.Run, bool, error)
+	GetMission(context.Context, string) (domain.Mission, error)
 	EnqueueOperatorSteering(context.Context,
 		domain.EnqueueOperatorSteeringRequest) (domain.OperatorSteeringEnqueueResult, error)
 }
 
 type SessionMessageSubmissionService struct {
-	store SessionMessageSubmissionStore
+	store          SessionMessageSubmissionStore
+	lifecycleHooks *hooks.Engine
+}
+
+// WithLifecycleHooks wires the restricted lifecycle hook engine. A nil engine
+// leaves every hook boundary a no-op.
+func (s *SessionMessageSubmissionService) WithLifecycleHooks(
+	engine *hooks.Engine,
+) *SessionMessageSubmissionService {
+	if s != nil {
+		s.lifecycleHooks = engine
+	}
+	return s
 }
 
 type SubmitSessionMessageRequest struct {
@@ -95,6 +109,24 @@ func (s *SessionMessageSubmissionService) Submit(ctx context.Context,
 			apperror.CodeConflict, "Session and Run binding changed")
 	}
 
+	// The user_prompt_submit boundary fires before the message is queued; a
+	// deny rejects the submission with nothing recorded.
+	mission, missionErr := s.store.GetMission(ctx, run.MissionID)
+	if missionErr != nil {
+		return SubmitSessionMessageResult{}, apperror.Normalize(missionErr)
+	}
+	submitted, err := sessionPromptAlreadySubmitted(ctx, s.store, linkedSession.ID, operationKey)
+	if err != nil {
+		return SubmitSessionMessageResult{}, apperror.Normalize(err)
+	}
+	if !submitted {
+		if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.UserPromptSubmit,
+			run.ID, mission.WorkspaceID, hooks.BuildUserPromptSubmitPayload(
+				hooks.UserPromptSubmitPayload{SessionID: linkedSession.ID, RunID: run.ID,
+					Content: content})); err != nil {
+			return SubmitSessionMessageResult{}, err
+		}
+	}
 	queued, err := s.store.EnqueueOperatorSteering(ctx,
 		domain.EnqueueOperatorSteeringRequest{
 			RunID: run.ID, SessionID: linkedSession.ID, Content: content,
