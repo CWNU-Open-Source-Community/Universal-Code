@@ -214,6 +214,15 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	if err := requirePinnedProjectInstructionSelection(turn.Run.Config, memory); err != nil {
 		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
+	// Context preparation may wait on a model compaction. Build execution
+	// scopes from the current snapshot rather than the early readiness read.
+	executionPermission, err = s.store.GetRunExecutionPermission(ctx, turn.Run.ID)
+	if err == nil {
+		err = requireSupervisorPermissionReady(s.executionCapabilities, executionPermission)
+	}
+	if err != nil {
+		return nil, result, s.recordFailure(ctx, &result, err, 0)
+	}
 	commandRuntime, err := s.supervisorCommandRuntimeTools(ctx, turn.Run.ID,
 		executionPermission.Mode)
 	if err != nil {

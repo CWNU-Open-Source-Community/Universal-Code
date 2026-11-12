@@ -9,6 +9,7 @@ import { V2Composer, v2ComposerNotSubmitted } from "./composer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { V2RecoveryProvider } from "../recovery-storage";
 import type { ComponentProps } from "react";
+import { fullPermissionNotReadyMessage } from "../../lib/local-ui-message";
 
 const client = {} as APIClient;
 const workspaces: WorkspaceView[] = [
@@ -200,6 +201,15 @@ describe("V2Composer", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(expected);
     expect(input).toHaveValue("保留原要求");
     expect(reason.message).toBe("Unconfirmed cancellation: retain this exact request");
+  });
+
+  it("keeps the safe Full recovery action visible for a sealed failed turn", async () => {
+    const reason = new APIRequestError(fullPermissionNotReadyMessage, "FAILED_PRECONDITION", 412, "full-not-ready", undefined, undefined, true);
+    renderComposer(vi.fn().mockRejectedValue(reason));
+    const input = screen.getByRole("textbox", { name: "开始新对话" });
+    fireEvent.change(input, { target: { value: "继续读取文件" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(fullPermissionNotReadyMessage);
   });
 
   it("requires a workspace before enabling submission", () => {

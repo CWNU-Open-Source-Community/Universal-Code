@@ -1,5 +1,6 @@
 import type { LocaleText } from "../../lib/locale";
 import type { PublicModelStreamSnapshot, ThreadTranscriptItemView } from "../../api/types";
+import { localUIMessage } from "../../lib/local-ui-message";
 import type { PublicModelStreamStatus } from "../../hooks/use-public-model-stream";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../../api/image-attachments";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../../api/file-attachments";
@@ -406,7 +407,7 @@ export function projectThreadNarrative(
     if (item.source === "harness" && tone !== "warning") continue;
     if (hiddenHarnessStatuses.has(status) && noticeTone(item) === "neutral") continue;
     if (tone !== "neutral") {
-      const text = normalizedText(item);
+      const text = localUIMessage(normalizedText(item), t);
       const eventKey = `${item.run_id}:${item.sequence}:${item.id}`;
       if (noticeEvents.has(eventKey)) continue;
       noticeEvents.add(eventKey);

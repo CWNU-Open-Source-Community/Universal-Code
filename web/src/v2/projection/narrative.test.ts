@@ -1,6 +1,7 @@
 import type { PublicModelStreamSnapshot, ThreadTranscriptItemView } from "../../api/types";
 import { prepareThreadNarrative, projectLiveThreadNarrative, projectThreadNarrative, type ThreadTranscriptActivityItem } from "./narrative";
 import { peerMessageFixture } from "../../test/thread-peer-message";
+import { fullPermissionNotReadyMessage } from "../../lib/local-ui-message";
 
 function item(overrides: Partial<ThreadTranscriptActivityItem>): ThreadTranscriptActivityItem {
   return {
@@ -24,6 +25,12 @@ function item(overrides: Partial<ThreadTranscriptActivityItem>): ThreadTranscrip
     ...overrides,
   };
 }
+
+it("keeps the fixed Full permission recovery notice localized in the actual narrative", () => {
+  const transcript = [item({ source: "harness", kind: "harness_status", stage: "blocked", status: "failed", title: "Full 权限尚未就绪", detail: fullPermissionNotReadyMessage, source_ref: "full-input" })];
+  expect(projectThreadNarrative(transcript).find((entry) => entry.kind === "notice")).toMatchObject({ text: fullPermissionNotReadyMessage });
+  expect(projectThreadNarrative(transcript, undefined, (_zh, en) => en).find((entry) => entry.kind === "notice")).toMatchObject({ text: expect.stringContaining("Reconfirm Full in the chat permissions") });
+});
 
 function snapshot(overrides: Partial<PublicModelStreamSnapshot> = {}): PublicModelStreamSnapshot {
   return {

@@ -1,4 +1,4 @@
-import { localUIMessage } from "../../lib/local-ui-message";
+import { fullPermissionNotReadyMessage, localUIMessage } from "../../lib/local-ui-message";
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1178,6 +1178,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         {submissionNotices.map(({ input, error }) =>
           <div className="v2-notice tone-warning" key={input.operationKey} role="alert">
             <p>{v2TurnWasNotQueued(error) ? t("这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。", "This message was not queued. Your draft and references are kept. Update the references or resolve the current restrictions, then retry.")
+              : v2TurnFailed(error) && error instanceof APIRequestError && error.code === "FAILED_PRECONDITION" && error.message === fullPermissionNotReadyMessage ? localUIMessage(fullPermissionNotReadyMessage, t)
               : v2TurnFailed(error) ? t("本轮执行未完成，失败记录与已完成的修改会保留。可以直接发送“继续”或补充要求。", "This turn did not finish. The failure history and completed changes are kept. Send “continue” or add instructions.")
               : observations[input.operationKey] ?? t("暂时无法确认这条消息的结果。草稿与引用已保留；发送新要求时会先核对原提交，也可以重试核对。", "The result of this message is not yet confirmed. Your draft and references are kept. Sending new instructions will first check the original submission; you can also retry the check.")}</p>
             <details><summary>{t("查看原因", "Show reason")}</summary>{error instanceof Error ? localUIMessage(error.message, t) : t("请求失败", "Request failed")}</details>

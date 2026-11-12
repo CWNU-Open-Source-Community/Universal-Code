@@ -3,6 +3,7 @@ package application_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/threadtranscript"
 )
 
 func assertRootToolExposure(t *testing.T, request llm.ChatRequest, root string) {
@@ -43,6 +45,63 @@ func assertRootToolExposure(t *testing.T, request llm.ChatRequest, root string) 
 	}
 	if !strings.Contains(exposure.Unavailable["command_runtime"], "Execution profile preview") || !strings.Contains(exposure.Unavailable["browser_actions"], "host has not connected") {
 		t.Fatalf("missing runtime refusal reasons: %v", exposure.Unavailable)
+	}
+}
+
+func TestThreadFullPermissionRecoverySurvivesSealingReplayAndTranscript(t *testing.T) {
+	st, _, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	original := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, DangerFullAccessEnabled: true, RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
+	if _, err := application.NewThreadExecutionPermissionService(st, original).Change(t.Context(), application.ChangeThreadExecutionPermissionRequest{ThreadID: input.ThreadID, Mode: "full", ConfirmFull: true, OperationKey: "thread-cold-full-permission", RequestedBy: "test_operator", Reason: "explicit Full selection"}); err != nil {
+		t.Fatal(err)
+	}
+	cold := original
+	cold.RuntimeAuthority = domain.NewExecutionPermissionRuntimeAuthority()
+	provider := &scriptedToolProvider{}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	execution := application.NewRunExecutionHandoffWithRuntime(st, router, policy.NewDefaultChecker(), application.RunRuntimeDependencies{ExecutionCapabilities: cold}).WithGeneratedContextCompaction(false)
+	turns := application.NewThreadTurnServiceWithExecutionCapabilities(st, application.NewRunLifecycleControlService(st), execution, cold)
+	var message, messageID string
+	for attempt := 0; attempt < 2; attempt++ {
+		result, err := turns.Execute(t.Context(), input)
+		var failure *application.ThreadTurnFailedError
+		if !errors.As(err, &failure) || failure.Failure == nil || failure.Failure.FailureStage != domain.ThreadFailureFullPermissionNotReady || !strings.Contains(err.Error(), "请在聊天权限中重新确认 Full") || !strings.Contains(err.Error(), "Ask / Auto") || len(provider.Requests()) != 0 {
+			t.Fatalf("sealed Full recovery lost its safe explanation: result=%+v error=%v requests=%d", result, err, len(provider.Requests()))
+		}
+		message = err.Error()
+		messageID = failure.Failure.MessageID
+	}
+	sources, err := st.ListThreadTranscriptSourceBefore(t.Context(), input.ThreadID, 0, 0, 101)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := threadtranscript.Build(input.ThreadID, sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range items {
+		if item.SourceRef == messageID && item.Status == "failed" {
+			found = true
+			if item.Detail != message {
+				t.Fatalf("durable notice lost recovery: %q", item.Detail)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no durable failed-turn notice")
+	}
+}
+
+func TestThreadFullPermissionStageCannotComeFromProviderErrorText(t *testing.T) {
+	provider := &scriptedToolProvider{respond: func(llm.ChatRequest, int) (*llm.ChatResponse, error) {
+		return nil, apperror.New(apperror.CodeFailedPrecondition, "Full permission not ready: untrusted-provider-detail")
+	}}
+	_, turns, input := threadControlFixture(t, provider)
+	_, err := turns.Execute(t.Context(), input)
+	var failure *application.ThreadTurnFailedError
+	if !errors.As(err, &failure) || failure.Failure == nil || failure.Failure.FailureStage == domain.ThreadFailureFullPermissionNotReady || strings.Contains(err.Error(), "untrusted-provider-detail") || strings.Contains(err.Error(), "重新确认 Full") {
+		t.Fatalf("provider prose manufactured permission recovery: %v", err)
 	}
 }
 

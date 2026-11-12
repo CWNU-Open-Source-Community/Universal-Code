@@ -53,7 +53,7 @@ function parseObservation(value: unknown, kind: "creation" | "turn", scope: stri
       ref.thread_id !== value.thread_id || ref.run_id !== value.run_id || ref.message_id !== value.message_id ||
       !Number.isSafeInteger(ref.event_sequence) || Number(ref.event_sequence) < 1 || value.error_code !== "turn_failed") return invalid();
   } else if (value.turn_failure !== undefined || value.error_code !== undefined || value.failure_stage !== undefined) return invalid();
-  if (value.failure_stage !== undefined && !["tool_request_rejected", "empty_model_response", "invalid_model_response", "context_window_exceeded"].includes(String(value.failure_stage))) return invalid();
+  if (value.failure_stage !== undefined && !["tool_request_rejected", "empty_model_response", "invalid_model_response", "context_window_exceeded", "full_permission_not_ready"].includes(String(value.failure_stage))) return invalid();
   return value as unknown as ThreadRequestObservation;
 }
 

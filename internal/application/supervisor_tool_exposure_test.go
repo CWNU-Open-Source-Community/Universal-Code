@@ -34,6 +34,30 @@ func TestSupervisorFullPermissionReadinessUsesCurrentProcessGrant(t *testing.T) 
 	}
 }
 
+type exposurePermissionStore struct {
+	AgentRunnerStore
+	current domain.RunExecutionPermissionSnapshot
+	reads   int
+}
+
+func (s *exposurePermissionStore) GetRunExecutionPermission(context.Context, string) (domain.RunExecutionPermissionSnapshot, error) {
+	s.reads++
+	return s.current, nil
+}
+
+func TestSupervisorReadinessRechecksCurrentPermissionBeforeUsingPreparedScope(t *testing.T) {
+	prepared := domain.RunExecutionPermissionSnapshot{ID: "full-before", RunID: "run-current", Revision: 2, Mode: domain.RunExecutionPermissionFull}
+	st := &exposurePermissionStore{current: domain.RunExecutionPermissionSnapshot{ID: "ask-current", RunID: prepared.RunID, Revision: 3, Mode: domain.RunExecutionPermissionAsk}}
+	runner := &AgentRunner{store: st}
+	err := runner.requireSupervisorPermissionCurrent(t.Context(), prepared)
+	if st.reads != 1 || apperror.CodeOf(err) != apperror.CodeConflict || strings.Contains(err.Error(), "Reconfirm Full") {
+		t.Fatalf("stale Full was checked instead of current Ask: reads=%d err=%v", st.reads, err)
+	}
+	if err := runner.requireSupervisorPermissionCurrent(t.Context(), st.current); err != nil || st.reads != 2 {
+		t.Fatalf("current Ask scope did not pass: reads=%d err=%v", st.reads, err)
+	}
+}
+
 func TestSupervisorToolExposureMatchesActualOpenAIChatStreamSchema(t *testing.T) {
 	for _, phase := range []domain.ExecutionPhase{domain.ExecutionPhasePlan, domain.ExecutionPhaseDeliver} {
 		t.Run(string(phase), func(t *testing.T) {

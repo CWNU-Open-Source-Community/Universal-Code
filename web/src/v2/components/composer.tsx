@@ -1,4 +1,4 @@
-import { localUIMessage } from "../../lib/local-ui-message";
+import { fullPermissionNotReadyMessage, localUIMessage } from "../../lib/local-ui-message";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command, SquarePen } from "lucide-react";
@@ -310,7 +310,9 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         ? failure.submission.operationKey : undefined;
       if (currentScope.current === scope) setError({ reason,
         message: reason instanceof APIRequestError && reason.turnFailed === true
-          ? reason.code === "CANCELLED"
+          ? reason.code === "FAILED_PRECONDITION" && reason.message === fullPermissionNotReadyMessage
+            ? fullPermissionNotReadyMessage
+            : reason.code === "CANCELLED"
             ? t("本轮已停止，输入和已完成的工作已保留。可发送新消息继续。", "This turn stopped. Your input and completed work are kept. Send a new message to continue.")
             : t("本轮执行失败，输入和已完成的工作已保留。可发送新消息继续。", "This turn failed. Your input and completed work are kept. Send a new message to continue.")
           : reason instanceof Error ? reason.message : t("消息发送失败", "Message could not be sent"),

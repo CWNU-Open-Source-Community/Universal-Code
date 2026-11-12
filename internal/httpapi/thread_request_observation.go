@@ -76,7 +76,7 @@ func threadRequestObservationView(observation domain.ThreadRequestObservation) T
 		view.ErrorCode = "turn_failed"
 		switch observation.Failure.FailureStage {
 		case domain.ThreadFailureToolRequestRejected, domain.ThreadFailureEmptyModelResponse,
-			domain.ThreadFailureInvalidModelResponse, domain.ThreadFailureContextWindowExceeded:
+			domain.ThreadFailureInvalidModelResponse, domain.ThreadFailureContextWindowExceeded, domain.ThreadFailureFullPermissionNotReady:
 			view.FailureStage = observation.Failure.FailureStage
 		}
 	}

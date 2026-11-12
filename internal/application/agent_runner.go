@@ -953,7 +953,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 	for {
 		// Each logical model request uses the current confirmed records. A
 		// transport retry remains bound to the same prepared request and audit.
-		if err := requireSupervisorPermissionReady(s.executionCapabilities, prepared.tools.permission); err != nil {
+		if err := s.requireSupervisorPermissionCurrent(ctx, prepared.tools.permission); err != nil {
 			return result, s.recordFailure(ctx, &result, err, 0)
 		}
 		if err := refreshLongTermMemories(); err != nil {

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"cyberagent-workbench/internal/apperror"
@@ -10,6 +11,8 @@ import (
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/toolgateway"
 )
+
+var errSupervisorFullPermissionNotReady = errors.New("supervisor Full permission is not ready")
 
 // Full is a process-local grant even for rooted file reads. Refuse a stale
 // selection before history compaction or the root model can spend a request
@@ -19,12 +22,23 @@ func requireSupervisorPermissionReady(capabilities domain.ExecutionPermissionRun
 		return nil
 	}
 	if !capabilities.Allows(permission.Mode) {
-		return apperror.New(apperror.CodeFailedPrecondition, "Full execution permission is unavailable in this app process. Select Ask or Auto in the chat permissions, or restart with the existing Full execution support before retrying.")
+		return apperror.Wrap(apperror.CodeFailedPrecondition, "Full execution permission is unavailable in this app process. Select Ask or Auto in the chat permissions, or restart with the existing Full execution support before retrying.", errSupervisorFullPermissionNotReady)
 	}
 	if _, live := capabilities.FullAccessGeneration(permission); !live {
-		return apperror.New(apperror.CodeFailedPrecondition, "The selected Full execution permission is not active in this app process. Reconfirm Full in the chat permissions, or select Ask or Auto, then retry. Workspace reads, file changes, commands and browser actions still require their current runtime authority.")
+		return apperror.Wrap(apperror.CodeFailedPrecondition, "The selected Full execution permission is not active in this app process. Reconfirm Full in the chat permissions, or select Ask or Auto, then retry. Workspace reads, file changes, commands and browser actions still require their current runtime authority.", errSupervisorFullPermissionNotReady)
 	}
 	return nil
+}
+
+func (s *AgentRunner) requireSupervisorPermissionCurrent(ctx context.Context, prepared domain.RunExecutionPermissionSnapshot) error {
+	current, err := s.store.GetRunExecutionPermission(ctx, prepared.RunID)
+	if err != nil {
+		return err
+	}
+	if current.ID != prepared.ID || current.Revision != prepared.Revision || current.Mode != prepared.Mode {
+		return apperror.New(apperror.CodeConflict, "Execution permission changed while preparing this turn. Retry using the current chat permissions.")
+	}
+	return requireSupervisorPermissionReady(s.executionCapabilities, current)
 }
 
 type supervisorToolExposureContext struct {
