@@ -26,15 +26,15 @@ import (
 )
 
 const (
-	ProtocolVersion      = "restricted-hooks.v1"
-	MaxDeclarations      = 64
-	MaxPayloadBytes      = 256 * 1024
-	MaxOutputBytes       = 16 * 1024
-	MaxAnnotations       = 16
-	MaxAnnotationBytes   = 1024
-	MaxHookTimeoutMillis = 2_000
-	MaxHookIdentityRunes = 256
-	MaxToolPatternBytes  = 256
+	ProtocolVersion         = "restricted-hooks.v1"
+	MaxDeclarations         = 64
+	MaxPayloadBytes         = 256 * 1024
+	MaxOutputBytes          = 16 * 1024
+	MaxAnnotations          = 16
+	MaxAnnotationBytes      = 1024
+	MaxHookTimeoutMillis    = 2_000
+	MaxHookIdentityRunes    = 256
+	MaxToolPatternBytes     = 256
 	MaxAsyncConcurrent      = 8
 	MaxAsyncAuditConcurrent = MaxDeclarations
 )
@@ -42,22 +42,23 @@ const (
 type Event string
 
 const (
-	PreTool          Event = "pre_tool"
-	PostTool         Event = "post_tool"
-	RunStarted       Event = "run_started"
-	RunCompleted     Event = "run_completed"
-	SessionOpened    Event = "session_opened"
-	SessionClosed    Event = "session_closed"
-	UserPromptSubmit Event = "user_prompt_submit"
-	Compaction       Event = "compaction"
-	Subagent         Event = "subagent"
-	Checkpoint       Event = "checkpoint"
+	PreTool           Event = "pre_tool"
+	PostTool          Event = "post_tool"
+	RunStarted        Event = "run_started"
+	RunCompleted      Event = "run_completed"
+	SessionOpened     Event = "session_opened"
+	SessionClosed     Event = "session_closed"
+	UserPromptSubmit  Event = "user_prompt_submit"
+	ApprovalRequested Event = "approval_requested"
+	Compaction        Event = "compaction"
+	Subagent          Event = "subagent"
+	Checkpoint        Event = "checkpoint"
 )
 
 func (e Event) Valid() bool {
 	switch e {
 	case PreTool, PostTool, RunStarted, RunCompleted, SessionOpened, SessionClosed,
-		UserPromptSubmit, Compaction, Subagent, Checkpoint:
+		UserPromptSubmit, ApprovalRequested, Compaction, Subagent, Checkpoint:
 		return true
 	default:
 		return false
@@ -162,6 +163,16 @@ func (d Declaration) Validate() error {
 	}
 	if d.Event == SessionClosed && d.FailurePolicy == FailureDeny {
 		return errors.New("session_closed hooks require continue failure policy because the session is already closed")
+	}
+	if d.Event == ApprovalRequested {
+		// The approval decision belongs to the operator: hooks at this
+		// boundary observe and record, they never auto-deny, annotate a
+		// pending human decision, or rewrite anything. Whitelist form on
+		// purpose: a future action type fails closed here instead of silently
+		// gaining approval-gate authority.
+		if d.Action != ActionRecord {
+			return errors.New("approval_requested hooks may only record observations")
+		}
 	}
 	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")
@@ -316,13 +327,13 @@ type AuditSink interface {
 }
 
 type Engine struct {
-	mu            sync.RWMutex
-	registrations []Registration
-	toolPatterns  []*regexp.Regexp
-	generation    string
-	sink          AuditSink
-	now           func() time.Time
-	loader        func(context.Context) ([]Registration, error)
+	mu              sync.RWMutex
+	registrations   []Registration
+	toolPatterns    []*regexp.Regexp
+	generation      string
+	sink            AuditSink
+	now             func() time.Time
+	loader          func(context.Context) ([]Registration, error)
 	scriptRunner    ScriptExecutor
 	asyncSlots      chan struct{}
 	asyncAuditSlots chan struct{}
@@ -658,7 +669,7 @@ func matchesTool(values []string, pattern *regexp.Regexp, toolName string) bool 
 
 func eventOrder(value Event) int {
 	for index, current := range []Event{PreTool, PostTool, RunStarted, RunCompleted,
-		SessionOpened, SessionClosed, UserPromptSubmit, Compaction, Subagent, Checkpoint} {
+		SessionOpened, SessionClosed, UserPromptSubmit, ApprovalRequested, Compaction, Subagent, Checkpoint} {
 		if current == value {
 			return index
 		}
