@@ -1,10 +1,10 @@
 package store
 
 // The first parameter scopes all claims to one Thread. A tool-boundary receipt
-// binds an already saved user row while its steering input is still pending;
-// the final segment commits that same row later. Keep this read-only relation
-// shared by transcript ordering and input statistics instead of guessing from
-// equal text or treating the steering status as an execution-completion fact.
+// binds an already saved user row while its steering input is still pending,
+// including when a later segment is cancelled before the final commit. Share
+// this read-only relation between transcript ordering and input statistics;
+// equal text and steering status alone cannot establish a completed input.
 const threadOperatorMessageBindingsCTE = `WITH thread_operator_inputs AS (
 	SELECT steering.* FROM thread_runs binding
 	JOIN operator_steering_messages steering ON steering.run_id=binding.run_id
@@ -26,7 +26,7 @@ const threadOperatorMessageBindingsCTE = `WITH thread_operator_inputs AS (
 	JOIN operator_steering_deliveries delivery ON delivery.message_id=steering.id
 		AND delivery.run_id=steering.run_id AND delivery.attempt_id=boundary.subject_id
 		AND delivery.turn=json_extract(boundary.payload_json,'$.turn') AND delivery.status='superseded'
-	WHERE steering.status='pending' AND steering.session_message_id IS NULL
+	WHERE steering.status IN ('pending','cancelled') AND steering.session_message_id IS NULL
 ), bound_operator_messages AS (
 	SELECT steering.id AS operator_message_id,message.id AS session_message_id,
 		queued.event_id AS queued_event_id,recorded.event_id AS session_event_id

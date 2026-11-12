@@ -173,3 +173,85 @@ func TestThreadInputBindingRejectsUnrelatedRowsAndReceiptClaims(t *testing.T) {
 		t.Fatalf("invalid receipt produced an extra binding: count=%d %v", count, err)
 	}
 }
+
+func TestThreadInputBindingRetainsConsumedInputAfterRunTermination(t *testing.T) {
+	for _, terminal := range []string{"cancelled", "failed"} {
+		for _, consumed := range []bool{true, false} {
+			t.Run(terminal+"/consumed_"+strconv.FormatBool(consumed), func(t *testing.T) {
+				st, run := newThreadTaskTest(t)
+				input := queueThreadTask(t, st, run, "terminal-input-binding")
+				if consumed {
+					_, lease := prepareThreadTask(t, st, run, 8)
+					cp := beginThreadTask(t, st, lease, input)
+					cp = completeThreadTaskSegment(t, st, cp, true)
+					if cp.Phase != domain.SupervisorTurnStarted {
+						t.Fatalf("next automatic segment did not start: %+v", cp)
+					}
+				}
+				var err error
+				if terminal == "cancelled" {
+					_, err = application.NewRunService(st).Cancel(t.Context(), run.ID)
+				} else {
+					_, err = application.NewRunService(st).Fail(t.Context(), run.ID, "terminal input binding regression")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				message, err := st.GetOperatorSteering(t.Context(), input)
+				if err != nil || message.Status != domain.OperatorSteeringCancelled || message.SessionMessageID != 0 {
+					t.Fatalf("fixture did not cancel the original steering input: %+v %v", message, err)
+				}
+				threadID := domain.InitialThreadID(run.ID)
+				stats, err := st.GetThreadStatistics(t.Context(), threadID)
+				want := int64(0)
+				if consumed {
+					want = 1
+				}
+				if err != nil || stats.Turns != want {
+					t.Fatalf("terminal input count=%d want=%d err=%v", stats.Turns, want, err)
+				}
+				sources, err := st.ListThreadTranscriptSourceBefore(t.Context(), threadID, 0, 0, 101)
+				if err != nil {
+					t.Fatal(err)
+				}
+				userRows := 0
+				for _, source := range sources {
+					if source.Event == nil {
+						continue
+					}
+					if source.Event.Type == events.OperatorSteeringQueuedEvent && source.Event.SubjectID == input && source.OperatorMessageBound != consumed {
+						t.Fatalf("consumed cancelled input lost its exact binding: %+v", source)
+					}
+					if source.Event.Type == events.SessionMessageEvent {
+						var role string
+						if err := st.db.QueryRow(`SELECT role FROM session_messages WHERE id=?`, source.Event.SubjectID).Scan(&role); err != nil {
+							t.Fatal(err)
+						}
+						if role == "user" {
+							userRows++
+						}
+					}
+				}
+				if int64(userRows) != want {
+					t.Fatalf("terminal projection invented user rows=%d want=%d", userRows, want)
+				}
+				items, err := threadtranscript.Build(threadID, sources)
+				if err != nil {
+					t.Fatal(err)
+				}
+				inputs := 0
+				for _, item := range items {
+					if item.Kind == runactivity.KindOperatorInput {
+						inputs++
+						if item.CanonicalID != input || item.Status != "cancelled" {
+							t.Fatalf("terminal input gained a duplicate Session bubble: %+v", item)
+						}
+					}
+				}
+				if inputs != 1 {
+					t.Fatalf("queue cancellation/input notifications=%d want one", inputs)
+				}
+			})
+		}
+	}
+}

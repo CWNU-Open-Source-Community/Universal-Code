@@ -22,11 +22,13 @@ func (s *SQLiteStore) GetThreadStatistics(ctx context.Context, threadID string) 
 	threadID = strings.TrimSpace(threadID)
 	var result domain.ThreadStatistics
 	// A tool-boundary segment can save its user row before committing steering.
-	// Reuse the exact transcript binding so this input never counts twice.
+	// Reuse the exact transcript binding so this input never counts twice or
+	// disappears when a later segment cancels its still-pending steering row.
 	err = tx.QueryRowContext(ctx, threadOperatorMessageBindingsCTE+` SELECT
 		(SELECT COUNT(*) FROM thread_runs binding JOIN operator_steering_messages input
 		 ON input.run_id=binding.run_id AND input.session_id=binding.session_id
-		 WHERE binding.thread_id=? AND input.status<>'cancelled') +
+		 WHERE binding.thread_id=? AND (input.status<>'cancelled' OR EXISTS (
+			SELECT 1 FROM bound_operator_messages bound WHERE bound.operator_message_id=input.id))) +
 		(SELECT COUNT(*) FROM thread_runs binding JOIN session_messages message
 		 ON message.session_id=binding.session_id WHERE binding.thread_id=?
 		 AND message.role='user' AND message.source_kind='operator_message' AND message.instruction_authorized=1
