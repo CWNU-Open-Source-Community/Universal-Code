@@ -1,0 +1,29 @@
+=== RUN   TestWorkflowClaimRenewsDuringLongWorker
+=== PAUSE TestWorkflowClaimRenewsDuringLongWorker
+=== RUN   TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease
+=== RUN   TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/storage_failure
+=== PAUSE TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/storage_failure
+=== RUN   TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/owner_replaced
+=== PAUSE TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/owner_replaced
+=== RUN   TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/renewal_timeout
+=== PAUSE TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/renewal_timeout
+=== CONT  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/storage_failure
+=== CONT  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/renewal_timeout
+=== CONT  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/owner_replaced
+=== NAME  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/storage_failure
+    workflow_claim_test.go:237: storage_failure cancelled provider, retained Run exclusion through drain, returned error and released Run lease
+=== NAME  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/owner_replaced
+    workflow_claim_test.go:237: owner_replaced cancelled provider, retained Run exclusion through drain, returned error and released Run lease
+=== NAME  TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/renewal_timeout
+    workflow_claim_test.go:237: renewal_timeout cancelled provider, retained Run exclusion through drain, returned error and released Run lease
+--- PASS: TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease (0.00s)
+    --- PASS: TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/storage_failure (10.61s)
+    --- PASS: TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/owner_replaced (10.63s)
+    --- PASS: TestWorkflowClaimRenewalLossCancelsAndDrainsRunLease/renewal_timeout (12.63s)
+=== RUN   TestWorkflowClaimReleaseErrorIsReturned
+--- PASS: TestWorkflowClaimReleaseErrorIsReturned (0.71s)
+=== CONT  TestWorkflowClaimRenewsDuringLongWorker
+    workflow_claim_test.go:155: worker remained exclusively owned past 35s; successful renewals=3 model_calls=1
+--- PASS: TestWorkflowClaimRenewsDuringLongWorker (35.78s)
+PASS
+ok  	cyberagent-workbench/internal/application	49.213s

@@ -131,10 +131,12 @@ func (s *SQLiteStore) ListWorkflowExecutions(ctx context.Context, runID string) 
 }
 
 // Claims serialize interpreter calls across processes, independently of the Run
-// lease acquired by the real worker runner. One Advance is bounded to 10 minutes.
+// lease acquired by the real worker runner. The interpreter renews while active.
 func (s *SQLiteStore) ClaimWorkflowExecution(ctx context.Context, id, owner string) (domain.WorkflowExecution, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	now := time.Now().UTC()
-	result, err := s.db.ExecContext(ctx, `UPDATE workflow_executions SET claim_owner=?,claim_until=? WHERE id=? AND (status IN ('running','waiting','waiting_approval') OR (status='paused' AND (`+workflowLifecycleDueSQL+`))) AND (claim_owner='' OR claim_until<=?)`, owner, ts(now.Add(15*time.Minute)), id, ts(now), ts(now))
+	result, err := s.db.ExecContext(ctx, `UPDATE workflow_executions SET claim_owner=?,claim_until=? WHERE id=? AND (status IN ('running','waiting','waiting_approval') OR (status='paused' AND (`+workflowLifecycleDueSQL+`))) AND (claim_owner='' OR claim_until<=?)`, owner, ts(now.Add(30*time.Second)), id, ts(now), ts(now))
 	if err != nil {
 		return domain.WorkflowExecution{}, false, err
 	}
@@ -145,7 +147,24 @@ func (s *SQLiteStore) ClaimWorkflowExecution(ctx context.Context, id, owner stri
 	e, err := s.GetWorkflowExecution(ctx, id)
 	return e, n == 1, err
 }
+
+// Renewal preserves the checkpoint and ordering cursor. A paused wave may still
+// settle, so only the current, unexpired owner determines claim renewal.
+func (s *SQLiteStore) RenewWorkflowExecutionClaim(ctx context.Context, id, owner string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	now := time.Now().UTC()
+	result, err := s.db.ExecContext(ctx, `UPDATE workflow_executions SET claim_until=? WHERE id=? AND claim_owner=? AND claim_until>?`, ts(now.Add(30*time.Second)), id, owner, ts(now))
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
 func (s *SQLiteStore) ReleaseWorkflowExecution(ctx context.Context, id, owner string) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	_, err := s.db.ExecContext(ctx, `UPDATE workflow_executions SET claim_owner='',claim_until='' WHERE id=? AND claim_owner=?`, id, owner)
 	return err
 }

@@ -1,0 +1,101 @@
+=== RUN   TestWorkflowClaimContentionReviewHealthyCall
+=== PAUSE TestWorkflowClaimContentionReviewHealthyCall
+=== RUN   TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== PAUSE TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== RUN   TestWorkflowClaimContentionRetryStopsWithParent
+=== PAUSE TestWorkflowClaimContentionRetryStopsWithParent
+=== CONT  TestWorkflowClaimContentionReviewHealthyCall
+=== CONT  TestWorkflowClaimContentionRetryStopsWithParent
+=== CONT  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== NAME  TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:197: model entered at 3.149s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimContentionRetryStopsWithParent
+    workflow_claim_contention_review_test.go:197: model entered at 3.15s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+    workflow_claim_contention_review_test.go:197: model entered at 3.106s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimContentionRetryStopsWithParent
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9.001s for 3.003s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10.002s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-708µs]; Run lease renewal events=[]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=true jobs=0 err=context canceled
+        renew workflow execution claim: context deadline exceeded
+--- PASS: TestWorkflowClaimContentionRetryStopsWithParent (14.95s)
+=== NAME  TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9.001s for 3.5s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10.002s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-708µs start=12.104s elapsed=397ms renewed=true err=<nil> outer_err=<nil> deadline_left=1.602576s]; Run lease renewal events=[start=13.074s elapsed=33ms err=<nil>]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=false jobs=1 err=<nil>
+--- PASS: TestWorkflowClaimContentionReviewHealthyCall (18.34s)
+=== NAME  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9s for 19.879s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10.002s elapsed=2.003s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-3.47ms start=12.108s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-439µs start=14.209s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-570µs start=16.312s elapsed=2.012s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-12.128ms start=18.437s elapsed=2.007s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-13.9ms start=20.544s elapsed=2.027s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-27.473ms start=22.675s elapsed=2.002s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-2.06ms start=24.778s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-501µs start=26.879s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-355µs]; Run lease renewal events=[start=13.046s elapsed=329ms err=<nil> start=23.051s elapsed=741ms err=<nil>]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=true jobs=0 err=context canceled
+        renew workflow execution claim: context deadline exceeded
+    workflow_claim_contention_review_test.go:259: persistent contention cancelled at 28.879s, before conservative initial expiry=30s
+--- PASS: TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry (33.83s)
+=== RUN   TestWorkflowClaimContentionReviewHealthyCall
+=== PAUSE TestWorkflowClaimContentionReviewHealthyCall
+=== RUN   TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== PAUSE TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== RUN   TestWorkflowClaimContentionRetryStopsWithParent
+=== PAUSE TestWorkflowClaimContentionRetryStopsWithParent
+=== CONT  TestWorkflowClaimContentionReviewHealthyCall
+=== CONT  TestWorkflowClaimContentionRetryStopsWithParent
+=== CONT  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== NAME  TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:197: model entered at 5.194s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimContentionRetryStopsWithParent
+    workflow_claim_contention_review_test.go:197: model entered at 5.194s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9.002s for 3.786s; SELECT proof=1
+=== NAME  TestWorkflowClaimContentionRetryStopsWithParent
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9.002s for 3.842s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10.086s elapsed=2.746s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-770.885ms]; Run lease renewal events=[]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=true jobs=0 err=context canceled
+--- PASS: TestWorkflowClaimContentionRetryStopsWithParent (20.73s)
+=== NAME  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+    workflow_claim_contention_review_test.go:197: model entered at 4.475s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10.09s elapsed=2.694s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-723.151ms start=12.94s elapsed=92ms renewed=true err=<nil> outer_err=<nil> deadline_left=1.907747s]; Run lease renewal events=[start=14.571s elapsed=30ms err=<nil>]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=false jobs=1 err=<nil>
+--- PASS: TestWorkflowClaimContentionReviewHealthyCall (22.31s)
+=== NAME  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9.045s for 19.938s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10.227s elapsed=1.92s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-27.372ms start=12.269s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-533µs start=14.373s elapsed=2.002s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-2.082ms start=16.479s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-453µs start=18.579s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-317µs start=20.68s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-107µs start=22.78s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-351µs start=24.881s elapsed=2s renewed=false err=context deadline exceeded outer_err=<nil> deadline_left=-355µs start=26.982s elapsed=2.001s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-533µs]; Run lease renewal events=[start=14.269s elapsed=264ms err=<nil> start=24.263s elapsed=18ms err=<nil>]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=true jobs=0 err=context canceled
+        renew workflow execution claim: context deadline exceeded
+    workflow_claim_contention_review_test.go:259: persistent contention cancelled at 28.983s, before conservative initial expiry=30s
+--- PASS: TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry (45.61s)
+=== RUN   TestWorkflowClaimContentionReviewHealthyCall
+=== PAUSE TestWorkflowClaimContentionReviewHealthyCall
+=== RUN   TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== PAUSE TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== RUN   TestWorkflowClaimContentionRetryStopsWithParent
+=== PAUSE TestWorkflowClaimContentionRetryStopsWithParent
+=== CONT  TestWorkflowClaimContentionReviewHealthyCall
+=== CONT  TestWorkflowClaimContentionRetryStopsWithParent
+=== CONT  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+=== NAME  TestWorkflowClaimContentionRetryStopsWithParent
+    workflow_claim_contention_review_test.go:197: model entered at 3.332s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:197: model entered at 3.333s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+    workflow_claim_contention_review_test.go:197: model entered at 3.135s; three-second prepare offset applies equally to both revisions
+=== NAME  TestWorkflowClaimContentionRetryStopsWithParent
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9.001s for 3.005s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10.005s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-161µs]; Run lease renewal events=[]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=true jobs=0 err=context canceled
+        renew workflow execution claim: context deadline exceeded
+--- PASS: TestWorkflowClaimContentionRetryStopsWithParent (14.74s)
+=== NAME  TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9.001s for 3.5s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10.005s elapsed=2s renewed=false err=context deadline exceeded outer_err=<nil> deadline_left=-161µs start=12.106s elapsed=397ms renewed=true err=<nil> outer_err=<nil> deadline_left=1.603083s]; Run lease renewal events=[start=13.186s elapsed=3ms err=<nil>]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=false jobs=1 err=<nil>
+--- PASS: TestWorkflowClaimContentionReviewHealthyCall (17.92s)
+=== NAME  TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry
+    workflow_claim_contention_review_test.go:239: real sole SQLite connection occupied from 9s for 19.806s; SELECT proof=1
+    workflow_claim_contention_review_test.go:246: claim renewal events=[start=10s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-311µs start=12.101s elapsed=2s renewed=false err=context deadline exceeded outer_err=<nil> deadline_left=-405µs start=14.202s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-350µs start=16.303s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-232µs start=18.403s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-245µs start=20.504s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-349µs start=22.604s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-476µs start=24.705s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-376µs start=26.806s elapsed=2s renewed=false err=context deadline exceeded outer_err=context deadline exceeded deadline_left=-385µs]; Run lease renewal events=[start=13.052s elapsed=153ms err=<nil> start=23.053s elapsed=1ms err=<nil>]
+    workflow_claim_contention_review_test.go:248: model calls=1 cancelled=true jobs=0 err=context canceled
+        renew workflow execution claim: context deadline exceeded
+    workflow_claim_contention_review_test.go:259: persistent contention cancelled at 28.807s, before conservative initial expiry=30s
+--- PASS: TestWorkflowClaimPersistentContentionStopsBeforeKnownExpiry (33.09s)
+PASS
+ok  	cyberagent-workbench/internal/store	113.945s

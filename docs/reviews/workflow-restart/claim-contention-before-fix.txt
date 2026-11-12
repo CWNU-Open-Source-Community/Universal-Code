@@ -1,0 +1,11 @@
+=== RUN   TestWorkflowClaimContentionReviewHealthyCall
+    workflow_claim_contention_review_test.go:150: model entered at 3.033s; three-second prepare offset applies equally to both revisions
+    workflow_claim_contention_review_test.go:168: real sole SQLite connection occupied from 9s for 3.5s; SELECT proof=1
+    workflow_claim_contention_review_test.go:175: claim renewal events=[start=10.001s elapsed=2.003s renewed=false err=context deadline exceeded]; Run lease renewal events=[]
+    workflow_claim_contention_review_test.go:177: model calls=1 cancelled=true jobs=0 err=context canceled
+        renew workflow execution claim: context deadline exceeded
+    workflow_claim_contention_review_test.go:179: healthy call did not survive the temporary connection contention
+--- FAIL: TestWorkflowClaimContentionReviewHealthyCall (12.96s)
+FAIL
+FAIL	cyberagent-workbench/internal/store	13.136s
+FAIL
