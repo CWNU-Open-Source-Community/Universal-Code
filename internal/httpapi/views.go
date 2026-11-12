@@ -702,6 +702,7 @@ type RunConfigView struct {
 	RequestedBudget                *domain.Budget `json:"requested_budget,omitempty"`
 	ModelRoute                     string         `json:"model_route"`
 	Interactive                    bool           `json:"interactive"`
+	BrowserOrigins                 []string       `json:"browser_origins,omitempty"`
 	ProjectConfigFingerprint       string         `json:"project_config_fingerprint,omitempty"`
 	ProjectInstructionsFingerprint string         `json:"project_instructions_fingerprint,omitempty"`
 	ContinuityContextFingerprint   string         `json:"continuity_context_fingerprint,omitempty"`
@@ -1685,6 +1686,7 @@ func runView(value domain.Run) RunView {
 	return RunView{
 		ID: value.ID, MissionID: value.MissionID, SessionID: value.SessionID, Status: string(value.Status),
 		Config: RunConfigView{ModelRoute: value.Config.ModelRoute, Interactive: value.Config.Interactive, RequestedBudget: value.Config.RequestedBudget,
+			BrowserOrigins:                 append([]string(nil), value.Config.BrowserOrigins...),
 			ProjectConfigFingerprint:       value.Config.ProjectConfigFingerprint,
 			ProjectInstructionsFingerprint: value.Config.ProjectInstructionsFingerprint,
 			ContinuityContextFingerprint:   value.Config.ContinuityContextFingerprint},

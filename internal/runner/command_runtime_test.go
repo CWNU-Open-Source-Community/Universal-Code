@@ -627,6 +627,112 @@ func TestCommandRuntimeManagerBoundsGlobalActiveProcesses(t *testing.T) {
 	}
 }
 
+func TestCommandRuntimeManagerReplaysAtGlobalActiveLimit(t *testing.T) {
+	for _, platform := range []bool{false, true} {
+		name := "fake"
+		if platform {
+			name = "native"
+		}
+		t.Run(name, func(t *testing.T) {
+			store := newCommandRuntimeMemoryStore()
+			starter := commandRuntimeStarter(&commandRuntimeFakeStarter{})
+			if platform {
+				starter = newPlatformCommandRuntimeStarter()
+			}
+			manager, err := NewCommandRuntimeManager(store, starter, "capacity-replay-owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := manager.Shutdown(ctx); err != nil {
+					t.Error(err)
+				}
+			}()
+			request := commandRuntimeTestRequest(manager, 60_000)
+			if platform {
+				executable, err := os.Executable()
+				if err != nil {
+					t.Fatal(err)
+				}
+				request.Spec, err = NormalizeCommandRuntimeSpec(CommandRuntimeSpec{
+					Version: CommandRuntimeProtocolVersion, Profile: CommandRuntimeProcess,
+					Executable: executable, Arguments: []string{"-test.run=^TestCommandRuntimeCapacityHelper$"},
+					WorkingDirectory: ".", Environment: []CommandRuntimeEnvironment{{Name: "COMMAND_RUNTIME_CAPACITY_HELPER", Value: "1"}},
+					StdinPolicy: CommandRuntimeStdinPipe, TimeoutMilliseconds: 60_000,
+					Output:  CommandRuntimeOutputPolicy{InlineBytes: MinCommandRuntimeInlineBytes, ArtifactBytes: MinCommandRuntimeInlineBytes},
+					Network: CommandRuntimeNetworkDisabled, Credentials: CommandRuntimeCredentialsNone,
+					Purpose: "verify command replay while all native process slots are occupied",
+				}, t.TempDir())
+				if err != nil {
+					t.Fatal(err)
+				}
+				request.Scope.WorkspaceRootSHA256 = request.Spec.WorkspaceRootSHA256
+			}
+			completedRequest := request
+			completedRequest.Scope.OperationKey = "completed-before-full"
+			completed, _, err := manager.Start(t.Context(), completedRequest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, _, err := manager.WriteStdin(t.Context(), completed.ID, "complete", nil, true); err != nil {
+				t.Fatal(err)
+			}
+			if !platform {
+				starter.(*commandRuntimeFakeStarter).last().finish(0)
+			}
+			completed, _ = waitCommandRuntimeTerminal(t, manager, completed.ID)
+			if completed.State != CommandRuntimeJobCompleted {
+				t.Fatalf("prepare completed replay: %+v", completed)
+			}
+			var running CommandRuntimeJobSnapshot
+			for index := 0; index < MaxCommandRuntimeActiveJobs; index++ {
+				request.Scope.OperationKey = fmt.Sprintf("capacity-%d", index)
+				running, _, err = manager.Start(t.Context(), request)
+				if err != nil {
+					t.Fatalf("fill slot %d: %v", index, err)
+				}
+			}
+			for _, replay := range []struct {
+				request CommandRuntimeStartRequest
+				job     CommandRuntimeJobSnapshot
+			}{{request, running}, {completedRequest, completed}} {
+				job, replayed, err := manager.Start(t.Context(), replay.request)
+				if err != nil || !replayed || job.ID != replay.job.ID || job.PID != replay.job.PID || job.State != replay.job.State {
+					t.Errorf("capacity rejected existing Job: id=%s replayed=%t pid=%d err=%v", job.ID, replayed, job.PID, err)
+				}
+			}
+			changed := request
+			changed.Spec.Spec.Purpose += " changed"
+			if _, _, err := manager.Start(t.Context(), changed); !errors.Is(err, ErrCommandRuntimeUncertain) {
+				t.Errorf("capacity hid replay mismatch: %v", err)
+			}
+			overflow := request
+			overflow.Scope.OperationKey = "capacity-overflow"
+			if _, _, err := manager.Start(t.Context(), overflow); !errors.Is(err, ErrCommandRuntimeUnavailable) {
+				t.Errorf("new operation bypassed capacity: %v", err)
+			}
+			jobs, err := store.ListCommandRuntimeJobs(t.Context(), CommandRuntimeListFilter{})
+			if err != nil || len(jobs) != MaxCommandRuntimeActiveJobs+1 {
+				t.Fatalf("replay or rejected operation created another Job: jobs=%d err=%v", len(jobs), err)
+			}
+			if !platform && starter.(*commandRuntimeFakeStarter).starts != MaxCommandRuntimeActiveJobs+1 {
+				t.Fatal("replay started another process")
+			}
+		})
+	}
+}
+
+func TestCommandRuntimeCapacityHelper(t *testing.T) {
+	if os.Getenv("COMMAND_RUNTIME_CAPACITY_HELPER") != "1" {
+		return
+	}
+	if _, err := io.Copy(io.Discard, os.Stdin); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCommandRuntimeManagerStartsTimeoutBeforeInitialStdinCanBlock(t *testing.T) {
 	store := newCommandRuntimeMemoryStore()
 	writeStarted := make(chan struct{})

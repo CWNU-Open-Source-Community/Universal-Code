@@ -1,0 +1,15 @@
+=== RUN   TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen
+=== RUN   TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen/cancel
+    workflow_late_cancel_test.go:44: old interpreter completion returned: <nil>
+    workflow_late_cancel_test.go:44: late completed checkpoint should retain Conflict semantics: <nil>
+    workflow_late_cancel_test.go:44: late completion overrode user cancel: workflow=completed reason="" calls=1 err=<nil>
+=== RUN   TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen/pause
+    workflow_late_cancel_test.go:44: old interpreter completion returned: <nil>
+    workflow_late_cancel_test.go:44: late completed checkpoint should retain Conflict semantics: <nil>
+    workflow_late_cancel_test.go:44: late completion overrode user pause: workflow=completed reason="" calls=1 err=<nil>
+--- FAIL: TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen (0.98s)
+    --- FAIL: TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen/cancel (0.50s)
+    --- FAIL: TestWorkflowLateCompletionCannotOverrideRunControlAfterReopen/pause (0.48s)
+FAIL
+FAIL	cyberagent-workbench/internal/application	1.080s
+FAIL

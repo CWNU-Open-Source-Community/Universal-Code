@@ -1,0 +1,431 @@
+{
+  "captured_at_utc": "2026-11-06T12:16:58.797Z",
+  "environment": "Windows 10; Microsoft Edge 156.0.0.0; device scale 1; Vite 8.3.5",
+  "source": {
+    "base": "bab65dca83986f105b16e45e59dfb6676ec16b33",
+    "current": "d4f12cd7c08519aeeb7b269847266c155fd246ce",
+    "after": "3bb1837a0aee62e18366e0ca815d4c5c67a0494d"
+  },
+  "component_blobs": {
+    "base": "9fb98f7389f382573dedad711b20773324a63f2d",
+    "current": "11ebb24c9b7f2286f2cd9687174042d03d24d2d8",
+    "after": "af446f5e8760206d871b5c082f3cfbd00731fe70"
+  },
+  "fixture": "Production V2AgentBrowser with fixture API client; ready headed status; no backend execution, screenshots or live frames",
+  "verification": {
+    "node": "24.22.1",
+    "component_test": "25 passed",
+    "typecheck": "passed",
+    "diff_check": "passed"
+  },
+  "captures": [
+    {
+      "phase": "base",
+      "size": "desktop",
+      "theme": "light",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1024,
+        "height": 600
+      },
+      "document": {
+        "width": 1024,
+        "height": 600,
+        "scrollWidth": 1024,
+        "scrollHeight": 600
+      },
+      "card": {
+        "width": 736,
+        "height": 150,
+        "scrollWidth": 736,
+        "scrollHeight": 150
+      },
+      "body": {
+        "width": 736,
+        "height": 110,
+        "scrollWidth": 736,
+        "scrollHeight": 110
+      },
+      "note": "需要结束网页操作时可停止浏览器；整个任务可在对话中停止。",
+      "noteDimensions": {
+        "width": 704,
+        "height": 20,
+        "scrollWidth": 704,
+        "scrollHeight": 20
+      },
+      "controls": [
+        {
+          "label": "关闭浏览器提示",
+          "x": 834,
+          "right": 864,
+          "top": 41,
+          "bottom": 71
+        },
+        {
+          "label": "停止浏览器",
+          "x": 739,
+          "right": 826,
+          "top": 41,
+          "bottom": 71
+        }
+      ]
+    },
+    {
+      "phase": "base",
+      "size": "narrow-long-origins",
+      "theme": "light",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 390,
+        "height": 800
+      },
+      "document": {
+        "width": 390,
+        "height": 800,
+        "scrollWidth": 390,
+        "scrollHeight": 800
+      },
+      "card": {
+        "width": 356,
+        "height": 170,
+        "scrollWidth": 356,
+        "scrollHeight": 170
+      },
+      "body": {
+        "width": 356,
+        "height": 130,
+        "scrollWidth": 356,
+        "scrollHeight": 130
+      },
+      "note": "需要结束网页操作时可停止浏览器；整个任务可在对话中停止。",
+      "noteDimensions": {
+        "width": 324,
+        "height": 39,
+        "scrollWidth": 324,
+        "scrollHeight": 39
+      },
+      "controls": [
+        {
+          "label": "关闭浏览器提示",
+          "x": 327,
+          "right": 357,
+          "top": 41,
+          "bottom": 71
+        },
+        {
+          "label": "停止浏览器",
+          "x": 232,
+          "right": 319,
+          "top": 41,
+          "bottom": 71
+        }
+      ]
+    },
+    {
+      "phase": "current",
+      "size": "desktop",
+      "theme": "light",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1024,
+        "height": 600
+      },
+      "document": {
+        "width": 1024,
+        "height": 600,
+        "scrollWidth": 1024,
+        "scrollHeight": 600
+      },
+      "card": {
+        "width": 736,
+        "height": 178,
+        "scrollWidth": 736,
+        "scrollHeight": 178
+      },
+      "body": {
+        "width": 736,
+        "height": 138,
+        "scrollWidth": 736,
+        "scrollHeight": 138
+      },
+      "note": "本会话的浏览器仅在操作者声明的来源内工作：https://example.org:443, http://localhost:3000",
+      "noteDimensions": {
+        "width": 704,
+        "height": 20,
+        "scrollWidth": 704,
+        "scrollHeight": 20
+      },
+      "controls": [
+        {
+          "label": "关闭浏览器提示",
+          "x": 834,
+          "right": 864,
+          "top": 41,
+          "bottom": 71
+        },
+        {
+          "label": "停止浏览器",
+          "x": 739,
+          "right": 826,
+          "top": 41,
+          "bottom": 71
+        }
+      ]
+    },
+    {
+      "phase": "current",
+      "size": "narrow-long-origins",
+      "theme": "light",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 390,
+        "height": 800
+      },
+      "document": {
+        "width": 390,
+        "height": 800,
+        "scrollWidth": 390,
+        "scrollHeight": 800
+      },
+      "card": {
+        "width": 356,
+        "height": 295,
+        "scrollWidth": 356,
+        "scrollHeight": 295
+      },
+      "body": {
+        "width": 356,
+        "height": 255,
+        "scrollWidth": 356,
+        "scrollHeight": 255
+      },
+      "note": "本会话的浏览器仅在操作者声明的来源内工作：https://browser-review.preview.customer-development.example.com:8443, https://identity-provider.integration.team-workspace.example.org:9443, https://documentation.release-candidate.platform-engineering.example.net:8443",
+      "noteDimensions": {
+        "width": 324,
+        "height": 117,
+        "scrollWidth": 324,
+        "scrollHeight": 117
+      },
+      "controls": [
+        {
+          "label": "关闭浏览器提示",
+          "x": 327,
+          "right": 357,
+          "top": 41,
+          "bottom": 71
+        },
+        {
+          "label": "停止浏览器",
+          "x": 232,
+          "right": 319,
+          "top": 41,
+          "bottom": 71
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "size": "desktop",
+      "theme": "light",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1024,
+        "height": 600
+      },
+      "document": {
+        "width": 1024,
+        "height": 600,
+        "scrollWidth": 1024,
+        "scrollHeight": 600
+      },
+      "card": {
+        "width": 736,
+        "height": 178,
+        "scrollWidth": 736,
+        "scrollHeight": 178
+      },
+      "body": {
+        "width": 736,
+        "height": 138,
+        "scrollWidth": 736,
+        "scrollHeight": 138
+      },
+      "note": "已声明的导航来源：https://example.org:443, http://localhost:3000",
+      "noteDimensions": {
+        "width": 704,
+        "height": 20,
+        "scrollWidth": 704,
+        "scrollHeight": 20
+      },
+      "controls": [
+        {
+          "label": "关闭浏览器提示",
+          "x": 834,
+          "right": 864,
+          "top": 41,
+          "bottom": 71
+        },
+        {
+          "label": "停止浏览器",
+          "x": 739,
+          "right": 826,
+          "top": 41,
+          "bottom": 71
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "size": "narrow-long-origins",
+      "theme": "light",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 390,
+        "height": 800
+      },
+      "document": {
+        "width": 390,
+        "height": 800,
+        "scrollWidth": 390,
+        "scrollHeight": 800
+      },
+      "card": {
+        "width": 356,
+        "height": 295,
+        "scrollWidth": 356,
+        "scrollHeight": 295
+      },
+      "body": {
+        "width": 356,
+        "height": 255,
+        "scrollWidth": 356,
+        "scrollHeight": 255
+      },
+      "note": "已声明的导航来源：https://browser-review.preview.customer-development.example.com:8443, https://identity-provider.integration.team-workspace.example.org:9443, https://documentation.release-candidate.platform-engineering.example.net:8443",
+      "noteDimensions": {
+        "width": 324,
+        "height": 117,
+        "scrollWidth": 324,
+        "scrollHeight": 117
+      },
+      "controls": [
+        {
+          "label": "关闭浏览器提示",
+          "x": 327,
+          "right": 357,
+          "top": 41,
+          "bottom": 71
+        },
+        {
+          "label": "停止浏览器",
+          "x": 232,
+          "right": 319,
+          "top": 41,
+          "bottom": 71
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "size": "desktop-dark",
+      "theme": "dark",
+      "locale": "zh-CN",
+      "viewport": {
+        "width": 1024,
+        "height": 600
+      },
+      "document": {
+        "width": 1024,
+        "height": 600,
+        "scrollWidth": 1024,
+        "scrollHeight": 600
+      },
+      "card": {
+        "width": 736,
+        "height": 178,
+        "scrollWidth": 736,
+        "scrollHeight": 178
+      },
+      "body": {
+        "width": 736,
+        "height": 138,
+        "scrollWidth": 736,
+        "scrollHeight": 138
+      },
+      "note": "已声明的导航来源：https://example.org:443, http://localhost:3000",
+      "noteDimensions": {
+        "width": 704,
+        "height": 20,
+        "scrollWidth": 704,
+        "scrollHeight": 20
+      },
+      "controls": [
+        {
+          "label": "关闭浏览器提示",
+          "x": 834,
+          "right": 864,
+          "top": 41,
+          "bottom": 71
+        },
+        {
+          "label": "停止浏览器",
+          "x": 739,
+          "right": 826,
+          "top": 41,
+          "bottom": 71
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "size": "desktop-english",
+      "theme": "light",
+      "locale": "en-US",
+      "viewport": {
+        "width": 1024,
+        "height": 600
+      },
+      "document": {
+        "width": 1024,
+        "height": 600,
+        "scrollWidth": 1024,
+        "scrollHeight": 600
+      },
+      "card": {
+        "width": 736,
+        "height": 178,
+        "scrollWidth": 736,
+        "scrollHeight": 178
+      },
+      "body": {
+        "width": 736,
+        "height": 138,
+        "scrollWidth": 736,
+        "scrollHeight": 138
+      },
+      "note": "Declared navigation origins: https://example.org:443, http://localhost:3000",
+      "noteDimensions": {
+        "width": 704,
+        "height": 20,
+        "scrollWidth": 704,
+        "scrollHeight": 20
+      },
+      "controls": [
+        {
+          "label": "Dismiss browser notice",
+          "x": 834,
+          "right": 864,
+          "top": 41,
+          "bottom": 71
+        },
+        {
+          "label": "Stop browser",
+          "x": 728.265625,
+          "right": 826,
+          "top": 41,
+          "bottom": 71
+        }
+      ]
+    }
+  ]
+}

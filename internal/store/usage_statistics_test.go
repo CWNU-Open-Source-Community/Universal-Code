@@ -133,6 +133,49 @@ func TestThreadUsageStatisticsAcrossRunsFiltersReceiptsAndCosts(t *testing.T) {
 	}
 }
 
+func TestUsageStatisticsActivityWindowBoundsScanToActivityRange(t *testing.T) {
+	st, run := newMonetaryTestStore(t)
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	activityStart := today.AddDate(0, 0, -181)
+	known := func(total int) llm.Usage {
+		return llm.Usage{InputTokens: total, TotalTokens: total}
+	}
+	for _, s := range []struct {
+		subject string
+		at      time.Time
+		tokens  int
+	}{
+		{"outside-activity", today.AddDate(0, 0, -200), 7},
+		{"boundary-fraction", activityStart.Add(500 * time.Millisecond), 11},
+		{"boundary-second", activityStart, 13},
+		{"activity-outside-period", today.AddDate(0, 0, -100), 17},
+		{"in-period", now, 19},
+	} {
+		usageTestEvent(t, st, run, "model_gateway", events.ModelCompletedEvent, s.subject, s.at,
+			map[string]any{"provider": "p", "model": "m", "usage": known(s.tokens)})
+	}
+	// The activity range consumes everything back to the activity start —
+	// including boundary-second rows regardless of fractional precision —
+	// while the period totals stay inside the 30-day calendar window, and
+	// "all" still reads the full ledger.
+	result, err := st.GetUsageStatistics(t.Context(), "30d", 0, now)
+	if err != nil || result.Totals.TotalTokens != 19 || len(result.Days) != 1 {
+		t.Fatalf("period totals or days changed: %+v %v", result, err)
+	}
+	activity := map[string]int64{}
+	for _, day := range result.ActivityDays {
+		activity[day.Date] += day.TotalTokens
+	}
+	if activity[activityStart.Format(time.DateOnly)] != 24 || len(activity) != 3 {
+		t.Fatalf("activity window lost boundary rows or gained stray dates: %+v", activity)
+	}
+	full, err := st.GetUsageStatistics(t.Context(), "all", 0, now)
+	if err != nil || full.Totals.TotalTokens != 67 {
+		t.Fatalf("full-ledger scan lost ancient receipts: %+v %v", full, err)
+	}
+}
+
 func usageTestEvent(t *testing.T, st *SQLiteStore, run domain.Run, source, kind, subject string, at time.Time, payload map[string]any) {
 	t.Helper()
 	event, err := events.New(run.ID, run.MissionID, kind, source, subject, payload)
@@ -150,6 +193,50 @@ func usageTestEvent(t *testing.T, st *SQLiteStore, run domain.Run, source, kind,
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestUsageStatisticsSettlementPairsAcrossActivityBoundary(t *testing.T) {
+	st, run := newMonetaryTestStore(t)
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	activityStart := today.AddDate(0, 0, -181)
+	const legacyKey = int64(3)
+	// A legacy root reservation created well before the activity window,
+	// settled inside it, whose matching start was also before the window:
+	// the windowed receipt scan drops the start, so the settled reservation
+	// must still bind the in-activity receipt through the reservedSequence
+	// fallback exactly as the unfiltered scan does.
+	// Insertion order is event sequence order: the reservation exists before
+	// its legacy start (the binding requires the first start FOLLOWING the
+	// reservation), and the legacy-root start index binds starts with a zero
+	// monetary key by their model_attempt.
+	usageTestReservation(t, st, run, "legacy-cost", domain.MonetaryScopeRoot, legacyKey,
+		activityStart.AddDate(0, 0, -30), activityStart.Add(time.Hour), 20, domain.MonetaryPricingPriced)
+	usageTestEvent(t, st, run, "model_gateway", events.ModelStartedEvent, "legacy-call",
+		activityStart.Add(-time.Hour), map[string]any{"provider": "p", "model": "m",
+			"model_attempt": legacyKey})
+	usageTestEvent(t, st, run, "model_gateway", events.ModelFailedEvent, "legacy-call",
+		activityStart.Add(time.Hour), map[string]any{"provider": "p", "model": "m",
+			"monetary_attempt_number": legacyKey, "usage": llm.Usage{InputTokens: 10, TotalTokens: 10}})
+	full, err := st.GetUsageStatistics(t.Context(), "all", 0, now)
+	if err != nil || full.Totals.Calls != 1 || full.Totals.TotalTokens != 10 ||
+		full.Cost.KnownCostMicros != 20 || full.Cost.PricedCalls != 1 || full.Cost.UntrackedCalls != 0 {
+		t.Fatalf("legacy pairing across the activity boundary: %+v %v", full, err)
+	}
+	// period=30d shows nothing in totals or cost (both rows predate the
+	// calendar window) while the activity range still consumes the receipt.
+	windowed, err := st.GetUsageStatistics(t.Context(), "30d", 0, now)
+	if err != nil || windowed.Totals.Calls != 0 || windowed.Cost.KnownCostMicros != 0 ||
+		windowed.Cost.PricedCalls != 0 || windowed.Cost.UntrackedCalls != 0 {
+		t.Fatalf("windowed totals or cost leaked boundary rows: %+v %v", windowed, err)
+	}
+	activity := map[string]int64{}
+	for _, day := range windowed.ActivityDays {
+		activity[day.Date] += day.TotalTokens
+	}
+	if activity[activityStart.Format(time.DateOnly)] != 10 || len(activity) != 1 {
+		t.Fatalf("activity range lost the boundary receipt: %+v", activity)
 	}
 }
 

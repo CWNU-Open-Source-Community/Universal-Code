@@ -34,6 +34,7 @@ export interface AgentBrowserStatus {
   profile_removed: boolean;
   process_scope?: "no_owned_process_resources" | "darwin_group_and_scoped_children.v1";
   process_scope_verified?: boolean;
+  declared_origins?: string[];
 }
 
 const states = new Set<AgentBrowserStatus["state"]>(["unavailable", "idle", "starting", "ready", "loading", "busy", "waiting_user", "failed", "closing", "closed", "cleanup_pending"]);
