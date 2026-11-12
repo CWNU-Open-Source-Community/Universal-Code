@@ -295,5 +295,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v224 | 重建 hook 审计表以接纳 user_prompt_submit 生命周期事件 | rebuild the hook audit table to admit the user_prompt_submit lifecycle event |
 | v225 | 重建 hook 审计表以接纳 approval_requested 审批等待事件，保留已有不可变收据和诊断绑定约束 | rebuild the hook audit table to admit the approval_requested lifecycle event while preserving immutable receipts and diagnostic binding guards |
 | v226 | 扩展 hook 审计事件以保存 post_tool_failure，保留脚本和已有生命周期审计约束 | admit post_tool_failure audits while preserving script bindings and previous lifecycle events |
+| v227 | 重建 hook 审计表以接纳 turn_end 生命周期事件 | rebuild the hook audit table to admit the turn_end lifecycle event |
 
 </details>

@@ -380,7 +380,7 @@ export const pluginStates = ["staged", "approved", "enabled", "disabled", "rolle
 
 export const pluginCapabilities = ["skills", "mcp", "ui", "hooks"];
 
-export const hookEvents = ["pre_tool", "post_tool", "post_tool_failure", "run_started", "run_completed", "session_opened", "session_closed", "user_prompt_submit", "approval_requested", "compaction", "subagent", "checkpoint"];
+export const hookEvents = ["pre_tool", "post_tool", "post_tool_failure", "run_started", "run_completed", "session_opened", "session_closed", "user_prompt_submit", "approval_requested", "turn_end", "compaction", "subagent", "checkpoint"];
 
 export const hookActions = ["deny", "annotate", "narrow", "record", "script"];
 

@@ -60,5 +60,6 @@ func NewRunExecutionHandoffWithRuntime(store RunExecutionHandoffStore, router *l
 	checker policy.Checker, dependencies RunRuntimeDependencies,
 ) *RunExecutionHandoffService {
 	return &RunExecutionHandoffService{store: store,
-		supervisor: NewAgentRunnerWithRuntime(store, router, checker, dependencies)}
+		supervisor:     NewAgentRunnerWithRuntime(store, router, checker, dependencies),
+		lifecycleHooks: dependencies.LifecycleHooks}
 }

@@ -212,6 +212,49 @@ func TestEnginePostToolFailureFiresOnlyForFailures(t *testing.T) {
 	}
 }
 
+func TestDeclarationRejectsTurnEndDenialPolicy(t *testing.T) {
+	declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-audit",
+		Event: TurnEnd, Action: ActionRecord, FailurePolicy: FailureDeny, TimeoutMillis: 100}
+	if err := declaration.Validate(); err == nil {
+		t.Fatal("turn_end declaration accepted a failure policy that cannot be enforced on a completed turn")
+	}
+	declaration.FailurePolicy = FailureContinue
+	if err := declaration.Validate(); err != nil {
+		t.Fatalf("turn_end continue policy was rejected: %v", err)
+	}
+}
+
+func TestTurnEndEventRules(t *testing.T) {
+	if !TurnEnd.Valid() {
+		t.Fatal("turn_end event is not valid")
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-tap",
+		Event: TurnEnd, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100}).Validate(); err != nil {
+		t.Fatalf("record hook on turn_end was rejected: %v", err)
+	}
+	for _, broken := range []struct {
+		name   string
+		action Action
+	}{
+		{"deny", ActionDeny},
+		{"annotate", ActionAnnotate},
+		{"narrow", ActionNarrow},
+	} {
+		declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-end",
+			Event: TurnEnd, Action: broken.action, FailurePolicy: FailureContinue,
+			TimeoutMillis: 100, Message: "hook-controlled"}
+		if err := declaration.Validate(); err == nil {
+			t.Fatalf("%s was accepted on turn_end", broken.name)
+		}
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-tool",
+		Event: TurnEnd, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, ToolNames: []string{"shell"}}).Validate(); err == nil {
+		t.Fatal("turn_end declaration accepted tool filters")
+	}
+}
+
 func TestDeclarationRejectsRunCompletedDenialPolicy(t *testing.T) {
 	declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "run-completed-audit",
 		Event: RunCompleted, Action: ActionRecord, FailurePolicy: FailureDeny, TimeoutMillis: 100}

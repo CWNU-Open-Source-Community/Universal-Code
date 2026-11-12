@@ -51,6 +51,7 @@ const (
 	SessionClosed     Event = "session_closed"
 	UserPromptSubmit  Event = "user_prompt_submit"
 	ApprovalRequested Event = "approval_requested"
+	TurnEnd           Event = "turn_end"
 	Compaction        Event = "compaction"
 	Subagent          Event = "subagent"
 	Checkpoint        Event = "checkpoint"
@@ -59,7 +60,7 @@ const (
 func (e Event) Valid() bool {
 	switch e {
 	case PreTool, PostTool, PostToolFailure, RunStarted, RunCompleted, SessionOpened, SessionClosed,
-		UserPromptSubmit, ApprovalRequested, Compaction, Subagent, Checkpoint:
+		UserPromptSubmit, ApprovalRequested, TurnEnd, Compaction, Subagent, Checkpoint:
 		return true
 	default:
 		return false
@@ -173,6 +174,16 @@ func (d Declaration) Validate() error {
 		// gaining approval-gate authority.
 		if d.Action != ActionRecord {
 			return errors.New("approval_requested hooks may only record observations")
+		}
+	}
+	if d.Event == TurnEnd {
+		// The turn has already completed when this boundary fires: hooks
+		// observe the outcome, they cannot deny, annotate, or narrow it.
+		if d.Action != ActionRecord {
+			return errors.New("turn_end hooks may only record observations")
+		}
+		if d.FailurePolicy == FailureDeny {
+			return errors.New("turn_end hooks require continue failure policy because the turn is already complete")
 		}
 	}
 	if d.Event != PreTool && d.Event != PostTool && d.Event != PostToolFailure && len(d.ToolNames) != 0 {
@@ -670,7 +681,7 @@ func matchesTool(values []string, pattern *regexp.Regexp, toolName string) bool 
 
 func eventOrder(value Event) int {
 	for index, current := range []Event{PreTool, PostTool, PostToolFailure, RunStarted, RunCompleted,
-		SessionOpened, SessionClosed, UserPromptSubmit, ApprovalRequested, Compaction, Subagent, Checkpoint} {
+		SessionOpened, SessionClosed, UserPromptSubmit, ApprovalRequested, TurnEnd, Compaction, Subagent, Checkpoint} {
 		if current == value {
 			return index
 		}

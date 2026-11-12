@@ -4205,7 +4205,7 @@ CREATE TABLE "plugin_hook_audits" (
 		declared_action TEXT NOT NULL DEFAULT '' CHECK(declared_action IN ('', 'deny', 'annotate', 'narrow', 'record', 'script')),
 		rejected INTEGER CHECK(rejected IS NULL OR rejected IN (0, 1)),
 		CHECK(event IN ('pre_tool', 'post_tool', 'post_tool_failure', 'run_started', 'run_completed',
-			'session_opened', 'session_closed', 'user_prompt_submit', 'approval_requested', 'compaction',
+			'session_opened', 'session_closed', 'user_prompt_submit', 'approval_requested', 'turn_end', 'compaction',
 			'subagent', 'checkpoint')),
 		CHECK(outcome IN ('completed', 'failed_closed', 'failed_continue')),
 		CHECK(length(plugin_id) BETWEEN 1 AND 256 AND length(hook_id) BETWEEN 1 AND 256),
