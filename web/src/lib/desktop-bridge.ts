@@ -4,6 +4,7 @@ import type { PluginSkillInstallView, ProjectlessDirectory, SkillPackageInventor
 import { validImageAttachments, type WorkspaceImageAttachment } from "../api/image-attachments";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
 import { validVerificationFeatureReadiness, type VerificationFeatureReadiness } from "../api/verification-readiness";
+import type { SharedBrowserBridge } from "./desktop-shared-browser";
 
 export const desktopConnectionProtocol = "desktop_connection_bootstrap.v1";
 export const desktopClipboardFilesProtocol = "desktop_clipboard_files.v1";
@@ -170,6 +171,7 @@ export interface DesktopConnectionBootstrap {
   batch_delivery_host_validation_enabled: boolean;
   ui_evidence_control_enabled: boolean;
   user_terminal_enabled: boolean;
+  shared_browser_enabled?: boolean;
   agent_terminal_input_default: false;
   workspace_open_enabled: boolean;
   workspace_import_enabled: boolean;
@@ -380,7 +382,7 @@ export interface DesktopLegacySkillInstallResult {
   receipt: DesktopOperationReceipt;
 }
 
-interface NativeDesktopBridge {
+interface NativeDesktopBridge extends Partial<SharedBrowserBridge> {
   GetTerminalSettings?: () => Promise<unknown>;
   ConfirmTerminalSettings?: (request: import("./desktop-terminal-settings").TerminalSettingsRequest) => Promise<unknown>;
   Bootstrap: () => Promise<unknown>;
@@ -882,6 +884,18 @@ export function desktopUserTerminalEnabled(): boolean {
   return activeBootstrap?.user_terminal_enabled === true && getTerminalBridge() !== null;
 }
 
+export function getSharedBrowserBridge(): SharedBrowserBridge | null {
+  const bridge = getBridge();
+  return activeBootstrap?.shared_browser_enabled === true && bridge &&
+    typeof bridge.OpenSharedBrowser === "function" && typeof bridge.GetSharedBrowser === "function" &&
+    typeof bridge.SharedBrowserCommand === "function" && typeof bridge.SetSharedBrowserSurface === "function"
+    ? bridge as SharedBrowserBridge : null;
+}
+
+export function desktopSharedBrowserEnabled(): boolean {
+  return getSharedBrowserBridge() !== null;
+}
+
 export function desktopDebugTerminalAgentInputEnabled(): boolean {
   return activeBootstrap?.user_terminal_enabled === true &&
     activeBootstrap.danger_full_access_enabled === true &&
@@ -1115,9 +1129,12 @@ function validBootstrap(value: unknown): value is DesktopConnectionBootstrap {
     ? ["chatgpt_auth_enabled"] : [];
   const projectlessKeys = isRecord(value) && Object.hasOwn(value, "projectless_workspaces_enabled")
     ? ["projectless_workspaces_enabled"] : [];
+  const sharedBrowserKeys = isRecord(value) && Object.hasOwn(value, "shared_browser_enabled")
+    ? ["shared_browser_enabled"] : [];
   if (!hasExactKeys(value, [
     ...chatGPTKeys,
     ...projectlessKeys,
+    ...sharedBrowserKeys,
     "agent_code_tools_enabled", "api_base_url", "api_version", "app_version",
     "code_intel_enabled",
     "approval_control_enabled", "command_runtime_enabled",
@@ -1204,6 +1221,7 @@ function validBootstrap(value: unknown): value is DesktopConnectionBootstrap {
     typeof value.ui_evidence_control_enabled === "boolean" &&
     typeof value.docker_execution_enabled === "boolean" &&
     typeof value.user_terminal_enabled === "boolean" &&
+    (value.shared_browser_enabled === undefined || typeof value.shared_browser_enabled === "boolean") &&
     value.agent_terminal_input_default === false &&
     typeof value.workspace_import_enabled === "boolean" &&
     (value.projectless_workspaces_enabled === undefined || typeof value.projectless_workspaces_enabled === "boolean") &&

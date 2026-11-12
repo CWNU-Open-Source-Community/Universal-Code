@@ -44,6 +44,8 @@ import { useV2WebAccessDefaults } from "./web-access-defaults";
 import { useProjectlessWorkspace } from "./projectless-workspace";
 import { threadProjectID } from "./components/thread-project-dialog";
 import { useChatShortcuts } from "./chat-preferences";
+import { V2DraftBrowserWorkspace } from "./components/draft-browser-workspace";
+import { bindDraftSharedBrowser } from "./shared-browser-session";
 
 type CreationAttempt = Map<string, string>;
 type NewThreadOptions = { networkMode: V2NetworkMode; allowedTargets: string[];
@@ -106,6 +108,7 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
   const onDraftChange = managedDraft?.changeText ?? legacyDraftChange;
   const creationRecovery = useV2CreationRecovery(client, workspaceID, (thread, originalDraft, files, input) => {
     registerV2RecoveredTurn(queryClient, input);
+    bindDraftSharedBrowser(workspaceID, thread.id);
     onCreated(thread, originalDraft, files, input.images, input.draftVersion, input.attachments, true, input.mcpReferences);
   });
   const { networkMode, allowedTargets, modelRoute } = options;
@@ -166,6 +169,7 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
         const thread = await creationRecovery.resolve(intent);
         const input = creationRecovery.handoff(intent, thread);
         const submission = turn.mutateAsync(input);
+        bindDraftSharedBrowser(creationWorkspaceID, thread.id);
         onCreated(thread, submittedDraft, files, images, input.draftVersion, attachments, requestIsCurrent(), mcpReferences);
         void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
         try { await submission; }
@@ -189,6 +193,7 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
           ...(attachments.length ? { attachments } : {}),
           ...(mcpReferences.length ? { mcpReferences } : {}),
           operationKey: `v2-thread-create-turn-${operationID}`, createdAt: new Date().toISOString() });
+        bindDraftSharedBrowser(creationWorkspaceID, result.thread.id);
         onCreated(result.thread, submittedDraft, files, images, undefined, attachments, requestIsCurrent(), mcpReferences);
         creationAttemptRef.current.delete(fingerprint);
         void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
@@ -204,9 +209,9 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
     }
     if (!requestIsCurrent()) return v2ComposerNotSubmitted;
   };
-  return <section className="v2-new-conversation">
+  return <V2DraftBrowserWorkspace workspaceID={workspaceID}>{(browserTrigger) => <section className="v2-new-conversation">
     <header><Folder aria-hidden="true" size={17} /><strong>{t("新对话", "New conversation")}</strong>
-      <V2WorkspaceStart client={client} onSelect={(workspace) => onImported(workspace, draft)} />{moreProjects}</header>
+      <V2WorkspaceStart client={client} onSelect={(workspace) => onImported(workspace, draft)} />{moreProjects}{browserTrigger}</header>
     <div className="v2-new-conversation-body"><div className="v2-new-copy">
       <span className="v2-orb" aria-hidden="true"><i /><i /></span>
       <h1>{t("接下来要做什么？", "What would you like to do next?")}</h1><p>{workspaceID || client.hasProjectlessWorkspaces ? t("描述目标，随时查看进展、补充消息或停止。", "Describe your goal. Check progress, add messages, or stop at any time.")
@@ -239,7 +244,7 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
       onWorkspaceChange={onWorkspaceChange} placeholder={t("输入任务或问题…", "Enter a task or question…")} threadID=""
       workspaceID={workspaceID} projectID={projectID} allowProjectless={client.hasProjectlessWorkspaces} workspaces={workspaces} />
       </div>
-  </section>;
+  </section>}</V2DraftBrowserWorkspace>;
 }
 
 export function V2Workbench({ client }: { client: APIClient }) {

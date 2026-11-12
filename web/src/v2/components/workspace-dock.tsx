@@ -5,6 +5,7 @@ import {
   FileCode2,
   FileDiff,
   FolderTree,
+  Globe,
   LoaderCircle,
   Maximize2,
   Minimize2,
@@ -24,7 +25,7 @@ import { useFileEditLeave } from "../../components/file-edit-drafts";
 import { UserTerminalPanel } from "../../components/user-terminal-panel";
 import { WorkspaceExplorer } from "../../components/workspace-explorer";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
-import { desktopUserTerminalEnabled } from "../../lib/desktop-bridge";
+import { desktopSharedBrowserEnabled, desktopUserTerminalEnabled } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
 import { localUIMessage } from "../../lib/local-ui-message";
 import type { ApplicationPreviewRequest } from "../application-preview-request";
@@ -46,6 +47,7 @@ import {
   setWorkspaceTerminalSession,
   setWorkspaceTerminalShell,
   setWorkspaceWidth,
+  setWorkspaceFullView,
   updateWorkspaceFileTabPath,
   workspaceCollapseAriaLabel,
   workspaceScopeKey,
@@ -60,6 +62,7 @@ import {
 } from "../workspace-tabs";
 import { V2IdentityDisclosure } from "./identity-disclosure";
 import { V2LazySurface } from "./lazy-surface";
+import { V2SharedBrowser } from "./shared-browser";
 import type { TaskReviewToolMemory } from "./task-review-tools";
 import "./workspace-dock.css";
 
@@ -89,6 +92,8 @@ function WorkspaceTabIcon({ tab }: { tab: WorkspaceTab }) {
       return <SquareTerminal aria-hidden="true" size={14} />;
     case "preview":
       return <PanelTop aria-hidden="true" size={14} />;
+    case "browser":
+      return <Globe aria-hidden="true" size={14} />;
     case "review":
       return <FileDiff aria-hidden="true" size={14} />;
     case "records":
@@ -259,6 +264,7 @@ export function V2WorkspaceDock({
   const firstMenuItemRef = useRef<HTMLButtonElement>(null);
   const tabTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const browserFullViewBeforeFullscreen = useRef<boolean | null>(null);
   const [recordsMenuOpen, setRecordsMenuOpen] = useState(false);
   const recordsMenuAnchor = useRef<HTMLDivElement>(null);
   const recordsMenuTrigger = useRef<HTMLButtonElement>(null);
@@ -495,6 +501,7 @@ export function V2WorkspaceDock({
   };
 
   const terminalAvailable = desktopUserTerminalEnabled();
+  const browserAvailable = desktopSharedBrowserEnabled();
   const hasTerminalTab = state.tabs.some((tab) => tab.id === "terminal");
   const fullViewLabel = state.fullView
     ? t("退出完整视图", "Exit full view")
@@ -630,6 +637,11 @@ export function V2WorkspaceDock({
                   <PanelTop aria-hidden="true" size={15} />
                   <span>{t("应用预览", "App preview")}</span>
                 </button>
+                {browserAvailable && <button role="menuitem" type="button" onClick={() => {
+                  setAddMenuOpen(false);
+                  const open = () => focusWorkspaceSingletonTab(threadID, "browser");
+                  if (activeTab.kind === "file") leaveFileEdit(open); else open();
+                }}><Globe aria-hidden="true" size={15} /><span>{t("浏览器", "Browser")}</span></button>}
                 <button
                   onClick={() => {
                     setAddMenuOpen(false);
@@ -801,6 +813,20 @@ export function V2WorkspaceDock({
           announcements (e.g. composer vs preview startup banner). State continuity (targets,
           runIDs, review memory) is maintained at the conversation parent level.
         */}
+        {panelVisible && activeTab.id === "browser" && <div role="tabpanel" className="v2-workspace-tabpanel"
+          id={tabPanelID(threadID, "browser")} aria-labelledby={tabButtonID(threadID, "browser")}>
+          {browserAvailable ? <V2SharedBrowser workspaceID={detail.thread.workspace_id ?? ""} threadID={threadID} runID={currentRunID}
+            onFullscreenChange={(fullscreen) => {
+              if (fullscreen) {
+                browserFullViewBeforeFullscreen.current = state.fullView;
+                setWorkspaceFullView(threadID, true);
+              } else if (browserFullViewBeforeFullscreen.current !== null) {
+                setWorkspaceFullView(threadID, browserFullViewBeforeFullscreen.current);
+                browserFullViewBeforeFullscreen.current = null;
+              }
+            }} />
+            : <p role="status">{t("此连接未提供交互浏览器。", "The interactive browser is unavailable on this connection.")}</p>}
+        </div>}
         {panelVisible && activeTab.id === "preview" && (
           <div
             aria-labelledby={tabButtonID(threadID, "preview")}
@@ -815,6 +841,7 @@ export function V2WorkspaceDock({
               resetKey={threadID}
             >
               <V2ApplicationPreview
+                onOpenBrowser={browserAvailable ? () => focusWorkspaceSingletonTab(threadID, "browser") : undefined}
                 canRequestStart={canRequestPreviewStart}
                 client={client}
                 embedded

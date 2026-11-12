@@ -2,7 +2,7 @@ import { localUIMessage } from "../../lib/local-ui-message";
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpen, ChevronDown, CircleEllipsis, Download, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, ShieldCheck, PanelTop, SquareTerminal, X } from "lucide-react";
+import { Archive, BookOpen, ChevronDown, CircleEllipsis, Download, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, Globe, ShieldCheck, PanelTop, SquareTerminal, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
@@ -53,7 +53,7 @@ import { V2ThreadRunRecovery } from "./thread-run-recovery";
 import { useV2ThreadExecution, V2ThreadExecutionControl, V2PausedThreadControl } from "./thread-execution-control";
 import { useFileEditLeave } from "../../components/file-edit-drafts";
 import { UserTerminalPanel, type TerminalQuoteResult } from "../../components/user-terminal-panel";
-import { desktopUserTerminalEnabled } from "../../lib/desktop-bridge";
+import { desktopSharedBrowserEnabled, desktopUserTerminalEnabled } from "../../lib/desktop-bridge";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { eventShortcut, shortcutLabel, useChatPreferences } from "../chat-preferences";
 import {
@@ -309,6 +309,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const contextTrigger = useRef<HTMLButtonElement>(null);
   const contextReturnFocus = useRef<HTMLButtonElement | null>(null);
   const previewTrigger = useRef<HTMLButtonElement>(null);
+  const browserTrigger = useRef<HTMLButtonElement>(null);
   const recordsTrigger = useRef<HTMLButtonElement>(null);
   const recordsReturnFocus = useRef<HTMLButtonElement | null>(null);
   const composerContainerRef = useRef<HTMLDivElement>(null);
@@ -323,7 +324,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const terminalAvailable = desktopUserTerminalEnabled();
   const currentRunIDRef = useRef("");
 
-  const openSingletonSurface = useCallback((kind: "terminal" | "preview" | "review" | "records") => {
+  const openSingletonSurface = useCallback((kind: "terminal" | "preview" | "browser" | "review" | "records") => {
     setContextOpen(false);
     const perform = () => {
       focusWorkspaceSingletonTab(threadID, kind);
@@ -336,7 +337,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     perform();
   }, [activeWorkspaceTab?.kind, docked, leaveFileEdit, threadID, workspaceVisible]);
 
-  const toggleSingletonSurface = useCallback((kind: "terminal" | "preview" | "review" | "records") => {
+  const toggleSingletonSurface = useCallback((kind: "terminal" | "preview" | "browser" | "review" | "records") => {
     setContextOpen(false);
     if (docked) {
       if (workspaceVisible && activeWorkspaceTab?.kind === "file") {
@@ -481,6 +482,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           return fileReturnFocus.current?.isConnected ? fileReturnFocus.current : fileTrigger.current;
         case "terminal":
           return terminalReturnFocus.current?.isConnected ? terminalReturnFocus.current : terminalTrigger.current;
+        case "browser":
+          return browserTrigger.current;
         case "preview":
           return previewTrigger.current;
         case "review":
@@ -1087,6 +1090,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           terminalReturnFocus.current = terminalTrigger.current;
           toggleSingletonSurface("terminal");
         }} ref={terminalTrigger} type="button"><SquareTerminal aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("终端", "Terminal")}</span></button>
+        {desktopSharedBrowserEnabled() && <button aria-label={t("浏览器", "Browser")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "browser"} onClick={() => toggleSingletonSurface("browser")}
+          ref={browserTrigger} title={t("浏览器", "Browser")} type="button"><Globe aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("浏览器", "Browser")}</span></button>}
         <button aria-label={t("应用预览", "App preview")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "preview"} onClick={() => toggleSingletonSurface("preview")}
           ref={previewTrigger} title={t("应用预览", "App preview")} type="button"><PanelTop aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("应用预览", "App preview")}</span></button>
       </div>
