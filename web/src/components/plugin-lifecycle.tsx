@@ -159,17 +159,17 @@ export function HookDiagnostics({ client, runID, workspaceID }: { client: APICli
 
 function HookRecords({ value }: { value: HookDiagnosticsView }) {
   const { t } = useLocale();
-  const events: Record<string, string> = { pre_tool: t("工具执行前", "Before tool"), post_tool: t("工具执行后", "After tool"), run_started: t("执行开始", "Run started"),
+  const events: Record<string, string> = { pre_tool: t("工具执行前", "Before tool"), post_tool: t("工具执行后", "After tool"), post_tool_failure: t("工具失败后", "After tool failure"), run_started: t("执行开始", "Run started"),
     run_completed: t("执行完成", "Run completed"), session_opened: t("会话打开", "Session opened"), session_closed: t("会话关闭", "Session closed"),
-    compaction: t("上下文整理", "Compaction"), subagent: t("子任务边界", "Subagent boundary"), checkpoint: t("检查点", "Checkpoint") };
-  const actions: Record<string, string> = { deny: t("拒绝操作", "Reject operation"), annotate: t("附加说明", "Annotate"), narrow: t("移除所列参数", "Remove listed fields"), record: t("记录触发", "Record observation") };
+    turn_end: t("轮次结束", "Turn ended"), approval_requested: t("等待审批", "Approval requested"), user_prompt_submit: t("用户输入提交", "User prompt submit"), compaction: t("上下文整理", "Compaction"), subagent: t("子任务边界", "Subagent boundary"), checkpoint: t("检查点", "Checkpoint") };
+  const actions: Record<string, string> = { deny: t("拒绝操作", "Reject operation"), annotate: t("附加说明", "Annotate"), narrow: t("移除所列参数", "Remove listed fields"), record: t("记录触发", "Record observation"), script: t("运行操作者脚本", "Run operator script") };
   return <div className="hook-records">
     <h3>{t("声明的规则", "Declared rules")}</h3>
     {value.declarations.length === 0 && <p>{t("当前安装包尚无 Hooks 声明。导入含 Hooks 的 Plugin 包后，在这里核对规则。", "Installed packages have no Hook declarations yet. Import a Plugin with Hooks to inspect its rules here.")}</p>}
     <ul>{value.declarations.map((item) => <li key={`${item.installation_id}/${item.hook_id}`}>
       <div><strong>{item.plugin_id} / {item.hook_id}</strong><span>{item.active ? t("已加载", "Loaded") : item.installation_state === "revoked" ? t("安装已撤销", "Installation revoked") : item.installation_state === "rolled_back" ? t("此版本已停用", "Version retired") : t("等待启用 Hooks 能力", "Awaiting Hook enablement")}</span></div>
       <p>{events[item.event]} · {actions[item.action]}</p>
-      <p>{t("规则范围：本机任务", "Rule scope: local tasks")}{item.tool_names.length ? ` · ${item.tool_names.join(", ")}` : item.event === "pre_tool" || item.event === "post_tool" ? ` · ${t("全部工具", "All tools")}` : ""}</p>
+      <p>{t("规则范围：本机任务", "Rule scope: local tasks")}{item.tool_names.length ? ` · ${item.tool_names.join(", ")}` : item.tool_pattern ? ` · /${item.tool_pattern}/` : item.event === "pre_tool" || item.event === "post_tool" ? ` · ${t("全部工具", "All tools")}` : ""}{item.async ? ` · ${t("后台观测", "background tap")}` : ""}</p>
       {item.remove_fields.length > 0 && <p>{t("移除参数", "Removed fields")}: {item.remove_fields.join(", ")}</p>}
       <details><summary>{t("规则详细记录", "Rule details")}</summary><p>{t("失败处理", "Failure policy")}: {item.failure_policy === "deny" ? t("拒绝当前操作", "Reject the operation") : t("继续当前操作", "Continue the operation")} · {item.timeout_ms} ms</p>
         <p>{t("安装状态", "Installation state")}: {item.installation_state}</p><p><code>{item.package_fingerprint}</code></p></details>

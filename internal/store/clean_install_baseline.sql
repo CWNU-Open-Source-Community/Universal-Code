@@ -4202,10 +4202,11 @@ CREATE TABLE "plugin_hook_audits" (
 		outcome TEXT NOT NULL,
 		created_at TEXT NOT NULL,
 		plugin_fingerprint TEXT NOT NULL DEFAULT '' CHECK(plugin_fingerprint = '' OR (length(plugin_fingerprint) = 64 AND plugin_fingerprint NOT GLOB '*[^0-9a-f]*')),
-		declared_action TEXT NOT NULL DEFAULT '' CHECK(declared_action IN ('', 'deny', 'annotate', 'narrow', 'record')),
+		declared_action TEXT NOT NULL DEFAULT '' CHECK(declared_action IN ('', 'deny', 'annotate', 'narrow', 'record', 'script')),
 		rejected INTEGER CHECK(rejected IS NULL OR rejected IN (0, 1)),
-		CHECK(event IN ('pre_tool', 'post_tool', 'run_started', 'run_completed',
-			'session_opened', 'session_closed', 'compaction', 'subagent', 'checkpoint', 'turn_end')),
+		CHECK(event IN ('pre_tool', 'post_tool', 'post_tool_failure', 'run_started', 'run_completed',
+			'session_opened', 'session_closed', 'user_prompt_submit', 'approval_requested', 'turn_end', 'compaction',
+			'subagent', 'checkpoint')),
 		CHECK(outcome IN ('completed', 'failed_closed', 'failed_continue')),
 		CHECK(length(plugin_id) BETWEEN 1 AND 256 AND length(hook_id) BETWEEN 1 AND 256),
 		CHECK(length(run_id) <= 256 AND length(workspace_id) <= 256
@@ -18534,7 +18535,7 @@ CREATE TRIGGER trg_plan_delivery_selection_update_immutable
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_plugin_hook_audits_delete_immutable
 		BEFORE DELETE ON plugin_hook_audits
-		BEGIN SELECT RAISE(ABORT, 'plugin hook audit is immutable'); END;
+		BEGIN SELECT RAISE(ABORT, 'plugin hook audit cannot be deleted'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_plugin_hook_audits_update_immutable
 		BEFORE UPDATE ON plugin_hook_audits
@@ -18543,7 +18544,12 @@ CREATE TRIGGER trg_plugin_hook_audits_update_immutable
 CREATE TRIGGER trg_plugin_hook_diagnostics_bound BEFORE INSERT ON plugin_hook_audits
 	 WHEN (NEW.plugin_fingerprint != '' OR NEW.declared_action != '' OR NEW.rejected IS NOT NULL)
 	 AND (NEW.plugin_fingerprint = '' OR NEW.declared_action = '' OR NEW.rejected IS NULL
-	 OR NEW.rejected != CASE WHEN NEW.outcome = 'failed_closed' OR (NEW.declared_action = 'deny' AND NEW.outcome = 'completed') THEN 1 ELSE 0 END)
+	 OR NEW.rejected != CASE
+		WHEN NEW.outcome = 'failed_closed' THEN 1
+		WHEN NEW.outcome = 'failed_continue' THEN 0
+		WHEN NEW.outcome = 'completed' AND NEW.declared_action = 'deny' THEN 1
+		WHEN NEW.outcome = 'completed' AND NEW.declared_action = 'script' THEN NEW.rejected
+		ELSE 0 END)
 	 BEGIN SELECT RAISE(ABORT, 'Hook decision metadata must bind one observed outcome'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_plugin_installation_generation

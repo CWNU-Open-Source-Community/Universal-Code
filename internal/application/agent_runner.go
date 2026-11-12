@@ -775,7 +775,11 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			return result, apperror.Normalize(err)
 		}
 		if waitingApproval {
-			return supervisorApprovalWaitingResult(result, prepared.toolRounds), nil
+			waiting, waitErr := s.supervisorApprovalWaitingResult(ctx, &turn, result, prepared.toolRounds)
+			if waitErr != nil {
+				return result, waitErr
+			}
+			return waiting, nil
 		}
 	}
 	refreshStandardCodeSupervisorRequest(&baseRequest, prepared.tools.standardCode)
@@ -1282,7 +1286,11 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 					return result, apperror.Normalize(storeErr)
 				}
 				if waitingApproval {
-					return supervisorApprovalWaitingResult(result, prepared.toolRounds), nil
+					waiting, waitErr := s.supervisorApprovalWaitingResult(ctx, &turn, result, prepared.toolRounds)
+					if waitErr != nil {
+						return result, waitErr
+					}
+					return waiting, nil
 				}
 				prepared.context.workItems, storeErr = s.store.ListWorkItems(ctx, domain.WorkItemFilter{
 					RunID: turn.Run.ID,
@@ -1401,6 +1409,22 @@ func (s *AgentRunner) Execute(ctx context.Context, runID string, maxSteps int) (
 	}
 	if run.Status == domain.RunWaitingApproval {
 		result.StopReason = "waiting_approval"
+		// Durable re-entry: the Run settled into the approval gate earlier.
+		// The workspace identity comes from the Run's mission, the same source
+		// the turn-level settlement uses.
+		workspaceID := ""
+		if s.lifecycleHooks != nil {
+			mission, missionErr := s.store.GetMission(ctx, run.MissionID)
+			if missionErr != nil {
+				return result, apperror.Normalize(missionErr)
+			}
+			workspaceID = mission.WorkspaceID
+		}
+		if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.ApprovalRequested,
+			result.RunID, workspaceID, map[string]any{"run_id": result.RunID,
+				"state": "waiting_approval"}); err != nil {
+			return result, err
+		}
 		return result, nil
 	}
 	err = s.withRunExecutionLease(ctx, result.RunID, func(leaseCtx context.Context,
@@ -1525,9 +1549,10 @@ func (s *AgentRunner) drainOperatorSteeringWithLease(ctx context.Context,
 	return nil
 }
 
-func supervisorApprovalWaitingResult(result LifecycleResult,
+func (s *AgentRunner) supervisorApprovalWaitingResult(ctx context.Context,
+	turn *domain.SupervisorTurn, result LifecycleResult,
 	rounds []domain.SupervisorToolRound,
-) LifecycleResult {
+) (LifecycleResult, error) {
 	result.Status = LifecycleTurnCompleted
 	result.RunStatus = domain.RunWaitingApproval
 	result.Action = domain.RootAction{Version: domain.RootLifecycleVersion,
@@ -1536,7 +1561,17 @@ func supervisorApprovalWaitingResult(result LifecycleResult,
 		Reason:  "waiting_approval:risk_escalation"}
 	result.Text = result.Action.Message
 	result.ToolRounds, result.ToolCalls = supervisorToolStats(rounds)
-	return result
+	// The approval_requested boundary fires on every settlement into the
+	// durable waiting-approval gate, whatever surface drove the turn. It is
+	// observation-only by validation: record hooks audit the pause, and the
+	// approval decision itself stays with the operator. A hook failure fails
+	// the boundary closed like every other pre-state gate.
+	if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.ApprovalRequested,
+		turn.Run.ID, turn.Mission.WorkspaceID, map[string]any{
+			"run_id": turn.Run.ID, "state": "waiting_approval"}); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (s *AgentRunner) executeWithLease(ctx context.Context, lease domain.RunExecutionLease,

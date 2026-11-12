@@ -100,7 +100,9 @@ type HookDeclarationView struct {
 	FailurePolicy      string   `json:"failure_policy"`
 	TimeoutMillis      int      `json:"timeout_ms"`
 	ToolNames          []string `json:"tool_names"`
+	ToolPattern        string   `json:"tool_pattern"`
 	RemoveFields       []string `json:"remove_fields"`
+	Async              bool     `json:"async"`
 }
 type HookObservationView struct {
 	ID                 string `json:"id"`
@@ -216,7 +218,7 @@ func (a *API) servePluginLifecycle(writer http.ResponseWriter, request *http.Req
 		view := HookDiagnosticsView{ProtocolVersion: HookDiagnosticsProtocol, RunID: value.RunID, WorkspaceID: value.WorkspaceID, Declarations: []HookDeclarationView{}, OmittedDeclarations: value.OmittedDeclarations, Observations: []HookObservationView{}}
 		for _, item := range value.Declarations {
 			d := item.Declaration
-			view.Declarations = append(view.Declarations, HookDeclarationView{InstallationID: item.InstallationID, PluginID: item.PluginID, PackageFingerprint: item.PackageFingerprint, InstallationState: string(item.InstallationState), Active: item.Active, Scope: "local", HookID: d.ID, Event: string(d.Event), Action: string(d.Action), FailurePolicy: string(d.FailurePolicy), TimeoutMillis: d.TimeoutMillis, ToolNames: append([]string{}, d.ToolNames...), RemoveFields: append([]string{}, d.RemoveFields...)})
+			view.Declarations = append(view.Declarations, HookDeclarationView{InstallationID: item.InstallationID, PluginID: item.PluginID, PackageFingerprint: item.PackageFingerprint, InstallationState: string(item.InstallationState), Active: item.Active, Scope: "local", HookID: d.ID, Event: string(d.Event), Action: string(d.Action), FailurePolicy: string(d.FailurePolicy), TimeoutMillis: d.TimeoutMillis, ToolNames: append([]string{}, d.ToolNames...), ToolPattern: d.ToolPattern, RemoveFields: append([]string{}, d.RemoveFields...), Async: d.Async})
 		}
 		for _, item := range value.Observations {
 			decision := "unknown"

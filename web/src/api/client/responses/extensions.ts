@@ -380,9 +380,9 @@ export const pluginStates = ["staged", "approved", "enabled", "disabled", "rolle
 
 export const pluginCapabilities = ["skills", "mcp", "ui", "hooks"];
 
-export const hookEvents = ["pre_tool", "post_tool", "run_started", "run_completed", "session_opened", "session_closed", "compaction", "subagent", "checkpoint"];
+export const hookEvents = ["pre_tool", "post_tool", "post_tool_failure", "run_started", "run_completed", "session_opened", "session_closed", "user_prompt_submit", "approval_requested", "turn_end", "compaction", "subagent", "checkpoint"];
 
-export const hookActions = ["deny", "annotate", "narrow", "record"];
+export const hookActions = ["deny", "annotate", "narrow", "record", "script"];
 
 export function parsePluginPublisher(value: unknown): PluginPublisherTrustView {
   if (!hasExactKeys(value, ["fingerprint", "publisher", "state", "generation", "reviewed_at"]) ||
@@ -429,12 +429,18 @@ export function parseHookDiagnostics(value: unknown, runID: string, workspaceID:
     throw new APIRequestError("Hook diagnostic scope is invalid", "INVALID_RESPONSE", 502);
   }
   for (const item of value.declarations) {
-    if (!hasExactKeys(item, ["installation_id", "plugin_id", "package_fingerprint", "installation_state", "active", "scope", "hook_id", "event", "action", "failure_policy", "timeout_ms", "tool_names", "remove_fields"]) ||
+    if (!hasExactKeys(item, ["installation_id", "plugin_id", "package_fingerprint", "installation_state", "active", "scope", "hook_id", "event", "action", "failure_policy", "timeout_ms", "tool_names", "tool_pattern", "remove_fields", "async"]) ||
       !boundedIdentity(item.installation_id) || !boundedIdentity(item.plugin_id) || !isSHA256(item.package_fingerprint) ||
       !pluginStates.includes(String(item.installation_state)) || typeof item.active !== "boolean" || (item.active && item.installation_state !== "enabled") ||
       item.scope !== "local" || !boundedIdentity(item.hook_id) || !hookEvents.includes(String(item.event)) || !hookActions.includes(String(item.action)) ||
       !["continue", "deny"].includes(String(item.failure_policy)) || !safePositiveInteger(item.timeout_ms) || item.timeout_ms > 2000 ||
-      !boundedStringArray(item.tool_names, 64, 256) || !boundedStringArray(item.remove_fields, 32, 256)) {
+      !boundedStringArray(item.tool_names, 64, 256) || !boundedStringArray(item.remove_fields, 32, 256) ||
+      typeof item.tool_pattern !== "string" || item.tool_pattern.length > 256 ||
+      item.tool_pattern.trim() !== item.tool_pattern ||
+      /[\u0000--]/.test(item.tool_pattern) ||
+      (item.tool_pattern !== "" && (item.tool_names.length > 0 || (item.event !== "pre_tool" && item.event !== "post_tool" && item.event !== "post_tool_failure"))) ||
+      typeof item.async !== "boolean" ||
+      (item.async && !["record", "script"].includes(String(item.action)))) {
       throw new APIRequestError("Hook declaration projection is invalid", "INVALID_RESPONSE", 502);
     }
   }
@@ -447,7 +453,11 @@ export function parseHookDiagnostics(value: unknown, runID: string, workspaceID:
       ((runID || workspaceID) && item.workspace_id !== value.workspace_id) ||
       (item.package_fingerprint !== undefined && !isSHA256(item.package_fingerprint)) ||
       (item.action !== undefined && (!hookActions.includes(String(item.action)) || !isSHA256(item.package_fingerprint))) ||
-      (item.action !== undefined && item.decision !== (item.outcome === "failed_closed" || item.action === "deny" && item.outcome === "completed" ? "rejected" : "continued")) ||
+      (item.action !== undefined && (
+        item.action === "script"
+          ? (item.outcome === "failed_closed" ? item.decision !== "rejected" : item.outcome === "failed_continue" ? item.decision !== "continued" : !["rejected", "continued"].includes(String(item.decision)))
+          : item.decision !== (item.outcome === "failed_closed" || item.action === "deny" && item.outcome === "completed" ? "rejected" : "continued")
+      )) ||
       (item.action === undefined && item.decision !== (item.outcome === "failed_closed" ? "rejected" : "unknown"))) {
       throw new APIRequestError("Hook observation projection is invalid", "INVALID_RESPONSE", 502);
     }

@@ -857,7 +857,7 @@ func (a *API) serveThreadMutationControl(writer http.ResponseWriter, request *ht
 		}
 		result, err := application.NewThreadServiceWithExecutionCapabilities(
 			a.store, a.executionPermissionCapabilities).WithModelRouteRegistry(
-			a.modelRegistry).Submit(request.Context(),
+			a.modelRegistry).WithLifecycleHooks(a.lifecycleHooks).Submit(request.Context(),
 			application.SubmitThreadMessageRequest{Version: view.Version, ThreadID: threadID,
 				Content: view.Content, OperationKey: operationKey,
 				RequestedBy: "http_thread_operator"})

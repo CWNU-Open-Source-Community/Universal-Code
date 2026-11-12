@@ -9,80 +9,67 @@ import (
 	"cyberagent-workbench/internal/hooks"
 )
 
-func TestSchemaV223AdmitsTurnEndLifecycleHookAudits(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "v222-turn-end.db")
+func TestSchemaV223PreservesHookReceiptsAndAdmitsScriptBindings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v222.db")
 	old := openHistoricalTestDatabase(t, path, 222)
 	at := time.Now().UTC()
-	if _, err := old.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at) VALUES('old-audit','guard','hook-1','pre_tool','run-1','workspace-1','file_write','completed',?)`, ts(at)); err != nil {
+	if _, err := old.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at) VALUES('old','guard','same-hook','pre_tool','run-old','workspace-one','file_write','completed',?)`, ts(at)); err != nil {
 		t.Fatal(err)
 	}
-	// Verify that under schema v222, inserting turn_end fails CHECK constraint.
-	if _, err := old.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at) VALUES('rejected-audit','guard','hook-2','approval_requested','run-1','workspace-1','','completed',?)`, ts(at)); err == nil {
-		t.Fatal("expected schema v222 to reject turn_end event")
+	if _, err := old.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at,plugin_fingerprint,declared_action,rejected) VALUES('old-deny','guard','deny-hook','pre_tool','run-old','workspace-one','shell','completed',?,?,?,1)`, ts(at), strings.Repeat("a", 64), "deny"); err != nil {
+		t.Fatal(err)
 	}
 	if err := old.Close(); err != nil {
 		t.Fatal(err)
 	}
-
 	state, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer state.Close()
-
-	// 1. Historical receipt is preserved across migration v223.
-	historical, err := state.ListHookAudits(t.Context(), "run-1", "workspace-1", 200)
-	if err != nil || len(historical) != 1 || historical[0].ID != "old-audit" || historical[0].Event != hooks.PreTool {
-		t.Fatalf("historical hook audit not preserved: %#v %v", historical, err)
+	values, err := state.ListHookAudits(t.Context(), "run-old", "workspace-one", 200)
+	if err != nil || len(values) != 2 {
+		t.Fatalf("historical receipts changed: %#v %v", values, err)
+	}
+	if values[0].Action != hooks.ActionDeny || values[0].Rejected == nil || !*values[0].Rejected {
+		t.Fatalf("bound historical receipt changed: %#v", values[0])
+	}
+	if values[1].Outcome != "completed" || values[1].Rejected != nil ||
+		values[1].PluginFingerprint != "" {
+		t.Fatalf("unbound historical receipt changed: %#v", values[1])
 	}
 
-	// 2. Inserting turn_end now succeeds.
-	fp := strings.Repeat("b", 64)
-	isFalse := false
-	audit := hooks.AuditRecord{
-		PluginID:          "watch-plugin",
-		PluginFingerprint: fp,
-		HookID:            "turn-observer",
-		Event:             hooks.TurnEnd,
-		RunID:             "run-1",
-		WorkspaceID:       "workspace-1",
-		Action:            hooks.ActionRecord,
-		Outcome:           "completed",
-		Rejected:          &isFalse,
-		CreatedAt:         at.Add(time.Second),
+	scriptDigest := strings.Repeat("b", 64)
+	registration := hooks.Registration{PluginID: hooks.OperatorPluginID,
+		PluginFingerprint: scriptDigest,
+		Declaration: hooks.Declaration{ProtocolVersion: hooks.ProtocolVersion,
+			ID: "operator-guard", Event: hooks.PreTool, Action: hooks.ActionScript,
+			FailurePolicy: hooks.FailureDeny, TimeoutMillis: 100,
+			Script: &hooks.ScriptSpec{Interpreter: "python", Path: "check.py",
+				SHA256: scriptDigest}}}
+	engine := hooks.NewEngine(state).WithScriptExecutor(stubScriptAuditExecutor{denied: true})
+	if err := engine.Replace([]hooks.Registration{registration}); err != nil {
+		t.Fatal(err)
 	}
-	if err := state.RecordHookAudit(t.Context(), audit); err != nil {
-		t.Fatalf("failed to record turn_end hook audit in SQLite: %v", err)
+	result, err := engine.Execute(t.Context(), hooks.Input{Event: hooks.PreTool,
+		RunID: "run-new", WorkspaceID: "workspace-one", ToolName: "shell"})
+	if err != nil || !result.Denied {
+		t.Fatalf("script denial result=%#v err=%v", result, err)
 	}
-
-	// 3. Verify reading back the turn_end audit.
-	audits, err := state.ListHookAudits(t.Context(), "run-1", "workspace-1", 200)
-	if err != nil || len(audits) != 2 {
-		t.Fatalf("expected 2 hook audits, got %#v (err=%v)", audits, err)
-	}
-	var foundApproval bool
-	for _, a := range audits {
-		if a.Event == hooks.TurnEnd {
-			foundApproval = true
-			if a.PluginID != "watch-plugin" || a.Action != hooks.ActionRecord || a.Outcome != "completed" {
-				t.Fatalf("unexpected approval audit fields: %#v", a)
-			}
-		}
-	}
-	if !foundApproval {
-		t.Fatal("recorded turn_end audit was not returned")
+	values, err = state.ListHookAudits(t.Context(), "run-new", "workspace-one", 200)
+	if err != nil || len(values) != 1 || values[0].Action != hooks.ActionScript ||
+		values[0].Outcome != "completed" || values[0].Rejected == nil || !*values[0].Rejected ||
+		values[0].PluginFingerprint != scriptDigest {
+		t.Fatalf("script denial receipt=%#v err=%v", values, err)
 	}
 
-	// 4. Verify invalid events are still rejected by the CHECK constraint.
-	if _, err := state.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at) VALUES('invalid-event','guard','hook-3','unknown_lifecycle_event','run-1','workspace-1','','completed',?)`, ts(at)); err == nil {
-		t.Fatal("expected CHECK constraint to reject unknown_lifecycle_event")
+	if _, err := state.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at,plugin_fingerprint,declared_action,rejected) VALUES('bad-binding','operator','h','pre_tool','run-new','workspace-one','shell','failed_continue',?,?,?,1)`, ts(at), scriptDigest, "script"); err == nil {
+		t.Fatal("contradictory script binding was accepted by the trigger")
 	}
-
-	// 5. Verify immutability triggers are preserved.
-	if _, err := state.db.Exec(`UPDATE plugin_hook_audits SET outcome='failed_closed' WHERE id='old-audit'`); err == nil {
-		t.Fatal("expected immutable update trigger to fail")
+	if _, err := state.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at,plugin_fingerprint,declared_action,rejected) VALUES('bad-action','operator','h','pre_tool','run-new','workspace-one','shell','completed',?,?,?,1)`, ts(at), strings.Repeat("c", 64), "explode"); err == nil {
+		t.Fatal("unknown declared action was accepted by the CHECK constraint")
 	}
-	if _, err := state.db.Exec(`DELETE FROM plugin_hook_audits WHERE id='old-audit'`); err == nil {
-		t.Fatal("expected immutable delete trigger to fail")
+	if _, err := state.db.Exec(`UPDATE plugin_hook_audits SET rejected=0 WHERE id=?`, values[0].ID); err == nil {
+		t.Fatal("immutable receipt changed")
 	}
 }
