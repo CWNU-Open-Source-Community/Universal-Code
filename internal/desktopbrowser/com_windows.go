@@ -74,6 +74,20 @@ func getBool(o *comObject, slot int) bool {
 	return value != 0
 }
 
+func putControllerBounds(controller *comObject, bounds nativeRect) error {
+	// RECT is a 16-byte by-value aggregate: Windows x64 passes its address,
+	// while Windows ARM64 passes the two double-words in consecutive registers.
+	if runtime.GOARCH == "arm64" {
+		first := uint64(uint32(bounds.Left)) | uint64(uint32(bounds.Top))<<32
+		second := uint64(uint32(bounds.Right)) | uint64(uint32(bounds.Bottom))<<32
+		return comCall(controller, controllerPutBounds, uintptr(first), uintptr(second))
+	}
+	if runtime.GOARCH == "386" {
+		return comCall(controller, controllerPutBounds, uintptr(bounds.Left), uintptr(bounds.Top), uintptr(bounds.Right), uintptr(bounds.Bottom))
+	}
+	return comCall(controller, controllerPutBounds, uintptr(unsafe.Pointer(&bounds)))
+}
+
 type comHandler struct {
 	vtable *[4]uintptr
 	refs   atomic.Int32

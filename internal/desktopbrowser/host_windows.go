@@ -368,7 +368,7 @@ func (p *nativePage) SetSurface(ctx context.Context, bounds Bounds, visible bool
 			return err
 		}
 		rect := nativeRect{Right: bounds.Width, Bottom: bounds.Height}
-		if err := comCall(p.controller, controllerPutBounds, uintptr(unsafe.Pointer(&rect))); err != nil {
+		if err := putControllerBounds(p.controller, rect); err != nil {
 			return err
 		}
 		var value uintptr
