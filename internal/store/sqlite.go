@@ -518,7 +518,8 @@ func migrationPlan() []migration {
 		migration{Version: 228, Name: "Post compaction lifecycle hook audits", Statements: postCompactionHookStatements},
 		migration{Version: 229, Name: "Post occurrence hook observation cap audits", Statements: hookAuditOutcomeCapStatements},
 		migration{Version: 230, Name: "Independent project browser network access", Statements: browserNetworkAccessStatements},
-		migration{Version: 231, Name: "Authority-bound same-page Agent pointer movement", Statements: agentBrowserMoveSupervisorLedgerStatements(), DisableForeignKeys: true})
+		migration{Version: 231, Name: "Authority-bound same-page Agent pointer movement", Statements: agentBrowserMoveSupervisorLedgerStatements(), DisableForeignKeys: true},
+		migration{Version: 232, Name: "Authority-bound workspace image reads", Statements: workspaceImageSupervisorLedgerStatements(), DisableForeignKeys: true})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {
