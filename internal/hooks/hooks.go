@@ -161,6 +161,12 @@ func (d Declaration) Validate() error {
 	if (d.Event == PostTool || d.Event == PostToolFailure) && d.FailurePolicy == FailureDeny {
 		return errors.New("post_tool hooks require continue failure policy because execution is already complete")
 	}
+	if d.Event == RunCompleted && d.FailurePolicy == FailureDeny {
+		return errors.New("run_completed hooks require continue failure policy because the terminal transition is already decided")
+	}
+	if d.Event == SessionClosed && d.FailurePolicy == FailureDeny {
+		return errors.New("session_closed hooks require continue failure policy because the session is already closed")
+	}
 	if d.Event == ApprovalRequested {
 		// The approval decision belongs to the operator: hooks at this
 		// boundary observe and record, they never auto-deny, annotate a

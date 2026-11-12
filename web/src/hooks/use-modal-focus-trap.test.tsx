@@ -43,6 +43,9 @@ describe("useModalFocusTrap", () => {
     const user = userEvent.setup();
     render(<Harness escapeDisabled />);
     await user.click(screen.getByRole("button", { name: "Open dialog" }));
+    expect(screen.getByRole("button", { name: "First action" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Last action" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.getByRole("dialog", { name: "Example dialog" })).toBeInTheDocument();
   });

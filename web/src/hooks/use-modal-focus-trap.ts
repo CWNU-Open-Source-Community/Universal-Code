@@ -75,14 +75,16 @@ export function useModalFocusTrap<T extends HTMLElement>(open: boolean, onEscape
   const dialogRef = useRef<T>(null);
   const onEscapeRef = useRef(onEscape);
   const escapeDisabledRef = useRef(escapeDisabled);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   onEscapeRef.current = onEscape;
   escapeDisabledRef.current = escapeDisabled;
 
   useLayoutEffect(() => {
     if (!open || !dialogRef.current) return;
     const dialog = dialogRef.current;
-    const previouslyFocused = document.activeElement instanceof HTMLElement
-      ? document.activeElement : null;
+    if (!previouslyFocusedRef.current && document.activeElement instanceof HTMLElement) {
+      previouslyFocusedRef.current = document.activeElement;
+    }
     const isolated = options?.isolateBackground ? modalBackgroundElements(dialog) : [];
     isolated.forEach(isolateElement);
     const candidates = focusableElements(dialog);
@@ -123,10 +125,24 @@ export function useModalFocusTrap<T extends HTMLElement>(open: boolean, onEscape
       dialog.removeEventListener("keydown", handleKeyDown);
       isolated.forEach(restoreElement);
       const returnFocus = options?.returnFocusRef?.current;
+      const opener = previouslyFocusedRef.current;
+      previouslyFocusedRef.current = null;
       if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
-      else if (previouslyFocused?.isConnected) previouslyFocused.focus({ preventScroll: true });
+      else if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
   }, [open, options?.isolateBackground, options?.trapFocus]);
+
+  useLayoutEffect(() => {
+    if (!open || !dialogRef.current || escapeDisabled) return;
+    const dialog = dialogRef.current;
+    if (!dialog.contains(document.activeElement)) {
+      const candidates = focusableElements(dialog);
+      const preferred = initialFocusRef?.current && dialog.contains(initialFocusRef.current)
+        ? initialFocusRef.current
+        : candidates.find((element) => element.hasAttribute("autofocus")) ?? candidates[0];
+      (preferred ?? dialog).focus();
+    }
+  }, [open, escapeDisabled, initialFocusRef]);
 
   return dialogRef;
 }

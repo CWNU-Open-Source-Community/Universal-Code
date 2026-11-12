@@ -1,14 +1,15 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import type { LocaleText } from "../lib/locale";
+import { useConnectionStore } from "../state/connection";
 
-export const workspaceTabsStorageKey = "universal-code.workspace-tabs.v1";
+export const workspaceTabsStorageKey = "universal-code.workspace-tabs.v2";
+const legacyWorkspaceTabsStorageKey = "universal-code.workspace-tabs.v1";
 export const workspaceTabsChangedEvent = "universal-code:workspace-tabs";
 const changedEvent = workspaceTabsChangedEvent;
 
 export const defaultWorkspaceWidth = 440;
 export const minWorkspaceWidth = 340;
 export const maxWorkspaceWidth = 960;
-const maxPersistedThreads = 48;
 const maxTabsPerThread = 12;
 
 export type WorkspaceFileTab = {
@@ -48,6 +49,10 @@ export type WorkspaceTab =
   | WorkspaceRecordsTab;
 
 export const maxWorkspaceTabsLimitNotice = "已达到 12 个工作区标签上限，请先关闭暂不使用的标签。";
+export const workspaceStorageConflictNotice = "另一窗口修改了工作区标签。本窗口的未保存状态已保留，请选择要使用的版本。";
+export const workspaceStorageConflictChangedNotice = "另一窗口再次修改了工作区标签，请重新选择要使用的版本。";
+export const workspaceLegacyTabsNotice = "发现旧版工作区标签，但无法确认其所属连接。确认属于当前连接后可恢复，恢复会替换当前标签。";
+const workspaceStorageFailureNotice = "无法保存工作区标签；当前状态仅保留在本窗口。";
 
 export interface ThreadWorkspaceState {
   tabs: WorkspaceTab[];
@@ -92,13 +97,28 @@ export function emptyThreadWorkspaceState(): ThreadWorkspaceState {
 }
 
 const memoryFallback = new Map<string, ThreadWorkspaceState>();
+const failedBaselines = new Map<string, string>();
+const conflictSnapshots = new Map<string, string>();
 let cachedRaw: string | null | undefined = undefined;
+let storageReadable = true;
 let cachedParsed: Record<string, ThreadWorkspaceState> = {};
 
+function workspaceThreadKey(threadID: string): { key: string; persistent: boolean } {
+  const connection = useConnectionStore.getState();
+  const storeID = connection.health?.data_store_id ?? "";
+  const base = connection.apiBaseURL || import.meta.env.VITE_API_BASE_URL || "/api/v1";
+  const transientScope = storeID ? null : connection.connectionGeneration;
+  return { key: JSON.stringify([base, storeID, transientScope, threadID]), persistent: Boolean(storeID) };
+}
+
+// Bind delayed callbacks to the connection that started them.
+export function workspaceScopeKey(threadID: string): string {
+  return JSON.stringify([workspaceThreadKey(threadID).key, useConnectionStore.getState().connectionGeneration]);
+}
+
 function normalizeFilePath(path: string): string {
-  const trimmed = path.trim();
-  if (!trimmed || trimmed === ".") return ".";
-  return trimmed.replace(/^\.\/+/u, "") || ".";
+  if (!path || path === ".") return ".";
+  return path.replace(/^\.\/+/u, "") || ".";
 }
 
 function sanitizeTab(raw: unknown): WorkspaceTab | null {
@@ -179,32 +199,50 @@ function sanitizeThreadState(raw: unknown): ThreadWorkspaceState | null {
   };
 }
 
-function readRawStorage(): string | null {
+function readRawStorage(): string | null | undefined {
   try {
     return localStorage.getItem(workspaceTabsStorageKey);
   } catch {
-    return null;
+    return undefined;
   }
+}
+
+function readLegacyThreadState(threadID: string): ThreadWorkspaceState | null {
+  try {
+    const raw = localStorage.getItem(legacyWorkspaceTabsStorageKey);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || (parsed as { version?: unknown }).version !== 1) return null;
+    const threads = (parsed as { threads?: unknown }).threads;
+    if (!threads || typeof threads !== "object" || !Object.hasOwn(threads, threadID)) return null;
+    return sanitizeThreadState((threads as Record<string, unknown>)[threadID]);
+  } catch { return null; }
 }
 
 function readAllPersisted(): Record<string, ThreadWorkspaceState> {
   const raw = readRawStorage();
-  if (raw === cachedRaw) return cachedParsed;
-  cachedRaw = raw;
-  if (!raw) {
+  if (raw === undefined) {
+    storageReadable = false;
+    return cachedParsed;
+  }
+  if (raw === cachedRaw) {
+    storageReadable = true;
+    return cachedParsed;
+  }
+  if (raw === null) {
+    cachedRaw = raw;
     cachedParsed = {};
+    storageReadable = true;
     return cachedParsed;
   }
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || (parsed as { version?: unknown }).version !== 1) {
-      cachedParsed = {};
-      return cachedParsed;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || (parsed as { version?: unknown }).version !== 1) {
+      throw new Error("invalid workspace storage");
     }
     const threadsRaw = (parsed as { threads?: unknown }).threads;
-    if (!threadsRaw || typeof threadsRaw !== "object") {
-      cachedParsed = {};
-      return cachedParsed;
+    if (!threadsRaw || typeof threadsRaw !== "object" || Array.isArray(threadsRaw)) {
+      throw new Error("invalid workspace threads");
     }
     const next: Record<string, ThreadWorkspaceState> = {};
     for (const [threadID, value] of Object.entries(threadsRaw as Record<string, unknown>)) {
@@ -212,50 +250,94 @@ function readAllPersisted(): Record<string, ThreadWorkspaceState> {
       const clean = sanitizeThreadState(value);
       if (clean) next[threadID] = clean;
     }
+    cachedRaw = raw;
     cachedParsed = next;
+    storageReadable = true;
     return cachedParsed;
   } catch {
-    cachedParsed = {};
+    // Preserve both the original storage and the last readable in-memory view.
+    storageReadable = false;
     return cachedParsed;
   }
 }
 
 export function getThreadWorkspaceState(threadID: string): ThreadWorkspaceState {
   if (!threadID) return emptyThreadWorkspaceState();
-  const persisted = readAllPersisted()[threadID];
-  const fallback = memoryFallback.get(threadID);
-  if (persisted && fallback) {
-    return fallback.updatedAt > persisted.updatedAt ? fallback : persisted;
+  const { key, persistent } = workspaceThreadKey(threadID);
+  const persisted = persistent ? readAllPersisted()[key] : undefined;
+  let fallback = memoryFallback.get(key);
+  if (fallback && failedBaselines.has(key)) {
+    if (storageReadable && JSON.stringify(persisted ?? null) !== failedBaselines.get(key)) {
+      if (!conflictSnapshots.has(key)) conflictSnapshots.set(key, JSON.stringify(persisted ?? null));
+      if (fallback.notice !== workspaceStorageConflictNotice && fallback.notice !== workspaceStorageConflictChangedNotice) {
+        fallback = { ...fallback, notice: workspaceStorageConflictNotice };
+        memoryFallback.set(key, fallback);
+      }
+    }
+    return fallback;
   }
-  return persisted ?? fallback ?? emptyThreadWorkspaceState();
+  // The last readable persisted snapshot remains authoritative on read failure,
+  // including remote deletion or a writer whose clock is behind this one.
+  // Unsaved local writes were handled above.
+  if (persistent) return persisted ?? emptyThreadWorkspaceState();
+  return fallback ?? emptyThreadWorkspaceState();
 }
 
 function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWorkspaceState) => ThreadWorkspaceState) {
   if (!threadID) return;
+  const { key, persistent } = workspaceThreadKey(threadID);
   const current = getThreadWorkspaceState(threadID);
+  const startingSnapshot = persistent ? JSON.stringify(cachedParsed[key] ?? null) : "";
   const candidate = updater(current);
   if (candidate === current) return;
   // A failed storage write leaves both the persisted snapshot and this in-memory
   // fallback. Advance past the snapshot we read even within the same millisecond
   // or after a clock adjustment, so the new state remains authoritative.
   const updatedAt = Math.max(Date.now(), current.updatedAt + 1);
-  const updated = sanitizeThreadState({ ...candidate, updatedAt }) ?? emptyThreadWorkspaceState();
-  memoryFallback.set(threadID, updated);
-  const all = { ...readAllPersisted(), [threadID]: updated };
-  const entries = Object.entries(all)
-    .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
-    .slice(0, maxPersistedThreads);
+  let updated = sanitizeThreadState({ ...candidate, updatedAt }) ?? emptyThreadWorkspaceState();
+  const persistedThreads = persistent ? readAllPersisted() : {};
+  const persisted = persistedThreads[key];
+  if (persistent && !persisted && !memoryFallback.has(key) && readLegacyThreadState(threadID) && !updated.notice) {
+    updated = { ...updated, notice: workspaceLegacyTabsNotice };
+  }
+  if (persistent && !storageReadable) {
+    if (!failedBaselines.has(key)) failedBaselines.set(key, JSON.stringify(persisted ?? null));
+    memoryFallback.set(key, { ...updated, notice: workspaceStorageFailureNotice });
+    window.dispatchEvent(new Event(changedEvent));
+    return;
+  }
+  if (persistent && !failedBaselines.has(key) && JSON.stringify(persisted ?? null) !== startingSnapshot) {
+    failedBaselines.set(key, startingSnapshot);
+    conflictSnapshots.set(key, JSON.stringify(persisted ?? null));
+    memoryFallback.set(key, { ...updated, notice: workspaceStorageConflictNotice });
+    window.dispatchEvent(new Event(changedEvent));
+    return;
+  }
+  if (!persistent || (failedBaselines.has(key) && JSON.stringify(persisted ?? null) !== failedBaselines.get(key))) {
+    updated = { ...updated, notice: persistent ? workspaceStorageConflictNotice : workspaceStorageFailureNotice };
+    memoryFallback.set(key, updated);
+    window.dispatchEvent(new Event(changedEvent));
+    return;
+  }
+  if (updated.notice === workspaceStorageFailureNotice || updated.notice === workspaceStorageConflictNotice ||
+      updated.notice === workspaceStorageConflictChangedNotice) {
+    updated = { ...updated, notice: undefined };
+  }
+  memoryFallback.set(key, updated);
   const payload: PersistedWorkspaceStore = {
     version: 1,
-    threads: Object.fromEntries(entries),
+    threads: { ...persistedThreads, [key]: updated },
   };
   try {
     const encoded = JSON.stringify(payload);
     localStorage.setItem(workspaceTabsStorageKey, encoded);
     cachedRaw = encoded;
     cachedParsed = payload.threads;
+    failedBaselines.delete(key);
+    conflictSnapshots.delete(key);
   } catch {
-    // Keep memoryFallback authoritative when storage is unavailable or full.
+    if (!failedBaselines.has(key)) failedBaselines.set(key, JSON.stringify(persisted ?? null));
+    memoryFallback.set(key, { ...updated, notice: workspaceStorageFailureNotice });
   }
   window.dispatchEvent(new Event(changedEvent));
 }
@@ -277,8 +359,52 @@ function subscribeWorkspaceTabs(notify: () => void) {
 
 export function resetWorkspaceTabsMemoryCache() {
   memoryFallback.clear();
+  failedBaselines.clear();
+  conflictSnapshots.clear();
   cachedRaw = undefined;
   cachedParsed = {};
+  storageReadable = true;
+}
+
+export function resolveWorkspaceStorageConflict(threadID: string, choice: "local" | "remote") {
+  const { key, persistent } = workspaceThreadKey(threadID);
+  if (!persistent || !failedBaselines.has(key)) return;
+  const remote = readAllPersisted()[key];
+  if (!storageReadable) return;
+  if (choice === "remote") {
+    failedBaselines.delete(key);
+    conflictSnapshots.delete(key);
+    memoryFallback.delete(key);
+    window.dispatchEvent(new Event(changedEvent));
+    return;
+  }
+  const latestSnapshot = JSON.stringify(remote ?? null);
+  if (conflictSnapshots.get(key) !== latestSnapshot) {
+    conflictSnapshots.set(key, latestSnapshot);
+    const local = memoryFallback.get(key);
+    if (local) memoryFallback.set(key, { ...local, notice: workspaceStorageConflictChangedNotice });
+    window.dispatchEvent(new Event(changedEvent));
+    return;
+  }
+  // The explicit choice authorizes replacing the last observed snapshot.
+  failedBaselines.set(key, latestSnapshot);
+  writeThreadWorkspaceState(threadID, (state) => ({ ...state, notice: undefined }));
+}
+
+export function restoreLegacyWorkspaceTabs(threadID: string) {
+  const legacy = readLegacyThreadState(threadID);
+  if (!legacy) return;
+  writeThreadWorkspaceState(threadID, () => ({ ...legacy, notice: undefined }));
+}
+
+export function hasLegacyWorkspaceTabs(threadID: string): boolean {
+  return Boolean(readLegacyThreadState(threadID));
+}
+
+export function promptLegacyWorkspaceTabs(threadID: string) {
+  if (!hasLegacyWorkspaceTabs(threadID)) return;
+  writeThreadWorkspaceState(threadID, (state) => state.notice === workspaceLegacyTabsNotice
+    ? state : { ...state, notice: workspaceLegacyTabsNotice });
 }
 
 function tryAddTab(
@@ -436,7 +562,8 @@ export function openWorkspaceFile(
   });
 }
 
-export function updateWorkspaceFileTabPath(threadID: string, tabID: string, nextPath: string) {
+export function updateWorkspaceFileTabPath(threadID: string, tabID: string, nextPath: string, expectedScope?: string) {
+  if (expectedScope !== undefined && workspaceScopeKey(threadID) !== expectedScope) return;
   writeThreadWorkspaceState(threadID, (state) => {
     const normalized = normalizeFilePath(nextPath);
     let changed = false;
@@ -563,7 +690,8 @@ export function setWorkspaceWidth(threadID: string, width: number) {
   writeThreadWorkspaceState(threadID, (state) => (state.width === clamped ? state : { ...state, width: clamped }));
 }
 
-export function setWorkspaceTerminalSession(threadID: string, sessionID: string, expectedSessionID?: string) {
+export function setWorkspaceTerminalSession(threadID: string, sessionID: string, expectedSessionID?: string, expectedScope?: string) {
+  if (expectedScope !== undefined && workspaceScopeKey(threadID) !== expectedScope) return;
   writeThreadWorkspaceState(threadID, (state) => {
     if (expectedSessionID !== undefined && state.terminalSessionID !== expectedSessionID) return state;
     const nextHad = Boolean(state.hadTerminalSession || sessionID);
@@ -576,8 +704,8 @@ export function setWorkspaceTerminalSession(threadID: string, sessionID: string,
   });
 }
 
-export function setWorkspaceTerminalShell(threadID: string, shellName: string) {
-  if (!shellName) return;
+export function setWorkspaceTerminalShell(threadID: string, shellName: string, expectedScope?: string) {
+  if (!shellName || (expectedScope !== undefined && workspaceScopeKey(threadID) !== expectedScope)) return;
   writeThreadWorkspaceState(threadID, (state) => {
     if (state.terminalShellName === shellName &&
       state.tabs.every((tab) => tab.kind !== "terminal" || tab.shellName === shellName)) {
@@ -659,7 +787,10 @@ export function workspaceCollapseAriaLabel(kind: WorkspaceTab["kind"], t: Locale
 }
 
 export function useThreadWorkspaceState(threadID: string): ThreadWorkspaceState {
-  const getSnapshot = useCallback(() => getThreadWorkspaceState(threadID), [threadID]);
+  const storeID = useConnectionStore((state) => state.health?.data_store_id ?? "");
+  const baseURL = useConnectionStore((state) => state.apiBaseURL ?? "");
+  const generation = useConnectionStore((state) => state.connectionGeneration);
+  const getSnapshot = useCallback(() => getThreadWorkspaceState(threadID), [threadID, storeID, baseURL, generation]);
   const state = useSyncExternalStore(subscribeWorkspaceTabs, getSnapshot, emptyThreadWorkspaceState);
   return useMemo(() => state, [state]);
 }

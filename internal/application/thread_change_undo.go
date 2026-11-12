@@ -278,17 +278,34 @@ func (s *ThreadChangeUndoService) Undo(ctx context.Context, threadID string, req
 	after, captureErr := workspacecheckpoint.Capture(finishCtx, workspacecheckpoint.CaptureRequest{ID: idgen.New("thread-undo-after"), RunID: run.ID, MissionID: mission.ID, SessionID: run.SessionID,
 		WorkspaceID: files.Workspace.ID, WorkspaceRoot: files.Workspace.RootPath, Trigger: workspacecheckpoint.TriggerRewindResult, Phase: workspacecheckpoint.PhaseAfter,
 		TriggerReceiptID: t.ID, CreatedAt: time.Now().UTC()})
-	if captureErr != nil {
+	// The durable claim is now "applying", so every path below must land a
+	// terminal transaction row: requireThreadChangeUndoIdleTx fences the
+	// workspace out of undo and checkpoint journaling while a transaction
+	// stays prepared or applying, and the startup-only reconcile would
+	// otherwise be the only way to clear a stranded claim. Post-apply
+	// failures record the same interrupted outcome the verify-drift path
+	// uses and keep the caller-facing error.
+	interrupt := func(cause error) error {
 		r.State = "partial"
 		r.Conflicts = append(r.Conflicts, ThreadChangeUndoConflict{Reason: "restore_failed"})
-		return r, errors.Join(applyErr, captureErr)
+		t.Status = workspacecheckpoint.TransactionInterrupted
+		t.ErrorCode = "restore_failed"
+		t.UpdatedAt = time.Now().UTC()
+		t.CompletedAt = &t.UpdatedAt
+		if _, _, updateErr := s.store.UpdateWorkspaceCheckpointTransaction(finishCtx, t); updateErr != nil {
+			return errors.Join(cause, updateErr)
+		}
+		return cause
+	}
+	if captureErr != nil {
+		return r, interrupt(errors.Join(applyErr, captureErr))
 	}
 	if err := validateThreadUndoObservation(files.Workspace.RootPath, after, paths); err != nil {
-		return r, apperror.Normalize(err)
+		return r, interrupt(apperror.Normalize(err))
 	}
 	after = scopeThreadUndoSnapshot(after, paths)
 	if _, _, err = s.store.CreateWorkspaceCheckpoint(finishCtx, after); err != nil {
-		return r, apperror.Normalize(err)
+		return r, interrupt(apperror.Normalize(err))
 	}
 	classifyThreadUndoPaths(&r, target, after)
 	verification, verifyErr := workspacecheckpoint.PreviewRestore(target, target, after)

@@ -71,7 +71,7 @@ function ConnectionsSettings({ client, threadID, sourceRunID, onSelect, onOpenGi
   const run = sourceRunID ? detail?.runs.find((item) => item.run.id === sourceRunID)?.run
     ?? (detail?.active_run?.id === sourceRunID ? detail.active_run : detail?.last_run?.id === sourceRunID ? detail.last_run : undefined)
     : detail?.active_run ?? detail?.last_run;
-  return <><h1>{t("连接与环境", "Connections & environment")}</h1><p className="v2-settings-lead">{t("连接模型，准备项目需要的工具，然后回到任务开始工作。", "Connect a model, prepare your project tools, then return to your task.")}</p>
+  return <><h1>{t("连接与环境", "Connections & environment")}</h1>
     <section className="v2-connection-task" aria-label={t("当前任务", "Current task")}>
       <div><strong>{threadID ? detail?.thread.title || t("当前任务", "Current task") : t("从一个任务开始", "Start with a task")}</strong>
         <p>{threadID ? t("在下面调整连接与选项，完成后继续对话。", "Adjust connections and options below, then continue the conversation.") : t("打开项目，选好模型，在对话中描述你想完成的工作。", "Open a project, choose a model, and describe what you want to do.")}</p></div>
@@ -169,7 +169,6 @@ function GeneralSettings({ client, threadID, workspaces, onPermissions }: {
   const [saveError, setSaveError] = useState(false);
   return <>
     <h1>{t("常规", "General")}</h1>
-    <p className="v2-settings-lead">{t("调整应用偏好。项目访问范围和执行环境可在「当前任务权限」中设置。", "Adjust app preferences. Manage project access and execution environments in Current task permissions.")}</p>
     <section className="v2-settings-section"><h2>{t("常规", "General")}</h2>
       <div className="v2-settings-card">
         <SettingRow detail={t("新对话中选择项目；桌面应用可直接打开本机文件夹", "Choose a project in a new conversation. The desktop app can open local folders directly.")} title={t("项目", "Projects")}>
@@ -446,7 +445,7 @@ function ArchivedSettings({ client, onOpenThread }: { client: APIClient; onOpenT
     .map((thread) => [thread.id, thread])).values()], [query.data]);
   const threads = useMemo(() => loaded.filter((thread) => !normalized ||
     thread.title.toLocaleLowerCase().includes(normalized)), [normalized, loaded]);
-  return <><h1>{t("已归档的聊天", "Archived chats")}</h1><p className="v2-settings-lead">{t("在这里查看归档对话及其记录。选择「取消归档」可将对话放回侧栏。", "View archived conversations and their records. Unarchive a conversation to return it to the sidebar.")}</p>
+  return <><h1>{t("已归档的聊天", "Archived chats")}</h1>
     <label className="v2-archive-search"><Search aria-hidden="true" size={15} />
       <input aria-label={t("搜索已归档的聊天", "Search archived chats")} onChange={(event) => setSearch(event.target.value)}
         placeholder={t("搜索已归档的聊天", "Search archived chats")} type="search" value={search} /></label>
@@ -522,9 +521,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {section === "configuration" && <V2WebAccessSettings mode={defaultWebAccessMode} targets={defaultWebAccessTargets}
         onChange={onDefaultWebAccessChange} hasThread={Boolean(threadID)}
         onOpenPermissions={() => onSelectSection("permissions")} onOpenEnvironment={() => onSelectSection("environment")} />}
-      {section === "permissions" && <><h1>{t("权限", "Permissions")}</h1><p className="v2-settings-lead">
-        {t("为当前任务选择操作确认方式。运行中提高权限会从下一次执行生效；降低权限会收紧相应操作范围。", "Choose approval behavior for the current task. Permission increases during a run apply to the next run; reductions restrict the corresponding actions.")}
-      </p>
+      {section === "permissions" && <><h1>{t("权限", "Permissions")}</h1>
         <section className="v2-settings-section"><h2>{t("任务权限", "Task permissions")}</h2>
           <V2PermissionControl client={client} threadID={threadID} variant="settings"
             onOpenModelSettings={() => onSelectSection("models")} />
@@ -536,7 +533,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {section === "usage" && <Suspense fallback={<p role="status">{t("正在加载用量统计…", "Loading usage…")}</p>}>
         <UsageSettings client={client} threadID={threadID} onOpenThread={onOpenThread} />
       </Suspense>}
-      {section === "environment" && <><h1>{t("执行环境设置", "Execution environment settings")}</h1><p className="v2-settings-lead">{t("管理执行环境、内置终端与验证功能。各项设置下方会说明生效时间。", "Manage execution environments, the integrated terminal, and verification features. Each setting explains when it takes effect.")}</p>
+      {section === "environment" && <><h1>{t("执行环境设置", "Execution environment settings")}</h1>
         <Suspense fallback={<p role="status">{t("正在加载执行环境设置…", "Loading execution environment settings…")}</p>}><SandboxEnvironmentPanel client={client} />
           <TerminalSettingsPanel /><VerificationSettingsPanel client={client} /></Suspense></>}
       {section === "connections" && <ConnectionsSettings client={client} threadID={threadID} sourceRunID={sourceRunID}
