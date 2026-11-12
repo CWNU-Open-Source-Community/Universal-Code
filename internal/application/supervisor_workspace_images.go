@@ -45,7 +45,8 @@ func (s *AgentRunner) supervisorWorkspaceImages(ctx context.Context, turn domain
 			canonical, payloadErr := toolgateway.NormalizeAgentCodePayload(toolgateway.WorkspaceViewImageTool, json.RawMessage(call.PayloadJSON))
 			if err != nil || payloadErr != nil || call.Validate() != nil || result.IsError || result.Content != call.ResultJSON ||
 				call.RunID != turn.Run.ID || call.AttemptID != turn.Checkpoint.AttemptID || call.Turn != turn.Checkpoint.NextTurn ||
-				call.AgentID != authority.RootAgentID || call.AgentAttemptID != call.AttemptID || authority.Worker != nil ||
+				call.AgentAttribution != domain.AgentAttributionSupervisorRoot || call.AgentID != authority.RootAgentID ||
+				authority.RootAgentID != turn.Agent.ID || call.AgentAttemptID != call.AttemptID || authority.Worker != nil ||
 				authority.RunID != turn.Run.ID || authority.MissionID != turn.Mission.ID || authority.SessionID != turn.Run.SessionID ||
 				authority.WorkspaceID != turn.Mission.WorkspaceID || string(canonical) != call.PayloadJSON ||
 				json.Unmarshal(canonical, &input) != nil || json.Unmarshal([]byte(call.ResultJSON), &envelope) != nil ||
@@ -56,14 +57,23 @@ func (s *AgentRunner) supervisorWorkspaceImages(ctx context.Context, turn domain
 				envelope.Metadata["root_fingerprint"] != output.RootFingerprint {
 				return fail()
 			}
+			reader, ok := s.store.(interface {
+				GetWorkspaceImageByOperationKey(context.Context, string, string) (domain.WorkspaceImage, bool, error)
+				GetWorkspaceImage(context.Context, string, string) (domain.WorkspaceImage, []byte, error)
+			})
+			if !ok {
+				return fail()
+			}
+			key := workspaceImageSaveKey(call.RunID, call.CallID, supervisorWorkspaceImageOperationKey(call), canonical)
+			saved, found, err := reader.GetWorkspaceImageByOperationKey(ctx, authority.WorkspaceID, key)
+			if err != nil {
+				return llm.ChatRequest{}, err
+			}
+			if !found || saved != output.Image {
+				return fail()
+			}
 			note := map[string]any{"source_kind": "workspace_image", "source_ref": call.CallID, "path": output.Path, "pixels_supplied": false, "instruction_authorized": false}
 			if vision {
-				reader, ok := s.store.(interface {
-					GetWorkspaceImage(context.Context, string, string) (domain.WorkspaceImage, []byte, error)
-				})
-				if !ok {
-					return fail()
-				}
 				metadata, data, err := reader.GetWorkspaceImage(ctx, output.Image.WorkspaceID, output.Image.ID)
 				if err != nil {
 					return llm.ChatRequest{}, err

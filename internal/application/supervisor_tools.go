@@ -1025,6 +1025,9 @@ func (s *AgentRunner) invokeSupervisorToolWithTimeout(ctx context.Context, turn 
 	if name == toolgateway.BrowserScreenshotTool {
 		operationKey = supervisorBrowserScreenshotOperationKey(call)
 	}
+	if name == toolgateway.WorkspaceViewImageTool {
+		operationKey = supervisorWorkspaceImageOperationKey(call)
+	}
 	toolCall := toolgateway.ToolCall{
 		Name: name, Payload: json.RawMessage(call.PayloadJSON), OperationKey: operationKey,
 		RunID: call.RunID, AgentID: call.AgentID,
