@@ -289,6 +289,53 @@ describe.each(["menu", "settings"] as const)("V2ApprovalModeControl %s", (varian
   });
 });
 
+describe.each(["menu", "settings"] as const)("V2ApprovalModeControl pre-creation %s", (variant) => {
+  const role = variant === "menu" ? "menuitemradio" : "button";
+  async function open(user: ReturnType<typeof userEvent.setup>) {
+    if (variant === "menu") await user.click(screen.getByRole("button", { expanded: false }));
+  }
+
+  it("confirms the choice once without presenting a running activation", async () => {
+    const user = userEvent.setup();
+    const initial = props({ variant, selectionOnly: true });
+    const view = render(<V2ApprovalModeControl {...initial} />);
+    await open(user);
+    expect(view.container.textContent).not.toMatch(/已激活|未激活|重新激活/u);
+    await user.click(screen.getByRole(role, { name: "完全访问权限" }));
+    const dialog = screen.getByRole("dialog", { name: "确认完全访问权限？" });
+    expect(within(dialog).getByText(/项目文件、执行本机命令和访问公共网络/u)).toBeVisible();
+    expect(initial.onRequestChange).not.toHaveBeenCalled();
+    await user.dblClick(within(dialog).getByRole("button", { name: "确认" }));
+    expect(initial.onRequestChange).toHaveBeenCalledExactlyOnceWith({ mode: "full", confirmFull: true });
+    view.rerender(<V2ApprovalModeControl {...initial} mode="full" fullActivation="active" />);
+    if (variant === "menu") {
+      const trigger = screen.getByRole("button", { expanded: false });
+      expect(trigger).toHaveTextContent(/^完全访问权限$/u);
+      expect(trigger).toHaveAttribute("title", "完全访问权限");
+    }
+    await open(user);
+    expect(screen.getByRole(role, { name: "完全访问权限" })).toHaveAccessibleDescription("允许文件、本机命令与公共网络访问，无需逐次批准。");
+    expect(view.container.textContent).not.toMatch(/已激活|未激活|重新激活|已选择/u);
+  });
+
+  it("allows a fresh confirmation after the pre-creation Full choice expires", async () => {
+    const user = userEvent.setup();
+    const initial = props({ variant, selectionOnly: true, mode: "full", fullActivation: "inactive" });
+    const view = render(<V2ApprovalModeControl {...initial} />);
+    await open(user);
+    const confirmationRole = variant === "menu" ? "menuitem" : "button";
+    await user.click(screen.getByRole(confirmationRole, { name: "确认完全访问权限" }));
+    expect(initial.onRequestChange).not.toHaveBeenCalled();
+    await user.click(within(screen.getByRole("dialog", { name: "确认完全访问权限？" })).getByRole("button", { name: "取消" }));
+    expect(initial.onRequestChange).not.toHaveBeenCalled();
+    await open(user);
+    await user.click(screen.getByRole(confirmationRole, { name: "确认完全访问权限" }));
+    await user.click(within(screen.getByRole("dialog", { name: "确认完全访问权限？" })).getByRole("button", { name: "确认" }));
+    expect(initial.onRequestChange).toHaveBeenCalledExactlyOnceWith({ mode: "full", confirmFull: true });
+    expect(view.container.textContent).not.toMatch(/已激活|未激活|重新激活/u);
+  });
+});
+
 describe("V2ApprovalModeControl changing host state", () => {
   it("blocks repeated Ask/Auto submissions as the host marks a request pending", async () => {
     const user = userEvent.setup();
