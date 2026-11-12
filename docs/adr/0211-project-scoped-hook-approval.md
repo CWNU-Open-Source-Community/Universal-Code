@@ -1,7 +1,7 @@
 # ADR 0211: project-scoped hook declarations with operator approval staging
 
-- Status: Proposed (design revision after delegate review; the script
-  hook runtime and its operator source are PR-carried, not on main)
+- Status: Proposed (design revision after delegate review; requires the
+  script hook runtime and operator source defined by ADR 0197)
 - Date: 2026-11-11
 - Scope: hook sources, workspace trust boundaries, and the plugin review
   surface
@@ -55,8 +55,14 @@ why it needs this design decision before any implementation.
    interpreter, change arguments, or alter filters while the approval
    stands. The manifest closes that channel: any byte drift anywhere in
    the manifest voids the approval and re-stages the declaration for
-   review. The per-fire re-verification (os.Root re-open, digest
-   re-check) extends to every manifest file.
+   review. Each fire must construct an immutable execution snapshot from
+   the manifest and verify every captured file against its approved
+   digest. Execute only that verified snapshot, including imported
+   helpers; interpreter arguments and module lookup must not reopen
+   mutable workspace files. Reopening paths with os.Root and checking
+   digests alone leaves a check/use race and does not guarantee that the
+   executed bytes match the approved manifest. A changed or incomplete
+   snapshot fails closed and re-stages the declaration.
 3. **The approval record is new durable state, specified.** A
    workspace-scoped `hook_approvals` record: workspace ID, declaration
    fingerprint (the manifest above), script digest, helper manifest
@@ -107,7 +113,8 @@ why it needs this design decision before any implementation.
    code in a workspace the agent itself can edit mid-run. The design
    acknowledges this as a deliberate trust transfer and leans on the
    mitigations that make it honest: the manifest approval binds
-   everything, every fire re-verifies digests, the script environment
+   everything, every fire executes a verified immutable manifest snapshot,
+   the script environment
    is minimal and non-inherited, and the revocation is immediate. The
    reserved operator audit convention extends with an explicit
    project-source marker so audit rows answer "which workspace's hook".
@@ -128,16 +135,12 @@ why it needs this design decision before any implementation.
 - Secrets- or path-scoped auto-approval was rejected: a "safe" directory
   is still repository content, and scoping rules regress into policy
   parsing that the manifest-pinned approval model handles honestly.
-- Executing project scripts from a repo-external snapshot, or re-resolving
-  helper files dynamically at each fire, was rejected as the apparent
-  stronger alternative: copying scripts out of the repository at approval
-  time severs the project from its own workflow (edits would need a
-  re-import step the repository cannot perform), and dynamic helper
-  resolution reintroduces exactly the drift window the manifest closes —
-  a helper file could change between resolution and execution. The
-  manifest achieves the same guarantee honestly: every resolved file is
-  digest-pinned at approval, re-verified at each fire, and any edit
-  re-stages the declaration for review.
+- Retaining only an approval-time copy was rejected: it would keep
+  executing old workflow content after repository edits. Decision 2
+  instead captures and verifies a fresh immutable snapshot for each fire.
+  Dynamically resolving helpers from the workspace after verification
+  was rejected because a helper can change between the check and use;
+  all manifest-bound execution must read the verified snapshot.
 - Denying project hooks entirely (the status quo) keeps the trust model
   but leaves the gap: every repository's workflow hooks depend on
   per-machine operator memory.
@@ -156,7 +159,9 @@ why it needs this design decision before any implementation.
   escaping files fail closed; the manifest pins every resolved file.
 - Approval: the operator act activates a manifest-pinned declaration;
   any drift voids approval and re-stages; revocation deactivates; the
-  multi-workspace N-approval rule holds.
+  multi-workspace N-approval rule holds. Mutating a workspace script or
+  helper after snapshot verification cannot alter the bytes executed;
+  execution and module lookup use only the verified snapshot.
 - Engine merge: approved project hooks execute under the same ceilings;
   unapproved proposals stay inert and ceiling-free; a malformed project
   source degrades alone while operator and plugin hooks keep working.
