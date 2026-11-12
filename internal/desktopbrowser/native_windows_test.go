@@ -11,6 +11,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -126,7 +127,7 @@ func (c *probeCDP) call(method string, params any) json.RawMessage {
 }
 func (c *probeCDP) evaluate(expression string) string {
 	c.t.Helper()
-	raw := c.call("Runtime.evaluate", map[string]any{"expression": expression, "returnByValue": true})
+	raw := c.call("Runtime.evaluate", map[string]any{"expression": expression, "returnByValue": true, "awaitPromise": true})
 	var result struct {
 		Result struct {
 			Value any `json:"value"`
@@ -159,8 +160,20 @@ func TestNativeBrowserProbe(t *testing.T) {
 			fmt.Fprint(w, `onmessage=()=>fetch('/write',{method:'POST',body:'worker body'}).then(r=>postMessage(r.status))`)
 			return
 		}
+		if r.URL.Path == "/shared.js" {
+			w.Header().Set("Content-Type", "text/javascript")
+			fmt.Fprint(w, `onconnect=e=>{e.ports[0].onmessage=()=>fetch('/write',{method:'POST',body:'shared body'}).then(r=>e.ports[0].postMessage(r.status))}`)
+			return
+		}
+		if r.URL.Path == "/sw.js" {
+			w.Header().Set("Content-Type", "text/javascript")
+			fmt.Fprint(w, `self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('message',e=>e.waitUntil(fetch('/write',{method:'POST',body:'service body'})))`)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html")
-		http.SetCookie(w, &http.Cookie{Name: "shared_login", Value: "persisted", Path: "/", MaxAge: 3600})
+		if r.URL.Path == "/a" {
+			http.SetCookie(w, &http.Cookie{Name: "shared_login", Value: "persisted", Path: "/", MaxAge: 3600})
+		}
 		fmt.Fprintf(w, `<!doctype html><title>Native %s</title><button id="increment" onclick="this.dataset.count=String(Number(this.dataset.count||0)+1)">Increment</button><script>window.worker=new Worker('/worker.js')</script>`, r.URL.Path)
 	}))
 	defer server.Close()
@@ -192,6 +205,15 @@ func TestNativeBrowserProbe(t *testing.T) {
 	if got := cdp.evaluate(`document.cookie`); !strings.Contains(got, "shared_login=persisted") {
 		t.Fatalf("missing login cookie: %s", got)
 	}
+	for _, kind := range []string{"mouseMoved", "mousePressed", "mouseReleased"} {
+		cdp.call("Input.dispatchMouseEvent", map[string]any{"type": kind, "x": 16, "y": 16, "button": "left", "clickCount": 1})
+	}
+	if got := cdp.evaluate(`document.getElementById('increment').dataset.count`); got != "2" {
+		t.Fatalf("actual native page mouse click did not affect DOM: %s", got)
+	}
+	if page.(*nativePage).cursor == 0 {
+		t.Fatalf("CDP mouse input did not create a native agent cursor: %v", page.(*nativePage).cursorError)
+	}
 	if err = page.Navigate(ctx, server.URL+"/b"); err != nil {
 		t.Fatal(err)
 	}
@@ -213,14 +235,25 @@ func TestNativeBrowserProbe(t *testing.T) {
 	if err = connection.WriteJSON(map[string]any{"id": 99, "method": "Target.createTarget", "params": map[string]any{}, "sessionId": page.ID()}); err == nil {
 		t.Fatal("page connection accepted a Target mutation")
 	}
+	if got := cdp.evaluate(`window.shared=new SharedWorker('/shared.js');shared.port.start();'ready'`); got != "ready" {
+		t.Fatal(got)
+	}
+	if got := cdp.evaluate(`navigator.serviceWorker.register('/sw.js').then(()=>navigator.serviceWorker.ready).then(r=>{window.sw=r.active;return 'ready'})`); got != "ready" {
+		t.Fatal(got)
+	}
 	lease, err := host.AcquireControl(ctx, page.ID())
 	if err != nil {
 		t.Fatal(err)
 	}
 	var seen atomic.Int32
+	var bodyMu sync.Mutex
+	bodies := map[string]bool{}
 	err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func() error) error {
 		seen.Add(1)
 		if strings.HasSuffix(request.URL, "/write") {
+			bodyMu.Lock()
+			bodies[string(request.Body)] = request.BodyComplete
+			bodyMu.Unlock()
 			return fmt.Errorf("denied by probe")
 		}
 		return dispatch()
@@ -229,9 +262,52 @@ func TestNativeBrowserProbe(t *testing.T) {
 		t.Fatal(err)
 	}
 	cdp.call("Runtime.evaluate", map[string]any{"expression": "worker.postMessage('go')"})
-	waitProbe(t, ctx, func() bool { return seen.Load() > 0 })
+	cdp.call("Runtime.evaluate", map[string]any{"expression": "shared.port.postMessage('go');sw.postMessage('go')"})
+	waitProbe(t, ctx, func() bool { bodyMu.Lock(); defer bodyMu.Unlock(); return len(bodies) >= 3 })
+	bodyMu.Lock()
+	for _, kind := range []string{"worker body", "shared body", "service body"} {
+		if !bodies[kind] {
+			t.Errorf("native request body missing/incomplete for %q: %#v", kind, bodies)
+		}
+	}
+	bodyMu.Unlock()
 	if writes.Load() != 0 {
 		t.Fatal("worker POST bypassed native policy")
+	}
+	var enabled uintptr
+	_ = ui.dispatcher.Invoke(ctx, func() error {
+		enabled, _, _ = user32.NewProc("IsWindowEnabled").Call(page.(*nativePage).container)
+		return nil
+	})
+	if enabled == 0 {
+		t.Fatal("agent lease disabled native human input")
+	}
+	leaseConnection, err := page.OpenCDP(ctx, CDPOptions{Dispatch: lease.Dispatch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked, unblock := make(chan struct{}), make(chan struct{})
+	if err = ui.dispatcher.Post(func() { close(blocked); <-unblock }); err != nil {
+		t.Fatal(err)
+	}
+	<-blocked
+	writeDone := make(chan error, 1)
+	go func() {
+		writeDone <- leaseConnection.WriteJSON(map[string]any{"id": 1, "method": "Runtime.evaluate", "params": map[string]any{"expression": "window.revokedWrite=true"}, "sessionId": page.ID()})
+	}()
+	waitProbe(t, ctx, func() bool {
+		ui.dispatcher.mu.Lock()
+		defer ui.dispatcher.mu.Unlock()
+		return len(ui.dispatcher.queue) > 0
+	})
+	lease.Cancel()
+	close(unblock)
+	if err = <-writeDone; err == nil {
+		t.Fatal("revoked queued CDP write was dispatched")
+	}
+	_ = leaseConnection.Close()
+	if got := cdp.evaluate(`String(window.revokedWrite)`); got != "undefined" {
+		t.Fatalf("revoked UI write mutated native document: %s", got)
 	}
 	if err = lease.Release(ctx); err != nil {
 		t.Fatal(err)
@@ -250,7 +326,7 @@ func TestNativeBrowserProbe(t *testing.T) {
 	if err = second.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("real WebView2 parent=%x child=%x: DOM interaction, navigation/history, shared cookie, exact-page CDP, worker network deny and manual resume passed", ui.hwnd, page.(*nativePage).container)
+	t.Logf("real WebView2 parent=%x child=%x cursor=%x: DOM/mouse interaction, history, cookie, exact-page CDP, dedicated/shared/service-worker request+body denial, native human input and queued lease cancellation passed", ui.hwnd, page.(*nativePage).container, page.(*nativePage).cursor)
 }
 
 func waitProbe(t *testing.T, ctx context.Context, predicate func() bool) {

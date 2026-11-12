@@ -101,7 +101,11 @@ func newHandler(iid string, invoke func(uintptr, uintptr) uintptr) *comHandler {
 func (h *comHandler) pointer() uintptr { return uintptr(unsafe.Pointer(h)) }
 func (h *comHandler) release()         { handlerRelease(h.pointer()) }
 func handlerQuery(this, iid, out uintptr) uintptr {
-	h := (*comHandler)(unsafe.Pointer(this))
+	value, ok := handlerRoots.Load(this)
+	if !ok {
+		return uintptr(0x80004002)
+	}
+	h := value.(*comHandler)
 	if out == 0 {
 		return uintptr(0x80004003)
 	}
@@ -118,10 +122,18 @@ func handlerQuery(this, iid, out uintptr) uintptr {
 	return 0
 }
 func handlerAddRef(this uintptr) uintptr {
-	return uintptr((*comHandler)(unsafe.Pointer(this)).refs.Add(1))
+	value, ok := handlerRoots.Load(this)
+	if !ok {
+		return 0
+	}
+	return uintptr(value.(*comHandler).refs.Add(1))
 }
 func handlerRelease(this uintptr) uintptr {
-	h := (*comHandler)(unsafe.Pointer(this))
+	value, ok := handlerRoots.Load(this)
+	if !ok {
+		return 0
+	}
+	h := value.(*comHandler)
 	n := h.refs.Add(-1)
 	if n == 0 {
 		handlerRoots.Delete(this)
@@ -129,7 +141,11 @@ func handlerRelease(this uintptr) uintptr {
 	return uintptr(n)
 }
 func handlerInvoke(this, a, b uintptr) uintptr {
-	return (*comHandler)(unsafe.Pointer(this)).invoke(a, b)
+	value, ok := handlerRoots.Load(this)
+	if !ok {
+		return uintptr(0x8000ffff)
+	}
+	return value.(*comHandler).invoke(a, b)
 }
 
 const (

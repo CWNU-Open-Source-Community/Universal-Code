@@ -41,6 +41,8 @@ type nativePage struct {
 	id               string
 	container        uintptr
 	cursor           uintptr
+	cursorError      error
+	cursorPoint      nativePoint
 	emulatedWidth    float64
 	controller, core *comObject
 	handlers         []*comHandler
@@ -375,6 +377,7 @@ func (p *nativePage) SetSurface(ctx context.Context, bounds Bounds, visible bool
 		if err := comCall(p.controller, controllerPutIsVisible, value); err != nil {
 			return err
 		}
+		p.positionCursor()
 		return comCall(p.controller, controllerNotifyPosition)
 	})
 }
@@ -418,6 +421,10 @@ func (p *nativePage) closeOnUI() {
 	}
 	p.handlers = nil
 	if p.container != 0 {
+		if p.cursor != 0 {
+			destroyWindow.Call(p.cursor)
+			p.cursor = 0
+		}
 		destroyWindow.Call(p.container)
 		p.container = 0
 	}

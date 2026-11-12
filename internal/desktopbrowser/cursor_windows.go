@@ -4,6 +4,7 @@ package desktopbrowser
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"sync"
 	"unsafe"
@@ -59,14 +60,19 @@ func (p *nativePage) updateAgentCursor(method string, params json.RawMessage) {
 			wc := windowClass{Size: uint32(unsafe.Sizeof(windowClass{})), WndProc: cursorWindowCallback, ClassName: cursorClass, Background: brush}
 			atom, _, err := user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)))
 			if atom == 0 {
-				cursorClassError = err
+				cursorClassError = fmt.Errorf("register agent cursor: %w", err)
 			}
 		})
 		if cursorClassError != nil {
+			p.cursorError = cursorClassError
 			return
 		}
-		p.cursor, _, _ = createWindowEx.Call(0x80000|0x20|0x08000000, uintptr(unsafe.Pointer(cursorClass)), 0, 0x40000000, 0, 0, 22, 30, p.container, 0, 0, 0)
+		var err error
+		// An owned layered popup also works in Go test/probe executables that
+		// lack the Windows-8 manifest required for layered child windows.
+		p.cursor, _, err = createWindowEx.Call(0x80000|0x20|0x80|0x08000000, uintptr(unsafe.Pointer(cursorClass)), 0, 0x80000000, 0, 0, 22, 30, p.host.options.ParentHWND, 0, 0, 0)
 		if p.cursor == 0 {
+			p.cursorError = fmt.Errorf("create agent cursor: %w", err)
 			return
 		}
 		points := []nativePoint{{0, 0}, {0, 24}, {6, 18}, {11, 29}, {16, 26}, {11, 16}, {21, 16}}
@@ -94,5 +100,22 @@ func (p *nativePage) updateAgentCursor(method string, params json.RawMessage) {
 		return
 	}
 	// HWND_TOP and SWP_NOACTIVATE preserve the operator's real OS pointer/focus.
-	setWindowPos.Call(p.cursor, 0, uintptr(x), uintptr(y), 22, 30, 0x10|0x40)
+	p.cursorPoint = nativePoint{x, y}
+	p.positionCursor()
+}
+
+func (p *nativePage) positionCursor() {
+	if p.cursor == 0 {
+		return
+	}
+	visible, _, _ := user32.NewProc("IsWindowVisible").Call(p.container)
+	if visible == 0 {
+		showWindow.Call(p.cursor, 0)
+		return
+	}
+	point := p.cursorPoint
+	if ok, _, _ := user32.NewProc("ClientToScreen").Call(p.container, uintptr(unsafe.Pointer(&point))); ok == 0 {
+		return
+	}
+	setWindowPos.Call(p.cursor, 0, uintptr(point.X), uintptr(point.Y), 22, 30, 0x10|0x40)
 }
