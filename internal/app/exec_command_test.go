@@ -81,7 +81,7 @@ func (p *execTestProvider) Chat(ctx context.Context, request llm.ChatRequest) (*
 		Text:     p.response,
 		Provider: p.Name(),
 		Model:    "model",
-		Usage:    llm.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+		Usage:    llm.Usage{InputTokens: 3, OutputTokens: 5, TotalTokens: 8},
 	}, nil
 }
 func (p *execTestProvider) StreamChat(ctx context.Context, req llm.ChatRequest) (<-chan llm.ChatChunk, error) {
@@ -681,5 +681,72 @@ func TestExecContinueArchivedThreadFailsClearly(t *testing.T) {
 	}
 	if strings.Contains(continueErr.Error(), "sql: no rows") {
 		t.Fatalf("raw SQL error leaked: %v", continueErr)
+	}
+}
+
+func TestExecJSONOutputIncludesUsage(t *testing.T) {
+	home := t.TempDir()
+	st, err := store.Open(filepath.Join(home, "exec-usage.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{
+		ID: "exec-usage-ws", Name: "exec-usage-ws",
+		RootPath:  t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	encoded, err := json.Marshal(domain.RootAction{
+		Version: domain.RootLifecycleVersion, Kind: domain.RootActionFinish,
+		Message: "Task completed successfully.", Summary: "Done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &execTestProvider{response: string(encoded)}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+
+	var out, errOut bytes.Buffer
+	a := &App{home: home, out: &out, errOut: &errOut, store: st, router: router,
+		checker: policy.NewDefaultChecker()}
+
+	execErr := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-usage-ws",
+		"--route", provider.Name() + "/model",
+		"--json",
+		"Complete the task",
+	})
+	if execErr != nil {
+		t.Fatalf("exec with --json failed: %v", execErr)
+	}
+	_ = provider
+
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse JSON output: %v, raw: %s", err, out.String())
+	}
+
+	usage, ok := result["usage"].(map[string]any)
+	if !ok {
+		t.Fatalf("usage object missing from JSON output: %v", result)
+	}
+	if usage["total_tokens"] == nil {
+		t.Fatal("usage.total_tokens is missing")
+	}
+	if usage["duration_ms"] == nil {
+		t.Fatal("usage.duration_ms is missing")
+	}
+	if usage["turns"] == nil {
+		t.Fatal("usage.turns is missing")
+	}
+	if result["reply"] != "Task completed successfully." {
+		t.Fatalf("reply mismatch: %v", result["reply"])
+	}
+	if result["stop_reason"] != "turn_finish" {
+		t.Fatalf("a finished turn must report turn_finish, got: %v", result["stop_reason"])
 	}
 }

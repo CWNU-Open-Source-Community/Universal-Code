@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"strings"
+	"time"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/session"
@@ -44,12 +45,17 @@ type OneShotRequest struct {
 // run status at return, and the last committed assistant reply (empty when
 // the run paused before producing one).
 type OneShotResult struct {
-	ThreadID   string
-	RunID      string
-	RunStatus  string
-	TurnStatus string
-	StopReason string
-	Reply      string
+	ThreadID     string
+	RunID        string
+	RunStatus    string
+	TurnStatus   string
+	StopReason   string
+	Reply        string
+	InputTokens  int64
+	OutputTokens int64
+	TotalTokens  int64
+	DurationMs   int64
+	TurnCount    int
 }
 
 // Run executes one prompt to its turn boundary. A run that ends paused —
@@ -66,6 +72,7 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 		return OneShotResult{}, apperror.New(apperror.CodeInvalidArgument,
 			"one-shot prompt is empty")
 	}
+	started := time.Now()
 	result, err := s.turns.Execute(ctx, ExecuteThreadTurnRequest{
 		Version: request.Version, ThreadID: request.ThreadID, Content: content,
 		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy,
@@ -75,10 +82,22 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 	}
 	submission := result.Submission
 	out := OneShotResult{ThreadID: submission.Thread.ID, RunID: submission.Run.ID,
-		RunStatus: string(submission.Run.Status)}
+		RunStatus: string(submission.Run.Status), DurationMs: time.Since(started).Milliseconds()}
 	if result.Execution != nil && result.Execution.Handoff.Result != nil {
 		out.TurnStatus = string(result.Execution.Handoff.Result.Status)
 		out.StopReason = result.Execution.Handoff.Result.StopReason
+	}
+	// Aggregate token usage across all supervisor steps in this invocation.
+	// Execution is nil when the turn reached a boundary before any execution
+	// batch (for example an approval wait), so both aggregations share one
+	// nil guard.
+	if result.Execution != nil {
+		for _, step := range result.Execution.Execution.Steps {
+			out.InputTokens += int64(step.Usage.InputTokens)
+			out.OutputTokens += int64(step.Usage.OutputTokens)
+			out.TotalTokens += int64(step.Usage.TotalTokens)
+			out.TurnCount++
+		}
 	}
 	reply, replyErr := s.lastAssistantReply(ctx, submission.Session.ID)
 	if replyErr != nil {
