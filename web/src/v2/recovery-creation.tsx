@@ -129,6 +129,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
   const store = useV2RecoveryStore();
   const [intents, setIntents] = useState<CreationIntent[]>([]);
   const [observations, setObservations] = useState<Record<string, Observation>>({});
+  const [loadError, setLoadError] = useState("");
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const verifiedThreads = useRef(new Map<string, ThreadView>());
@@ -161,30 +162,39 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
     verifiedThreads.current.clear();
     setObservations({});
     setIntents([]);
-    let saved: CreationIntent[];
-    try {
-      saved = loadIntents().filter((intent) => intent.request.workspace_id === workspaceID);
+    setError("");
+    let stopRetry: (() => void) | undefined;
+    const load = () => {
+      let saved: CreationIntent[];
+      try {
+        saved = loadIntents().filter((intent) => intent.request.workspace_id === workspaceID);
+      } catch (failure) {
+        setLoadError(failure instanceof Error ? failure.message : invalid().message);
+        return false;
+      }
+      // Only a failed initial read listens to store changes. Once readable,
+      // typing and unrelated writes must not re-inspect unknown creations.
+      stopRetry?.(); stopRetry = undefined;
       setIntents(saved);
-      setError("");
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : invalid().message);
-      return;
-    }
-    for (const intent of saved) {
-      void inspect(intent, abort.signal).then((thread) => {
-        if (abort.signal.aborted) return;
-        if (thread && !intent.projectSkills?.refs.length) verifiedThreads.current.set(intent.operationID, thread);
-        setObservations((current) => ({ ...current, [intent.operationID]: thread
-          ? { thread, message: t("已找到原对话。点击“打开原对话”查看首条消息的提交结果。", "The original conversation was found. Open it to check the first message submission.") }
-          : { message: t("本次查询尚未找到创建记录。可点击“重新核对”；再次发送相同内容时会先核对原请求。", "No creation record was found. Check again; resending the same content checks the original request first.") } }));
-      }).catch(() => {
-        if (!abort.signal.aborted) setObservations((current) => ({ ...current,
-          [intent.operationID]: { message: t("暂时无法核对原创建请求，原内容与请求标识已保留。请点击“重新核对”查看结果。", "Could not check the original creation request. Its content and identity are kept. Select Check again to read the result.") } }));
-      });
-    }
-    return () => abort.abort();
-    // Only mounting, changing scope or an explicit read-only refresh scans the
-    // journal. Preparing a new send must not schedule an extra creation action.
+      setLoadError("");
+      for (const intent of saved) {
+        void inspect(intent, abort.signal).then((thread) => {
+          if (abort.signal.aborted) return;
+          if (thread && !intent.projectSkills?.refs.length) verifiedThreads.current.set(intent.operationID, thread);
+          setObservations((current) => ({ ...current, [intent.operationID]: thread
+            ? { thread, message: t("已找到原对话。点击“打开原对话”查看首条消息的提交结果。", "The original conversation was found. Open it to check the first message submission.") }
+            : { message: t("本次查询尚未找到创建记录。可点击“重新核对”；再次发送相同内容时会先核对原请求。", "No creation record was found. Check again; resending the same content checks the original request first.") } }));
+        }).catch(() => {
+          if (!abort.signal.aborted) setObservations((current) => ({ ...current,
+            [intent.operationID]: { message: t("暂时无法核对原创建请求，原内容与请求标识已保留。请点击“重新核对”查看结果。", "Could not check the original creation request. Its content and identity are kept. Select Check again to read the result.") } }));
+        });
+      }
+      return true;
+    };
+    if (!load()) stopRetry = store.subscribePrefix?.("", load);
+    return () => { stopRetry?.(); abort.abort(); };
+    // Mount/scope/explicit refresh scan once; a failed load waits for storage
+    // repair. Preparing a send must not schedule an extra creation action.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, client, workspaceID, refresh]);
 
@@ -244,7 +254,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
   };
 
   const notice = !store ? null : <>
-    {error && <p className="v2-notice tone-warning" role="alert">{localUIMessage(error, t)}</p>}
+    {(loadError || error) && <p className="v2-notice tone-warning" role="alert">{localUIMessage(loadError || error, t)}</p>}
     {intents.map((intent) => <section key={intent.operationID} className="v2-notice" aria-label={t("上次创建的对话", "Previously created conversation")}>
       <p>{intent.request.goal.slice(0, 120)}</p>
       <p role="status">{observations[intent.operationID]?.message ?? t("原创建请求已保存，结果尚待确认。可点击“重新核对”查看记录。", "The original creation request is saved and its result is unconfirmed. Select Check again to read the record.")}</p>
