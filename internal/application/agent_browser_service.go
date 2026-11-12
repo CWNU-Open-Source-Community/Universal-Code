@@ -27,6 +27,9 @@ type AgentBrowserStore interface {
 	GetRunExecutionPermission(context.Context, string) (domain.RunExecutionPermissionSnapshot, error)
 }
 type AgentBrowserOptions struct {
+	// SharedPage attaches the root Agent to a trusted host-owned exact page.
+	// Worker browser sessions retain their separate, disposable runtimes.
+	SharedPage       func(context.Context, browserruntime.AgentBrowserStartRequest) (browserruntime.AgentBrowserAttachedPage, error)
 	ServiceReadiness AgentBrowserServiceReadiness
 	HomePath         string
 	Capabilities     domain.ExecutionPermissionRuntimeCapabilities
@@ -70,7 +73,7 @@ type AgentBrowserView struct {
 	Cleanup          *browserruntime.AgentBrowserCleanup `json:"cleanup,omitempty"`
 	Capabilities     AgentBrowserCapabilities            `json:"capabilities"`
 }
-type agentBrowserRuntime interface {
+type AgentBrowserRuntime interface {
 	Navigate(context.Context, string) (browserruntime.AgentBrowserNavigation, error)
 	Snapshot(context.Context) (browserruntime.AgentBrowserSnapshot, error)
 	Click(context.Context, string, string) (browserruntime.AgentBrowserInteraction, error)
@@ -84,6 +87,8 @@ type agentBrowserRuntime interface {
 	Close(context.Context) (browserruntime.AgentBrowserCleanup, error)
 	Done() <-chan struct{}
 }
+type agentBrowserRuntime = AgentBrowserRuntime
+
 type agentBrowserViewportNavigator interface {
 	NavigateWithViewport(context.Context, string, browserruntime.AgentBrowserViewport) (browserruntime.AgentBrowserNavigation, error)
 }
@@ -254,7 +259,11 @@ func (s *AgentBrowserService) authorityLocked(a toolgateway.AgentBrowserCallAuth
 		a.SessionGeneration = s.sequence
 		a.RunAuthorizationFence = fence
 		a.Generation = a.Fingerprint()
-		slot = &agentBrowserSlot{authority: a, activation: s.sequence, consumed: map[string]bool{}, view: AgentBrowserView{Version: "agent_browser_status.v1", RunID: runID, SessionID: a.BrowserSessionID, Generation: a.SessionGeneration, State: "idle", Product: s.options.Product, Headless: s.options.Headless, UpdatedAt: time.Now().UTC()}}
+		headless := s.options.Headless
+		if s.options.SharedPage != nil && a.Role == domain.AgentRoleRoot {
+			headless = false
+		}
+		slot = &agentBrowserSlot{authority: a, activation: s.sequence, consumed: map[string]bool{}, view: AgentBrowserView{Version: "agent_browser_status.v1", RunID: runID, SessionID: a.BrowserSessionID, Generation: a.SessionGeneration, State: "idle", Product: s.options.Product, Headless: headless, UpdatedAt: time.Now().UTC()}}
 		s.slots[key] = slot
 		s.sessions[a.BrowserSessionID] = slot
 	}
@@ -302,7 +311,7 @@ func agentBrowserRuntimeEnded(r agentBrowserRuntime) bool {
 	return state == "closed" || state == "closing" || state == "cleanup_pending"
 }
 func agentBrowserCleanupComplete(slot *agentBrowserSlot) bool {
-	return slot.closed && slot.view.Cleanup != nil && slot.view.Cleanup.ProcessesStopped() && slot.view.Cleanup.ProfileRemoved && !slot.view.Cleanup.CleanupPending
+	return slot.closed && slot.view.Cleanup != nil && slot.view.Cleanup.Complete()
 }
 
 func agentBrowserUnusedColdSlot(slot *agentBrowserSlot) bool {
@@ -459,7 +468,7 @@ func (s *AgentBrowserService) Close(ctx context.Context, runID, sessionID string
 		if launchCleanup != nil && launchCleanup.SessionID == sessionID {
 			cleanup = *launchCleanup
 		}
-		cleanup.CleanupPending = cleanup.CleanupPending || !cleanup.ProcessesStopped() || !cleanup.ProfileRemoved
+		cleanup.CleanupPending = !cleanup.Complete()
 		if cleanup.CleanupPending {
 			e = agentBrowserUnavailable("browser launch failed without complete cleanup evidence; session cannot be reopened")
 		}

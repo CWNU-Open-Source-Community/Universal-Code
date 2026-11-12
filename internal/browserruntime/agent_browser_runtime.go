@@ -18,6 +18,8 @@ type agentBrowserRef struct {
 }
 
 type AgentBrowserRuntime struct {
+	attached                                  *AgentBrowserAttachedPage
+	attachmentDetached                        bool
 	request                                   AgentBrowserStartRequest
 	profile                                   agentBrowserProfile
 	product                                   BrowserProduct
@@ -340,9 +342,18 @@ func (r *AgentBrowserRuntime) Status() AgentBrowserStatus {
 // Done signals invalidation and the end of the first cleanup attempt. Inspect
 // Close's result for cleanup completion; a failed cleanup remains retryable.
 func (r *AgentBrowserRuntime) Done() <-chan struct{} { return r.done }
-func (r *AgentBrowserRuntime) Cancel()               { r.cancel() }
-func (r *AgentBrowserRuntime) Close(ctx context.Context) (AgentBrowserCleanup, error) {
+func (r *AgentBrowserRuntime) Cancel() {
+	if r.attached != nil {
+		r.attached.Lease.Cancel()
+	}
+	r.mu.Lock()
+	r.invalidateLocked()
+	r.invalidateNetworkLocked()
+	r.mu.Unlock()
 	r.cancel()
+}
+func (r *AgentBrowserRuntime) Close(ctx context.Context) (AgentBrowserCleanup, error) {
+	r.Cancel()
 	r.closeMu.Lock()
 	defer r.closeMu.Unlock()
 	defer r.doneOnce.Do(func() { close(r.done) })
@@ -353,6 +364,29 @@ func (r *AgentBrowserRuntime) Close(ctx context.Context) (AgentBrowserCleanup, e
 	r.mu.Unlock()
 	if r.cdp != nil {
 		r.cdp.close()
+	}
+	if r.attached != nil {
+		r.mu.Lock()
+		released := r.attachmentDetached
+		r.mu.Unlock()
+		var releaseErr error
+		if !released {
+			if r.cdp == nil {
+				releaseErr = r.attached.Connection.Close()
+			}
+			releaseErr = errors.Join(releaseErr, r.attached.Lease.Release(ctx))
+		}
+		result.CleanupPending = releaseErr != nil
+		result.AgentDetached = releaseErr == nil
+		r.mu.Lock()
+		r.attachmentDetached = releaseErr == nil
+		if result.CleanupPending {
+			r.state = "cleanup_pending"
+		} else {
+			r.state = "closed"
+		}
+		r.mu.Unlock()
+		return result, releaseErr
 	}
 	var err error
 	if r.process == nil {
@@ -430,6 +464,11 @@ func (r *AgentBrowserRuntime) document(ctx context.Context) (agentBrowserDocumen
 		return agentBrowserDocument{}, err
 	}
 	f := tree.FrameTree.Frame
+	if r.attached != nil && f.URL != "about:blank" {
+		if err := r.authorizeSessionNavigation(ctx, f.URL); err != nil {
+			return agentBrowserDocument{}, err
+		}
+	}
 	if f.ID == "" || (f.URL != "about:blank" && !validAgentBrowserURL(f.URL)) {
 		return agentBrowserDocument{}, ErrBrowserRuntimeBoundary
 	}

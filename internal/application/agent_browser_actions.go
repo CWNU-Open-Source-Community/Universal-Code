@@ -14,6 +14,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/browserruntime"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/imageattachment"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/toolgateway"
@@ -91,19 +92,15 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 		return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("browser session retired before dispatch; original authority cannot be rebound")
 	}
 	r := slot.runtime
-	if r == nil && name == toolgateway.BrowserNavigateTool {
+	shared := s.options.SharedPage != nil && a.Role == domain.AgentRoleRoot
+	start := name == toolgateway.BrowserNavigateTool || (shared && name != toolgateway.BrowserStatusTool)
+	if r == nil && start {
 		slot.view.State = "starting"
 		slot.launchAttempted = true
 	}
 	s.mu.Unlock()
-	if r == nil && name == toolgateway.BrowserNavigateTool {
-		runtimeAuthority := browserruntime.AgentBrowserAuthority{RunID: a.RunID, ManagerBootID: a.ManagerBootID, SessionID: a.BrowserSessionID, Generation: a.SessionGeneration, PermissionSnapshotID: a.PermissionSnapshotID, PermissionRevision: a.PermissionRevision, PermissionActivation: slot.activation, RunAuthorizationFence: a.RunAuthorizationFence, PermissionMode: string(a.PermissionMode)}
-		r, e = s.launch(ctx, browserruntime.AgentBrowserStartRequest{HomePath: s.options.HomePath, Authority: runtimeAuthority, Product: s.options.Product, Headless: s.options.Headless, RuntimeDeadline: time.Now().Add(s.options.SessionLifetime), NetworkMode: browserruntime.AgentBrowserNetworkMode(a.BrowserNetworkAccess), ScopedOrigins: append([]string(nil), a.DeclaredOrigins...), ReviewNetworkWrite: s.reviewNetworkWrite(a), CheckAuthority: func(c context.Context, received browserruntime.AgentBrowserAuthority) error {
-			if received != runtimeAuthority {
-				return agentBrowserUnavailable("runtime activation does not match its private slot")
-			}
-			return s.checkResource(c, a)
-		}})
+	if r == nil && start {
+		r, e = s.startRuntime(ctx, a, slot)
 		if e == nil {
 			s.mu.Lock()
 			slot.runtime = r
@@ -122,7 +119,7 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 			var launchFailure *browserruntime.AgentBrowserLaunchError
 			if errors.As(e, &launchFailure) && launchFailure.Cleanup.SessionID == a.BrowserSessionID {
 				receipt := launchFailure.Cleanup
-				receipt.CleanupPending = receipt.CleanupPending || !receipt.ProcessesStopped() || !receipt.ProfileRemoved
+				receipt.CleanupPending = !receipt.Complete()
 				slot.view.Cleanup = &receipt
 			}
 			s.mu.Unlock()

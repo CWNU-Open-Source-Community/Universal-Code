@@ -24,12 +24,7 @@ type agentBrowserCDP struct {
 
 // The only dial remains in the audited restricted_cdp_transport adapter; this
 // dispatcher receives an already validated owned-loopback connection.
-type agentBrowserConnection interface {
-	ReadJSON(any) error
-	WriteJSON(any) error
-	SetWriteDeadline(time.Time) error
-	Close() error
-}
+type agentBrowserConnection = AgentBrowserConnection
 type agentBrowserPending struct {
 	session string
 	reply   chan cdpWireMessage

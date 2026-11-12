@@ -141,6 +141,7 @@ type AgentBrowserScreenshot struct {
 }
 
 type AgentBrowserCleanup struct {
+	AgentDetached        bool   `json:"agent_detached,omitempty"`
 	SessionID            string `json:"session_id"`
 	TreeReaped           bool   `json:"tree_reaped"`
 	ProfileRemoved       bool   `json:"profile_removed"`
@@ -172,6 +173,15 @@ func (c AgentBrowserCleanup) ProcessesStopped() bool {
 	default:
 		return false
 	}
+}
+
+// Complete distinguishes releasing a borrowed page from destroying an owned
+// browser. A detached native page deliberately retains its process and profile.
+func (c AgentBrowserCleanup) Complete() bool {
+	if c.AgentDetached {
+		return !c.CleanupPending && !c.TreeReaped && !c.ProfileRemoved && c.ProcessScope == "" && !c.ProcessScopeVerified
+	}
+	return !c.CleanupPending && c.ProcessesStopped() && c.ProfileRemoved
 }
 
 type agentBrowserOwnedProcess interface {
