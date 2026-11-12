@@ -276,10 +276,11 @@ export function getThreadWorkspaceState(threadID: string): ThreadWorkspaceState 
     }
     return fallback;
   }
-  // A successful persisted write is authoritative, including deletion and a
-  // newer write from a computer whose clock is behind this one.
-  if (persistent && storageReadable) return persisted ?? emptyThreadWorkspaceState();
-  return fallback ?? persisted ?? emptyThreadWorkspaceState();
+  // The last readable persisted snapshot remains authoritative on read failure,
+  // including remote deletion or a writer whose clock is behind this one.
+  // Unsaved local writes were handled above.
+  if (persistent) return persisted ?? emptyThreadWorkspaceState();
+  return fallback ?? emptyThreadWorkspaceState();
 }
 
 function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWorkspaceState) => ThreadWorkspaceState) {

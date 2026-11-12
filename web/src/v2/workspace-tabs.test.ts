@@ -190,6 +190,26 @@ describe("workspace-tabs store", () => {
     expect(getThreadWorkspaceState("read-failure").tabs).toMatchObject([{ path: "existing.ts" }, { path: "local.ts" }]);
   });
 
+  it.each([false, true])("retains the last observed remote state on read failure (deleted: %s)", (deleted) => {
+    const threadID = "remote-before-read-failure";
+    openWorkspaceFile(threadID, { path: "old-local.ts" });
+    const saved = JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!);
+    const key = Object.keys(saved.threads).find((item) => JSON.parse(item).at(-1) === threadID)!;
+    if (deleted) delete saved.threads[key];
+    else saved.threads[key].tabs[0].path = "remote.ts";
+    localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
+    const expectedTabs = deleted ? [] : [{ path: "remote.ts" }];
+    expect(getThreadWorkspaceState(threadID).tabs).toMatchObject(expectedTabs);
+
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
+    expect(getThreadWorkspaceState(threadID).tabs).toMatchObject(expectedTabs);
+    openWorkspaceFile(threadID, { path: "new-local.ts" });
+    read.mockRestore();
+    setWorkspaceWidth(threadID, 600);
+    resetWorkspaceTabsMemoryCache();
+    expect(getThreadWorkspaceState(threadID).tabs).toMatchObject([...expectedTabs, { path: "new-local.ts" }]);
+  });
+
   it("does not overwrite malformed data that appears during an update", () => {
     openWorkspaceFile("late-corruption", { path: "existing.ts" });
     const originalGet = Storage.prototype.getItem;
