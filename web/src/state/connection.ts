@@ -5,6 +5,7 @@ import type { HealthView } from "../api/types";
 type ResourceKind = "thread" | "run" | "session";
 
 interface ConnectionState {
+  connectionGeneration: number;
   health: HealthView | null;
   apiBaseURL: string | undefined;
   resourceKind: ResourceKind;
@@ -78,8 +79,9 @@ const initialSelection = {
   selectedSessionID: "",
 };
 
-export const useConnectionStore = create<ConnectionState>((set) => ({
+export const useConnectionStore = create<ConnectionState>((set, get) => ({
   ...initialSelection,
+  connectionGeneration: 0,
   health: null,
   apiBaseURL: undefined,
   token: "",
@@ -137,7 +139,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   codeIntelEnabled: false,
   connect: (token, health, controlToken = "", capabilities = {}, apiBaseURL) => {
     const present = controlToken.trim() !== "";
-    set({ token, health, controlToken, apiBaseURL,
+    set({ connectionGeneration: get().connectionGeneration + 1, token, health, controlToken, apiBaseURL,
       runControlEnabled: present && (capabilities.runControlEnabled ?? true),
       workspaceImportEnabled: present && capabilities.workspaceImportEnabled === true,
       projectlessWorkspacesEnabled: present && capabilities.projectlessWorkspacesEnabled === true,
@@ -218,7 +220,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
 	  codeIntelEnabled: capabilities.codeIntelEnabled ?? false,
     });
   },
-  disconnect: () => set({ token: "", controlToken: "", health: null, apiBaseURL: undefined,
+  disconnect: () => set({ connectionGeneration: get().connectionGeneration + 1, token: "", controlToken: "", health: null, apiBaseURL: undefined,
     runControlEnabled: false, runCreationEnabled: false,
     workspaceImportEnabled: false,
     projectlessWorkspacesEnabled: false,

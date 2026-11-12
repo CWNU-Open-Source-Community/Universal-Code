@@ -22,7 +22,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
 | [desktop-terminal-settings](#desktop-terminal-settings) | `internal-durable` | Desktop terminal maintainers | 1 | true |
 | [desktop-verification-settings](#desktop-verification-settings) | `internal-durable` | Desktop verification settings maintainers | 1 | true |
-| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 25 | true |
+| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 26 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
@@ -45,7 +45,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [standard-code-delivery-ledger](#standard-code-delivery-ledger) | `external-durable` | Standard Code delivery and public projection maintainers | 8 | true |
 | [supervisor-input-delivery-projection](#supervisor-input-delivery-projection) | `projection` | Supervisor input and context maintainers | 1 | true |
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
-| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 62 | true |
+| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 63 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 44 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
@@ -803,11 +803,11 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Retirement gate (`rebuild-from-source`): Rebuild source remains retained and independently verifiable; Replacement preserves ordering, cursor, invalidation, and redaction behavior; Retirement evidence proves a complete rebuild from the named source
 - Rebuild source: Go Application DTOs plus explicitly user-owned local presentation settings.
 - Writers:
-  - `desktop-web-presentation-state-writer` (`v1`, write-current) at `web/src`
+  - `desktop-web-presentation-state-writer` (`v1, v2`, write-current) at `web/src`
 - Readers:
-  - `desktop-web-presentation-state-reader` (`v1`, active) at `web/src`
+  - `desktop-web-presentation-state-reader` (`v1, v2`, active) at `web/src`
 
-<details><summary>25 active identifiers</summary>
+<details><summary>26 active identifiers</summary>
 
 - `desktop_chat_resource.v1`
 - `desktop_clipboard_files.v1`
@@ -833,6 +833,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `universal-code.specialist-continuation.v1`
 - `universal-code.turn-notifications.v1`
 - `universal-code.workspace-tabs.v1`
+- `universal-code.workspace-tabs.v2`
 - `v2_file_upload.v1`
 
 </details>
@@ -1852,18 +1853,20 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Class: `internal-durable`
 - Owner: Thread, Run, Session, context, and message maintainers
 - Source of truth: `internal/session`, `internal/store`, `web/src/v2`
-- Persistence/export boundary: SQLite preserves user history, ordering, Run succession, provenance, notes, and messages. Scoped browser recovery storage retains unsent drafts and exact unknown-request identities; these cannot be reconstructed from server history.
-- Compatibility rule: Add versions without rewriting identity/history; retain every reader needed by supported databases and exports. The observed_browser_controls marker is a semantic progress hash domain, not an executable payload or authority. Retain sealed original tool receipts and the meaning of persisted progress counters when evolving its observation projection.
+- Persistence/export boundary: SQLite preserves user history, ordering, Run succession, provenance, notes, and messages. Scoped browser recovery storage retains unsent drafts and exact unknown-request identities; these cannot be reconstructed from server history. Image upload attempts persist the original operation key, file name, SHA-256, byte size and MIME type in localStorage through the V2 recovery envelope, scoped to the original Workspace and Thread.
+- Compatibility rule: Add versions without rewriting identity/history; retain every reader needed by supported databases and exports. Local image upload recovery preserves the original operation key and file binding, retains unreadable or unknown-version records until the user explicitly discards that individual record from its original Workspace/Thread draft, and reconciles the exact original receipt without automatically re-uploading. Explicit discard never clears other records or treats inaccessible storage as a corrupt image. The observed_browser_controls marker is a semantic progress hash domain, not an executable payload or authority. Retain sealed original tool receipts and the meaning of persisted progress counters when evolving its observation projection.
 - Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
 - Writers:
   - `thread-run-session-ledgers-writer` (`v0, v1, v2, v3, v4`, write-new) at `internal/application`
   - `thread-local-recovery-writer` (`v1`, write-new) at `web/src/v2`
+  - `thread-image-upload-recovery-writer` (`v1`, write-new) at `web/src/v2/components/image-input.tsx`
 - Readers:
   - `thread-run-session-ledgers-reader` (`v0, v1, v2, v3, v4`, active) at `internal/store`
   - `thread-local-recovery-reader` (`v1`, active) at `web/src/v2`
+  - `thread-image-upload-recovery-reader` (`v1`, active) at `web/src/v2/components/image-input.tsx`
   - `pr-followup-local-intent-reader` (`v1`, active) at `web/src/v2/components/task-pr-followup.tsx`
 
-<details><summary>62 active identifiers</summary>
+<details><summary>63 active identifiers</summary>
 
 - `context_memory.v1`
 - `context_memory_candidate.v1`
@@ -1925,6 +1928,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `thread_turn_lifecycle_operation.v1`
 - `v2_creation_recovery.v1`
 - `v2_draft_document.v1`
+- `v2_image_upload.v1`
 - `v2_native_clipboard_recovery.v1`
 - `v2_recovery.v1`
 
@@ -2200,6 +2204,8 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `ui-evidence-ci-smoke.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `ui-evidence-ci-startup-diagnostic.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `unknown.v1` | `negative-version-fixture` | `internal/analyzer/descriptor_test.go`, `internal/httpapi/project_preparation_test.go`, `web/src/api/queued-messages.test.ts` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
+| `v2_image_upload.v99` | `negative-version-fixture` | `web/src/v2/components/image-upload-recovery.test.tsx` | Unknown image upload recovery version remains untouched until the user explicitly discards only its original draft record. |
+| `v2_recovery.v99` | `negative-version-fixture` | `web/src/v2/components/image-upload-recovery.test.tsx` | Unknown local recovery envelope is retained and may be removed only by explicit discard of that single image record. |
 | `web-mode-test.v1` | `test-fixture` | `internal/application/web_permissions_integration_test.go` | Test connector identity for the real Supervisor search path across Ask, Auto, and cold Full; not a production protocol. |
 | `web_search.v0` | `test-fixture` | `internal/toolgateway/web_evidence_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `windows-local-sandbox.v1` | `test-fixture` | `internal/application/command_runtime_test.go`, `internal/application/supervisor_tool_permission_test.go`, `internal/desktop/standard_code_security_ledger_windows_test.go`, `internal/store/migration_v207_test.go`, `internal/store/supervisor_tool_registry_migration_test.go`, `internal/store/supervisor_tools_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |

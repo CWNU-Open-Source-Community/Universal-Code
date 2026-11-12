@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { WorkspaceView } from "../../api/types";
 import type { ThreadGitExecuteRequest, ThreadGitPreview, ThreadGitResult, ThreadGitSpec, ThreadGitState } from "../../api/task-delivery";
-import { V2RecoveryProvider, useV2RecoveryStore, type V2RecoveryStore } from "../recovery-storage";
+import { V2RecoveryProvider, resetV2RecoveryStorageMemory, useV2RecoveryStore, type V2RecoveryStore } from "../recovery-storage";
 import { TaskGit } from "./task-git";
 import type { GitFormState } from "./git-form-state";
 
@@ -102,7 +102,7 @@ async function selectCommit(message = "only the selected change") {
   return user;
 }
 beforeEach(() => window.localStorage.clear());
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); resetV2RecoveryStorageMemory(); vi.restoreAllMocks(); });
 
 it("adds a comment bound to the preview fingerprint without executing Git or closing the preview", async () => {
   const f = fixture();

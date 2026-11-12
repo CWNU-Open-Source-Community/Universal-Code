@@ -1722,6 +1722,10 @@ func TestRunCreateAcceptsBrowserOriginsAndFailsClosed(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("scoped create stdout=%s stderr=%s code=%d", created, stderr, code)
 	}
+	shown, stderr, code := executeTestCommand(t, "run", "show", runIDPattern.FindString(created))
+	if code != 0 || stderr != "" || !strings.Contains(shown, "browser_origins: http://localhost:3000, https://example.com:443") {
+		t.Fatalf("run show must echo the declared origins: output=%s stderr=%s code=%d", shown, stderr, code)
+	}
 	if _, stderr, code = executeTestCommand(t, "run", "create",
 		"out of policy", "--profile", "code", "--surface", "code",
 		"--phase", "plan", "--browser-origin", "http://192.168.1.5"); code == 0 || !strings.Contains(stderr, "browser origins fail-closed") {
