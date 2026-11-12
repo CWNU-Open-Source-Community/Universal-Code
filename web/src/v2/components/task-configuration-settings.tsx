@@ -41,9 +41,7 @@ export function TaskConfigurationSettings({ client, threadID, sourceRunID, draft
   const pinned = Boolean(threadID || sourceRunID);
   const source = threadID ? thread : standaloneRun;
   const workspaceID = threadID ? detail?.thread.workspace_id ?? "" : directRun?.mission.workspace_id ?? "";
-  return <><h1>{t("任务预算与项目配置", "Task budget and project configuration")}</h1><p className="v2-settings-lead">{pinned
-    ? t("查看所选执行的预算、项目限制与配置来源。", "View the selected run's budget, project restrictions, and configuration sources.")
-    : t("为当前项目的新任务设置预算。设置随草稿保留，发送时会再次核对项目配置。", "Set the budget for new tasks in this project. Settings stay with the draft; project configuration is checked again when you send.")}</p>
+  return <><h1>{t("任务预算与项目配置", "Task budget and project configuration")}</h1>
     {pinned ? run && workspaceID ? <TaskConfiguration key={`run:${run.id}`} client={client} workspaceID={workspaceID} run={run} />
       : <div className="v2-notice" role={source.isPending ? "status" : "alert"}>
         {source.isPending ? t("正在核对任务与执行配置来源…", "Checking the task and execution source…") : source.isError ? t("无法读取所选执行的配置来源，请重试。", "Could not read the selected execution source. Try again.")
