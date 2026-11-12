@@ -56,8 +56,8 @@ func TestThreadGeneratedCompactionDefaultTwoPassesKeepSourcesAndUsage(t *testing
 		}
 		return historyRecallFinish(), nil
 	}
-	turns, _ := generatedThreadServices(st, p, nil)
-	turns.WithLifecycleHooks(postCompactionHookEngine(t, st))
+	turns, execution := generatedThreadServices(st, p, nil)
+	execution.WithLifecycleHooks(postCompactionHookEngine(t, st))
 	summaries := map[int64]contextmgr.Summary{}
 	for index := 1; index <= 24; index++ {
 		submitHistoryRecall(t, turns, run.ID, fmt.Sprintf("generated-normal-%02d", index), generatedFixtureInput(index))

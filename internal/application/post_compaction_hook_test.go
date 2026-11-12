@@ -18,7 +18,15 @@ func postCompactionHookEngine(t *testing.T, state *store.SQLiteStore) *hooks.Eng
 
 func assertPostCompactionHookAudits(t *testing.T, state *store.SQLiteStore, runID string, count int) {
 	t.Helper()
-	audits, err := state.ListHookAudits(t.Context(), runID, "", 200)
+	run, err := state.GetRun(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mission, err := state.GetMission(t.Context(), run.MissionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audits, err := state.ListHookAudits(t.Context(), runID, mission.WorkspaceID, 200)
 	if err != nil || len(audits) != count {
 		t.Fatalf("post-compaction audits=%+v want=%d err=%v", audits, count, err)
 	}
