@@ -80,6 +80,29 @@ func getThreadMessageIntentTx(ctx context.Context, tx *sql.Tx, key string) (doma
 	return intent, err == nil, err
 }
 
+// InspectThreadMessageIntent reads an existing submission without reserving a new
+// intent. Callers still use ReserveThreadMessageIntent to validate and replay it.
+func (s *SQLiteStore) InspectThreadMessageIntent(ctx context.Context, request domain.ThreadMessageIntentRequest) (domain.ThreadMessageIntent, bool, error) {
+	key, fingerprint, _, err := threadMessageIntentIdentity(request)
+	if err != nil {
+		return domain.ThreadMessageIntent{}, false, err
+	}
+	var intent domain.ThreadMessageIntent
+	err = s.db.QueryRowContext(ctx, `SELECT operation_key_digest, request_fingerprint,
+ COALESCE(run_id, ''), COALESCE(message_id, ''), rejected FROM thread_message_intents
+ WHERE operation_key_digest = ?`, key).Scan(&intent.OperationKeyDigest, &intent.RequestFingerprint, &intent.RunID, &intent.MessageID, &intent.Rejected)
+	if errors.Is(err, sql.ErrNoRows) {
+		return intent, false, nil
+	}
+	if err != nil {
+		return intent, false, err
+	}
+	if intent.RequestFingerprint != fingerprint {
+		return intent, false, apperror.New(apperror.CodeConflict, "Thread message operation key was already used for different content or file references")
+	}
+	return intent, true, nil
+}
+
 // ReserveThreadMessageIntent fixes the original Thread operation key before
 // preparation changes a Run. Legacy steering operations are adopted rather than
 // replayed into a newer successor or treated as file-bearing submissions.

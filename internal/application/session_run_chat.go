@@ -108,7 +108,11 @@ func (e *SessionRunChatExecutor) ExecuteSessionTurnWithOptions(ctx context.Conte
 	// state transitions; a deny rejects the submission with nothing recorded.
 	// The workspace identity comes from the run's mission, the same source
 	// the run_started boundary uses.
-	if strings.TrimSpace(input) != "" {
+	submitted, err := sessionPromptAlreadySubmitted(ctx, e.store, sess.ID, strings.TrimSpace(options.OperationKey))
+	if err != nil {
+		return session.RunChatResult{}, true, apperror.Normalize(err)
+	}
+	if !submitted && strings.TrimSpace(input) != "" {
 		mission, missionErr := e.store.GetMission(ctx, run.MissionID)
 		if missionErr != nil {
 			return session.RunChatResult{}, true, apperror.Normalize(missionErr)

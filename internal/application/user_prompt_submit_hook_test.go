@@ -383,3 +383,85 @@ func TestThreadTurnUserPromptSubmitDenyLeavesNoIntentResidue(t *testing.T) {
 		t.Fatalf("retry fired the boundary %#v", sink.records)
 	}
 }
+
+func TestUserPromptSubmitCommittedReplaySurvivesPolicyChange(t *testing.T) {
+	t.Run("thread_turn", func(t *testing.T) {
+		base := openPromptHookStore(t, "replay-turn.db")
+		created := promptHookRun(t, base, "prompt replay")
+		provider := &lifecycleProvider{responses: []string{rootActionResponse(domain.RootActionFinish, "Ready", "done", "")}}
+		router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+		router.RegisterProvider(provider)
+		sink := &promptHookAuditSink{}
+		turns := application.NewThreadTurnService(base, application.NewRunLifecycleControlService(base), application.NewRunExecutionHandoffService(base, router, policy.NewDefaultChecker())).WithLifecycleHooks(promptHookEngine(t, sink, hooks.ActionRecord))
+		request := application.ExecuteThreadTurnRequest{Version: domain.ThreadMessageProtocolVersion, ThreadID: domain.InitialThreadID(created.ID), Content: "Finish", OperationKey: "prompt-replay-turn-key", RequestedBy: "thread_turn_test_operator"}
+		first, err := turns.Execute(t.Context(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		turns.WithLifecycleHooks(promptHookEngine(t, sink, hooks.ActionDeny))
+		replay, err := turns.Execute(t.Context(), request)
+		if err != nil || !replay.Replayed || replay.Submission.Message.ID != first.Submission.Message.ID || provider.calls != 1 || len(sink.records) != 1 {
+			t.Fatalf("committed replay changed: first=%+v replay=%+v calls=%d records=%d err=%v", first, replay, provider.calls, len(sink.records), err)
+		}
+	})
+	t.Run("thread_submit", func(t *testing.T) {
+		base := openPromptHookStore(t, "replay-thread.db")
+		created := promptHookRun(t, base, "prompt replay")
+		sink := &promptHookAuditSink{}
+		service := application.NewThreadService(base).WithLifecycleHooks(promptHookEngine(t, sink, hooks.ActionRecord))
+		request := application.SubmitThreadMessageRequest{Version: domain.ThreadMessageProtocolVersion, ThreadID: domain.InitialThreadID(created.ID), Content: "Finish", OperationKey: "prompt-replay-thread-key", RequestedBy: "cli_thread_operator"}
+		first, err := service.Submit(t.Context(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		service.WithLifecycleHooks(promptHookEngine(t, sink, hooks.ActionDeny))
+		replay, err := service.Submit(t.Context(), request)
+		if err != nil || !replay.Replayed || replay.Message.ID != first.Message.ID || len(sink.records) != 1 {
+			t.Fatalf("committed replay changed: first=%+v replay=%+v records=%d err=%v", first, replay, len(sink.records), err)
+		}
+		request.Content = "different content"
+		if _, err := service.Submit(t.Context(), request); apperror.CodeOf(err) != apperror.CodeConflict {
+			t.Fatalf("replay changed content: %v", err)
+		}
+	})
+	for _, chat := range []bool{false, true} {
+		name := "session_submit"
+		if chat {
+			name = "session_chat"
+		}
+		t.Run(name, func(t *testing.T) {
+			base := openPromptHookStore(t, "replay-session.db")
+			created := promptHookRun(t, base, "prompt replay")
+			sink := &promptHookAuditSink{}
+			engine := promptHookEngine(t, sink, hooks.ActionRecord)
+			service := application.NewSessionMessageSubmissionService(base).WithLifecycleHooks(engine)
+			request := application.SubmitSessionMessageRequest{Version: domain.SessionMessageSubmissionProtocolVersion, SessionID: created.SessionID, Content: "Finish", OperationKey: "prompt-replay-session-key", RequestedBy: "session_operator"}
+			first, err := service.Submit(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			deny := promptHookEngine(t, sink, hooks.ActionDeny)
+			if chat {
+				executor := application.NewSessionRunChatExecutor(base, nil, policy.NewDefaultChecker()).WithLifecycleHooks(deny)
+				sess, err := base.GetSession(t.Context(), created.SessionID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, attached, err := executor.ExecuteSessionTurnWithOptions(t.Context(), sess, request.Content, session.RunChatOptions{OperationKey: request.OperationKey})
+				if err != nil || !attached || len(sink.records) != 1 {
+					t.Fatalf("chat replay records=%d attached=%t err=%v", len(sink.records), attached, err)
+				}
+			} else {
+				service.WithLifecycleHooks(deny)
+				replay, err := service.Submit(t.Context(), request)
+				if err != nil || !replay.Replayed || replay.Message.ID != first.Message.ID || len(sink.records) != 1 {
+					t.Fatalf("session replay changed: replay=%+v records=%d err=%v", replay, len(sink.records), err)
+				}
+				request.Content = "different content"
+				if _, err := service.Submit(t.Context(), request); apperror.CodeOf(err) != apperror.CodeConflict {
+					t.Fatalf("replay changed content: %v", err)
+				}
+			}
+		})
+	}
+}

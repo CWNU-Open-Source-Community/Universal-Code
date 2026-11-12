@@ -122,7 +122,11 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	// deliveries already passed this boundary when their message was
 	// submitted, so they skip it here; every internal Submit call below skips
 	// its own boundary for the same reason.
-	if request.queued == nil && strings.TrimSpace(normalized.Content) != "" {
+	submitted, err := s.threads.promptAlreadySubmitted(ctx, normalized)
+	if err != nil {
+		return ExecuteThreadTurnResult{}, apperror.Normalize(err)
+	}
+	if request.queued == nil && !submitted && strings.TrimSpace(normalized.Content) != "" {
 		if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.UserPromptSubmit,
 			"", "", hooks.BuildUserPromptSubmitPayload(
 				hooks.UserPromptSubmitPayload{ThreadID: normalized.ThreadID,
