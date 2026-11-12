@@ -362,6 +362,12 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	if err != nil {
 		return nil, err
 	}
+	if runtime.GOOS == "windows" && config.RunExecutionEnabled {
+		if err := stateStore.EnableDesktopBrowserDefaults(context.Background()); err != nil {
+			_ = stateStore.Close()
+			return nil, apperror.Wrap(apperror.CodeUnavailable, "desktop browser defaults startup reconciliation failed", err)
+		}
+	}
 	if !config.RunExecutionEnabled {
 		// No browser service will be created to invalidate the previous process'
 		// paused page requests. They cannot be resumed by this Desktop instance.

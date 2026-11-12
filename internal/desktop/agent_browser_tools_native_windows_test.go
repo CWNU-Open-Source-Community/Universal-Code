@@ -119,28 +119,27 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = st.Close() })
+			// Match Windows OpenControlPlane startup, without a user network toggle.
+			if err := st.EnableDesktopBrowserDefaults(ctx); err != nil {
+				t.Fatal(err)
+			}
 			if err := st.SaveWorkspace(ctx, store.WorkspaceRecord{ID: "native-tool-workspace", Name: "Native tool workspace", RootPath: root, CreatedAt: time.Now().UTC()}); err != nil {
 				t.Fatal(err)
 			}
 			runs := application.NewRunService(st)
-			_, run, err := runs.Create(ctx, application.CreateRunRequest{Goal: "Preview a local HTML file using actual Agent tools", Profile: "code", Surface: "code", Phase: "deliver", WorkspaceID: "native-tool-workspace", ModelRoute: "native-browser-tools/model", BrowserNetworkAccess: domain.BrowserNetworkInternet, Budget: domain.Budget{MaxTurns: 3, MaxToolCalls: 12}})
+			_, run, err := runs.Create(ctx, application.CreateRunRequest{Goal: "Preview a local HTML file using actual Agent tools", Profile: "code", Surface: "code", Phase: "deliver", WorkspaceID: "native-tool-workspace", ModelRoute: "native-browser-tools/model", Interactive: true, Budget: domain.Budget{MaxTurns: 3, MaxToolCalls: 12}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			caps := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, DangerFullAccessEnabled: true, RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
-			if _, err := application.NewRunExecutionProfileService(st).Change(ctx, application.ChangeRunExecutionProfileRequest{RunID: run.ID, Profile: "local", OperationKey: "native-tool-local-profile", RequestedBy: "test_operator", Reason: "Use the installed host command runtime"}); err != nil {
-				t.Fatal(err)
-			}
-			selected, err := application.NewRunExecutionPermissionService(st, caps).Change(ctx, application.ChangeRunExecutionPermissionRequest{RunID: run.ID, Mode: "full", OperationKey: "native-tool-full-permission", RequestedBy: "test_operator", Reason: "Run the isolated local preview and browser tools", ConfirmFull: true})
+			thread, err := st.GetThreadByRun(ctx, run.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, live := caps.FullAccessGeneration(selected.Permission); !live {
-				if _, err := caps.RuntimeAuthority.ActivateRunFullAccess(selected.Permission); err != nil {
-					t.Fatal(err)
-				}
+			if run.Config.BrowserNetworkAccess != domain.BrowserNetworkInternet || run.Config.BrowserNetworkRevision != 1 {
+				t.Fatalf("ordinary chat browser default=%+v", run.Config)
 			}
-			if _, err := runs.Start(ctx, run.ID); err != nil {
+			if _, err := application.NewThreadExecutionPermissionService(st, caps).Change(ctx, application.ChangeThreadExecutionPermissionRequest{ThreadID: thread.ID, Mode: "full", OperationKey: "native-tool-full-permission", RequestedBy: "test_operator", Reason: "Run the isolated local preview and browser tools", ConfirmFull: true}); err != nil {
 				t.Fatal(err)
 			}
 			shared, err := newSharedBrowserService(st, SharedBrowserOptions{HomePath: home, CreateHost: func(ctx context.Context, profile string, onEvent func(desktopbrowser.Event)) (*desktopbrowser.Host, error) {
@@ -341,8 +340,9 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 			}
 			router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
 			router.RegisterProvider(provider)
-			agent := application.NewAgentRunner(st, router, policy.NewDefaultChecker()).WithExecutionPermissionCapabilities(caps).WithCommandRuntime(commands).WithAgentBrowser(browser)
-			result, err := agent.Step(ctx, run.ID)
+			execution := application.NewRunExecutionHandoffWithRuntime(st, router, policy.NewDefaultChecker(), application.RunRuntimeDependencies{ExecutionCapabilities: caps, CommandRuntime: commands, AgentBrowser: browser})
+			turns := application.NewThreadTurnServiceWithExecutionCapabilities(st, application.NewRunLifecycleControlService(st), execution, caps).WithDefaultCommandRuntime(commands)
+			result, err := turns.Execute(ctx, application.ExecuteThreadTurnRequest{Version: domain.ThreadMessageProtocolVersion, ThreadID: thread.ID, Content: "Preview the workspace HTML and verify its button using the shared browser", OperationKey: "native-preview-first-user-input", RequestedBy: "operator"})
 			if err != nil {
 				rounds, _ := st.ListRunSupervisorToolRoundsPage(context.Background(), run.ID, 0, 8)
 				for _, round := range rounds {
@@ -354,8 +354,18 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 				}
 				t.Fatalf("actual Agent tool execution: %v; scripted provider: %v", err, provider.lastError)
 			}
-			if result.ToolCalls != 7 || len(provider.requests) != 5 {
+			toolCalls := 0
+			if result.Execution != nil {
+				for _, step := range result.Execution.Execution.Steps {
+					toolCalls += step.ToolCalls
+				}
+			}
+			if !result.ToolCalled || toolCalls != 7 || len(provider.requests) != 5 {
 				t.Fatalf("unexpected actual tool flow: %+v requests=%d", result, len(provider.requests))
+			}
+			profile, err := st.GetRunExecutionProfile(ctx, run.ID)
+			if err != nil || profile.Profile != domain.RunExecutionProfileLocal {
+				t.Fatalf("ordinary desktop profile=%+v %v", profile, err)
 			}
 			if artifactPath == "" {
 				t.Fatal("missing native screenshot")

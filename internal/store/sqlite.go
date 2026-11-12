@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -23,10 +24,11 @@ import (
 )
 
 type SQLiteStore struct {
-	db                    *sql.DB
-	home                  string
-	hideDrydockWorkspaces bool
-	dataStoreID           string
+	db                     *sql.DB
+	home                   string
+	hideDrydockWorkspaces  bool
+	dataStoreID            string
+	desktopBrowserDefaults atomic.Bool
 }
 
 const maxStoreListOffset = 100000

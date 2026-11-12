@@ -485,6 +485,13 @@ func (s *ThreadTurnService) pendingEpochConfiguration(ctx context.Context,
 	if pending, err := s.defaultCommandNeedsSuccessor(ctx, active); err != nil || pending {
 		return pending, err
 	}
+	if reader, ok := s.threads.store.(interface {
+		DesktopBrowserDefaultNeedsSuccessor(context.Context, string) (bool, error)
+	}); ok {
+		if pending, err := reader.DesktopBrowserDefaultNeedsSuccessor(ctx, active.ID); err != nil || pending {
+			return pending, apperror.Normalize(err)
+		}
+	}
 	if reader, ok := s.threads.store.(threadModelRoutePreferenceReader); ok {
 		preference, found, err := reader.GetThreadModelRoutePreference(ctx, threadRecord.ID)
 		if err != nil {

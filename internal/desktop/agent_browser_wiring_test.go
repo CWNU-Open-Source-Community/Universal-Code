@@ -129,11 +129,14 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 		t.Fatalf("Full selection status=%d body=%s", permission.Code, permission.Body.String())
 	}
 	assertDesktopCurrentApproval(t, plane, permissionCapabilities, fullThread.Run.ID, domain.RunExecutionPermissionFull)
-	network := desktopControlRequest(plane.Handler(), http.MethodPut,
-		"/api/v1/runs/"+fullThread.Run.ID+"/browser-network", "desktop-agent-browser-network-0001",
-		`{"version":"browser_network_access.v1","expected_revision":1,"browser_network_access":"internet"}`)
-	if network.Code != http.StatusOK {
-		t.Fatalf("browser network selection status=%d body=%s", network.Code, network.Body.String())
+	if runtime.GOOS != "windows" {
+		// Other hosts keep their existing explicit network selection flow.
+		network := desktopControlRequest(plane.Handler(), http.MethodPut,
+			"/api/v1/runs/"+fullThread.Run.ID+"/browser-network", "desktop-agent-browser-network-0001",
+			`{"version":"browser_network_access.v1","expected_revision":1,"browser_network_access":"internet"}`)
+		if network.Code != http.StatusOK {
+			t.Fatalf("browser network selection status=%d body=%s", network.Code, network.Body.String())
+		}
 	}
 	completeDesktopSourceWiringTurn(t, plane, fullThread,
 		"Inspect the ordinary browser tools available to this Run",
@@ -213,9 +216,6 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 	if _, found := successorTools["command_runtime"]; found != (runtime.GOOS == "windows") {
 		t.Fatalf("ordinary desktop command schema available=%t profile=%s", found, profile.Profile)
 	}
-	if _, found := successorTools["browser_navigate"]; found {
-		t.Fatal("explicit browser-off configuration unexpectedly advertised browser navigation")
-	}
 	for _, name := range []string{"browser_navigate", "browser_scroll", "browser_key", "browser_upload"} {
 		_, fullFound := fullTools[name]
 		_, restrictedFound := restrictedTools[name]
@@ -226,9 +226,13 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 		if !browserruntime.AgentBrowserPlatformAvailable() && fullFound {
 			t.Fatalf("host without an adapter advertised ordinary browser tool %s", name)
 		}
-		if restrictedFound {
-			t.Fatalf("Ask Run received ordinary browser tool %s: %v", name,
+		wantDefaultBrowser := runtime.GOOS == "windows" && browserruntime.AgentBrowserPlatformAvailable()
+		if restrictedFound != wantDefaultBrowser {
+			t.Fatalf("Ask browser tool %s available=%t: %v", name, restrictedFound,
 				desktopSourceWiringToolNames(captured[1].Tools))
+		}
+		if _, found := successorTools[name]; found != wantDefaultBrowser {
+			t.Fatalf("confirmed Full successor browser tool %s available=%t", name, found)
 		}
 	}
 	if !browserruntime.AgentBrowserPlatformAvailable() {
