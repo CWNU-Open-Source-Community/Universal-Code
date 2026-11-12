@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -369,5 +370,140 @@ func TestExecCancellationKeepsRunRecoverable(t *testing.T) {
 	}
 	if runs[0].Terminal() {
 		t.Fatalf("cancelled Run must stay recoverable, got status %s", runs[0].Status)
+	}
+}
+
+// execFinishResponse builds a supervisor finish response with the given
+// public reply text.
+func execFinishResponse(message string) string {
+	encoded, err := json.Marshal(domain.RootAction{
+		Version: domain.RootLifecycleVersion, Kind: domain.RootActionFinish,
+		Message: message, Summary: "Done"})
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
+}
+
+func newExecLastMessageTestApp(t *testing.T) (*App, *execTestProvider, string) {
+	t.Helper()
+	home := t.TempDir()
+	st, err := store.Open(filepath.Join(home, "exec-last-message-test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{
+		ID:        "exec-ws",
+		Name:      "exec-ws",
+		RootPath:  t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &execTestProvider{response: execFinishResponse("first reply")}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	a := &App{home: home, out: &bytes.Buffer{}, errOut: &bytes.Buffer{}, store: st,
+		router: router, checker: policy.NewDefaultChecker()}
+	return a, provider, home
+}
+
+func TestExecOutputLastMessageWritesReply(t *testing.T) {
+	a, provider, _ := newExecLastMessageTestApp(t)
+	target := filepath.Join(t.TempDir(), "last-message.txt")
+
+	var out bytes.Buffer
+	a.out = &out
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--output-last-message", target, "--json", "Any task"}); err != nil {
+		t.Fatalf("exec with --output-last-message failed: %v", err)
+	}
+	written, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(written) != "first reply" {
+		t.Fatalf("last-message file mismatch: %q", string(written))
+	}
+	// The standard output contract is unchanged: --json still carries the
+	// reply alongside the file.
+	var result struct {
+		Reply string `json:"reply"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse exec JSON: %v, raw: %s", err, out.String())
+	}
+	if result.Reply != "first reply" {
+		t.Fatalf("stdout reply mismatch: %+v", result)
+	}
+}
+
+func TestExecOutputLastMessageRejectsSurroundingWhitespaceBeforeExecution(t *testing.T) {
+	a, provider, _ := newExecLastMessageTestApp(t)
+	target := filepath.Join(t.TempDir(), "reply.txt")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, requested := range []string{" " + target, target + " ", "\t" + target, " "} {
+		err := a.execCommand(t.Context(), []string{
+			"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+			"--output-last-message", requested, "Any task"})
+		if err == nil || !strings.Contains(err.Error(), "surrounding whitespace") {
+			t.Fatalf("output path %q must fail before execution, got %v", requested, err)
+		}
+	}
+	written, err := os.ReadFile(target)
+	if err != nil || string(written) != "original" {
+		t.Fatalf("existing output was changed: %q, error=%v", written, err)
+	}
+	if delivered := provider.deliveredText(); delivered != "" {
+		t.Fatal("invalid output path executed the model")
+	}
+}
+
+func TestExecOutputLastMessageWriteFailureFailsBeforeOutput(t *testing.T) {
+	a, provider, _ := newExecLastMessageTestApp(t)
+	missingDir := filepath.Join(t.TempDir(), "does-not-exist", "last-message.txt")
+
+	var out, errOut bytes.Buffer
+	a.out = &out
+	a.errOut = &errOut
+	err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--output-last-message", missingDir, "Any task"})
+	if err == nil || !strings.Contains(err.Error(), "--output-last-message") {
+		t.Fatalf("failed write must fail the command with the flag named, got: %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("no reply may reach stdout when the write failed, got: %s", out.String())
+	}
+}
+
+func TestExecOutputLastMessageRecordsPauseReply(t *testing.T) {
+	a, provider, _ := newExecLastMessageTestApp(t)
+	// A continue action never reports finish, so the turn pauses with no
+	// committed reply for this invocation.
+	provider.response = `{"version":"root_lifecycle.v1","action":"continue","message":"Incomplete task message"}`
+	target := filepath.Join(t.TempDir(), "last-message.txt")
+
+	var out bytes.Buffer
+	a.out = &out
+	err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--max-turns", "1", "--output-last-message", target, "Any task"})
+	if err == nil || !strings.Contains(err.Error(), "exec turn did not finish") {
+		t.Fatalf("paused turn must exit non-zero, got: %v", err)
+	}
+	written, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatalf("paused turn must still record the file: %v", readErr)
+	}
+	// The wait action commits its public message as the reply before the
+	// pause, so the file records that committed text — the same text stdout
+	// would carry.
+	if string(written) != "Incomplete task message" {
+		t.Fatalf("paused turn must record its committed reply, got %q", string(written))
 	}
 }

@@ -169,6 +169,15 @@ terminate the process before the cancellation is recorded: the Run may then
 not be ready for `thread send`, and exit code 7 is not guaranteed for those
 exits.
 
+`--output-last-message <file>`
+additionally writes the final assistant reply to a file (created or
+truncated; Unix permission bits 0600, Windows stays ACL-controlled) before
+the standard output is produced, so cron jobs and CI steps get a reliable
+file sink for the reply regardless of the output format; a failed write
+fails the command. A paused turn records its committed reply at the pause
+point; the file is empty only when the turn failed before committing any
+reply.
+
 `cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
 回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
 权限、审批与预算规则原样生效。`--workspace` 必填；`--profile`（默认 `code`）、
@@ -192,6 +201,13 @@ SIGTERM）不会在写入中途杀死进程：它干净地取消本次调用，t
 以非零码退出——取消对应退出码 `7`，`--timeout` 超时对应退出码 `9`。Windows
 上的控制台关闭、注销或关机可能在取消被记录之前终止进程：Run 可能尚未恢复
 到可 `thread send` 的状态，这些退出不保证退出码 7。
+
+`--output-last-message <文件>`
+会先把最终助手回复写入文件（创建或截断；Unix 权限位 0600，Windows 由 ACL
+控制）再产出标准输出，cron
+作业与 CI 步骤因此获得与输出格式无关的可靠文件汇；写入失败将使命令失败。
+turn 在暂停点的已提交回复会写入文件；仅当 turn 在提交任何回复前失败时文
+件才为空。
 
 ### 补充消息与排队 / Follow-up messages and queue
 
