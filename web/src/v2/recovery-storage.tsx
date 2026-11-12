@@ -24,12 +24,16 @@ export interface V2RecoveryStore {
   remove(key: string): void;
   entries<T>(prefix: string): Array<[string, T]>;
   invalidKeys(prefix: string): string[];
+  getWarning(excludedInvalidPrefix?: string): string | null;
   assertReadable(prefix?: string): void;
   reject(key: string): void;
   markUnsaved(key: string, message: string): void;
   unsavedWarning(key: string): string | null;
   subscribePrefix?(prefix: string, listener: () => void): () => void;
 }
+
+type PersistentConflict = { id: number; key: string; changedAgain: boolean; unsavedOnly: boolean; keepLocal: () => void; useRemote: () => void };
+let nextPersistentBindingID = 0;
 
 function decodeRecord(raw: string): unknown {
   const record: unknown = JSON.parse(raw);
@@ -49,7 +53,10 @@ class RecoveryStorage implements V2RecoveryStore {
   private readonly warningListeners = new Set<() => void>();
   private readonly failures = new Map<string, string>();
   private readonly unsaved = new Map<string, string>();
+  private readonly conflictListeners = new Set<() => void>();
+  private conflicts: PersistentConflict[] = [];
   private warning: string | null = null;
+  private warningSources = "[[],[]]";
   private warningNotificationQueued = false;
 
   constructor(private readonly prefix: string) {}
@@ -68,9 +75,10 @@ class RecoveryStorage implements V2RecoveryStore {
   }
 
   private updateWarning(): void {
-    const warning = this.failures.values().next().value ?? this.unsaved.values().next().value ?? null;
-    if (warning === this.warning) return;
-    this.warning = warning;
+    const sources = JSON.stringify([[...this.failures], [...this.unsaved]]);
+    if (sources === this.warningSources) return;
+    this.warningSources = sources;
+    this.warning = this.failures.values().next().value ?? this.unsaved.values().next().value ?? null;
     // Reads can occur during render. Notify warning consumers after that render,
     // rather than updating another component from inside a lazy initializer.
     if (this.warningNotificationQueued) return;
@@ -97,10 +105,12 @@ class RecoveryStorage implements V2RecoveryStore {
   }
 
   read<T>(key: string, fallback: T): T {
-    try {
-      const record = this.readRecord(key);
-      return record.found ? record.value as T : fallback;
-    } catch { return fallback; }
+    try { return this.readOrThrow(key, fallback); } catch { return fallback; }
+  }
+
+  readOrThrow<T>(key: string, fallback: T): T {
+    const record = this.readRecord(key);
+    return record.found ? record.value as T : fallback;
   }
 
   write<T>(key: string, value: T): void {
@@ -193,6 +203,29 @@ class RecoveryStorage implements V2RecoveryStore {
 
   unsavedWarning(key: string): string | null { return this.unsaved.get(key) ?? null; }
 
+  setConflict(conflict: PersistentConflict): void {
+    this.conflicts = [...this.conflicts.filter((item) => item.id !== conflict.id), conflict];
+    this.conflictListeners.forEach((listener) => listener());
+  }
+
+  clearConflict(id: number): void {
+    const next = this.conflicts.filter((item) => item.id !== id);
+    if (next.length === this.conflicts.length) return;
+    this.conflicts = next;
+    this.conflictListeners.forEach((listener) => listener());
+  }
+
+  discardUnsaved(key: string, failedWriteKey = key): void {
+    this.unsaved.delete(key);
+    this.clearFailure(`write:${failedWriteKey}`);
+  }
+
+  subscribeConflicts = (listener: () => void): (() => void) => {
+    this.conflictListeners.add(listener);
+    return () => { this.conflictListeners.delete(listener); };
+  };
+  getConflicts = (): PersistentConflict[] => this.conflicts;
+
   reject(key: string): void {
     // Valid JSON can still contain an invalid business payload. Do not allow
     // initial empty UI state to silently overwrite that original evidence.
@@ -230,7 +263,16 @@ class RecoveryStorage implements V2RecoveryStore {
     this.warningListeners.add(listener);
     return () => { this.warningListeners.delete(listener); };
   };
-  getWarning = (): string | null => this.warning;
+  getWarning = (excludedInvalidPrefix?: string): string | null => {
+    if (!excludedInvalidPrefix) return this.warning;
+    for (const [operation, message] of this.failures) {
+      const invalid = operation.startsWith("invalid:") || operation.startsWith("read:") && message === INVALID_RECORD;
+      const key = operation.slice(operation.indexOf(":") + 1);
+      if (invalid && key.startsWith(excludedInvalidPrefix)) continue;
+      return message;
+    }
+    return this.unsaved.values().next().value ?? null;
+  };
 
   connect(): () => void {
     const onStorage = (event: StorageEvent) => {
@@ -247,6 +289,12 @@ class RecoveryStorage implements V2RecoveryStore {
   }
 }
 
+type RecoveryStoreEntry = { prefix: string; store: RecoveryStorage; providers: number };
+const recoveryStoreEntries = new Map<string, RecoveryStoreEntry[]>();
+
+// Test isolation; live entries are retained while they contain unresolved edits.
+export function resetV2RecoveryStorageMemory() { recoveryStoreEntries.clear(); }
+
 const RecoveryContext = createContext<{ store: RecoveryStorage | null; warning: string | null } | null>(null);
 
 export function V2RecoveryProvider({ client, scopeID, children }: {
@@ -256,11 +304,30 @@ export function V2RecoveryProvider({ client, scopeID, children }: {
 }) {
   const scope = scopeID?.trim() ?? "";
   const origin = typeof window === "undefined" ? "" : window.location.origin;
-  const store = useMemo(() => scope && origin ? new RecoveryStorage(
-    `${VERSION}:${encodeURIComponent(origin)}:${encodeURIComponent(client.baseURL)}:${encodeURIComponent(scope)}:`,
-  ) : null, [origin, client.baseURL, scope]);
+  const entry = useMemo(() => {
+    if (!scope || !origin) return null;
+    const prefix = `${VERSION}:${encodeURIComponent(origin)}:${encodeURIComponent(client.baseURL)}:${encodeURIComponent(scope)}:`;
+    return recoveryStoreEntries.get(prefix)?.find((item) => item.providers === 0)
+      ?? { prefix, store: new RecoveryStorage(prefix), providers: 0 };
+  }, [origin, client.baseURL, scope]);
+  const store = entry?.store ?? null;
   const context = useMemo(() => ({ store, warning: store ? null : UNSUPPORTED }), [store]);
-  useEffect(() => store?.connect(), [store]);
+  useEffect(() => {
+    if (!entry) return;
+    entry.providers++;
+    const retained = recoveryStoreEntries.get(entry.prefix)?.filter((item) => item !== entry) ?? [];
+    if (retained.length) recoveryStoreEntries.set(entry.prefix, retained);
+    else recoveryStoreEntries.delete(entry.prefix);
+    const disconnect = entry.store.connect();
+    return () => {
+      disconnect();
+      entry.providers--;
+      if (entry.providers === 0 && entry.store.getConflicts().length > 0) {
+        const retained = recoveryStoreEntries.get(entry.prefix) ?? [];
+        if (!retained.includes(entry)) recoveryStoreEntries.set(entry.prefix, [...retained, entry]);
+      }
+    };
+  }, [entry]);
   return <RecoveryContext.Provider value={context}>{children}</RecoveryContext.Provider>;
 }
 
@@ -270,35 +337,113 @@ export function useV2RecoveryStore(): V2RecoveryStore | null {
 
 const noSubscription = () => () => {};
 const noWarning = () => null;
+const noConflicts: PersistentConflict[] = [];
+const getNoConflicts = () => noConflicts;
 
-export function useV2PersistenceWarning(): string | null {
+export function useV2PersistenceWarning(excludedInvalidPrefix?: string): string | null {
   const { t } = useLocale();
   const context = useContext(RecoveryContext);
-  const warning = useSyncExternalStore(context?.store?.subscribeWarning ?? noSubscription,
-    context?.store?.getWarning ?? noWarning, noWarning);
+  const read = useCallback(() => context?.store?.getWarning(excludedInvalidPrefix) ?? null, [context?.store, excludedInvalidPrefix]);
+  const warning = useSyncExternalStore(context?.store?.subscribeWarning ?? noSubscription, read, noWarning);
   const message = warning ?? context?.warning;
   return message ? localUIMessage(message, t) : null;
+}
+
+export function V2PersistenceConflicts() {
+  const { t } = useLocale();
+  const store = useContext(RecoveryContext)?.store ?? null;
+  const conflicts = useSyncExternalStore(store?.subscribeConflicts ?? noSubscription,
+    store?.getConflicts ?? getNoConflicts, getNoConflicts);
+  if (!conflicts.length) return null;
+  return <div className="v2-toast v2-persistence-conflicts" role="alert">{conflicts.map((conflict) => <div key={conflict.id}>
+    <p>{conflict.unsavedOnly
+      ? t("本窗口的编辑尚未保存，请重试保存或使用已保存的版本。", "This window's edits could not be saved. Retry saving or use the saved version.")
+      : conflict.changedAgain
+      ? t("另一窗口再次修改了同一条记录，请重新选择要保存的版本。", "The other window changed this record again. Please choose which version to keep.")
+      : t("另一窗口修改了同一条记录。本窗口的未保存编辑已保留，请选择要保存的版本。",
+        "Another window changed the same record. Your unsaved edits are preserved; choose which version to keep.")}</p>
+    <code>{conflict.key}</code>
+    <button type="button" onClick={conflict.keepLocal}>{t("保留本窗口版本", "Keep this window's version")}</button>
+    <button type="button" onClick={conflict.useRemote}>{t("使用另一窗口版本", "Use the other window's version")}</button>
+  </div>)}</div>;
+}
+
+function samePersistentValue(left: unknown, right: unknown): boolean {
+  try { return JSON.stringify(left) === JSON.stringify(right); } catch { return false; }
 }
 
 export function useV2PersistentState<T>(key: string, initial: T | (() => T)): [T, Dispatch<SetStateAction<T>>] {
   const store = useContext(RecoveryContext)?.store ?? null;
   const [, rerender] = useReducer((version: number) => version + 1, 0);
-  const current = useRef<{ store: RecoveryStorage | null; key: string; value: T; fallback: T } | null>(null);
+  const current = useRef<{ id: number; store: RecoveryStorage | null; key: string; value: T; fallback: T; base: T; dirty: boolean; writing: boolean } | null>(null);
   if (!current.current || current.current.store !== store || current.current.key !== key) {
     const fallback = typeof initial === "function" ? (initial as () => T)() : initial;
-    current.current = { store, key, fallback, value: store ? store.read(key, fallback) : fallback };
+    const value = store ? store.read(key, fallback) : fallback;
+    current.current = { id: ++nextPersistentBindingID, store, key, fallback, value, base: value, dirty: false, writing: false };
   }
   const binding = current.current;
+  const registerConflict = (observedRemote: T, changedAgain = false, unsavedOnly = false) => {
+    const target = binding.store;
+    if (!target) return;
+    const unsavedKey = `persistent:${binding.id}:${binding.key}`;
+    target.markUnsaved(unsavedKey, WRITE_FAILED);
+    target.setConflict({ id: binding.id, key: binding.key, changedAgain, unsavedOnly,
+      keepLocal: () => {
+        binding.writing = true;
+        try {
+          const latestRemote = target.readOrThrow(binding.key, binding.fallback);
+          if (!samePersistentValue(latestRemote, observedRemote)) {
+            registerConflict(latestRemote, true);
+            return;
+          }
+          target.write(binding.key, binding.value);
+          binding.base = binding.value; binding.dirty = false;
+          target.discardUnsaved(unsavedKey, binding.key); target.clearConflict(binding.id);
+        } catch { /* Keep both versions available for another retry. */ }
+        finally { binding.writing = false; rerender(); }
+      },
+      useRemote: () => {
+        try {
+          target.assertReadable(binding.key);
+          binding.value = target.readOrThrow(binding.key, binding.fallback);
+          binding.base = binding.value; binding.dirty = false;
+          target.discardUnsaved(unsavedKey, binding.key); target.clearConflict(binding.id);
+          rerender();
+        } catch { /* Retain local edits when the other version cannot be read. */ }
+      },
+    });
+  };
   const setState = useCallback<Dispatch<SetStateAction<T>>>((update) => {
     const value = typeof update === "function" ? (update as (previous: T) => T)(binding.value) : update;
-    try { binding.store?.write(binding.key, value); }
-    catch { /* Drafts stay editable in this window; the store exposes the warning. */ }
     binding.value = value;
+    if (binding.store) {
+      try {
+        binding.store.assertReadable(binding.key);
+        const remote = binding.store.readOrThrow(binding.key, binding.fallback);
+        if (!samePersistentValue(remote, binding.base)) {
+          binding.dirty = true; registerConflict(remote); rerender(); return;
+        }
+        binding.writing = true;
+        binding.store.write(binding.key, value);
+        binding.base = value; binding.dirty = false;
+        binding.store.discardUnsaved(`persistent:${binding.id}:${binding.key}`, binding.key);
+        binding.store.clearConflict(binding.id);
+      } catch { binding.dirty = true; registerConflict(binding.base, false, true); }
+      finally { binding.writing = false; }
+    }
     rerender();
   }, [binding]);
   useEffect(() => store?.subscribe(key, () => {
-    binding.value = store.read(key, binding.fallback);
-    rerender();
+    if (binding.writing) return;
+    try {
+      const remote = store.readOrThrow(key, binding.fallback);
+      if (binding.dirty) {
+        if (!samePersistentValue(remote, binding.base)) registerConflict(remote);
+        return;
+      }
+      binding.value = remote; binding.base = remote;
+      rerender();
+    } catch { /* A read failure must not replace the visible value with a fallback. */ }
   }), [store, key, binding]);
   return [binding.value, setState];
 }

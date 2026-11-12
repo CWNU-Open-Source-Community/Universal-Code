@@ -1300,7 +1300,8 @@
           "id": "desktop-web-presentation-state-writer",
           "source": "web/src",
           "versions": [
-            1
+            1,
+            2
           ],
           "mode": "write-current"
         }
@@ -1310,7 +1311,8 @@
           "id": "desktop-web-presentation-state-reader",
           "source": "web/src",
           "versions": [
-            1
+            1,
+            2
           ],
           "status": "active"
         }
@@ -1352,6 +1354,7 @@
         "universal-code.specialist-continuation.v1",
         "universal-code.turn-notifications.v1",
         "universal-code.workspace-tabs.v1",
+        "universal-code.workspace-tabs.v2",
         "v2_file_upload.v1"
       ],
       "retired_identifiers": [
