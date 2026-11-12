@@ -81,13 +81,20 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 		out.TurnStatus = string(result.Execution.Handoff.Result.Status)
 		out.StopReason = result.Execution.Handoff.Result.StopReason
 	}
-	if submission.Session.ID != "" {
+	if result.Execution != nil {
+		for _, step := range result.Execution.Execution.Steps {
+			if step.ReplyMessage.ID > 0 {
+				out.Reply = step.ReplyMessage.Content
+			}
+		}
+	}
+	if out.Reply == "" && submission.Session.ID != "" {
 		// Use a detached context for the partial reply lookup: the caller's
 		// ctx may already be cancelled (e.g. --timeout fired), and the reply
 		// is precisely what the caller needs in that scenario.
 		detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
-		reply, replyErr := s.lastAssistantReply(detached, submission.Session.ID)
+		reply, replyErr := s.lastAssistantReply(detached, submission.Session.ID, submission.Message.SessionMessageID)
 		if replyErr == nil && reply != "" {
 			out.Reply = reply
 		} else if replyErr != nil && turnErr == nil {
@@ -97,29 +104,35 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 	return out, turnErr
 }
 
-// lastAssistantReply returns the newest assistant message committed after
-// this invocation's input. The operator message for this turn is the last
-// committed user message in the session (it is committed before the turn
-// executes), so any assistant reply after it belongs to this turn — an
-// earlier turn's reply is never returned as this invocation's partial reply,
-// and a turn that failed before committing one yields an empty reply.
+// Replays bind to their own committed input, even after a later turn has run.
 func (s *OneShotService) lastAssistantReply(ctx context.Context,
-	sessionID string,
+	sessionID string, inputID int64,
 ) (string, error) {
+	if inputID <= 0 {
+		return "", nil
+	}
 	messages, err := s.store.ListSessionMessages(ctx, sessionID, true)
 	if err != nil {
 		return "", apperror.Normalize(err)
 	}
-	lastInput := -1
+	inputIndex := -1
 	for index, message := range messages {
+		if message.ID == inputID && message.Role == "user" {
+			inputIndex = index
+			break
+		}
+	}
+	if inputIndex < 0 {
+		return "", nil
+	}
+	reply := ""
+	for _, message := range messages[inputIndex+1:] {
 		if message.Role == "user" {
-			lastInput = index
+			break
+		}
+		if message.Role == "assistant" {
+			reply = message.Content
 		}
 	}
-	for index := len(messages) - 1; index > lastInput; index-- {
-		if messages[index].Role == "assistant" {
-			return messages[index].Content, nil
-		}
-	}
-	return "", nil
+	return reply, nil
 }
