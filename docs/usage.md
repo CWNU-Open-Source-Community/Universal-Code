@@ -159,6 +159,15 @@ authority: pin text stays below system policy and can never grant tools,
 permissions, or policy exceptions. The pin is visible in the Thread's context
 pin state and can be edited or removed there like any operator pin.
 
+`--output-last-message <file>`
+additionally writes the final assistant reply to a file (created or
+truncated; Unix permission bits 0600, Windows stays ACL-controlled) before
+the standard output is produced, so cron jobs and CI steps get a reliable
+file sink for the reply regardless of the output format; a failed write
+fails the command. A paused turn records its committed reply at the pause
+point; the file is empty only when the turn failed before committing any
+reply.
+
 `cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
 回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
 权限、审批与预算规则原样生效。`--workspace` 必填；`--profile`（默认 `code`）、
@@ -175,6 +184,13 @@ agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 
 Thread 上的后续 turn。它不放宽任何权限：pin 文本始终低于系统策略，永远不能
 授予工具、权限或策略例外。pin 在 Thread 的 context pin 状态中可见，可以像
 其他操作者 pin 一样在那里编辑或移除。
+
+`--output-last-message <文件>`
+会先把最终助手回复写入文件（创建或截断；Unix 权限位 0600，Windows 由 ACL
+控制）再产出标准输出，cron
+作业与 CI 步骤因此获得与输出格式无关的可靠文件汇；写入失败将使命令失败。
+turn 在暂停点的已提交回复会写入文件；仅当 turn 在提交任何回复前失败时文
+件才为空。
 
 ### 补充消息与排队 / Follow-up messages and queue
 

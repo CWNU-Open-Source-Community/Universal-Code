@@ -43,6 +43,8 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	jsonOutput := fs.Bool("json", false, "emit a structured JSON result")
 	instructions := fs.String("instructions", "",
 		"fix extra operator instructions as a Thread context pin for this invocation")
+	outputLastMessage := fs.String("output-last-message", "",
+		"write the final assistant reply to this file; empty disables it")
 	enablePermissionControl := fs.Bool("enable-permission-control", false,
 		"enable the operator-approval runtime for this process")
 	enableFullAccess := fs.Bool("enable-danger-full-access", false,
@@ -54,10 +56,14 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"max-turns": true, "max-tokens": true, "max-tool-calls": true,
 		"max-cost-usd": true, "timeout": true, "stdin": false, "json": false,
 		"instructions":              true,
+		"output-last-message":       true,
 		"enable-permission-control": false, "enable-danger-full-access": false,
 		"confirm-full": false,
 	})); err != nil {
 		return err
+	}
+	if *outputLastMessage != strings.TrimSpace(*outputLastMessage) {
+		return errors.New("exec --output-last-message path cannot contain surrounding whitespace")
 	}
 	prompt := strings.Join(fs.Args(), " ")
 	if *stdin {
@@ -189,6 +195,15 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+	// The last-message file is written before the standard output, so a
+	// failed write fails the command instead of leaving a stale file beside
+	// a success exit code. The reply may be empty when the turn paused
+	// before producing one; the file then records that emptiness.
+	if target := *outputLastMessage; target != "" {
+		if err := os.WriteFile(target, []byte(result.Reply), 0o600); err != nil {
+			return fmt.Errorf("write --output-last-message %s: %w", target, err)
+		}
 	}
 	if *jsonOutput {
 		encoder := json.NewEncoder(a.out)
