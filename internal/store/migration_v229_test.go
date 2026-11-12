@@ -77,9 +77,13 @@ func TestSchemaV229PreservesAllHookEventsAndScriptDecisions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v228-all-hooks.db")
 	old := openHistoricalTestDatabase(t, path, 228)
 	at := time.Now().UTC()
-	events := []hooks.Event{hooks.UserPromptSubmit, hooks.ApprovalRequested, hooks.PostToolFailure, hooks.TurnEnd, hooks.PostCompaction}
+	events := []hooks.Event{hooks.UserPromptSubmit, hooks.ApprovalRequested, hooks.PostToolFailure, hooks.TurnEnd, hooks.PostCompaction, hooks.PreTool}
 	for i, event := range events {
-		if _, err := old.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,outcome,created_at,plugin_fingerprint,declared_action,rejected) VALUES(?, 'guard','script-guard',?,'completed',?,?,'script',1)`, fmt.Sprintf("old-%d", i), string(event), ts(at), strings.Repeat("b", 64)); err != nil {
+		action, rejected := "record", 0
+		if event == hooks.PreTool {
+			action, rejected = "script", 1
+		}
+		if _, err := old.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,outcome,created_at,plugin_fingerprint,declared_action,rejected) VALUES(?, 'guard','script-guard',?,'completed',?,?,?,?)`, fmt.Sprintf("old-%d", i), string(event), ts(at), strings.Repeat("b", 64), action, rejected); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -96,7 +100,12 @@ func TestSchemaV229PreservesAllHookEventsAndScriptDecisions(t *testing.T) {
 		t.Fatalf("cumulative audits=%+v err=%v", audits, err)
 	}
 	for _, audit := range audits {
-		if audit.Action != hooks.ActionScript || audit.Rejected == nil || !*audit.Rejected {
+		expectedRejected := audit.Event == hooks.PreTool
+		expectedAction := hooks.ActionRecord
+		if expectedRejected {
+			expectedAction = hooks.ActionScript
+		}
+		if audit.Action != expectedAction || audit.Rejected == nil || *audit.Rejected != expectedRejected {
 			t.Fatalf("script decision lost: %+v", audit)
 		}
 	}

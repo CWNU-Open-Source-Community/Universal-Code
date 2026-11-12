@@ -418,6 +418,9 @@ func TestPostOccurrenceCapPreservesPayloadForLaterScripts(t *testing.T) {
 	capturing := &payloadCapturingExecutor{}
 	engine := NewEngine(nil).WithScriptExecutor(capturing)
 	values := annotateRegistrations(RunCompleted, MaxAnnotations+4, MaxAnnotationBytes)
+	for i := range values {
+		values[i].PluginID = "a-plugin"
+	}
 	values = append(values, Registration{PluginID: OperatorPluginID, PluginFingerprint: testHookDigest("script"), Declaration: Declaration{ProtocolVersion: ProtocolVersion, ID: "later-script", Event: RunCompleted, Action: ActionScript, FailurePolicy: FailureContinue, TimeoutMillis: 100, Script: &ScriptSpec{Interpreter: "python", Path: "tap.py", SHA256: testHookDigest("script")}}})
 	if err := engine.Replace(values); err != nil {
 		t.Fatal(err)
