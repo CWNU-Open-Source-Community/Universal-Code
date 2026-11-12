@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"strings"
+	"time"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/session"
@@ -71,6 +72,7 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 		return OneShotResult{}, apperror.New(apperror.CodeInvalidArgument,
 			"one-shot prompt is empty")
 	}
+	started := time.Now()
 	result, err := s.turns.Execute(ctx, ExecuteThreadTurnRequest{
 		Version: request.Version, ThreadID: request.ThreadID, Content: content,
 		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy,
@@ -80,7 +82,7 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 	}
 	submission := result.Submission
 	out := OneShotResult{ThreadID: submission.Thread.ID, RunID: submission.Run.ID,
-		RunStatus: string(submission.Run.Status)}
+		RunStatus: string(submission.Run.Status), DurationMs: time.Since(started).Milliseconds()}
 	if result.Execution != nil && result.Execution.Handoff.Result != nil {
 		out.TurnStatus = string(result.Execution.Handoff.Result.Status)
 		out.StopReason = result.Execution.Handoff.Result.StopReason
@@ -94,15 +96,7 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 			out.InputTokens += int64(step.Usage.InputTokens)
 			out.OutputTokens += int64(step.Usage.OutputTokens)
 			out.TotalTokens += int64(step.Usage.TotalTokens)
-			if step.Turn > out.TurnCount {
-				out.TurnCount = step.Turn
-			}
-		}
-		// Duration comes from the checkpoint's execution clock, which tracks
-		// wall-clock time spent in the agent loop.
-		if len(result.Execution.Execution.Steps) > 0 {
-			last := result.Execution.Execution.Steps[len(result.Execution.Execution.Steps)-1]
-			out.DurationMs = last.Checkpoint.ExecutionMillis
+			out.TurnCount++
 		}
 	}
 	reply, replyErr := s.lastAssistantReply(ctx, submission.Session.ID)
