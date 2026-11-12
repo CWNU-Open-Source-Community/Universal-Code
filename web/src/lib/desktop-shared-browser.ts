@@ -14,6 +14,7 @@ export interface SharedBrowserState extends SharedBrowserScope {
   session_id: string; revision: number; state: "starting" | "ready" | "closed" | "failed";
   control_owner: "user" | "agent"; fullscreen: boolean; active_tab_id: string;
   tabs: SharedBrowserTab[]; error?: string;
+  history?: Array<{ url: string; title: string; visited_at: string }>;
 }
 export type SharedBrowserCommand = "new_tab" | "select_tab" | "close_tab" | "navigate" |
   "back" | "forward" | "reload" | "stop" | "focus" | "take_control" | "release_control" |
@@ -68,6 +69,11 @@ export function parseSharedBrowserState(value: unknown, expected: Partial<Shared
       typeof tab.can_go_forward !== "boolean") throw new Error("Invalid shared browser tab");
     seen.add(tab.tab_id);
   }
+  if (value.history !== undefined && (!Array.isArray(value.history) || value.history.length > 50 || value.history.some((entry) =>
+    !record(entry) || typeof entry.url !== "string" || entry.url === "about:blank" || !sharedBrowserNavigationURL(entry.url) ||
+    typeof entry.title !== "string" || typeof entry.visited_at !== "string" || !Number.isFinite(Date.parse(entry.visited_at))))) {
+    throw new Error("Invalid shared browser history");
+  }
   if ((value.tabs.length > 0 && !seen.has(value.active_tab_id)) || (value.tabs.length === 0 && value.active_tab_id !== "") ||
     Object.entries(expected).some(([key, entry]) => entry !== undefined && (value[key] ?? "") !== entry)) {
     throw new Error("Shared browser scope mismatch");
@@ -97,6 +103,6 @@ export async function commandSharedBrowser(sessionID: string, command: SharedBro
 export async function setSharedBrowserSurface(request: Omit<SharedBrowserSurface, "protocol_version">): Promise<SharedBrowserSurfaceResult> {
   const value = await bridge().SetSharedBrowserSurface({ protocol_version: sharedBrowserProtocol, ...request });
   if (!record(value) || value.protocol_version !== sharedBrowserProtocol || value.session_id !== request.session_id ||
-    value.layout_revision !== request.layout_revision || typeof value.visible !== "boolean") throw new Error("Invalid browser surface result");
+    !counter(value.layout_revision) || value.layout_revision < request.layout_revision || typeof value.visible !== "boolean") throw new Error("Invalid browser surface result");
   return value as unknown as SharedBrowserSurfaceResult;
 }

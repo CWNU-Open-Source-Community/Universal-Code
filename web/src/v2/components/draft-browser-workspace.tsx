@@ -4,11 +4,11 @@ import { desktopSharedBrowserEnabled } from "../../lib/desktop-bridge";
 import { useLocale } from "../../lib/locale";
 import { clampWorkspaceWidth, collapseWorkspacePanel, defaultWorkspaceWidth, focusWorkspaceSingletonTab,
   minWorkspaceWidth, setWorkspaceWidth, setWorkspaceFullView, toggleWorkspaceFullView, useThreadWorkspaceState } from "../workspace-tabs";
-import { V2SharedBrowser } from "./shared-browser";
+import { V2SharedBrowser, type SharedBrowserTool } from "./shared-browser";
 import "./workspace-dock.css";
 
-export function V2DraftBrowserWorkspace({ workspaceID, children }: {
-  workspaceID: string; children: (trigger: ReactNode) => ReactNode;
+export function V2DraftBrowserWorkspace({ workspaceID, children, tools }: {
+  workspaceID: string; children: (trigger: ReactNode) => ReactNode; tools?: SharedBrowserTool[];
 }) {
   const { t } = useLocale();
   const scope = `draft:${workspaceID}`;
@@ -17,6 +17,7 @@ export function V2DraftBrowserWorkspace({ workspaceID, children }: {
   const trigger = useRef<HTMLButtonElement>(null);
   const beforeFullscreen = useRef<boolean | null>(null);
   const [compact, setCompact] = useState(false);
+  const [tabTarget, setTabTarget] = useState<HTMLDivElement | null>(null);
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
   const drag = useRef<{ pointerID: number; startX: number; startWidth: number } | null>(null);
   const available = desktopSharedBrowserEnabled() && Boolean(workspaceID);
@@ -67,14 +68,14 @@ export function V2DraftBrowserWorkspace({ workspaceID, children }: {
             if (next !== undefined) { event.preventDefault(); setWorkspaceWidth(scope, clampWorkspaceWidth(next, maximum())); }
           }} />}
         <header className="v2-workspace-tabbar">
-          <div className="v2-workspace-tabs-track v2-draft-browser-title"><Globe size={14} aria-hidden="true" />{t("浏览器", "Browser")}</div>
+          <div className="v2-workspace-tabs-track"><div className="v2-workspace-tablist" role="tablist" aria-label={t("工作区标签", "Workspace tabs")} ref={setTabTarget} /></div>
           <div className="v2-workspace-window-actions">
             {!compact && <button type="button" className="v2-workspace-icon-btn" aria-label={state.fullView ? t("退出完整视图", "Exit full view") : t("进入完整视图", "Enter full view")}
               onClick={() => toggleWorkspaceFullView(scope)}>{state.fullView ? <Minimize2 size={15} aria-hidden="true" /> : <Maximize2 size={15} aria-hidden="true" />}</button>}
             <button type="button" className="v2-workspace-icon-btn" aria-label={t("收起浏览器", "Collapse browser")} onClick={close}><PanelRightClose size={16} aria-hidden="true" /></button>
           </div>
         </header>
-        <div className="v2-workspace-dock-body"><V2SharedBrowser key={workspaceID} workspaceID={workspaceID} onFullscreenChange={(fullscreen) => {
+        <div className="v2-workspace-dock-body"><V2SharedBrowser key={workspaceID} workspaceID={workspaceID} tabBarTarget={tabTarget} tools={tools} onFullscreenChange={(fullscreen) => {
           if (fullscreen) { beforeFullscreen.current = state.fullView; setWorkspaceFullView(scope, true); }
           else if (beforeFullscreen.current !== null) { setWorkspaceFullView(scope, beforeFullscreen.current); beforeFullscreen.current = null; }
         }} /></div>

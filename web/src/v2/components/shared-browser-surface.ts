@@ -25,7 +25,7 @@ export function sharedBrowserOccluded(surface: HTMLElement): boolean {
 }
 
 // DOM supplies geometry only. The host attaches the actual browser view here.
-export function useSharedBrowserSurface(state: SharedBrowserState | null, onError: (error: unknown) => void) {
+export function useSharedBrowserSurface(state: SharedBrowserState | null, onError: (error: unknown) => void, showNative = true) {
   const ref = useRef<HTMLDivElement>(null);
   const errorRef = useRef(onError);
   errorRef.current = onError;
@@ -55,7 +55,7 @@ export function useSharedBrowserSurface(state: SharedBrowserState | null, onErro
       const bounds = { x: Math.max(0, rect.x), y: Math.max(0, rect.y),
         width: Math.max(0, Math.min(rect.right, window.innerWidth) - Math.max(0, rect.x)),
         height: Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(0, rect.y)) };
-      send(state.state === "ready" && bounds.width > 0 && bounds.height > 0 && !sharedBrowserOccluded(surface), bounds);
+      send(showNative && state.state === "ready" && bounds.width > 0 && bounds.height > 0 && !sharedBrowserOccluded(surface), bounds);
       if (performance.now() < followUntil) frame = requestAnimationFrame(update);
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
@@ -86,6 +86,6 @@ export function useSharedBrowserSurface(state: SharedBrowserState | null, onErro
       send(false, { x: 0, y: 0, width: 0, height: 0 });
       if (owners.get(session_id) === owner) owners.delete(session_id);
     };
-  }, [state?.session_id, state?.active_tab_id, state?.state]);
+  }, [state?.session_id, state?.active_tab_id, state?.state, showNative]);
   return ref;
 }

@@ -1,17 +1,34 @@
-.v2-shared-browser { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: var(--prayu-surface-solid); }
-.v2-browser-tabs-row, .v2-browser-toolbar { display: flex; align-items: center; min-width: 0; gap: 3px; padding: 5px 7px; border-bottom: 1px solid var(--prayu-border); }
-.v2-browser-tabs { display: flex; flex: 1; min-width: 0; overflow-x: auto; gap: 3px; }
-.v2-browser-tab { display: flex; flex: 0 1 170px; min-width: 80px; border-radius: 6px; }
-.v2-browser-tab[data-active="true"] { background: var(--v2-control); }
-.v2-browser-tab > button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; min-width: 0; padding: 6px; font-size: 12px; }
-.v2-browser-tab > button:first-child { flex: 1; }
-.v2-browser-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.v2-browser-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 27px; width: 27px; height: 27px; padding: 0; border: 0; border-radius: 5px; color: inherit; background: transparent; }
-.v2-browser-icon:hover:not(:disabled), .v2-browser-tab button:hover:not(:disabled) { background: var(--v2-control-hover); }
+.v2-shared-browser { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; color: var(--v2-ink); background: var(--prayu-surface-solid); }
+.v2-browser-tab-portal { display: contents; }
+.v2-browser-tab { min-width: 126px; max-width: 220px; border-radius: 10px; }
+.v2-browser-new-tab { margin-left: 2px; }
+.v2-browser-toolbar { display: flex; align-items: center; min-width: 0; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--v2-border); flex-shrink: 0; background: color-mix(in srgb, var(--v2-control-hover) 50%, var(--prayu-surface-solid)); }
+.v2-browser-navigation { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; padding: 5px; height: 42px; box-sizing: border-box; border-radius: 14px; background: var(--v2-control-hover); }
+.v2-browser-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 9px; color: var(--v2-ink); background: transparent; cursor: pointer; }
+.v2-browser-icon:disabled { opacity: .35; cursor: default; }
+.v2-browser-icon:hover:not(:disabled), .v2-browser-icon:focus-visible { background: var(--v2-control-hover); }
 .v2-browser-address { flex: 1; min-width: 0; }
-.v2-browser-address input { width: 100%; min-width: 0; height: 28px; padding: 4px 9px; border: 1px solid var(--prayu-border); border-radius: 6px; color: inherit; background: var(--v2-control); font: inherit; font-size: 12px; }
+.v2-browser-address input { box-sizing: border-box; width: 100%; min-width: 0; height: 42px; padding: 8px 14px; border: 1px solid var(--v2-border); border-radius: 14px; color: inherit; background: var(--prayu-surface-solid); font: inherit; font-size: 12px; outline-offset: 2px; }
+.v2-browser-toolbar > .v2-browser-icon { width: 38px; height: 38px; flex-basis: 38px; border-radius: 12px; }
+.v2-browser-address input::placeholder { color: var(--v2-muted); }
 .v2-browser-native-surface { flex: 1; min-height: 0; min-width: 0; background: #fff; color: #222; position: relative; }
 .v2-browser-native-surface > span { display: block; padding: 24px; font-size: 13px; }
+.v2-browser-native-surface.is-start-page { overflow: auto; background: var(--prayu-surface-solid); color: var(--v2-ink); }
+.v2-browser-start { width: 100%; max-width: 840px; box-sizing: border-box; padding: 48px; }
+.v2-browser-start h2 { margin: 0 0 12px; color: var(--v2-muted); font-size: 12px; font-weight: 500; }
+.v2-browser-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 24px; }
+.v2-browser-tools > button { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; padding: 8px; border: 0; border-radius: 9px; background: transparent; color: inherit; text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
+.v2-browser-tools > button:hover { background: var(--v2-control-hover); }
+.v2-browser-tools svg { color: var(--v2-muted); }
+.v2-browser-tools span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@container workspace-dock (max-width: 540px) { .v2-browser-start { padding: 32px 24px; } .v2-browser-tools { column-gap: 12px; } }
+.v2-browser-recent { margin-top: 32px; }
+.v2-browser-recent h2 { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; color: var(--v2-muted); font-size: 11px; font-weight: 500; }
+.v2-browser-recent > button { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 10px 8px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.v2-browser-recent > button:hover { background: var(--v2-control-hover); }
+.v2-browser-recent > button svg { flex-shrink: 0; color: var(--v2-muted); }
+.v2-browser-recent > button span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-browser-recent > button small { max-width: 36%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--v2-muted); font-size: 10px; }
 .v2-browser-error { padding: 8px 10px; font-size: 12px; overflow-wrap: anywhere; }
 .v2-browser-error button { margin-left: 8px; }
 .v2-browser-spinner { animation: v2-browser-spin 1s linear infinite; }
@@ -19,5 +36,5 @@
 @media (prefers-reduced-motion: reduce) { .v2-browser-spinner { animation: none; } }
 .v2-draft-browser-stage { height: 100%; }
 .v2-draft-browser-stage > .v2-conversation-main-column > .v2-new-conversation { flex: 1; }
-.v2-draft-browser-title { display: flex; align-items: center; gap: 7px; padding-left: 12px; font-size: 12px; }
-.v2-draft-browser-trigger { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; flex-shrink: 0; }
+.v2-draft-browser-trigger { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; flex-shrink: 0; min-height: 28px; padding: 4px 8px; border: 1px solid var(--v2-border); border-radius: 7px; background: transparent; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.v2-draft-browser-trigger:hover { background: var(--v2-control-hover); }

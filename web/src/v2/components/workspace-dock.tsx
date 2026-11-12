@@ -62,7 +62,7 @@ import {
 } from "../workspace-tabs";
 import { V2IdentityDisclosure } from "./identity-disclosure";
 import { V2LazySurface } from "./lazy-surface";
-import { V2SharedBrowser } from "./shared-browser";
+import { sharedWorkspaceTabKey, V2SharedBrowser } from "./shared-browser";
 import type { TaskReviewToolMemory } from "./task-review-tools";
 import "./workspace-dock.css";
 
@@ -264,6 +264,7 @@ export function V2WorkspaceDock({
   const firstMenuItemRef = useRef<HTMLButtonElement>(null);
   const tabTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [browserTabTarget, setBrowserTabTarget] = useState<HTMLDivElement | null>(null);
   const browserFullViewBeforeFullscreen = useRef<boolean | null>(null);
   const [recordsMenuOpen, setRecordsMenuOpen] = useState(false);
   const recordsMenuAnchor = useRef<HTMLDivElement>(null);
@@ -484,24 +485,9 @@ export function V2WorkspaceDock({
     performClose();
   };
 
-  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
-    const count = state.tabs.length;
-    if (count <= 1) return;
-    const targetIndex = event.key === "ArrowRight" ? (index + 1) % count
-      : event.key === "ArrowLeft" ? (index - 1 + count) % count
-        : event.key === "Home" ? 0
-          : event.key === "End" ? count - 1
-            : -1;
-    if (targetIndex === -1) return;
-    event.preventDefault();
-    const target = state.tabs[targetIndex];
-    handleSelectTab(target.id);
-    requestAnimationFrame(() => tabTriggerRefs.current.get(target.id)?.focus());
-  };
-
   const terminalAvailable = desktopUserTerminalEnabled();
   const browserAvailable = desktopSharedBrowserEnabled();
+  const hasBrowserTab = browserAvailable && state.tabs.some((tab) => tab.kind === "browser");
   const hasTerminalTab = state.tabs.some((tab) => tab.id === "terminal");
   const fullViewLabel = state.fullView
     ? t("退出完整视图", "Exit full view")
@@ -528,7 +514,8 @@ export function V2WorkspaceDock({
       <header className="v2-workspace-tabbar">
         <div className="v2-workspace-tabs-track">
           <div aria-label={t("右侧工作区标签", "Workspace tabs")} className="v2-workspace-tablist" role="tablist">
-            {state.tabs.map((tab, index) => {
+            {state.tabs.map((tab) => {
+              if (tab.kind === "browser" && browserAvailable) return <div key={tab.id} className="v2-browser-tab-portal" ref={setBrowserTabTarget} />;
               const isActive = tab.id === activeTab.id;
               const title = workspaceTabTitle(tab, t);
               const tooltip = workspaceTabTooltip(tab, workspaceName, t);
@@ -547,7 +534,7 @@ export function V2WorkspaceDock({
                       }
                     }}
                     onClick={() => handleSelectTab(tab.id)}
-                    onKeyDown={(event) => handleTabKeyDown(event, index)}
+                    onKeyDown={sharedWorkspaceTabKey}
                     ref={(node) => {
                       if (node) tabTriggerRefs.current.set(tab.id, node);
                       else tabTriggerRefs.current.delete(tab.id);
@@ -587,7 +574,7 @@ export function V2WorkspaceDock({
               title={t("打开标签", "Open tab")}
               type="button"
             >
-              <Plus aria-hidden="true" size={15} />
+              {hasBrowserTab ? <MoreHorizontal aria-hidden="true" size={15} /> : <Plus aria-hidden="true" size={15} />}
             </button>
             {addMenuOpen && (
               <div className="v2-workspace-add-menu" role="menu">
@@ -813,9 +800,15 @@ export function V2WorkspaceDock({
           announcements (e.g. composer vs preview startup banner). State continuity (targets,
           runIDs, review memory) is maintained at the conversation parent level.
         */}
-        {panelVisible && activeTab.id === "browser" && <div role="tabpanel" className="v2-workspace-tabpanel"
-          id={tabPanelID(threadID, "browser")} aria-labelledby={tabButtonID(threadID, "browser")}>
+        {state.tabs.some((tab) => tab.kind === "browser") && <div className="v2-workspace-tabpanel" hidden={!panelVisible || activeTab.id !== "browser"}>
           {browserAvailable ? <V2SharedBrowser workspaceID={detail.thread.workspace_id ?? ""} threadID={threadID} runID={currentRunID}
+            tabBarTarget={browserTabTarget} active={panelVisible && activeTab.id === "browser"} onActivate={() => handleSelectTab("browser")}
+            tools={[
+              { id: "files", label: t("文件", "Files"), icon: <FolderTree size={20} aria-hidden="true" />, onOpen: () => addWorkspaceFileTab(threadID, currentRunID) },
+              { id: "changes", label: t("变更", "Changes"), icon: <FileDiff size={20} aria-hidden="true" />, onOpen: () => focusWorkspaceSingletonTab(threadID, "review") },
+              ...(terminalAvailable ? [{ id: "terminal", label: t("终端", "Terminal"), icon: <SquareTerminal size={20} aria-hidden="true" />, onOpen: () => focusWorkspaceSingletonTab(threadID, "terminal") }] : []),
+              { id: "preview", label: t("应用预览", "App preview"), icon: <PanelTop size={20} aria-hidden="true" />, onOpen: () => focusWorkspaceSingletonTab(threadID, "preview") },
+            ]}
             onFullscreenChange={(fullscreen) => {
               if (fullscreen) {
                 browserFullViewBeforeFullscreen.current = state.fullView;

@@ -1,6 +1,6 @@
 import { lazy, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { QueryClient, QueryClientProvider, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Folder, SlidersHorizontal } from "lucide-react";
+import { Brain, Folder, SlidersHorizontal } from "lucide-react";
 import type { APIClient } from "../api/client";
 import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadSearchResultView, ThreadView, WorkspaceView } from "../api/types";
 import { normalizedTaskBudget } from "../api/task-configuration";
@@ -45,7 +45,7 @@ import { useProjectlessWorkspace } from "./projectless-workspace";
 import { threadProjectID } from "./components/thread-project-dialog";
 import { useChatShortcuts } from "./chat-preferences";
 import { V2DraftBrowserWorkspace } from "./components/draft-browser-workspace";
-import { bindDraftSharedBrowser } from "./shared-browser-session";
+import { adoptDraftSharedBrowser, bindDraftSharedBrowser } from "./shared-browser-session";
 
 type CreationAttempt = Map<string, string>;
 type NewThreadOptions = { networkMode: V2NetworkMode; allowedTargets: string[];
@@ -122,6 +122,7 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
     const submittedDraft = draft;
     setModelCatalogError("");
     const creationWorkspaceID = workspaceID;
+    const browserGeneration = useConnectionStore.getState().connectionGeneration;
     const creationRequest = ++creationRequestRef.current;
     // Leaving this page, changing projects, or starting another request ends
     // this request's right to navigate, but not its original input handoff.
@@ -167,9 +168,9 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
         }
         const intent = creationRecovery.prepare(request, content, files, submittedDraft, images, draftVersion, attachments, projectSkills, mcpReferences);
         const thread = await creationRecovery.resolve(intent);
+        await adoptDraftSharedBrowser(creationWorkspaceID, thread.id, thread.last_run_id, browserGeneration);
         const input = creationRecovery.handoff(intent, thread);
         const submission = turn.mutateAsync(input);
-        bindDraftSharedBrowser(creationWorkspaceID, thread.id);
         onCreated(thread, submittedDraft, files, images, input.draftVersion, attachments, requestIsCurrent(), mcpReferences);
         void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
         try { await submission; }
@@ -187,13 +188,13 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
             throw new Error(`${t(`对话 ${result.thread.id} 已保存，技能选择失败，尚未发送首条消息。`, `Conversation ${result.thread.id} was saved, but skill selection failed and the first message has not been sent.`)}${error instanceof Error ? error.message : t("请重试。", "Please try again.")}`);
           }
         }
+        await adoptDraftSharedBrowser(creationWorkspaceID, result.thread.id, result.thread.last_run_id, browserGeneration);
         const submission = turn.mutateAsync({ threadID: result.thread.id, workspaceID, content,
           ...(files.length ? { files } : {}),
           ...(images.length ? { images } : {}),
           ...(attachments.length ? { attachments } : {}),
           ...(mcpReferences.length ? { mcpReferences } : {}),
           operationKey: `v2-thread-create-turn-${operationID}`, createdAt: new Date().toISOString() });
-        bindDraftSharedBrowser(creationWorkspaceID, result.thread.id);
         onCreated(result.thread, submittedDraft, files, images, undefined, attachments, requestIsCurrent(), mcpReferences);
         creationAttemptRef.current.delete(fingerprint);
         void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
@@ -209,7 +210,10 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
     }
     if (!requestIsCurrent()) return v2ComposerNotSubmitted;
   };
-  return <V2DraftBrowserWorkspace workspaceID={workspaceID}>{(browserTrigger) => <section className="v2-new-conversation">
+  return <V2DraftBrowserWorkspace workspaceID={workspaceID} tools={[
+    { id: "task-configuration", label: t("任务配置", "Task configuration"), icon: <SlidersHorizontal size={20} aria-hidden="true" />, onOpen: onOpenTaskConfiguration },
+    { id: "models", label: t("模型", "Models"), icon: <Brain size={20} aria-hidden="true" />, onOpen: () => onManageModels(true) },
+  ]}>{(browserTrigger) => <section className="v2-new-conversation">
     <header><Folder aria-hidden="true" size={17} /><strong>{t("新对话", "New conversation")}</strong>
       <V2WorkspaceStart client={client} onSelect={(workspace) => onImported(workspace, draft)} />{moreProjects}{browserTrigger}</header>
     <div className="v2-new-conversation-body"><div className="v2-new-copy">

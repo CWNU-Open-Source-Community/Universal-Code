@@ -3,6 +3,12 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../../lib/locale";
 import type { SharedBrowserState, SharedBrowserSurface } from "../../lib/desktop-shared-browser";
 import { V2SharedBrowser } from "./shared-browser";
+import { V2DraftBrowserWorkspace } from "./draft-browser-workspace";
+import * as desktopBridge from "../../lib/desktop-bridge";
+import { V2WorkspaceDock } from "./workspace-dock";
+import { focusWorkspaceSingletonTab, useThreadWorkspaceState } from "../workspace-tabs";
+import type { APIClient } from "../../api/client";
+import type { ThreadDetailView } from "../../api/types";
 
 const rpc = vi.hoisted(() => ({ open: vi.fn(), get: vi.fn(), command: vi.fn(), surface: vi.fn() }));
 vi.mock("../../lib/desktop-shared-browser", async (original) => ({ ...await original<typeof import("../../lib/desktop-shared-browser")>(),
@@ -82,5 +88,90 @@ describe("native shared-browser controls", () => {
     const view = mount(); view.unmount();
     await act(async () => resolve(initial));
     expect(rpc.surface).toHaveBeenCalledWith(expect.objectContaining({ session_id: "session-ui", visible: false }));
+  });
+  it("shows actual tools and host history on the new-tab page while hiding the native surface", async () => {
+    const tool = vi.fn();
+    rpc.open.mockResolvedValue({ ...initial, tabs: [{ ...initial.tabs[0], title: "", url: "about:blank" }],
+      history: [{ url: "https://example.com/actual-visit", title: "已访问报告", visited_at: "2026-11-12T05:00:00Z" }] });
+    render(<LocaleProvider><V2SharedBrowser workspaceID="workspace-ui" tools={[{ id: "files", label: "文件", icon: null, onOpen: tool }]} /></LocaleProvider>);
+    expect(await screen.findByRole("region", { name: "新标签页" })).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "浏览器地址" })).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "文件" }));
+    expect(tool).toHaveBeenCalledOnce();
+    await waitFor(() => expect(rpc.surface).toHaveBeenCalledWith(expect.objectContaining({ visible: false })));
+    expect(rpc.surface.mock.calls.every(([request]) => request.visible === false)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /已访问报告/ }));
+    await waitFor(() => expect(rpc.command).toHaveBeenCalledWith("session-ui", "navigate", { tab_id: "tab-ui", url: "https://example.com/actual-visit" }));
+    await waitFor(() => expect(rpc.surface.mock.lastCall?.[0].visible).toBe(true));
+  });
+  it("renders one draft workspace tab bar and restores split after OS fullscreen", async () => {
+    vi.spyOn(desktopBridge, "desktopSharedBrowserEnabled").mockReturnValue(true);
+    let revision = 1;
+    rpc.command.mockImplementation(async (_session, name) => ({ ...initial, revision: ++revision, fullscreen: name === "enter_fullscreen" }));
+    const view = render(<LocaleProvider><V2DraftBrowserWorkspace workspaceID="workspace-ui">{trigger => <section><header>{trigger}</header><p>草稿</p></section>}</V2DraftBrowserWorkspace></LocaleProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    expect(await screen.findByRole("tab", { name: "Example" })).toBeVisible();
+    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(screen.queryByRole("tab", { name: "浏览器" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "全屏浏览器" }));
+    await waitFor(() => expect(view.container.querySelector(".v2-conversation-stage")).toHaveClass("is-full-view"));
+    fireEvent.click(screen.getByRole("button", { name: "退出全屏" }));
+    await waitFor(() => expect(view.container.querySelector(".v2-conversation-stage")).not.toHaveClass("is-full-view"));
+  });
+  it("does not exit OS fullscreen for a modal but exits when the browser container unmounts", async () => {
+    const changed = vi.fn();
+    rpc.open.mockResolvedValue({ ...initial, fullscreen: true });
+    const view = render(<LocaleProvider><V2SharedBrowser workspaceID="workspace-ui" onFullscreenChange={changed} /></LocaleProvider>);
+    await waitFor(() => expect(changed).toHaveBeenCalledWith(true));
+    const menu = document.createElement("div"); menu.setAttribute("role", "menu");
+    act(() => document.body.append(menu));
+    await waitFor(() => expect(rpc.surface.mock.lastCall?.[0].visible).toBe(false));
+    expect(rpc.command).not.toHaveBeenCalled();
+    act(() => menu.remove());
+    view.unmount();
+    expect(rpc.command).toHaveBeenCalledWith("session-ui", "exit_fullscreen");
+    expect(changed).toHaveBeenLastCalledWith(false);
+  });
+  it("keeps native pages alongside other workspace tabs in the same dock tab list", async () => {
+    vi.spyOn(desktopBridge, "desktopSharedBrowserEnabled").mockReturnValue(true);
+    const pages = { ...initial, tabs: [...initial.tabs, { ...initial.tabs[0], tab_id: "tab-two", title: "Second" }] };
+    rpc.open.mockResolvedValue(pages); rpc.get.mockResolvedValue(pages);
+    let revision = 1;
+    rpc.command.mockImplementation(async (_session, _command, options) => ({ ...pages, revision: ++revision, active_tab_id: options?.tab_id ?? pages.active_tab_id }));
+    const threadID = "unified-dock-test";
+    focusWorkspaceSingletonTab(threadID, "browser");
+    focusWorkspaceSingletonTab(threadID, "records");
+    focusWorkspaceSingletonTab(threadID, "browser");
+    function Dock() {
+      const state = useThreadWorkspaceState(threadID);
+      return <V2WorkspaceDock client={{} as APIClient} threadID={threadID} detail={{ thread: { workspace_id: "workspace-ui" } } as ThreadDetailView}
+        currentRunID="run-ui" workspaceName="工作区" working={false} docked panelVisible state={state}
+        fullViewShortcutLabel="" onToggleFullView={() => {}} onCollapse={() => {}} returnFocusRef={{ current: null }}
+        canQuote={false} onReturnToDraft={() => {}} onRequestChange={() => {}} canRequestPreviewStart={false} onRequestPreviewStart={() => {}}
+        recordsContent={<p>真实记录面板</p>} />;
+    }
+    render(<LocaleProvider><Dock /></LocaleProvider>);
+    const nativeTab = await screen.findByRole("tab", { name: "Example" });
+    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(screen.queryByRole("tab", { name: "浏览器" })).not.toBeInTheDocument();
+    const secondTab = screen.getByRole("tab", { name: "Second" });
+    fireEvent.keyDown(nativeTab, { key: "ArrowRight" });
+    await waitFor(() => expect(secondTab).toHaveAttribute("aria-selected", "true"));
+    expect(secondTab).toHaveFocus();
+    fireEvent.keyDown(secondTab, { key: "End" });
+    expect(await screen.findByText("真实记录面板")).toBeVisible();
+    const recordsTab = screen.getByRole("tab", { name: "执行记录" });
+    expect(recordsTab).toHaveFocus();
+    expect(nativeTab).toBeVisible();
+    expect(nativeTab).toHaveAttribute("aria-selected", "false");
+    await waitFor(() => expect(rpc.surface.mock.lastCall?.[0].visible).toBe(false));
+    fireEvent.keyDown(recordsTab, { key: "ArrowLeft" });
+    await waitFor(() => expect(rpc.surface.mock.lastCall?.[0].visible).toBe(true));
+    expect(secondTab).toHaveFocus();
+    fireEvent.keyDown(secondTab, { key: "Home" });
+    await waitFor(() => expect(nativeTab).toHaveAttribute("aria-selected", "true"));
+    expect(nativeTab).toHaveFocus();
+    expect(nativeTab).toHaveAttribute("aria-selected", "true");
+    expect(rpc.open).toHaveBeenCalledOnce();
   });
 });
