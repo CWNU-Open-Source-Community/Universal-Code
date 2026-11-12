@@ -91,7 +91,7 @@ export function useModalFocusTrap<T extends HTMLElement>(open: boolean, onEscape
     const preferred = initialFocusRef?.current && dialog.contains(initialFocusRef.current)
       ? initialFocusRef.current
       : candidates.find((element) => element.hasAttribute("autofocus")) ?? candidates[0];
-    if (!escapeDisabled && !dialog.contains(document.activeElement)) {
+    if (!dialog.contains(document.activeElement)) {
       (preferred ?? dialog).focus();
     }
 
