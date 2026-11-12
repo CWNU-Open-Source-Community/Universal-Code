@@ -102,11 +102,13 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 	indexSHA := sha256.Sum256(nil)
 	indexBlobSHA := ""
 	if inventory.git && inventory.indexPath != "" {
-		indexRaw, readErr := os.ReadFile(inventory.indexPath)
+		indexRaw, streamSHA, readErr := readCaptureIndex(inventory.indexPath)
 		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 			return Snapshot{}, fmt.Errorf("read Git index: %w", readErr)
 		}
-		indexSHA = sha256.Sum256(indexRaw)
+		if !errors.Is(readErr, os.ErrNotExist) {
+			indexSHA = streamSHA
+		}
 		if errors.Is(readErr, os.ErrNotExist) {
 			// A missing index is a legitimate, exactly recoverable state for a
 			// newly initialized repository. The empty digest plus an absent blob
@@ -411,6 +413,45 @@ func inspectCaptureInventory(ctx context.Context, root string) (captureInventory
 		}
 	}
 	return result, nil
+}
+
+// readCaptureIndex hashes the Git index as a stream and captures only its
+// first MaxStoredIndexBytes+1 bytes. Restore bounds the same file through an
+// equivalent limited read (readGitIndexUnderLock), while an unbounded
+// os.ReadFile here allocated the whole index on every preflight capture —
+// hundreds of megabytes on a monorepo, multiplied by concurrent captures.
+// The returned digest still covers the complete file, so restore's preview
+// drift detection keeps comparing whole-index digests, and the oversized
+// prefix length drives the existing partial-recovery classification without
+// storing a blob.
+func readCaptureIndex(path string) ([]byte, [sha256.Size]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, [sha256.Size]byte{}, err
+	}
+	defer file.Close()
+	hasher := sha256.New()
+	raw := make([]byte, 0, 64*1024)
+	buf := make([]byte, 128*1024)
+	for {
+		n, readErr := file.Read(buf)
+		if n > 0 {
+			hasher.Write(buf[:n])
+			if room := MaxStoredIndexBytes + 1 - len(raw); room > 0 {
+				if n > room {
+					raw = append(raw, buf[:room]...)
+				} else {
+					raw = append(raw, buf[:n]...)
+				}
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return raw, [sha256.Size]byte(hasher.Sum(nil)), nil
+		}
+		if readErr != nil {
+			return nil, [sha256.Size]byte{}, readErr
+		}
+	}
 }
 
 func capturePaths(inventory captureInventory) []string {
