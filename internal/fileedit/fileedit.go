@@ -934,8 +934,24 @@ func (m *Manager) ApproveIntent(ctx context.Context, id string) (Edit, error) {
 	if edit.Status == StatusApproved {
 		return edit, nil
 	}
+	edit, err = PrepareReview(edit, true, "", time.Now().UTC())
+	if err != nil {
+		return Edit{}, err
+	}
+	return m.store.SaveFileEdit(ctx, edit)
+}
+
+// PrepareReview validates and prepares a review without writing the workspace
+// or storage. Durable reviewers can commit it with the exact approval decision.
+func PrepareReview(edit Edit, approve bool, reason string, now time.Time) (Edit, error) {
 	if edit.Status != StatusProposed {
 		return Edit{}, fmt.Errorf("file edit %s is %s, not %s", edit.ID, edit.Status, StatusProposed)
+	}
+	if !approve {
+		edit.Status = StatusDenied
+		edit.Reason = redact.String(strings.TrimSpace(reason))
+		edit.UpdatedAt = now
+		return edit, nil
 	}
 	operation, err := NormalizeOperation(edit.Operation)
 	if err != nil {
@@ -955,8 +971,8 @@ func (m *Manager) ApproveIntent(ctx context.Context, id string) (Edit, error) {
 	}
 	edit.Status = StatusApproved
 	edit.Reason = ""
-	edit.UpdatedAt = time.Now().UTC()
-	return m.store.SaveFileEdit(ctx, edit)
+	edit.UpdatedAt = now
+	return edit, nil
 }
 
 func (m *Manager) Deny(ctx context.Context, id string, reason string) (Edit, error) {
@@ -967,12 +983,10 @@ func (m *Manager) Deny(ctx context.Context, id string, reason string) (Edit, err
 	if edit.Status == StatusDenied {
 		return edit, nil
 	}
-	if edit.Status != StatusProposed {
-		return Edit{}, fmt.Errorf("file edit %s is %s, not %s", edit.ID, edit.Status, StatusProposed)
+	edit, err = PrepareReview(edit, false, reason, time.Now().UTC())
+	if err != nil {
+		return Edit{}, err
 	}
-	edit.Status = StatusDenied
-	edit.Reason = redact.String(strings.TrimSpace(reason))
-	edit.UpdatedAt = time.Now().UTC()
 	return m.store.SaveFileEdit(ctx, edit)
 }
 
