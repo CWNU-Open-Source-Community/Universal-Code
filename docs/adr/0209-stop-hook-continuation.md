@@ -1,16 +1,16 @@
 # ADR 0209: stop hooks with bounded continuation
 
-- Status: Proposed (design revision after delegate review; not
-  implementable until the dependencies below land)
+- Status: Proposed (design revision after delegate review; implementation
+  must include the runtime and event migrations below)
 - Date: 2026-11-11
 - Scope: hook events, turn lifecycle, session provenance, and automation
 - Dependencies: **requires the operator script hook runtime** (conditional
   `denied` script output, hook directory confinement) from the
-  operator-script-hooks PR series — not on main yet; this ADR is not
-  implementable until it lands. The `turn_end` / `post_compaction` PRs
-  are relevant as the per-event validation precedent and for sequencing
-  the audit-event migration (they currently ship no audit migration at
-  all — flagged on those PRs)
+  operator-script-hooks PR series (ADR 0197). Relative to this proposal's
+  original baseline, that runtime has landed; `turn_end` (#580) and
+  `post_compaction` (#582) also carry audit-event migrations. The stop
+  migration must follow the event migrations present on its implementation
+  base and preserve their admitted events.
 - Updates: docs/extensions.md; extends ADR 0201 (one-shot exec mode),
   ADR 0205 (exec --continue thread), and the operator script hook
   contract
@@ -59,12 +59,12 @@ acquiring operator authority.
    (annotate is currently valid for any event — the new rule is genuinely
    needed), narrow is already pre_tool-only.
 2. **The conditional decision comes from operator script hooks.** The
-   hook engine on main is declarative-only: plugin rules carry a fixed
+   declarative plugin rules carry a fixed
    declaration-time message and cannot inspect the reply. A stop hook
    that decides "is the task done" requires the operator script hook
    runtime's bounded script output (`denied: true` + reason) from the
-   script-hooks PR series — this ADR depends on it and is not
-   implementable without it. Declarative plugin rules MAY also declare
+   script-hooks PR series — implementation depends on that runtime being
+   present on its base. Declarative plugin rules MAY also declare
    `stop` with `record` action (observation only); a declarative `deny`
    would be an unconditional always-continue rule, which is rejected at
    validation to prevent a fixed-message loop.
@@ -164,10 +164,11 @@ acquiring operator authority.
    of Decision 4, and audits the outcome. Multi-hook denial is already
    deterministic (registrations are sorted; the first deny wins), so one
    reason drives each continuation.
-9. **Audit, migration, and diagnostics.** The audit table's event
-   constraint has never been widened on main — a migration (following
-   the table-rebuild pattern the script-hooks PR series introduces for
-   its own events) adds `stop` to the event constraint. The web
+9. **Audit, migration, and diagnostics.** A new migration adds `stop` to
+   the audit table's event constraint using the table-rebuild pattern.
+   It follows the predecessor migrations on the implementation base,
+   including `turn_end` / `post_compaction` when present, and retains
+   every already-admitted event. The web
    diagnostics `hookEvents` list and label map gain the event in the
    same PR (the post_tool_failure review caught exactly this class of
    omission). The continuation counter surfaces in the end record so
@@ -221,7 +222,7 @@ answered explicitly: the model still cannot continue itself, the
 operator still owns hook configuration, hook text never acquires
 operator authority, and a hook can only continue — never widen tools,
 permissions, or budget. The design depends on the operator script hook
-runtime and its migrations landing first; if maintainers prefer the
+runtime and predecessor migrations being present on its base; if maintainers prefer the
 orchestrator-side pattern, this ADR records the full design — including
 the provenance work that any future continuation mechanism must reuse —
 for reconsideration instead of an unreviewed feature landing in the turn
