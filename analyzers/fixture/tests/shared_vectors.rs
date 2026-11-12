@@ -137,7 +137,10 @@ fn validates_shared_go_owned_golden_vectors() {
         );
         let request = serde_json::to_vec(&vector.request).expect("request must serialize");
         let evaluation = evaluate(&request);
-        let actual_sha = format!("{:x}", Sha256::digest(&evaluation.stdout));
+        let actual_sha = Sha256::digest(&evaluation.stdout)
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
         assert_eq!(
             evaluation.exit_code, vector.expected_exit_code,
             "{}",
@@ -213,7 +216,10 @@ fn validates_shared_archive_inventory_vectors() {
         );
         let request = serde_json::to_vec(&vector.request).expect("archive request must serialize");
         let evaluation = evaluate(&request);
-        let actual_sha = format!("{:x}", Sha256::digest(&evaluation.stdout));
+        let actual_sha = Sha256::digest(&evaluation.stdout)
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
         assert_eq!(evaluation.exit_code, EXIT_SUCCESS, "{}", vector.name);
         assert_eq!(
             evaluation.exit_code, vector.expected_exit_code,

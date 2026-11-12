@@ -244,7 +244,10 @@ fn evaluate_fixture(request: Request, content: &[u8]) -> Evaluation {
         summary: Summary {
             media_type: request.input.media_type,
             input_bytes: content.len(),
-            sha256: format!("{:x}", Sha256::digest(content)),
+            sha256: Sha256::digest(content)
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>(),
             utf8: text,
             line_count: logical_line_count(content, text),
         },
