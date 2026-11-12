@@ -1236,8 +1236,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </p>}
       {reconciling ? <p className="v2-composer-caption" role="status">{t("正在核对上次提交，避免重复执行。可以继续编辑，核对完成后再发送。", "Checking the previous submission to avoid duplicate execution. You can keep editing and send when the check finishes.")}</p>
         : executionQuery.data?.state === "stopping" && <p className="v2-composer-caption" role="status">{t("正在停止执行。可以继续编辑，停止完成后再发送。", "Stopping execution. You can keep editing and send when stopping finishes.")}</p>}
-      {working && draft && onDraftChange && submittedContents.has(draft.trim()) &&
-        <button className="v2-composer-chip" onClick={() => onDraftChange("")} type="button">{t("编写下一条", "Write next message")}</button>}
       {detail.recovery && <V2ThreadRunRecovery recovery={detail.recovery}
         approvalSaved={narrative.some((entry) => recoveryRepresentsNotice(entry, detail.recovery))} />}
       {executionQuery.data?.state === "idle" && executionQuery.data.last_turn_interrupted &&
@@ -1257,6 +1255,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         submitDisabled={reconciling || executionQuery.data?.state === "stopping" ||
           executionQuery.data?.state === "stop_failed"}
         draft={draft} onDraftChange={onDraftChange}
+        onStartNextMessage={working && draft && onDraftChange && submittedContents.has(draft.trim())
+          ? () => onDraftChange("") : undefined}
         onStop={() => {
           const button = stopButtonRef.current;
           if (!button || button.disabled) return false;

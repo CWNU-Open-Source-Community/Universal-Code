@@ -37,7 +37,7 @@ export type V2ComposerSubmitResult = void | typeof v2ComposerNotSubmitted;
 export function V2Composer({ client, threadID, workspaceID, runID, workspaces, disabled = false, submitDisabled = false,
   projectID, allowProjectless = false,
   placeholder, newThreadControls, threadControls, runActive = false, onManageModels,
-  pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, onStop, draft, onDraftChange,
+  pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, onStop, draft, onDraftChange, onStartNextMessage,
   fileReferenceUnavailableReason, confirmedSubmission, presentedSubmissionErrors = [] }: {
   client: APIClient;
   threadID: string;
@@ -60,6 +60,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   onStop?: () => boolean;
   draft?: string;
   onDraftChange?: (content: string, expected?: string) => void;
+  onStartNextMessage?: () => void;
   fileReferenceUnavailableReason?: string;
   confirmedSubmission?: V2TurnInput | null;
   presentedSubmissionErrors?: ReadonlyArray<Pick<V2TurnInput, "threadID" | "workspaceID" | "operationKey">>;
@@ -442,6 +443,13 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
           setError(null);
           requestAnimationFrame(() => inputRef.current?.focus());
         }} />}
+      {onStartNextMessage && <div className="v2-composer-draft-actions">
+        <button className="v2-composer-chip" disabled={disabled} onClick={() => {
+          onStartNextMessage();
+          setEditorExpanded(true);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }} type="button">{t("编写下一条", "Write next message")}</button>
+      </div>}
       <MarkdownInput label={threadID ? t("继续对话", "Continue conversation") : t("开始新对话", "Start a new conversation")} disabled={disabled}
         onChange={(next) => { promptHistory.cancel(); setContent(next); setError(null); }} onSubmit={() => void submit()}
         onHistoryNavigate={promptHistory.navigate} onHistoryCancel={promptHistory.cancel}

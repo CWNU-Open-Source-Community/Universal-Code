@@ -44,16 +44,19 @@ vi.mock("../projection/narrative", () => ({
 }));
 
 vi.mock("./composer", () => ({
-  V2Composer: ({ disabled, onSubmit, onStop, threadID, fileReferenceUnavailableReason }: {
+  V2Composer: ({ disabled, onSubmit, onStop, onStartNextMessage, threadID, fileReferenceUnavailableReason }: {
     disabled: boolean;
     onSubmit: (content: string, files?: V2FileReference[]) => Promise<void>;
     onStop?: () => boolean;
+    onStartNextMessage?: () => void;
     threadID: string;
     fileReferenceUnavailableReason?: string;
-  }) => { composerStop.current = onStop; return <button data-file-reference-unavailable={fileReferenceUnavailableReason}
+  }) => { composerStop.current = onStop; return <div data-testid="composer">
+    {onStartNextMessage && <button onClick={onStartNextMessage} type="button">编写下一条</button>}
+    <button data-file-reference-unavailable={fileReferenceUnavailableReason}
     disabled={disabled} onClick={() => void onSubmit(`pending-${threadID}`, composerFiles.current).catch(() => undefined)} type="button">
     发送 {threadID}
-  </button>; },
+  </button></div>; },
 }));
 
 vi.mock("../../components/user-terminal-panel", () => ({
@@ -948,6 +951,7 @@ describe("V2Conversation", () => {
     // The settled mutation leaves the cache, but the leftover draft still
     // matches the accepted payload, so the chip stays available.
     const chip = await screen.findByRole("button", { name: "编写下一条" });
+    expect(within(screen.getByTestId("composer")).getByRole("button", { name: "编写下一条" })).toBe(chip);
 
     await user.click(chip);
     expect(onDraftChange).toHaveBeenCalledWith("");

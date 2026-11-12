@@ -1368,6 +1368,8 @@
   position: relative;
   transition: border-color var(--prayu-motion-fast) ease;
 }
+.v2-composer-draft-actions { display: flex; justify-content: flex-end; padding: 8px 12px 0; position: relative; z-index: 2; }
+.v2-composer-draft-actions > .v2-composer-chip { height: 28px; max-width: 100%; }
 .v2-composer-surface:focus-within { border-color: var(--prayu-focus); }
 @supports selector(:has(textarea:focus-visible)) {
   .v2-composer-surface:has(textarea:focus-visible) {

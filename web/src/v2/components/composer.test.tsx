@@ -51,6 +51,24 @@ describe("V2Composer", () => {
     expect(input).toHaveValue("创建期间继续写下的草稿");
     expect(screen.getByRole("button", { name: "添加附件" })).toBeEnabled();
   });
+  it("keeps the next-message action beside the draft and focuses the editor without submitting", async () => {
+    localStorage.setItem("universal-code.composer-plain-text", "true");
+    const onStartNextMessage = vi.fn();
+    const onSubmit = vi.fn(async () => undefined);
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <V2Composer client={client} onSubmit={onSubmit} onWorkspaceChange={vi.fn()} threadID=""
+        workspaceID="workspace-1" workspaces={workspaces} draft="已发送的正文" onDraftChange={vi.fn()}
+        onStartNextMessage={onStartNextMessage} />
+    </QueryClientProvider>);
+    const action = screen.getByRole("button", { name: "编写下一条" });
+    expect(action.closest(".v2-composer-surface")).not.toBeNull();
+    expect(action.closest(".v2-composer-footer")).toBeNull();
+    await userEvent.setup().click(action);
+    expect(onStartNextMessage).toHaveBeenCalledOnce();
+    expect(onSubmit).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "开始新对话" })).toHaveFocus());
+  });
+
   it("changes editor mode from the compact add menu without submitting or losing the draft", async () => {
     localStorage.setItem("universal-code.composer-plain-text", "true");
     const { onSubmit } = renderComposer();
