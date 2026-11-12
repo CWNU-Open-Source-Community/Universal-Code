@@ -193,9 +193,16 @@ func TestThreadLifecycleAndExportNeverOrphanHistory(t *testing.T) {
 	exported, err := st.ExportThread(ctx, restored.ID)
 	if err != nil || len(exported.Runs) != 1 || len(exported.Sessions) != 1 ||
 		len(exported.Bindings) != 1 || exported.Sessions[0].ID != run.SessionID ||
-		len(exported.Messages) != 1005 || len(exported.Events) < 3 ||
+		len(exported.Messages) != maxThreadExportSection || !exported.MessagesTruncated ||
+		len(exported.Events) < 3 ||
 		len(exported.AuditEvents) == 0 || exported.Thread.ID != restored.ID {
 		t.Fatalf("export=%#v err=%v", exported, err)
+	}
+	// The export's message section is bounded at the cap; the migrated
+	// history itself stays whole through the uncapped page path.
+	fullMessages, err := st.ListThreadMessagesPage(ctx, restored.ID, true, 0, 0)
+	if err != nil || len(fullMessages) != 1005 {
+		t.Fatalf("migrated message history orphaned: %d %v", len(fullMessages), err)
 	}
 	if exported.Messages[0].ProvenanceVersion != session.ContextProvenanceVersion ||
 		exported.Messages[0].SourceKind != session.SourceOperatorMessage ||
@@ -215,7 +222,8 @@ func TestThreadLifecycleAndExportNeverOrphanHistory(t *testing.T) {
 	afterDelete, err := st.ExportThread(ctx, deleted.ID)
 	if err != nil || len(afterDelete.Runs) != 1 || len(afterDelete.Sessions) != 1 ||
 		len(afterDelete.Bindings) != 1 ||
-		len(afterDelete.Messages) != 1005 || len(afterDelete.AuditEvents) == 0 ||
+		len(afterDelete.Messages) != maxThreadExportSection || !afterDelete.MessagesTruncated ||
+		len(afterDelete.AuditEvents) == 0 ||
 		len(afterDelete.Events) < 4 {
 		t.Fatalf("deleted export=%#v err=%v", afterDelete, err)
 	}

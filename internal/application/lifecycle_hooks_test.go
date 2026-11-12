@@ -73,10 +73,14 @@ func TestRunServiceLifecycleHooksGuardRealTransactions(t *testing.T) {
 func setDenyHook(t *testing.T, engine *hooks.Engine, event hooks.Event, id string) {
 	t.Helper()
 	digest := sha256.Sum256([]byte(id))
+	policy := hooks.FailureDeny
+	if event == hooks.RunCompleted || event == hooks.SessionClosed {
+		policy = hooks.FailureContinue
+	}
 	if err := engine.Replace([]hooks.Registration{{PluginID: "fixture-plugin",
 		PluginFingerprint: hex.EncodeToString(digest[:]), Declaration: hooks.Declaration{
 			ProtocolVersion: hooks.ProtocolVersion, ID: id, Event: event,
-			Action: hooks.ActionDeny, FailurePolicy: hooks.FailureDeny,
+			Action: hooks.ActionDeny, FailurePolicy: policy,
 			TimeoutMillis: 100, Message: "operator policy",
 		}}}); err != nil {
 		t.Fatal(err)

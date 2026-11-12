@@ -69,7 +69,7 @@ export function V2ModelSettings({ client, presets, onSelectPreset, prepareForDra
   return <section aria-labelledby="v2-model-settings-title">
     <header className="v2-model-catalog-heading">
       <h1 id="v2-model-settings-title">{t("模型", "Models")}</h1>
-      <p>{t("选择供应商，保存连接信息并完成模型检查。兼容接口可从自定义配置接入。", "Choose a provider, save its connection and check the model. Use custom configuration for compatible endpoints.")}</p>
+
     </header>
     <ul aria-label={t("模型供应商", "Model providers")} className="v2-model-catalog" role="list">
       <li>

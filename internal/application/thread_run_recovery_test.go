@@ -99,7 +99,7 @@ func TestThreadRunRecoveryFailsOldRunThenExplicitSubmitMaterializesSuccessor(t *
 		PluginID: "thread-recovery-test-plugin", PluginFingerprint: hex.EncodeToString(digest[:]),
 		Declaration: hooks.Declaration{ProtocolVersion: hooks.ProtocolVersion,
 			ID: "deny-thread-recovery-completion", Event: hooks.RunCompleted,
-			Action: hooks.ActionDeny, FailurePolicy: hooks.FailureDeny,
+			Action: hooks.ActionDeny, FailurePolicy: hooks.FailureContinue,
 			TimeoutMillis: 100, Message: "operator policy"},
 	}}); err != nil {
 		t.Fatal(err)

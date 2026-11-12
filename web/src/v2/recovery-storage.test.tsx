@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
-import { V2PersistenceError, V2RecoveryProvider, useV2PersistenceWarning, useV2PersistentState, useV2RecoveryStore } from "./recovery-storage";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { V2PersistenceConflicts, V2PersistenceError, V2RecoveryProvider, resetV2RecoveryStorageMemory, useV2PersistenceWarning, useV2PersistentState, useV2RecoveryStore } from "./recovery-storage";
 
 const client = { baseURL: "/api/v1" };
 function wrapper({ children }: { children: ReactNode }) {
@@ -13,9 +13,52 @@ function storageKey(key: string, scope = "database-one", baseURL = "/api/v1") {
 function envelope(value: unknown) { return JSON.stringify({ version: "v2_recovery.v1", value }); }
 
 beforeEach(() => window.localStorage.clear());
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); resetV2RecoveryStorageMemory(); vi.restoreAllMocks(); });
 
 describe("V2 scoped recovery storage", () => {
+  it("projects only current-draft invalid image warnings and notices an equal-message second source", async () => {
+    const prefix = `image-upload:${JSON.stringify(["workspace-one", ""])}:`;
+    const other = `image-upload:${JSON.stringify(["workspace-one", "another-thread"])}:original`;
+    const current = prefix + "original";
+    const { result, rerender } = renderHook(({ excluded }: { excluded?: string }) => ({ store: useV2RecoveryStore()!, warning: useV2PersistenceWarning(excluded) }),
+      { wrapper, initialProps: { excluded: prefix as string | undefined } });
+    act(() => { result.current.store.write(current, false); result.current.store.reject(current); });
+    await waitFor(() => expect(result.current.store.getWarning()).toContain("格式异常"));
+    expect(result.current.warning).toBeNull();
+    rerender({ excluded: undefined });
+    expect(result.current.warning).toContain("格式异常");
+    rerender({ excluded: prefix });
+    expect(result.current.warning).toBeNull();
+    expect(() => result.current.store.assertReadable()).toThrow(V2PersistenceError);
+    act(() => { result.current.store.write(other, false); result.current.store.reject(other); });
+    await waitFor(() => expect(result.current.warning).toContain("格式异常"));
+    act(() => result.current.store.remove(current));
+    expect(result.current.warning).toContain("格式异常");
+    expect(result.current.store.read(other, null)).toBe(false);
+    expect(() => result.current.store.assertReadable()).toThrow(V2PersistenceError);
+    act(() => result.current.store.remove(other));
+    await waitFor(() => expect(result.current.warning).toBeNull());
+  });
+
+  it("keeps other-workspace, denied reads and unsaved warnings visible beside a handled image error", async () => {
+    const prefix = `image-upload:${JSON.stringify(["workspace-one", ""])}:`;
+    const other = `image-upload:${JSON.stringify(["workspace-two", ""])}:original`;
+    const { result } = renderHook(() => ({ store: useV2RecoveryStore()!, warning: useV2PersistenceWarning(prefix) }), { wrapper });
+    act(() => result.current.store.reject(prefix + "original"));
+    expect(result.current.warning).toBeNull();
+    act(() => result.current.store.reject(other));
+    await waitFor(() => expect(result.current.warning).toContain("格式异常"));
+    act(() => result.current.store.remove(other));
+    await waitFor(() => expect(result.current.warning).toBeNull());
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
+    act(() => result.current.store.read(prefix + "denied", null));
+    await waitFor(() => expect(result.current.warning).toContain("无法读取"));
+    expect(result.current.store.invalidKeys(prefix)).not.toContain(prefix + "denied");
+    getItem.mockRestore();
+    act(() => { result.current.store.read(prefix + "denied", null); result.current.store.markUnsaved("draft:other", "Unsaved draft"); });
+    await waitFor(() => expect(result.current.warning).toBe("Unsaved draft"));
+  });
+
   it("retains unsaved draft warnings across reads and other writes until that draft saves or is discarded", async () => {
     const { result } = renderHook(() => ({ store: useV2RecoveryStore()!, warning: useV2PersistenceWarning() }), { wrapper });
     act(() => {
@@ -97,6 +140,23 @@ describe("V2 scoped recovery storage", () => {
     expect(window.localStorage.getItem(storageKey("unknown:one"))).toBe(raw);
   });
 
+  it("reports only malformed keys in the requested scope for explicit removal", () => {
+    const { result } = renderHook(() => useV2RecoveryStore()!, { wrapper });
+    window.localStorage.setItem(storageKey("images:a:json"), "broken");
+    window.localStorage.setItem(storageKey("images:b:json"), "broken");
+    act(() => {
+      result.current.entries("images:");
+      result.current.reject("images:a:payload");
+    });
+    expect(result.current.invalidKeys("images:a:")).toEqual(["images:a:json", "images:a:payload"]);
+    act(() => result.current.remove("images:a:json"));
+    expect(result.current.invalidKeys("images:a:")).toEqual(["images:a:payload"]);
+    expect(window.localStorage.getItem(storageKey("images:b:json"))).toBe("broken");
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
+    act(() => result.current.read("images:a:denied", null));
+    expect(result.current.invalidKeys("images:a:")).toEqual(["images:a:payload"]);
+  });
+
   it("permits explicit removal of a malformed record and clears its warning", async () => {
     window.localStorage.setItem(storageKey("draft:a"), "broken");
     const { result } = renderHook(() => ({ store: useV2RecoveryStore()!, warning: useV2PersistenceWarning() }), { wrapper });
@@ -168,6 +228,8 @@ describe("V2 scoped recovery storage", () => {
     act(() => expect(result.current.store.entries("draft:")).toEqual([["draft:valid", "valid"]]));
     await waitFor(() => expect(result.current.warning).toContain("格式异常"));
     expect(window.localStorage.getItem(badKey)).toBe(envelope("preserve"));
+    expect(result.current.store.invalidKeys("draft:")).toEqual([]);
+    expect(result.current.store.getWarning("draft:")).toContain("格式异常");
   });
 
   it("preserves an existing record when JSON encoding or explicit removal fails", async () => {
@@ -242,6 +304,107 @@ describe("V2 scoped recovery storage", () => {
     act(() => result.current.state[1]((previous) => previous + " recovered"));
     expect(window.localStorage.getItem(storageKey("draft:a"))).toBe(envelope("unsaved 中文 recovered"));
     await waitFor(() => expect(result.current.warning).toBeNull());
+  });
+
+  it.each(["local", "remote"])("preserves failed local edits until the user resolves the %s version", (choice) => {
+    function Probe() {
+      const [value, setValue] = useV2PersistentState("draft:a", "");
+      return <><input aria-label="draft" value={value} onChange={(event) => setValue(event.target.value)} /><V2PersistenceConflicts /></>;
+    }
+    localStorage.setItem(storageKey("draft:a"), envelope("original"));
+    render(<V2RecoveryProvider client={client} scopeID="database-one"><Probe /></V2RecoveryProvider>);
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "local" } });
+    setItem.mockRestore();
+    act(() => {
+      localStorage.setItem(storageKey("draft:a"), envelope("remote"));
+      window.dispatchEvent(new StorageEvent("storage", { key: storageKey("draft:a"), newValue: envelope("remote") }));
+    });
+    expect(screen.getByRole("textbox")).toHaveValue("local");
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "local edited" } });
+    expect(localStorage.getItem(storageKey("draft:a"))).toBe(envelope("remote"));
+    fireEvent.click(screen.getByRole("button", { name: choice === "local" ? "保留本窗口版本" : "使用另一窗口版本" }));
+    expect(screen.getByRole("textbox")).toHaveValue(choice === "local" ? "local edited" : "remote");
+    expect(localStorage.getItem(storageKey("draft:a"))).toBe(envelope(choice === "local" ? "local edited" : "remote"));
+  });
+
+  it("keeps separate failed edits to the same key until each conflict is resolved", () => {
+    function Probe() {
+      const [first, setFirst] = useV2PersistentState("draft:a", "");
+      const [second, setSecond] = useV2PersistentState("draft:a", "");
+      return <><input aria-label="first" value={first} onChange={(event) => setFirst(event.target.value)} />
+        <input aria-label="second" value={second} onChange={(event) => setSecond(event.target.value)} />
+        <V2PersistenceConflicts /></>;
+    }
+    localStorage.setItem(storageKey("draft:a"), envelope("original"));
+    render(<V2RecoveryProvider client={client} scopeID="database-one"><Probe /></V2RecoveryProvider>);
+    const fail = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    fireEvent.change(screen.getByLabelText("first"), { target: { value: "local first" } });
+    fireEvent.change(screen.getByLabelText("second"), { target: { value: "local second" } });
+    fail.mockRestore();
+    act(() => {
+      localStorage.setItem(storageKey("draft:a"), envelope("remote"));
+      window.dispatchEvent(new StorageEvent("storage", { key: storageKey("draft:a") }));
+    });
+    expect(screen.getAllByRole("button", { name: "保留本窗口版本" })).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole("button", { name: "保留本窗口版本" })[0]);
+    expect(screen.getByLabelText("second")).toHaveValue("local second");
+    expect(screen.getAllByRole("button", { name: "使用另一窗口版本" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "使用另一窗口版本" }));
+    expect(screen.getByLabelText("second")).toHaveValue("local first");
+  });
+
+  it("requires a fresh choice if the other version changes before saving the local one", () => {
+    function Probe() {
+      const [value, setValue] = useV2PersistentState("draft:a", "");
+      return <><input aria-label="draft" value={value} onChange={(event) => setValue(event.target.value)} /><V2PersistenceConflicts /></>;
+    }
+    localStorage.setItem(storageKey("draft:a"), envelope("original"));
+    render(<V2RecoveryProvider client={client} scopeID="database-one"><Probe /></V2RecoveryProvider>);
+    const fail = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "local" } });
+    fail.mockRestore();
+    act(() => {
+      localStorage.setItem(storageKey("draft:a"), envelope("remote one"));
+      window.dispatchEvent(new StorageEvent("storage", { key: storageKey("draft:a") }));
+    });
+    localStorage.setItem(storageKey("draft:a"), envelope("remote two"));
+    fireEvent.click(screen.getByRole("button", { name: "保留本窗口版本" }));
+    expect(localStorage.getItem(storageKey("draft:a"))).toBe(envelope("remote two"));
+    expect(screen.getByLabelText("draft")).toHaveValue("local");
+    fireEvent.click(screen.getByRole("button", { name: "保留本窗口版本" }));
+    expect(localStorage.getItem(storageKey("draft:a"))).toBe(envelope("local"));
+  });
+
+  it("keeps a visible value when a storage notification cannot be read", () => {
+    localStorage.setItem(storageKey("draft:a"), envelope("saved"));
+    const { result } = renderHook(() => useV2PersistentState("draft:a", "fallback"), { wrapper });
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: storageKey("draft:a") })));
+    expect(result.current[0]).toBe("saved");
+    read.mockRestore();
+  });
+
+  it("retains failed edits across component unmount and connection changes", () => {
+    function Probe() {
+      const [value, setValue] = useV2PersistentState("draft:a", "");
+      return <input aria-label="draft" value={value} onChange={(event) => setValue(event.target.value)} />;
+    }
+    const screenFor = (scope: string, visible = true) => <V2RecoveryProvider client={client} scopeID={scope}>
+      {visible && <Probe />}<V2PersistenceConflicts />
+    </V2RecoveryProvider>;
+    localStorage.setItem(storageKey("draft:a"), envelope("saved"));
+    const view = render(screenFor("database-one"));
+    const fail = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "unsaved" } });
+    fail.mockRestore();
+    view.rerender(screenFor("database-one", false));
+    view.rerender(screenFor("database-two"));
+    expect(screen.getByLabelText("draft")).toHaveValue("");
+    view.rerender(screenFor("database-one"));
+    fireEvent.click(screen.getByRole("button", { name: "保留本窗口版本" }));
+    expect(screen.getByLabelText("draft")).toHaveValue("unsaved");
+    expect(localStorage.getItem(storageKey("draft:a"))).toBe(envelope("unsaved"));
   });
 
   it("catches unavailable storage for reads and enumeration but makes writes and removals fail", async () => {

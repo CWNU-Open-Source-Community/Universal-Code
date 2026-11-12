@@ -994,7 +994,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
   };
 
   if (!client.hasProviderDefinitions) {
-    return <><h1>{t("自定义配置", "Custom configuration")}</h1><p className="v2-settings-lead">{t("当前桌面后端未启用供应商定义控制。", "Provider definition controls are disabled in this desktop backend.")}</p>
+    return <><h1>{t("自定义配置", "Custom configuration")}</h1>
       <section className="v2-settings-card v2-provider-empty"><Server aria-hidden="true" size={24} />
         <strong>{t("自定义供应商不可用", "Custom providers unavailable")}</strong><p>{t("连接具备控制权限与模型控制能力的服务后，可添加供应商并使用系统凭据库保存密钥。", "Connect to a service with control and model permissions to add providers and save keys in system credentials.")}</p>
       </section></>;
@@ -1017,8 +1017,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
 
   if (!draft) {
     const providers = definitions.data?.providers ?? [];
-    return <><div className="v2-provider-heading"><div><h1>{t("自定义配置", "Custom configuration")}</h1>
-      <p>{t("在模型模块中连接兼容供应商；定义与系统凭据相互分离。", "Connect compatible providers here. Definitions and system credentials are stored separately.")}</p></div>
+    return <><div className="v2-provider-heading"><div><h1>{t("自定义配置", "Custom configuration")}</h1></div>
       <button className="primary" disabled={definitions.isLoading || definitions.isError}
         onClick={(event) => openEditor(blankDraft(), event.currentTarget)} ref={addButtonRef} type="button">
         <Plus aria-hidden="true" size={15} />{t("添加供应商", "Add provider")}</button></div>

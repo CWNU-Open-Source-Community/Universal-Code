@@ -129,7 +129,21 @@ func (s *SQLiteStore) getUsageStatistics(ctx context.Context, threadID, period s
 	if threadID != "" {
 		receiptQuery += ` AND binding.thread_id=?`
 	}
-	rows, err := tx.QueryContext(ctx, receiptQuery+` ORDER BY e.run_id,e.sequence`, scopeArgs...)
+	// Period windows are pushed into SQL as a conservative lower bound:
+	// ActivityDays still consume receipts across the 181-day activity range,
+	// so the window is the activity start, not the period start, and the
+	// exact local-window semantics stay in the Go aggregation below. The
+	// bound is written without a trailing zone marker so it sorts strictly
+	// below every RFC3339Nano timestamp in its second (stored values use
+	// variable-width fractions; a 'Z'-terminated bound would misorder against
+	// fractional rows in the boundary second). "all" keeps the full-ledger
+	// scan because the operator explicitly asked for every receipt.
+	windowArgs := scopeArgs
+	if period != "all" {
+		receiptQuery += ` AND e.created_at >= ?`
+		windowArgs = append(windowArgs, activityStart.UTC().Format("2006-01-02T15:04:05"))
+	}
+	rows, err := tx.QueryContext(ctx, receiptQuery+` ORDER BY e.run_id,e.sequence`, windowArgs...)
 	if err != nil {
 		return result, err
 	}
@@ -212,7 +226,17 @@ func (s *SQLiteStore) getUsageStatistics(ctx context.Context, threadID, period s
 	if threadID != "" {
 		costQuery += ` AND EXISTS (SELECT 1 FROM thread_runs binding WHERE binding.run_id=r.run_id AND binding.thread_id=?)`
 	}
-	rows, err = tx.QueryContext(ctx, costQuery+` ORDER BY r.run_id,r.scope,r.attempt_number`, scopeArgs...)
+	// The same conservative window applies to settlements: a call whose
+	// receipt is inside the activity range settles at or after the call, so
+	// its reservation cannot predate the window. Out-of-window reservations
+	// only ever pair with out-of-window receipts, which no window-visible
+	// aggregate consumes.
+	costArgs := scopeArgs
+	if period != "all" {
+		costQuery += ` AND r.settled_at >= ?`
+		costArgs = append(costArgs, activityStart.UTC().Format("2006-01-02T15:04:05"))
+	}
+	rows, err = tx.QueryContext(ctx, costQuery+` ORDER BY r.run_id,r.scope,r.attempt_number`, costArgs...)
 	if err != nil {
 		return result, err
 	}
