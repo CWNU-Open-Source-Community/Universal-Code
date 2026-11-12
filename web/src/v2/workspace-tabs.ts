@@ -286,6 +286,7 @@ function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWo
   if (!threadID) return;
   const { key, persistent } = workspaceThreadKey(threadID);
   const current = getThreadWorkspaceState(threadID);
+  const startingSnapshot = persistent ? JSON.stringify(cachedParsed[key] ?? null) : "";
   const candidate = updater(current);
   if (candidate === current) return;
   // A failed storage write leaves both the persisted snapshot and this in-memory
@@ -301,6 +302,13 @@ function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWo
   if (persistent && !storageReadable) {
     if (!failedBaselines.has(key)) failedBaselines.set(key, JSON.stringify(persisted ?? null));
     memoryFallback.set(key, { ...updated, notice: workspaceStorageFailureNotice });
+    window.dispatchEvent(new Event(changedEvent));
+    return;
+  }
+  if (persistent && !failedBaselines.has(key) && JSON.stringify(persisted ?? null) !== startingSnapshot) {
+    failedBaselines.set(key, startingSnapshot);
+    conflictSnapshots.set(key, JSON.stringify(persisted ?? null));
+    memoryFallback.set(key, { ...updated, notice: workspaceStorageConflictNotice });
     window.dispatchEvent(new Event(changedEvent));
     return;
   }

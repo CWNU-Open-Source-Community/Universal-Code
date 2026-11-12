@@ -208,6 +208,56 @@ describe("workspace-tabs store", () => {
     expect(getThreadWorkspaceState("late-corruption").tabs).toMatchObject([{ path: "existing.ts" }, { path: "local.ts" }]);
   });
 
+  it.each(["local", "remote"] as const)("preserves a simultaneous update until the %s version is chosen", (choice) => {
+    openWorkspaceFile("simultaneous", { path: "existing.ts" });
+    const originalGet = Storage.prototype.getItem;
+    const originalSet = Storage.prototype.setItem;
+    let reads = 0;
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+      if (key === workspaceTabsStorageKey && ++reads === 2) {
+        const saved = JSON.parse(originalGet.call(this, key)!);
+        const entryKey = Object.keys(saved.threads).find((item) => JSON.parse(item).at(-1) === "simultaneous")!;
+        saved.threads[entryKey].tabs.push({ id: "file:2", kind: "file", path: "remote.ts" });
+        originalSet.call(this, key, JSON.stringify(saved));
+      }
+      return originalGet.call(this, key);
+    });
+    const write = vi.spyOn(Storage.prototype, "setItem");
+    openWorkspaceFile("simultaneous", { path: "local.ts" });
+    expect(write).not.toHaveBeenCalled();
+    read.mockRestore();
+    write.mockRestore();
+    expect(getThreadWorkspaceState("simultaneous")).toMatchObject({ notice: workspaceStorageConflictNotice,
+      tabs: [{ path: "existing.ts" }, { path: "local.ts" }] });
+    resolveWorkspaceStorageConflict("simultaneous", choice);
+    resetWorkspaceTabsMemoryCache();
+    expect(getThreadWorkspaceState("simultaneous").tabs).toMatchObject([
+      { path: "existing.ts" }, { path: choice === "local" ? "local.ts" : "remote.ts" },
+    ]);
+  });
+
+  it("merges an intervening update to a different task without a conflict", () => {
+    openWorkspaceFile("mine", { path: "existing.ts" });
+    openWorkspaceFile("other", { path: "other.ts" });
+    const originalGet = Storage.prototype.getItem;
+    const originalSet = Storage.prototype.setItem;
+    let reads = 0;
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+      if (key === workspaceTabsStorageKey && ++reads === 2) {
+        const saved = JSON.parse(originalGet.call(this, key)!);
+        const entryKey = Object.keys(saved.threads).find((item) => JSON.parse(item).at(-1) === "other")!;
+        saved.threads[entryKey].width = 700;
+        originalSet.call(this, key, JSON.stringify(saved));
+      }
+      return originalGet.call(this, key);
+    });
+    openWorkspaceFile("mine", { path: "local.ts" });
+    read.mockRestore();
+    expect(getThreadWorkspaceState("mine").tabs).toMatchObject([{ path: "existing.ts" }, { path: "local.ts" }]);
+    expect(getThreadWorkspaceState("mine").notice).toBeUndefined();
+    expect(getThreadWorkspaceState("other").width).toBe(700);
+  });
+
   it("uses the latest saved tabs even when another window's clock is behind", () => {
     openWorkspaceFile("older-clock", { path: "local.ts" });
     const saved = JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!);
