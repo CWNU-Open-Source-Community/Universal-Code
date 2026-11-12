@@ -18,10 +18,17 @@
 }
 
 .v2-workspace-dock.is-docked {
+  --v2-workspace-resize-width: 8px;
   width: 100%;
   flex: 1 1 auto;
   box-shadow: none;
   backdrop-filter: none;
+}
+
+/* Reserve HTML space for the divider. A native WebView child cannot be
+   covered by this renderer's z-index, even when the handle is on top in DOM. */
+.v2-workspace-dock.is-docked:not(.is-full-view) {
+  padding-left: var(--v2-workspace-resize-width);
 }
 
 .v2-workspace-dock.is-docked.is-full-view {
@@ -33,7 +40,7 @@
   top: 0;
   bottom: 0;
   left: 0;
-  width: 7px;
+  width: var(--v2-workspace-resize-width, 8px);
   cursor: col-resize;
   z-index: 12;
   touch-action: none;

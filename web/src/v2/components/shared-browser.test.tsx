@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../../lib/locale";
 import type { SharedBrowserState, SharedBrowserSurface } from "../../lib/desktop-shared-browser";
@@ -117,6 +118,48 @@ describe("native shared-browser controls", () => {
     await waitFor(() => expect(view.container.querySelector(".v2-conversation-stage")).toHaveClass("is-full-view"));
     fireEvent.click(screen.getByRole("button", { name: "退出全屏" }));
     await waitFor(() => expect(view.container.querySelector(".v2-conversation-stage")).not.toHaveClass("is-full-view"));
+  });
+  it.each(["draft", "conversation"])("keeps %s divider dragging outside page input and restores the native surface afterward", async (kind) => {
+    vi.spyOn(desktopBridge, "desktopSharedBrowserEnabled").mockReturnValue(true);
+    const workspaceID = `resize-${kind}`, scope = kind === "draft" ? `draft:${workspaceID}` : `resize-thread-${kind}`;
+    rpc.open.mockResolvedValue({ ...initial, workspace_id: workspaceID });
+    rpc.get.mockResolvedValue({ ...initial, workspace_id: workspaceID });
+    focusWorkspaceSingletonTab(scope, "browser");
+    function Dock() {
+      const state = useThreadWorkspaceState(scope);
+      const [resizing, setResizing] = useState(false);
+      return <div className="v2-conversation-stage"><div className="v2-workbench-slot is-open" data-resizing={resizing || undefined}>
+        <V2WorkspaceDock client={{} as APIClient} threadID={scope} detail={{ thread: { workspace_id: workspaceID } } as ThreadDetailView}
+          currentRunID="run-ui" workspaceName="工作区" working={false} docked panelVisible state={state}
+          fullViewShortcutLabel="" onToggleFullView={() => {}} onCollapse={() => {}} returnFocusRef={{ current: null }}
+          canQuote={false} onReturnToDraft={() => {}} onRequestChange={() => {}} canRequestPreviewStart={false} onRequestPreviewStart={() => {}}
+          onResizeStateChange={(active) => setResizing(active)} />
+      </div></div>;
+    }
+    const view = render(<LocaleProvider>{kind === "draft"
+      ? <V2DraftBrowserWorkspace workspaceID={workspaceID}>{trigger => <section>{trigger}</section>}</V2DraftBrowserWorkspace>
+      : <Dock />}</LocaleProvider>);
+    Object.defineProperty(view.container.querySelector(".v2-conversation-stage"), "clientWidth", { configurable: true, value: 1280 });
+    await waitFor(() => expect(rpc.surface.mock.lastCall?.[0].visible).toBe(true));
+    const handle = screen.getByRole("separator");
+    let captured = false;
+    const release = vi.fn(() => { captured = false; });
+    Object.assign(handle, { setPointerCapture: vi.fn(() => { captured = true; }), hasPointerCapture: () => captured, releasePointerCapture: release });
+    const pointer = (type: string, x: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x });
+      Object.defineProperty(event, "pointerId", { value: 7 });
+      fireEvent(handle, event);
+    };
+    pointer("pointerdown", 700);
+    pointer("pointermove", 620);
+    await waitFor(() => expect(rpc.surface.mock.lastCall?.[0].visible).toBe(false));
+    expect(view.container.querySelector(".v2-workbench-slot")).toHaveAttribute("data-resizing", "true");
+    expect(rpc.command).not.toHaveBeenCalled();
+    pointer("pointerup", 620);
+    await waitFor(() => expect(handle).toHaveAttribute("aria-valuenow", "520"));
+    await waitFor(() => expect(rpc.surface.mock.lastCall?.[0].visible).toBe(true));
+    expect(release).toHaveBeenCalledWith(7);
+    expect(view.container.querySelector(".v2-workbench-slot")).not.toHaveAttribute("data-resizing");
   });
   it("does not exit OS fullscreen for a modal but exits when the browser container unmounts", async () => {
     const changed = vi.fn();
