@@ -37,21 +37,22 @@ const (
 type Event string
 
 const (
-	PreTool       Event = "pre_tool"
-	PostTool      Event = "post_tool"
-	RunStarted    Event = "run_started"
-	RunCompleted  Event = "run_completed"
-	SessionOpened Event = "session_opened"
-	SessionClosed Event = "session_closed"
-	Compaction    Event = "compaction"
-	Subagent      Event = "subagent"
-	Checkpoint    Event = "checkpoint"
+	PreTool          Event = "pre_tool"
+	PostTool         Event = "post_tool"
+	RunStarted       Event = "run_started"
+	RunCompleted     Event = "run_completed"
+	SessionOpened    Event = "session_opened"
+	SessionClosed    Event = "session_closed"
+	UserPromptSubmit Event = "user_prompt_submit"
+	Compaction       Event = "compaction"
+	Subagent         Event = "subagent"
+	Checkpoint       Event = "checkpoint"
 )
 
 func (e Event) Valid() bool {
 	switch e {
 	case PreTool, PostTool, RunStarted, RunCompleted, SessionOpened, SessionClosed,
-		Compaction, Subagent, Checkpoint:
+		UserPromptSubmit, Compaction, Subagent, Checkpoint:
 		return true
 	default:
 		return false
@@ -522,7 +523,7 @@ func matchesTool(values []string, toolName string) bool {
 
 func eventOrder(value Event) int {
 	for index, current := range []Event{PreTool, PostTool, RunStarted, RunCompleted,
-		SessionOpened, SessionClosed, Compaction, Subagent, Checkpoint} {
+		SessionOpened, SessionClosed, UserPromptSubmit, Compaction, Subagent, Checkpoint} {
 		if current == value {
 			return index
 		}

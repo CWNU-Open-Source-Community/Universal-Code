@@ -136,11 +136,14 @@ cyberagent plugin show <new-installation-id>
 | `run_completed` | completed/failed/cancelled 或 Supervisor finalize 写入前 |
 | `session_opened` | 新 Session 与 Run 原子创建前 |
 | `session_closed` | HTTP/Desktop Session archive 写入前 |
+| `user_prompt_submit` | 操作者 prompt 进入提交面（Thread turn 端点——含经其路由的定时任务、PR 跟进与 Plan 修正，CLI `thread send`，Session 聊天，Session 消息提交）之后、任何持久化或排队之前；deny 干净拒绝提交。经 peer 投递直接入队的消息在其原始提交面触发 |
 | `compaction` | `MaybeCompact` 确认真正需要压缩后、摘要写入前 |
 | `subagent` | 经操作者授权的 Specialist schedule 获取执行租约前 |
 | `checkpoint` | 连续性或手工 Workspace Checkpoint 写入前 |
 
 同一事件按 event、Plugin ID、Hook ID 稳定排序。每条声明有最大 2 秒超时，输入 256 KiB、输出 16 KiB、注释 16 条的上限；`failure_policy=deny` 失败关闭，`continue` 只记录失败并继续。每个结果写 metadata-only audit，不保存 Hook 输入、注释正文或工具 payload。
+
+`user_prompt_submit` 的 payload 由 Go 编码：Thread 面携带 `thread_id`，Session 面携带 `session_id` 与 `run_id`，加上 `content`（超长 prompt 在 UTF-8 边界截断并带 `truncated` 标记；非法 UTF-8 字节一次性剔除），不支持工具过滤。deny 在消息意图预留与排队发生之前拒绝提交；annotate 只进入结果与审计，不注入模型上下文。已知盲区：image-only 提交（`content` 为空）不触发边界，MCP-only 提交以合成文案触发、真实 MCP 参数不在 payload 中；同一 operation key 的每次重试都会再次触发（attempt-scoped）。
 
 ## Operator 脚本 Hook
 
@@ -175,7 +178,9 @@ Schemas v120-v121 introduced the low-trust extension runtime; Universal Code add
 
 The MCP state flow is `staged -> approve_discovery -> capabilities_pending -> enable_capabilities -> enabled`. Disable and revoke are immediate; capability or restart ambiguity quarantines the server. A connection, discovery, or tool-call failure during invocation marks it unavailable and removes it from model-visible capabilities until an explicit refresh succeeds. Plugin installation is independently `staged -> approved -> enabled`, with capability-by-capability enablement, publisher trust/revocation, atomic upgrade/rollback, and a separate MCP review for contributed server descriptors. HTTPS import requires an exact archive SHA-256 and rejects every redirect. Git import accepts only a credential-free HTTPS repository, a full commit SHA, and a safe repository-relative ZIP path; it fetches into a temporary bare repository with system/global Git config, URL rewrites, credential helpers, hooks, redirects, and non-HTTPS protocols disabled, performs no checkout or submodule load, and reads only the exact ordinary blob. A revoked publisher cannot be bypassed with untrusted confirmation, and the database permits at most one enabled version of each Plugin ID. Enabling a Plugin's `skills` capability never auto-selects, injects, or authorizes those inert resources for a Run; the existing explicit Skill installation, selection, and mode-compatibility path remains authoritative.
 
-Actual hook boundaries are Tool pre/post, initial Run start, terminal Run finalization, Session creation/archive, real compaction immediately before summary persistence, operator-authorized Specialist scheduling, and continuity/manual Workspace Checkpoint persistence. Ordering, time, input/output, annotation, reentry, and failure-policy limits are enforced by Go and every execution writes a metadata-only audit.
+Actual hook boundaries are Tool pre/post, initial Run start, terminal Run finalization, Session creation/archive, operator prompt submission at its four surfaces (the Thread turn endpoint, CLI `thread send`, Session chat, and Session message submission) before any persistence or queueing, real compaction immediately before summary persistence, operator-authorized Specialist scheduling, and continuity/manual Workspace Checkpoint persistence. Ordering, time, input/output, annotation, reentry, and failure-policy limits are enforced by Go and every execution writes a metadata-only audit.
+
+The `user_prompt_submit` payload is Go-encoded: Thread surfaces carry `thread_id`, Session surfaces carry `session_id` and `run_id`, plus `content` (oversized prompts clip on a UTF-8 boundary with a `truncated` flag; invalid UTF-8 bytes are dropped once); tool filters are not allowed. A deny rejects the submission before the message intent or steering queue entry exists; annotations stay in the result and audit and are never injected into model context. Known blind spots: image-only submissions (empty content) skip the boundary, MCP-only submissions fire with synthesized text while the real MCP arguments stay outside the payload, and every attempt of the same operation key re-fires the boundary (attempt-scoped).
 
 ## Operator script hooks
 

@@ -161,8 +161,8 @@ function HookRecords({ value }: { value: HookDiagnosticsView }) {
   const { t } = useLocale();
   const events: Record<string, string> = { pre_tool: t("工具执行前", "Before tool"), post_tool: t("工具执行后", "After tool"), run_started: t("执行开始", "Run started"),
     run_completed: t("执行完成", "Run completed"), session_opened: t("会话打开", "Session opened"), session_closed: t("会话关闭", "Session closed"),
-    compaction: t("上下文整理", "Compaction"), subagent: t("子任务边界", "Subagent boundary"), checkpoint: t("检查点", "Checkpoint") };
-  const actions: Record<string, string> = { deny: t("拒绝操作", "Reject operation"), annotate: t("附加说明", "Annotate"), narrow: t("移除所列参数", "Remove listed fields"), record: t("记录触发", "Record observation") };
+    user_prompt_submit: t("用户输入提交", "User prompt submit"), compaction: t("上下文整理", "Compaction"), subagent: t("子任务边界", "Subagent boundary"), checkpoint: t("检查点", "Checkpoint") };
+  const actions: Record<string, string> = { deny: t("拒绝操作", "Reject operation"), annotate: t("附加说明", "Annotate"), narrow: t("移除所列参数", "Remove listed fields"), record: t("记录触发", "Record observation"), script: t("运行操作者脚本", "Run operator script") };
   return <div className="hook-records">
     <h3>{t("声明的规则", "Declared rules")}</h3>
     {value.declarations.length === 0 && <p>{t("当前安装包尚无 Hooks 声明。导入含 Hooks 的 Plugin 包后，在这里核对规则。", "Installed packages have no Hook declarations yet. Import a Plugin with Hooks to inspect its rules here.")}</p>}

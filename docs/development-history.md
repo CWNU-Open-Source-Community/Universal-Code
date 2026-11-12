@@ -292,5 +292,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v221 | 将工作流完成与待通知义务同事务保存，支持宿主重试和独立租约，保留已交付历史与完成输出 | atomically persist workflow completion notifications for host retries and independent claims, preserving delivered history and completed outputs |
 | v222 | 保存暂停的浏览器网页请求及审批来源，记录摘要、有效期和发送状态，支持过期与重启清理 | persist paused browser page requests and their approval source, including digests, expiry and dispatch state for expiry and restart cleanup |
 | v223 | 重建 hook 审计表以接纳 operator 脚本 hook 动作，绑定触发器以引擎观察值为准 | rebuild the hook audit table to admit the operator script hook action; the binding trigger treats the engine's observed script denial as authoritative |
+| v224 | 重建 hook 审计表以接纳 user_prompt_submit 生命周期事件 | rebuild the hook audit table to admit the user_prompt_submit lifecycle event |
 
 </details>

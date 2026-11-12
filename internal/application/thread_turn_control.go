@@ -7,6 +7,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/hooks"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/llm"
 )
@@ -96,7 +97,8 @@ func (s *ThreadTurnService) SubmitCurrentSteering(ctx context.Context,
 				"The current task is stopping; keep this draft and send it after stopping completes")
 		}
 	}
-	return NewSessionMessageSubmissionService(submissions).Submit(ctx, request)
+	return NewSessionMessageSubmissionService(submissions).
+		WithLifecycleHooks(s.lifecycleHooks).Submit(ctx, request)
 }
 
 func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request ExecuteThreadTurnRequest,
@@ -115,6 +117,24 @@ func (s *ThreadTurnService) executeWithPreparation(ctx context.Context, request 
 	if err != nil {
 		return ExecuteThreadTurnResult{}, err
 	}
+	// The user_prompt_submit boundary fires before any persistence, so a deny
+	// rejects the submission cleanly and reserves no message intent. Queued
+	// deliveries already passed this boundary when their message was
+	// submitted, so they skip it here; every internal Submit call below skips
+	// its own boundary for the same reason.
+	submitted, err := s.threads.promptAlreadySubmitted(ctx, normalized)
+	if err != nil {
+		return ExecuteThreadTurnResult{}, apperror.Normalize(err)
+	}
+	if request.queued == nil && !submitted && strings.TrimSpace(normalized.Content) != "" {
+		if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.UserPromptSubmit,
+			"", "", hooks.BuildUserPromptSubmitPayload(
+				hooks.UserPromptSubmitPayload{ThreadID: normalized.ThreadID,
+					Content: normalized.Content})); err != nil {
+			return ExecuteThreadTurnResult{}, err
+		}
+	}
+	normalized.skipPromptHook = true
 	var intent domain.ThreadMessageIntent
 	if request.queued != nil {
 		intent.MessageID = request.queued.Message.ID
