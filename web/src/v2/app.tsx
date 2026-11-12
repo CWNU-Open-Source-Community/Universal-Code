@@ -6,11 +6,14 @@ import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, Thre
 import { normalizedTaskBudget } from "../api/task-configuration";
 import { useConnectionStore } from "../state/connection";
 import { V2Composer, v2ComposerNotSubmitted } from "./components/composer";
+import { V2ApprovalModeControl } from "./components/approval-mode-control";
+import type { ExecutionApprovalMode } from "./components/approval-mode-contract";
+import { applyCreationApproval } from "./creation-approval";
 import { v2FileReferenceKey, type V2FileReference } from "./components/file-context";
 import { V2Conversation } from "./components/conversation";
 import { V2ConfirmDialog } from "./components/dialog";
 import { V2LazySurface } from "./components/lazy-surface";
-import { V2NetworkScopeControl, type V2NetworkMode } from "./components/network-scope-control";
+import type { V2NetworkMode } from "./components/network-scope-control";
 import { V2SettingsSidebar, V2Sidebar, type V2SettingsSection } from "./components/sidebar";
 import { V2SidebarLayout } from "./components/sidebar-layout";
 import { V2Titlebar } from "./components/titlebar";
@@ -62,7 +65,7 @@ const V2SessionDetailsPage = lazy(() => import("./components/session-details-pag
 const V2AutomationsPage = lazy(() => import("./components/automations-page").then((module) => ({ default: module.V2AutomationsPage })));
 
 function NewConversation({ client, workspaces, workspaceID, projectID, workspaceNotice, onWorkspaceChange, onCreated,
-  onTurnSuccess, onManageModels, onOpenTaskConfiguration, phase, onPhaseChange, budget, configurationValid, webAccessValid, projectSkills,
+  onTurnSuccess, onManageModels, onOpenTaskConfiguration, onOpenWebSettings, phase, onPhaseChange, budget, configurationValid, webAccessValid, projectSkills,
   draft: legacyDraft, onDraftChange: legacyDraftChange, creationAttemptRef, options, onOptionsChange, moreProjects, onImported }: {
   client: APIClient;
   workspaces: WorkspaceView[];
@@ -75,6 +78,7 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
   onTurnSuccess: (threadID: string, submittedDraft: string) => void;
   onManageModels: (prepareForDraft?: boolean) => void;
   onOpenTaskConfiguration: () => void;
+  onOpenWebSettings: () => void;
   phase: V2WorkPhase;
   onPhaseChange: (phase: V2WorkPhase) => void;
   budget?: TaskBudgetSettings;
@@ -106,19 +110,26 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
   const managedDraft = useV2DraftDocument(workspaceID);
   const draft = managedDraft?.state.snapshot.text ?? legacyDraft;
   const onDraftChange = managedDraft?.changeText ?? legacyDraftChange;
-  const creationRecovery = useV2CreationRecovery(client, workspaceID, (thread, originalDraft, files, input) => {
+  const [applyingApproval, setApplyingApproval] = useState(false);
+  const creationRecovery = useV2CreationRecovery(client, workspaceID, (thread, originalDraft, files, input, shouldOpen) => {
     registerV2RecoveredTurn(queryClient, input);
     bindDraftSharedBrowser(workspaceID, thread.id);
-    onCreated(thread, originalDraft, files, input.images, input.draftVersion, input.attachments, true, input.mcpReferences);
-  });
+    onCreated(thread, originalDraft, files, input.images, input.draftVersion, input.attachments,
+      shouldOpen && activeRef.current && workspaceRef.current === input.workspaceID, input.mcpReferences);
+  }, applyingApproval);
   const { networkMode, allowedTargets, modelRoute } = options;
   const [modelCatalogError, setModelCatalogError] = useState("");
+  const [approvalChoice, setApprovalChoice] = useState<{ workspaceID: string; mode: ExecutionApprovalMode; confirmed: boolean } | null>(null);
+  const approval = approvalChoice?.workspaceID === workspaceID ? approvalChoice : null;
   const create = async (content: string, files: V2FileReference[] = [], images: WorkspaceImageAttachment[] = [], draftVersion?: V2DraftVersion, attachments: WorkspaceFileAttachment[] = [], mcpReferences: MCPDraftReference[] = []) => {
-    if (!webAccessValid) throw new Error(t("请重新选择网页访问方式，草稿已保留。", "Choose web access again. Your draft has been kept."));
+    if (!webAccessValid) throw new Error(t("请在设置的“配置”页修正网页限制，草稿已保留。", "Correct web restrictions in Settings > Configuration. Your draft has been kept."));
     if (!configurationValid) throw new Error(t("任务配置尚未通过核对，请打开任务配置修正预算或重新读取项目设置。草稿已保留。", "Task configuration needs review. Open task configuration to fix the budget or reload project settings. Your draft has been kept."));
     if (projectSkills?.refs.length && !projectSkills.confirmUntrustedContext) throw new Error(t("请在任务配置中确认所选技能上下文。草稿已保留。", "Confirm the selected skill context in task configuration. Your draft has been kept."));
     normalizedTaskBudget(budget);
     if (phase === "plan" && !client.hasPlanDelivery) throw new Error(t("当前连接未启用计划确认。请检查连接，或选择直接执行。", "This connection does not support plan confirmation. Check the connection or choose direct execution."));
+    if (approval?.mode === "full" && !approval.confirmed) throw new Error(t("请先确认完全访问权限，草稿已保留。", "Confirm Full access first. Your draft has been kept."));
+    const selectedApproval = approval;
+    const selectedApprovalMode = client.hasExecutionPermissionControl ? selectedApproval?.mode ?? "ask" : undefined;
     const submittedDraft = draft;
     setModelCatalogError("");
     const creationWorkspaceID = workspaceID;
@@ -128,87 +139,93 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
     // this request's right to navigate, but not its original input handoff.
     const requestIsCurrent = () => activeRef.current &&
       workspaceRef.current === creationWorkspaceID && creationRequestRef.current === creationRequest;
+    setApplyingApproval(true);
     try {
-      const catalog = await client.availableModelRoutes();
-      if (!requestIsCurrent()) return v2ComposerNotSubmitted;
-      const selectable = catalog.routes.filter((route) => route.selectable);
-      const selectedReady = !modelRoute || selectable.some((route) =>
-        route.provider_id === modelRoute.provider && route.model === modelRoute.model);
-      if (!selectable.length || !selectedReady) {
-        onManageModels(true);
+      try {
+        const catalog = await client.availableModelRoutes();
+        if (!requestIsCurrent()) return v2ComposerNotSubmitted;
+        const selectable = catalog.routes.filter((route) => route.selectable);
+        const selectedReady = !modelRoute || selectable.some((route) =>
+          route.provider_id === modelRoute.provider && route.model === modelRoute.model);
+        if (!selectable.length || !selectedReady) {
+          onManageModels(true);
+          return v2ComposerNotSubmitted;
+        }
+      } catch (error) {
+        if (!requestIsCurrent()) return v2ComposerNotSubmitted;
+        setModelCatalogError(`${t("无法检查可用模型，草稿已保留。", "Could not check available models. Your draft has been kept.")}${error instanceof Error && error.message
+          ? ` ${error.message}` : t(" 请检查连接后重试。", " Check the connection and try again.")}`);
         return v2ComposerNotSubmitted;
       }
-    } catch (error) {
-      if (!requestIsCurrent()) return v2ComposerNotSubmitted;
-      setModelCatalogError(`${t("无法检查可用模型，草稿已保留。", "Could not check available models. Your draft has been kept.")}${error instanceof Error && error.message
-        ? ` ${error.message}` : t(" 请检查连接后重试。", " Check the connection and try again.")}`);
-      return v2ComposerNotSubmitted;
-    }
-    let goal = content || "文件对话";
-    if (!content && images.length) goal = "图片对话";
-    else if (!content && mcpReferences.length) goal = "MCP 内容";
-    const request = {
-      version: "thread_creation.v1",
-      workspace_id: workspaceID,
-      goal,
-      profile: "code",
-      surface: "code",
-      phase,
-      network_mode: "disabled",
-      web_access_mode: networkMode,
-      web_allowed_targets: networkMode === "rules" ? allowedTargets : [],
-      ...(budget ? { budget } : {}),
-      ...(modelRoute ? { provider: modelRoute.provider, model: modelRoute.model } : {}),
-    } as Parameters<APIClient["createThread"]>[0] & { provider?: string; model?: string };
-    try {
-      if (recovery) {
-        if (managedDraft) {
-          if (draftVersion) assertV2DraftVersion(managedDraft, draftVersion, { text: submittedDraft, files, images, attachments, mcpReferences });
-          else draftVersion = requireV2DraftVersion(managedDraft, { text: submittedDraft, files, images, attachments, mcpReferences });
-        }
-        const intent = creationRecovery.prepare(request, content, files, submittedDraft, images, draftVersion, attachments, projectSkills, mcpReferences);
-        const thread = await creationRecovery.resolve(intent);
-        await adoptDraftSharedBrowser(creationWorkspaceID, thread.id, thread.last_run_id, browserGeneration);
-        const input = creationRecovery.handoff(intent, thread);
-        const submission = turn.mutateAsync(input);
-        onCreated(thread, submittedDraft, files, images, input.draftVersion, attachments, requestIsCurrent(), mcpReferences);
-        void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
-        try { await submission; }
-        catch (error) { if (v2TurnFailed(error) && !input.draftVersion) onTurnSuccess(thread.id, submittedDraft); throw error; }
-        if (!input.draftVersion) onTurnSuccess(thread.id, submittedDraft);
-      } else {
-        const fingerprint = JSON.stringify([request, files, images, fileAttachmentIdentities(attachments), projectSkills, mcpReferenceIdentities(mcpReferences)]);
-        const operationID = creationAttemptRef.current.get(fingerprint) ?? globalThis.crypto.randomUUID();
-        creationAttemptRef.current.set(fingerprint, operationID);
-        const result = await client.createThread(request, `v2-thread-create-${operationID}`);
-        if (projectSkills?.refs.length) {
-          try { await submitSkillChoice(client, result.thread.last_run_id, projectSkills, operationID); }
-          catch (error) {
-            void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
-            throw new Error(`${t(`对话 ${result.thread.id} 已保存，技能选择失败，尚未发送首条消息。`, `Conversation ${result.thread.id} was saved, but skill selection failed and the first message has not been sent.`)}${error instanceof Error ? error.message : t("请重试。", "Please try again.")}`);
+      let goal = content || "文件对话";
+      if (!content && images.length) goal = "图片对话";
+      else if (!content && mcpReferences.length) goal = "MCP 内容";
+      const request = {
+        version: "thread_creation.v1",
+        workspace_id: workspaceID,
+        goal,
+        profile: "code",
+        surface: "code",
+        phase,
+        network_mode: "disabled",
+        web_access_mode: networkMode,
+        web_allowed_targets: networkMode === "rules" ? allowedTargets : [],
+        ...(budget ? { budget } : {}),
+        ...(modelRoute ? { provider: modelRoute.provider, model: modelRoute.model } : {}),
+      } as Parameters<APIClient["createThread"]>[0] & { provider?: string; model?: string };
+      try {
+        // Confirmation belongs to this attempt, never to a restored draft.
+        if (selectedApproval?.mode === "full") setApprovalChoice((current) => current === selectedApproval ? { ...current, confirmed: false } : current);
+        if (recovery) {
+          if (managedDraft) {
+            if (draftVersion) assertV2DraftVersion(managedDraft, draftVersion, { text: submittedDraft, files, images, attachments, mcpReferences });
+            else draftVersion = requireV2DraftVersion(managedDraft, { text: submittedDraft, files, images, attachments, mcpReferences });
           }
+          const intent = creationRecovery.prepare(request, content, files, submittedDraft, images, draftVersion, attachments, projectSkills, mcpReferences, selectedApprovalMode);
+          const thread = await creationRecovery.resolve(intent, selectedApproval?.mode === "full" && selectedApproval.confirmed);
+          await adoptDraftSharedBrowser(creationWorkspaceID, thread.id, thread.last_run_id, browserGeneration);
+          const input = creationRecovery.handoff(intent, thread);
+          const submission = turn.mutateAsync(input);
+          onCreated(thread, submittedDraft, files, images, input.draftVersion, attachments, requestIsCurrent(), mcpReferences);
+          void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
+          try { await submission; }
+          catch (error) { if (v2TurnFailed(error) && !input.draftVersion) onTurnSuccess(thread.id, submittedDraft); throw error; }
+          if (!input.draftVersion) onTurnSuccess(thread.id, submittedDraft);
+        } else {
+          const fingerprint = JSON.stringify([request, files, images, fileAttachmentIdentities(attachments), projectSkills, mcpReferenceIdentities(mcpReferences)]);
+          const operationID = creationAttemptRef.current.get(fingerprint) ?? globalThis.crypto.randomUUID();
+          creationAttemptRef.current.set(fingerprint, operationID);
+          const result = await client.createThread(request, `v2-thread-create-${operationID}`);
+          if (projectSkills?.refs.length) {
+            try { await submitSkillChoice(client, result.thread.last_run_id, projectSkills, operationID); }
+            catch (error) {
+              void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
+              throw new Error(`${t(`对话 ${result.thread.id} 已保存，技能选择失败，尚未发送首条消息。`, `Conversation ${result.thread.id} was saved, but skill selection failed and the first message has not been sent.`)}${error instanceof Error ? error.message : t("请重试。", "Please try again.")}`);
+            }
+          }
+          await applyCreationApproval(client, result.thread.id, selectedApprovalMode, selectedApproval?.mode === "full" && selectedApproval.confirmed);
+          await adoptDraftSharedBrowser(creationWorkspaceID, result.thread.id, result.thread.last_run_id, browserGeneration);
+          const submission = turn.mutateAsync({ threadID: result.thread.id, workspaceID, content,
+            ...(files.length ? { files } : {}),
+            ...(images.length ? { images } : {}),
+            ...(attachments.length ? { attachments } : {}),
+            ...(mcpReferences.length ? { mcpReferences } : {}),
+            operationKey: `v2-thread-create-turn-${operationID}`, createdAt: new Date().toISOString() });
+          onCreated(result.thread, submittedDraft, files, images, undefined, attachments, requestIsCurrent(), mcpReferences);
+          creationAttemptRef.current.delete(fingerprint);
+          void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
+          try { await submission; }
+          catch (error) { if (v2TurnFailed(error)) onTurnSuccess(result.thread.id, submittedDraft); throw error; }
+          onTurnSuccess(result.thread.id, submittedDraft);
         }
-        await adoptDraftSharedBrowser(creationWorkspaceID, result.thread.id, result.thread.last_run_id, browserGeneration);
-        const submission = turn.mutateAsync({ threadID: result.thread.id, workspaceID, content,
-          ...(files.length ? { files } : {}),
-          ...(images.length ? { images } : {}),
-          ...(attachments.length ? { attachments } : {}),
-          ...(mcpReferences.length ? { mcpReferences } : {}),
-          operationKey: `v2-thread-create-turn-${operationID}`, createdAt: new Date().toISOString() });
-        onCreated(result.thread, submittedDraft, files, images, undefined, attachments, requestIsCurrent(), mcpReferences);
-        creationAttemptRef.current.delete(fingerprint);
-        void queryClient.invalidateQueries({ queryKey: v2QueryKeys.threads("active") });
-        try { await submission; }
-        catch (error) { if (v2TurnFailed(error)) onTurnSuccess(result.thread.id, submittedDraft); throw error; }
-        onTurnSuccess(result.thread.id, submittedDraft);
+      } catch (error) {
+        // The original key/journal and Thread mutation keep this failure. It
+        // must not replace a newer request's error after returning to a project.
+        if (requestIsCurrent()) throw error;
+        return v2ComposerNotSubmitted;
       }
-    } catch (error) {
-      // The original key/journal and Thread mutation keep this failure. It
-      // must not replace a newer request's error after returning to a project.
-      if (requestIsCurrent()) throw error;
-      return v2ComposerNotSubmitted;
-    }
-    if (!requestIsCurrent()) return v2ComposerNotSubmitted;
+      if (!requestIsCurrent()) return v2ComposerNotSubmitted;
+    } finally { setApplyingApproval(false); }
   };
   return <V2DraftBrowserWorkspace workspaceID={workspaceID} tools={[
     { id: "task-configuration", label: t("任务配置", "Task configuration"), icon: <SlidersHorizontal size={20} aria-hidden="true" />, onOpen: onOpenTaskConfiguration },
@@ -224,7 +241,8 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
     {workspaceNotice}
     {creationRecovery.notice}
     {modelCatalogError && <div className="v2-notice" role="alert">{modelCatalogError}</div>}
-    {!webAccessValid && <div className="v2-notice" role="alert">{t("保存的网页访问设置需要更新，请在输入框下方重新选择。", "Saved web access settings need updating. Choose again below the input.")}</div>}
+    {!webAccessValid && <div className="v2-notice" role="alert">{t("保存的网页限制需要更新。", "Saved web restrictions need updating.")}
+      <button onClick={onOpenWebSettings} type="button">{t("修正网页限制", "Fix web restrictions")}</button></div>}
     {!configurationValid && <div className="v2-notice" role="alert">{t("任务配置需要修正或重新核对，草稿已保留。", "Task configuration needs correction or review. Your draft has been kept.")}
       <button onClick={onOpenTaskConfiguration} type="button">{t("修正任务配置", "Fix task configuration")}</button></div>}
     <div className="v2-composer-dock">
@@ -232,7 +250,7 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
         onResolve={(token, ref) => { managedDraft.document.resolve(managedDraft.scope, token, ref); }} />}
       <V2Composer client={client}
       draft={draft} onDraftChange={onDraftChange}
-      disabled={!client.hasThreadControl} submitDisabled={!configurationValid || !webAccessValid} onSubmit={create}
+      disabled={!client.hasThreadControl} submitDisabled={!configurationValid || !webAccessValid || creationRecovery.pending} onSubmit={create}
       onManageModels={onManageModels} onPendingModelRouteChange={(route) =>
         onOptionsChange({ ...options, modelRoute: route })}
       pendingModelRoute={modelRoute}
@@ -241,10 +259,11 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
         onClick={onOpenTaskConfiguration} type="button"><SlidersHorizontal aria-hidden="true" size={14} /><span className="v2-composer-optional-label">{t("任务配置", "Task configuration")}{budget ? t(" · 自定义", " · Custom") : ""}</span></button>
       <V2PhasePicker phase={phase} onChange={onPhaseChange}
         disabled={!client.hasThreadControl} planAvailable={client.hasPlanDelivery} />
-      <V2NetworkScopeControl disabled={!client.hasThreadControl}
-        mode={networkMode} onChange={(nextMode, nextTargets) => {
-          onOptionsChange({ ...options, networkMode: nextMode, allowedTargets: nextTargets });
-        }} targets={allowedTargets} /></>}
+      <V2ApprovalModeControl selectionOnly mode={approval?.mode ?? "ask"}
+        fullActivation={approval?.confirmed ? "active" : "inactive"} pending={applyingApproval}
+        disabled={!client.hasExecutionPermissionControl} onRequestChange={(choice) => {
+          setApprovalChoice({ workspaceID, mode: choice.mode, confirmed: choice.confirmFull });
+        }} /></>}
       onWorkspaceChange={onWorkspaceChange} placeholder={t("输入任务或问题…", "Enter a task or question…")} threadID=""
       workspaceID={workspaceID} projectID={projectID} allowProjectless={client.hasProjectlessWorkspaces} workspaces={workspaces} />
       </div>
@@ -760,6 +779,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             webAccessValid={webAccessDefaults.valid}
             budget={draftTaskConfiguration.budget} configurationValid={draftTaskConfiguration.valid} projectSkills={draftTaskConfiguration.projectSkills}
             onOpenTaskConfiguration={() => setSettingsSection("task-configuration")}
+            onOpenWebSettings={() => setSettingsSection("configuration")}
             onCreated={(thread, submittedDraft, files, images = [], version, attachments = [], shouldOpen = true, mcpReferences = []) => {
               const source = `new:${thread.workspace_id}`;
               const target = `thread:${thread.id}`;
