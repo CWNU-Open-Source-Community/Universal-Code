@@ -73,13 +73,13 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 			"one-shot prompt is empty")
 	}
 	started := time.Now()
-	result, err := s.turns.Execute(ctx, ExecuteThreadTurnRequest{
+	result, turnErr := s.turns.Execute(ctx, ExecuteThreadTurnRequest{
 		Version: request.Version, ThreadID: request.ThreadID, Content: content,
 		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy,
 	})
-	if err != nil {
-		return OneShotResult{}, err
-	}
+	// When the turn fails mid-execution, messages committed before the error
+	// are still in the session. Extract any partial reply so the caller gets
+	// useful output alongside the error, instead of losing the agent's work.
 	submission := result.Submission
 	out := OneShotResult{ThreadID: submission.Thread.ID, RunID: submission.Run.ID,
 		RunStatus: string(submission.Run.Status), DurationMs: time.Since(started).Milliseconds()}
@@ -97,30 +97,56 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 			out.OutputTokens += int64(step.Usage.OutputTokens)
 			out.TotalTokens += int64(step.Usage.TotalTokens)
 			out.TurnCount++
+			if step.ReplyMessage.ID > 0 {
+				out.Reply = step.ReplyMessage.Content
+			}
 		}
 	}
-	reply, replyErr := s.lastAssistantReply(ctx, submission.Session.ID)
-	if replyErr != nil {
-		return out, replyErr
+	if out.Reply == "" && submission.Session.ID != "" {
+		// Use a detached context for the partial reply lookup: the caller's
+		// ctx may already be cancelled (e.g. --timeout fired), and the reply
+		// is precisely what the caller needs in that scenario.
+		detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		reply, replyErr := s.lastAssistantReply(detached, submission.Session.ID, submission.Message.SessionMessageID)
+		if replyErr == nil && reply != "" {
+			out.Reply = reply
+		} else if replyErr != nil && turnErr == nil {
+			return out, replyErr
+		}
 	}
-	out.Reply = reply
-	return out, nil
+	return out, turnErr
 }
 
-// lastAssistantReply returns the newest committed assistant message. The turn
-// machinery commits replies in order, so the last assistant row is the reply
-// for this invocation.
+// Replays bind to their own committed input, even after a later turn has run.
 func (s *OneShotService) lastAssistantReply(ctx context.Context,
-	sessionID string,
+	sessionID string, inputID int64,
 ) (string, error) {
+	if inputID <= 0 {
+		return "", nil
+	}
 	messages, err := s.store.ListSessionMessages(ctx, sessionID, true)
 	if err != nil {
 		return "", apperror.Normalize(err)
 	}
-	for index := len(messages) - 1; index >= 0; index-- {
-		if messages[index].Role == "assistant" {
-			return messages[index].Content, nil
+	inputIndex := -1
+	for index, message := range messages {
+		if message.ID == inputID && message.Role == "user" {
+			inputIndex = index
+			break
 		}
 	}
-	return "", nil
+	if inputIndex < 0 {
+		return "", nil
+	}
+	reply := ""
+	for _, message := range messages[inputIndex+1:] {
+		if message.Role == "user" {
+			break
+		}
+		if message.Role == "assistant" {
+			reply = message.Content
+		}
+	}
+	return reply, nil
 }

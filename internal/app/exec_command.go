@@ -252,9 +252,6 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		OperationKey: idgen.New("cli-exec"),
 		RequestedBy:  "cli_exec_operator",
 	})
-	if err != nil {
-		return err
-	}
 	// The last-message file is written before the standard output, so a
 	// failed write fails the command instead of leaving a stale file beside
 	// a success exit code. The reply may be empty when the turn paused
@@ -265,8 +262,14 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		}
 	}
 	if *jsonOutput {
+		// A failed handoff can transition the Run after the result snapshot
+		// was taken; report the current durable status. A lookup failure
+		// keeps the snapshot and never masks the turn error below.
+		if run, runErr := a.store.GetRun(ctx, result.RunID); runErr == nil {
+			result.RunStatus = string(run.Status)
+		}
 		encoder := json.NewEncoder(a.out)
-		if err := encoder.Encode(map[string]any{"run_id": result.RunID,
+		if encodeErr := encoder.Encode(map[string]any{"run_id": result.RunID,
 			"thread_id": result.ThreadID, "status": result.RunStatus,
 			"stop_reason": result.StopReason, "turn_status": result.TurnStatus,
 			"reply": result.Reply,
@@ -276,12 +279,18 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 				"total_tokens":  result.TotalTokens,
 				"duration_ms":   result.DurationMs,
 				"turns":         result.TurnCount,
-			}}); err != nil {
-			return err
+			}}); encodeErr != nil {
+			return encodeErr
 		}
-	} else {
+	} else if result.Reply != "" {
 		fmt.Fprintln(a.out, result.Reply)
 	}
+	if err != nil {
+		return err
+	}
+	// The supervisor's turn_finish stop reason is the completion signal for a
+	// one-shot task; waiting_approval, root_wait, and failures exit non-zero
+	// with the reason and run status.
 	if result.StopReason != "turn_finish" {
 		return fmt.Errorf("exec turn did not finish: stop_reason=%s turn_status=%s run_status=%s",
 			result.StopReason, result.TurnStatus, result.RunStatus)
