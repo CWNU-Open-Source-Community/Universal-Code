@@ -2,6 +2,15 @@ import { absoluteFilePath, parseProjectFileLink } from "../../lib/chat-resources
 
 type Node = { type: string; value?: string; url?: string; children?: Node[]; position?: { start: { offset?: number }; end: { offset?: number } } };
 const pathLike = /^(?:[a-z]:[\\/]|\.?\.?[\\/]|[\w@.-]+[\\/])[^\r\n]*\.[\w-]+(?:(?:#L|:)\d+(?::\d+)?)?$|^[\w.-]+\.[a-z][a-z\d]*(?:(?:#L|:)\d+(?::\d+)?)?$/iu;
+// A bare dotted word needs a familiar file extension; domains and version or
+// API names are ordinary prose. A path containing a separator is explicit.
+const fileExtensions = new Set("html htm svg md mdx txt rst json jsonc yaml yml toml xml ini cfg conf log csv tsv sql pdf doc docx xls xlsx ppt pptx png jpg jpeg gif webp avif ico zip tar gz 7z js jsx ts tsx css scss sass less vue svelte py go rs java kt c h cpp hpp cs sh bash ps1 bat cmd rb php swift dart lua ipynb wasm lock".split(" "));
+function proseFilePath(value: string): boolean {
+  if (!pathLike.test(value)) return false;
+  const file = parseProjectFileLink(value);
+  if (!file) return false;
+  return file.path.includes("/") || fileExtensions.has(file.path.split(".").at(-1)!.toLowerCase());
+}
 // Explicit Markdown labels remain intact. Recognize file paths in prose and
 // inline code without rewriting fenced commands, existing links or images.
 export function remarkResourceLinks() {
@@ -17,16 +26,28 @@ export function remarkResourceLinks() {
           return [{ type: "link", url: node.value, children: [{ type: "text", value: node.value }] }];
         }
         if (node.type === "text") {
-          const value = node.value ?? "", parts = value.split(/(\S+)/u).filter(Boolean);
-          const isPath = (part: string) => pathLike.test(part) && /\.[a-z][\w-]*(?:(?:#L|:)\d+(?::\d+)?)?$/iu.test(part) && parseProjectFileLink(part);
-          if (!parts.some(isPath)) return [node];
+          // CJK punctuation commonly touches a delivered filename, e.g.
+          // pelican-bicycle.html（341 行）. Keep that punctuation in prose.
+          const value = node.value ?? "";
+          if (!/\.[a-z]/iu.test(value)) return [node];
+          const parts = value.split(/([\s，。！？；：（）【】《》“”‘’、]+)/u).filter(Boolean);
           let offset = node.position?.start.offset;
-          return parts.map((part): Node => {
-            const position = offset === undefined ? undefined : { start: { offset }, end: { offset: offset + part.length } };
+          let linked = false;
+          const children = parts.flatMap((part): Node[] => {
+            const start = offset;
             if (offset !== undefined) offset += part.length;
-            const child = { type: "text", value: part, position };
-            return isPath(part) ? { type: "link", url: part, children: [child], position } : child;
+            const text = (value: string, from = 0): Node => ({ type: "text", value,
+              position: start === undefined ? undefined : { start: { offset: start + from }, end: { offset: start + from + value.length } } });
+            const prefix = part.match(/^[([{<"']+/u)?.[0] ?? "";
+            const suffix = part.slice(prefix.length).match(/[.,;!?)\]}>"']+$/u)?.[0] ?? "";
+            const path = part.slice(prefix.length, part.length - suffix.length);
+            if (!proseFilePath(path)) return [text(part)];
+            linked = true;
+            const child = text(path, prefix.length);
+            return [...(prefix ? [text(prefix)] : []), { type: "link", url: path, children: [child], position: child.position },
+              ...(suffix ? [text(suffix, prefix.length + path.length)] : [])];
           });
+          return linked ? children : [node];
         }
         visit(node); return [node];
       });

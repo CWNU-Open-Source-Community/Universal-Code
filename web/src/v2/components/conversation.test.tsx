@@ -1277,6 +1277,40 @@ describe("V2Conversation", () => {
     expect(await screen.findByRole("dialog", { name: "工作区文件" })).toBeInTheDocument();
   });
 
+  it("opens the plain delivered HTML filename and its file content in the wide workspace dock", async () => {
+    const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains("v2-shell") ? 1140 : this.classList.contains("v2-conversation") ? 841 : 0;
+      });
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    try {
+      const filename = "pelican-bicycle.html";
+      const sentence = `页面已完成并写入工作区： ${filename}（341 行，包含 SVG 和交互）。`;
+      const content = "<!doctype html><title>Pelican bicycle preview</title>";
+      const client = baseClient({
+        fileEditChangeSet: vi.fn().mockResolvedValue({ workspace_id: "workspace-1" }),
+        getPage: vi.fn(() => Promise.resolve(page([transcriptItem("plain-html-file", sentence, 1)]))) as unknown as APIClient["getPage"],
+      });
+      const directory = await client.workspaceExplore("workspace-1", ".");
+      vi.mocked(client.workspaceExplore).mockImplementation(async (_workspaceID, path = ".") => path === "." ? {
+        ...directory, entries: [{ name: filename, path: filename, kind: "file", readable: true, size_bytes: content.length }],
+      } : { ...directory, path, kind: "file", entries: [], content });
+      const view = renderConversation(client);
+      view.container.classList.add("v2-shell", "has-sidebar");
+      const link = await screen.findByRole("link", { name: filename });
+      expect(link).toHaveClass("v2-file-link");
+      expect(link.closest("p")).toHaveTextContent(sentence);
+      await userEvent.click(link);
+      const dock = await screen.findByRole("complementary", { name: "工作区文件" });
+      expect(dock.closest(".v2-conversation-stage")).not.toBeNull();
+      expect(await within(dock).findByText(content)).toBeInTheDocument();
+      expect(within(dock).getByRole("tab", { name: filename })).toHaveAttribute("aria-selected", "true");
+      expect(client.workspaceExplore).toHaveBeenCalledWith("workspace-1", filename, expect.any(AbortSignal));
+    } finally {
+      cleanup(); clientWidth.mockRestore(); vi.unstubAllGlobals();
+    }
+  });
+
   it("resolves the originating Run's workspace before reading files in V2FileDrawer", async () => {
     const client = baseClient({
       fileEditChangeSet: vi.fn(() => Promise.resolve({
