@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -27,6 +29,13 @@ import (
 // pre-arranged execution permissions are the operator's responsibility, and
 // no flag here can widen them.
 func (a *App) execCommand(ctx context.Context, args []string) error {
+	// SIGINT (and SIGTERM where the platform delivers it) becomes a clean
+	// cancellation instead of a hard process kill: the turn machinery records
+	// the durable handoff failure through context.WithoutCancel, the Run stays
+	// recoverable for follow-up thread sends, and exec exits non-zero
+	// (cancelled → exit 7; a --timeout deadline → exit 9).
+	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 	if err := a.ensureStore(); err != nil {
 		return err
 	}
@@ -61,11 +70,29 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	}
 	prompt := strings.Join(fs.Args(), " ")
 	if *stdin {
-		raw, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("read prompt from stdin: %w", err)
+		// Cancellation must unblock an idle stdin read: Ctrl-C while waiting
+		// for piped input should exit with the cancelled code instead of
+		// hanging until input arrives — io.ReadAll alone never observes the
+		// context. The abandoned reader goroutine may stay blocked on EOF;
+		// the process is exiting anyway.
+		type stdinRead struct {
+			data []byte
+			err  error
 		}
-		prompt = string(raw)
+		read := make(chan stdinRead, 1)
+		go func(input *os.File) {
+			raw, readErr := io.ReadAll(input)
+			read <- stdinRead{data: raw, err: readErr}
+		}(os.Stdin)
+		select {
+		case result := <-read:
+			if result.err != nil {
+				return fmt.Errorf("read prompt from stdin: %w", result.err)
+			}
+			prompt = string(result.data)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {

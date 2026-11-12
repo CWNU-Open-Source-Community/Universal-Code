@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
@@ -277,5 +278,96 @@ func TestExecInstructionsWhitespaceOnlyFailsBeforeRunCreation(t *testing.T) {
 		"--instructions", "   ", "Any task"})
 	if err == nil || !strings.Contains(err.Error(), "requires nonempty text") {
 		t.Fatalf("whitespace-only --instructions must fail loudly, got: %v", err)
+	}
+}
+
+// cancellingExecProvider blocks inside the model call until the invocation
+// context is cancelled, mimicking an interruption arriving mid-turn. Both
+// model entry points block: the turn machinery streams by default, and the
+// promoted StreamChat of the embedded fixture would otherwise dispatch to the
+// embedded fixture's own immediate response.
+type cancellingExecProvider struct {
+	execTestProvider
+	started     chan struct{}
+	arriveConce sync.Once
+}
+
+// arrive reports the first model entry exactly once, even if the machinery
+// ever retries or races the two entry points.
+func (p *cancellingExecProvider) arrive() {
+	p.arriveConce.Do(func() { close(p.started) })
+}
+
+func (p *cancellingExecProvider) Chat(ctx context.Context,
+	request llm.ChatRequest) (*llm.ChatResponse, error) {
+	p.arrive()
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (p *cancellingExecProvider) StreamChat(ctx context.Context,
+	request llm.ChatRequest) (<-chan llm.ChatChunk, error) {
+	p.arrive()
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestExecCancellationKeepsRunRecoverable(t *testing.T) {
+	home := t.TempDir()
+	st, err := store.Open(filepath.Join(home, "exec-test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{
+		ID:        "exec-ws",
+		Name:      "exec-ws",
+		RootPath:  t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &cancellingExecProvider{started: make(chan struct{})}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	a := &App{home: home, out: &bytes.Buffer{}, errOut: &bytes.Buffer{}, store: st,
+		router: router, checker: policy.NewDefaultChecker()}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- a.execCommand(ctx, []string{
+			"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+			"Long running task"})
+	}()
+
+	select {
+	case <-provider.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("exec never reached the model call")
+	}
+	cancel()
+	var execErr error
+	select {
+	case execErr = <-errCh:
+	case <-time.After(60 * time.Second):
+		t.Fatal("exec did not return after cancellation")
+	}
+	if execErr == nil || apperror.CodeOf(execErr) != apperror.CodeCancelled {
+		t.Fatalf("cancelled exec must surface the cancelled code, got: %v", execErr)
+	}
+
+	// The durable Run is recoverable, not orphaned: the handoff failure was
+	// recorded through a detached context and the Run keeps its lifecycle.
+	runs, err := st.ListRuns(t.Context(), domain.RunFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected exactly one Run after cancellation, got %d", len(runs))
+	}
+	if runs[0].Terminal() {
+		t.Fatalf("cancelled Run must stay recoverable, got status %s", runs[0].Status)
 	}
 }

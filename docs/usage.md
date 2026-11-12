@@ -159,6 +159,16 @@ authority: pin text stays below system policy and can never grant tools,
 permissions, or policy exceptions. The pin is visible in the Thread's context
 pin state and can be edited or removed there like any operator pin.
 
+Ctrl-C (SIGINT; SIGTERM where the
+platform delivers it) does not kill the process mid-write: it cancels the
+invocation cleanly, the turn machinery records the durable stop through a
+detached context, the Run stays recoverable for a follow-up `thread send`,
+and exec exits non-zero — exit `7` for a cancellation, exit `9` for a
+`--timeout` deadline. On Windows, a console close, logoff, or shutdown can
+terminate the process before the cancellation is recorded: the Run may then
+not be ready for `thread send`, and exit code 7 is not guaranteed for those
+exits.
+
 `cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
 回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
 权限、审批与预算规则原样生效。`--workspace` 必填；`--profile`（默认 `code`）、
@@ -175,6 +185,13 @@ agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 
 Thread 上的后续 turn。它不放宽任何权限：pin 文本始终低于系统策略，永远不能
 授予工具、权限或策略例外。pin 在 Thread 的 context pin 状态中可见，可以像
 其他操作者 pin 一样在那里编辑或移除。
+
+Ctrl-C（SIGINT；平台支持的
+SIGTERM）不会在写入中途杀死进程：它干净地取消本次调用，turn 机制通过脱离的
+上下文记录持久停止，Run 保持可恢复状态供后续 `thread send` 继续使用，exec
+以非零码退出——取消对应退出码 `7`，`--timeout` 超时对应退出码 `9`。Windows
+上的控制台关闭、注销或关机可能在取消被记录之前终止进程：Run 可能尚未恢复
+到可 `thread send` 的状态，这些退出不保证退出码 7。
 
 ### 补充消息与排队 / Follow-up messages and queue
 
