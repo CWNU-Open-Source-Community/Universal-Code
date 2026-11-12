@@ -34,7 +34,7 @@ describe.each(["menu", "settings"] as const)("V2ApprovalModeControl English %s",
     expect(screen.getByText("Execution permissions")).toBeVisible();
     expect(screen.getByText("Full access inactive")).toBeVisible();
     expect(screen.getByRole(role, { name: "Request approval" })).toHaveAccessibleDescription(/public network requests need approval/u);
-    expect(screen.getByText(/Read-only claims are checked against actual effects/u)).toBeVisible();
+    expect(screen.queryByText(/Read-only claims are checked against actual effects/u)).not.toBeInTheDocument();
     expect(view.container.textContent).not.toMatch(/[\u3400-\u9fff]/u);
     await user.click(screen.getByRole(role, { name: "Approve for me" }));
     expect(initial.onRequestChange).toHaveBeenCalledExactlyOnceWith({ mode: "auto", confirmFull: false });
