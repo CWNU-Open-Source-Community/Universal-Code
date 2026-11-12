@@ -21,16 +21,17 @@ func (s *SQLiteStore) GetThreadStatistics(ctx context.Context, threadID string) 
 	defer finish()
 	threadID = strings.TrimSpace(threadID)
 	var result domain.ThreadStatistics
-	// Committed steering has a Session message too. Count that input once,
-	// retaining older direct Session input that predates the steering ledger.
-	err = tx.QueryRowContext(ctx, `SELECT
+	// A tool-boundary segment can save its user row before committing steering.
+	// Reuse the exact transcript binding so this input never counts twice.
+	err = tx.QueryRowContext(ctx, threadOperatorMessageBindingsCTE+` SELECT
 		(SELECT COUNT(*) FROM thread_runs binding JOIN operator_steering_messages input
-		 ON input.run_id=binding.run_id WHERE binding.thread_id=? AND input.status<>'cancelled') +
+		 ON input.run_id=binding.run_id AND input.session_id=binding.session_id
+		 WHERE binding.thread_id=? AND input.status<>'cancelled') +
 		(SELECT COUNT(*) FROM thread_runs binding JOIN session_messages message
 		 ON message.session_id=binding.session_id WHERE binding.thread_id=?
 		 AND message.role='user' AND message.source_kind='operator_message' AND message.instruction_authorized=1
-		 AND NOT EXISTS (SELECT 1 FROM operator_steering_messages input WHERE input.session_message_id=message.id))`,
-		threadID, threadID).Scan(&result.Turns)
+		 AND NOT EXISTS (SELECT 1 FROM bound_operator_messages bound WHERE bound.session_message_id=message.id))`,
+		threadID, threadID, threadID).Scan(&result.Turns)
 	if err != nil {
 		return result, err
 	}
