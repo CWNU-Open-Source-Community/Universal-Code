@@ -52149,6 +52149,9 @@
           "active": {
             "type": "boolean"
           },
+          "async": {
+            "type": "boolean"
+          },
           "event": {
             "type": "string"
           },
@@ -52194,6 +52197,10 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "tool_pattern": {
+            "maxLength": 256,
+            "type": "string"
           }
         },
         "required": [
@@ -52209,7 +52216,9 @@
           "failure_policy",
           "timeout_ms",
           "tool_names",
-          "remove_fields"
+          "tool_pattern",
+          "remove_fields",
+          "async"
         ],
         "type": "object"
       },

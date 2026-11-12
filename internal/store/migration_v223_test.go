@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,11 +9,14 @@ import (
 	"cyberagent-workbench/internal/hooks"
 )
 
-func TestSchemaV223PreservesHookAuditsAndAcceptsCapOutcome(t *testing.T) {
+func TestSchemaV223PreservesHookReceiptsAndAdmitsScriptBindings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v222.db")
 	old := openHistoricalTestDatabase(t, path, 222)
 	at := time.Now().UTC()
-	if _, err := old.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at) VALUES('old','guard','same-hook','run_completed','run-old','workspace-one','','completed',?)`, ts(at)); err != nil {
+	if _, err := old.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at) VALUES('old','guard','same-hook','pre_tool','run-old','workspace-one','file_write','completed',?)`, ts(at)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at,plugin_fingerprint,declared_action,rejected) VALUES('old-deny','guard','deny-hook','pre_tool','run-old','workspace-one','shell','completed',?,?,?,1)`, ts(at), strings.Repeat("a", 64), "deny"); err != nil {
 		t.Fatal(err)
 	}
 	if err := old.Close(); err != nil {
@@ -25,50 +27,49 @@ func TestSchemaV223PreservesHookAuditsAndAcceptsCapOutcome(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer state.Close()
-	// Historical rows survive the outcome CHECK rebuild.
 	values, err := state.ListHookAudits(t.Context(), "run-old", "workspace-one", 200)
-	if err != nil || len(values) != 1 || values[0].Outcome != "completed" || values[0].Rejected != nil {
-		t.Fatalf("historical receipt changed: %#v %v", values, err)
+	if err != nil || len(values) != 2 {
+		t.Fatalf("historical receipts changed: %#v %v", values, err)
 	}
-	// A post-occurrence fire that caps its observation output records the
-	// drop through the store sink and the rebuilt CHECK accepts it.
-	engine := hooks.NewEngine(state)
-	fingerprint := strings.Repeat("b", 64)
-	registrations := make([]hooks.Registration, 0, hooks.MaxAnnotations+4)
-	for i := 0; i < hooks.MaxAnnotations+4; i++ {
-		registrations = append(registrations, hooks.Registration{PluginID: "guard",
-			PluginFingerprint: fingerprint, Declaration: hooks.Declaration{
-				ProtocolVersion: hooks.ProtocolVersion, ID: fmt.Sprintf("annotate-%02d", i),
-				Event: hooks.RunCompleted, Action: hooks.ActionAnnotate,
-				FailurePolicy: hooks.FailureContinue, TimeoutMillis: 100,
-				Message: fmt.Sprintf("observation %d", i)}})
+	if values[0].Action != hooks.ActionDeny || values[0].Rejected == nil || !*values[0].Rejected {
+		t.Fatalf("bound historical receipt changed: %#v", values[0])
 	}
-	if err := engine.Replace(registrations); err != nil {
+	if values[1].Outcome != "completed" || values[1].Rejected != nil ||
+		values[1].PluginFingerprint != "" {
+		t.Fatalf("unbound historical receipt changed: %#v", values[1])
+	}
+
+	scriptDigest := strings.Repeat("b", 64)
+	registration := hooks.Registration{PluginID: hooks.OperatorPluginID,
+		PluginFingerprint: scriptDigest,
+		Declaration: hooks.Declaration{ProtocolVersion: hooks.ProtocolVersion,
+			ID: "operator-guard", Event: hooks.PreTool, Action: hooks.ActionScript,
+			FailurePolicy: hooks.FailureDeny, TimeoutMillis: 100,
+			Script: &hooks.ScriptSpec{Interpreter: "python", Path: "check.py",
+				SHA256: scriptDigest}}}
+	engine := hooks.NewEngine(state).WithScriptExecutor(stubScriptAuditExecutor{denied: true})
+	if err := engine.Replace([]hooks.Registration{registration}); err != nil {
 		t.Fatal(err)
 	}
-	result, err := engine.Execute(t.Context(), hooks.Input{Event: hooks.RunCompleted,
-		RunID: "run-new", WorkspaceID: "workspace-one"})
-	if err != nil || len(result.Executed) != hooks.MaxAnnotations+4 || len(result.Annotations) != hooks.MaxAnnotations {
-		t.Fatalf("capped fire: result=%#v err=%v", result, err)
+	result, err := engine.Execute(t.Context(), hooks.Input{Event: hooks.PreTool,
+		RunID: "run-new", WorkspaceID: "workspace-one", ToolName: "shell"})
+	if err != nil || !result.Denied {
+		t.Fatalf("script denial result=%#v err=%v", result, err)
 	}
 	values, err = state.ListHookAudits(t.Context(), "run-new", "workspace-one", 200)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(values) != 1 || values[0].Action != hooks.ActionScript ||
+		values[0].Outcome != "completed" || values[0].Rejected == nil || !*values[0].Rejected ||
+		values[0].PluginFingerprint != scriptDigest {
+		t.Fatalf("script denial receipt=%#v err=%v", values, err)
 	}
-	capped := 0
-	for _, value := range values {
-		if value.Outcome == "output_capped" {
-			capped++
-			if value.Rejected == nil || *value.Rejected {
-				t.Fatalf("capped receipt decision binding: %#v", value)
-			}
-		}
+
+	if _, err := state.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at,plugin_fingerprint,declared_action,rejected) VALUES('bad-binding','operator','h','pre_tool','run-new','workspace-one','shell','failed_continue',?,?,?,1)`, ts(at), scriptDigest, "script"); err == nil {
+		t.Fatal("contradictory script binding was accepted by the trigger")
 	}
-	if capped == 0 {
-		t.Fatalf("cap drop was not audited: %#v", values)
+	if _, err := state.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,run_id,workspace_id,tool_name,outcome,created_at,plugin_fingerprint,declared_action,rejected) VALUES('bad-action','operator','h','pre_tool','run-new','workspace-one','shell','completed',?,?,?,1)`, ts(at), strings.Repeat("c", 64), "explode"); err == nil {
+		t.Fatal("unknown declared action was accepted by the CHECK constraint")
 	}
-	// The rebuilt CHECK still rejects unknown outcomes.
-	if _, err := state.db.Exec(`INSERT INTO plugin_hook_audits(id,plugin_id,hook_id,event,outcome,created_at) VALUES('bogus','guard','h','run_completed','failed_other',?)`, ts(at)); err == nil {
-		t.Fatal("unknown outcome accepted by rebuilt CHECK")
+	if _, err := state.db.Exec(`UPDATE plugin_hook_audits SET rejected=0 WHERE id=?`, values[0].ID); err == nil {
+		t.Fatal("immutable receipt changed")
 	}
 }

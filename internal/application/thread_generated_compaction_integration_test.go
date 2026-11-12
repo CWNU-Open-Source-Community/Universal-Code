@@ -56,7 +56,8 @@ func TestThreadGeneratedCompactionDefaultTwoPassesKeepSourcesAndUsage(t *testing
 		}
 		return historyRecallFinish(), nil
 	}
-	turns, _ := generatedThreadServices(st, p, nil)
+	turns, execution := generatedThreadServices(st, p, nil)
+	execution.WithLifecycleHooks(postCompactionHookEngine(t, st))
 	summaries := map[int64]contextmgr.Summary{}
 	for index := 1; index <= 24; index++ {
 		submitHistoryRecall(t, turns, run.ID, fmt.Sprintf("generated-normal-%02d", index), generatedFixtureInput(index))
@@ -71,6 +72,7 @@ func TestThreadGeneratedCompactionDefaultTwoPassesKeepSourcesAndUsage(t *testing
 	if len(summaries) < 2 || p.generatedCount() < 2 {
 		t.Fatalf("default normal Thread did not generate twice: summaries=%d calls=%d", len(summaries), p.generatedCount())
 	}
+	assertPostCompactionHookAudits(t, st, run.ID, len(summaries))
 	generatedCalls, normalCalls := p.splitRequests()
 	for index, captured := range generatedCalls {
 		if captured.Transport != "chat" || captured.Request.Model != "model" || len(captured.Request.Tools) != 0 || captured.Request.MaxTokens <= 0 {

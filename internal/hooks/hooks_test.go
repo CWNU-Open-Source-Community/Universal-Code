@@ -128,6 +128,147 @@ func testHookDigest(value string) string {
 	return hex.EncodeToString(digest[:])
 }
 
+func TestApprovalRequestedEventRules(t *testing.T) {
+	if !ApprovalRequested.Valid() {
+		t.Fatal("approval_requested event is not valid")
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "approval-tap",
+		Event: ApprovalRequested, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100}).Validate(); err != nil {
+		t.Fatalf("record hook on approval_requested was rejected: %v", err)
+	}
+	for _, broken := range []struct {
+		name   string
+		action Action
+	}{
+		{"auto-deny", ActionDeny},
+		{"annotation", ActionAnnotate},
+		{"narrow", ActionNarrow},
+	} {
+		declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "approval",
+			Event: ApprovalRequested, Action: broken.action, FailurePolicy: FailureDeny,
+			TimeoutMillis: 100, Message: "hook-controlled text"}
+		if err := declaration.Validate(); err == nil {
+			t.Fatalf("%s was accepted on approval_requested", broken.name)
+		}
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "approval-tool",
+		Event: ApprovalRequested, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, ToolNames: []string{"shell"}}).Validate(); err == nil {
+		t.Fatal("approval_requested declaration accepted tool filters")
+	}
+}
+
+func TestPostToolFailureEventRules(t *testing.T) {
+	if !PostToolFailure.Valid() {
+		t.Fatal("post_tool_failure event is not valid")
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "failure-tap",
+		Event: PostToolFailure, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, ToolNames: []string{"shell"}}).Validate(); err != nil {
+		t.Fatalf("record hook with tool filter on post_tool_failure was rejected: %v", err)
+	}
+	// Deny is rejected (same rule as post_tool)
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "failure-deny",
+		Event: PostToolFailure, Action: ActionDeny, FailurePolicy: FailureDeny,
+		TimeoutMillis: 100, Message: "retroactive"}).Validate(); err == nil {
+		t.Fatal("deny on post_tool_failure was accepted")
+	}
+	// FailurePolicy=deny is rejected (same rule as post_tool)
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "failure-policy",
+		Event: PostToolFailure, Action: ActionRecord, FailurePolicy: FailureDeny,
+		TimeoutMillis: 100}).Validate(); err == nil {
+		t.Fatal("FailureDeny on post_tool_failure was accepted")
+	}
+	// Tool filter works (same as post_tool)
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "failure-narrow",
+		Event: PostToolFailure, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, ToolNames: []string{"shell"}}).Validate(); err != nil {
+		t.Fatalf("tool filter on post_tool_failure was rejected: %v", err)
+	}
+}
+
+func TestEnginePostToolFailureFiresOnlyForFailures(t *testing.T) {
+	sink := &scriptedAuditSink{}
+	engine := NewEngine(sink)
+	if err := engine.Replace([]Registration{{PluginID: "plugin-a",
+		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "failure-tap", Event: PostToolFailure,
+			Action: ActionRecord, FailurePolicy: FailureContinue, TimeoutMillis: 100}}}); err != nil {
+		t.Fatal(err)
+	}
+	// A successful tool call fires post_tool but NOT post_tool_failure.
+	successInput := Input{Event: PostTool, ToolName: "shell", Payload: json.RawMessage(`{"status":"completed"}`)}
+	result, err := engine.Execute(t.Context(), successInput)
+	if err != nil || len(result.Executed) != 0 {
+		t.Fatalf("post_tool_failure fired for a successful call: %#v err=%v", result, err)
+	}
+	// A failed tool call fires post_tool_failure.
+	failureInput := Input{Event: PostToolFailure, ToolName: "shell", Payload: json.RawMessage(`{"status":"failed"}`)}
+	result, err = engine.Execute(t.Context(), failureInput)
+	if err != nil || len(result.Executed) != 1 {
+		t.Fatalf("post_tool_failure did not fire for a failed call: %#v err=%v", result, err)
+	}
+	if len(sink.records) != 1 || sink.records[0].Event != PostToolFailure {
+		t.Fatalf("audit records=%#v", sink.records)
+	}
+}
+
+func TestDeclarationRejectsTurnEndDenialPolicy(t *testing.T) {
+	declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-audit",
+		Event: TurnEnd, Action: ActionRecord, FailurePolicy: FailureDeny, TimeoutMillis: 100}
+	if err := declaration.Validate(); err == nil {
+		t.Fatal("turn_end declaration accepted a failure policy that cannot be enforced on a completed turn")
+	}
+	declaration.FailurePolicy = FailureContinue
+	if err := declaration.Validate(); err != nil {
+		t.Fatalf("turn_end continue policy was rejected: %v", err)
+	}
+}
+
+func TestTurnEndEventRules(t *testing.T) {
+	if !TurnEnd.Valid() {
+		t.Fatal("turn_end event is not valid")
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-tap",
+		Event: TurnEnd, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100}).Validate(); err != nil {
+		t.Fatalf("record hook on turn_end was rejected: %v", err)
+	}
+	for _, broken := range []struct {
+		name   string
+		action Action
+	}{
+		{"deny", ActionDeny},
+		{"annotate", ActionAnnotate},
+		{"narrow", ActionNarrow},
+	} {
+		declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-end",
+			Event: TurnEnd, Action: broken.action, FailurePolicy: FailureContinue,
+			TimeoutMillis: 100, Message: "hook-controlled"}
+		if err := declaration.Validate(); err == nil {
+			t.Fatalf("%s was accepted on turn_end", broken.name)
+		}
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "turn-tool",
+		Event: TurnEnd, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, ToolNames: []string{"shell"}}).Validate(); err == nil {
+		t.Fatal("turn_end declaration accepted tool filters")
+	}
+}
+
+func TestDeclarationRejectsPostCompactionDenialPolicy(t *testing.T) {
+	declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "post-compact-audit",
+		Event: PostCompaction, Action: ActionRecord, FailurePolicy: FailureDeny, TimeoutMillis: 100}
+	if err := declaration.Validate(); err == nil {
+		t.Fatal("post_compaction declaration accepted a failure policy that cannot be enforced after compaction")
+	}
+	declaration.FailurePolicy = FailureContinue
+	if err := declaration.Validate(); err != nil {
+		t.Fatalf("post_compaction continue policy was rejected: %v", err)
+	}
+}
+
 type recordingHookAuditSink struct{ outcomes []string }
 
 func (s *recordingHookAuditSink) RecordHookAudit(_ context.Context, record AuditRecord) error {
@@ -201,7 +342,7 @@ func TestPostOccurrenceOutputSizeOverflowCapsInsteadOfFailing(t *testing.T) {
 	}
 }
 
-func TestSessionClosedPayloadEchoOverflowDropsPayloadOnly(t *testing.T) {
+func TestSessionClosedPreservesIndependentlyBoundedPayload(t *testing.T) {
 	engine := NewEngine(nil)
 	if err := engine.Replace([]Registration{{PluginID: "plugin",
 		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
@@ -214,8 +355,8 @@ func TestSessionClosedPayloadEchoOverflowDropsPayloadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("payload echo overflow failed the boundary: %v", err)
 	}
-	if result.Payload != nil || len(result.Executed) != 1 {
-		t.Fatalf("payload echo was not capped in place: payload=%d executed=%v",
+	if len(result.Payload) != 20*1024+2 || len(result.Executed) != 1 {
+		t.Fatalf("independently bounded payload was not preserved: payload=%d executed=%v",
 			len(result.Payload), result.Executed)
 	}
 }
@@ -259,5 +400,37 @@ func TestPostOccurrenceExecutedListOverflowCapsInsteadOfFailing(t *testing.T) {
 	}
 	if len(encoded) > MaxOutputBytes || len(result.Executed) == MaxDeclarations {
 		t.Fatalf("executed list was not capped: %d bytes, %d entries", len(encoded), len(result.Executed))
+	}
+}
+
+func TestPostOccurrenceAuditFailureStillCapsAnnotations(t *testing.T) {
+	engine := NewEngine(failingHookAuditSink{})
+	if err := engine.Replace(annotateRegistrations(RunCompleted, MaxAnnotations+4, 0)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(t.Context(), Input{Event: RunCompleted, RunID: "run-1"})
+	if err != nil || len(result.Annotations) != MaxAnnotations || len(result.Executed) != 0 {
+		t.Fatalf("failed sink output escaped cap: %+v err=%v", result, err)
+	}
+}
+
+func TestPostOccurrenceCapPreservesPayloadForLaterScripts(t *testing.T) {
+	capturing := &payloadCapturingExecutor{}
+	engine := NewEngine(nil).WithScriptExecutor(capturing)
+	values := annotateRegistrations(RunCompleted, MaxAnnotations+4, MaxAnnotationBytes)
+	values = append(values, Registration{PluginID: OperatorPluginID, PluginFingerprint: testHookDigest("script"), Declaration: Declaration{ProtocolVersion: ProtocolVersion, ID: "later-script", Event: RunCompleted, Action: ActionScript, FailurePolicy: FailureContinue, TimeoutMillis: 100, Script: &ScriptSpec{Interpreter: "python", Path: "tap.py", SHA256: testHookDigest("script")}}})
+	if err := engine.Replace(values); err != nil {
+		t.Fatal(err)
+	}
+	payload := json.RawMessage("\"" + strings.Repeat("x", 20*1024) + "\"")
+	result, err := engine.Execute(t.Context(), Input{Event: RunCompleted, Payload: payload})
+	if err != nil || len(capturing.invocations) != 1 || string(capturing.invocations[0].Payload) != string(payload) || string(result.Payload) != string(payload) {
+		t.Fatalf("capping changed script input: invocations=%+v payload=%d err=%v", capturing.invocations, len(result.Payload), err)
+	}
+	produced := result
+	produced.Payload = nil
+	encoded, _ := json.Marshal(produced)
+	if len(encoded) > MaxOutputBytes {
+		t.Fatalf("uncapped hook output: %d", len(encoded))
 	}
 }

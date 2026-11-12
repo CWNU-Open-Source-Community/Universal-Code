@@ -185,7 +185,7 @@ func (m Manifest) Validate() error {
 	}
 	seenHooks := make(map[string]struct{}, len(m.Hooks))
 	for _, declaration := range m.Hooks {
-		if err := declaration.Validate(); err != nil {
+		if err := hooks.ValidateDeclarative(declaration); err != nil {
 			return err
 		}
 		if _, found := seenHooks[declaration.ID]; found {

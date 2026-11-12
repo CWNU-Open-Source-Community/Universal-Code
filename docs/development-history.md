@@ -291,5 +291,12 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v220 | 将工作区文件上传接入 Agent 浏览器工具账本，保留已有调用行、执行身份和授权约束 | admit workspace file uploads to the Agent browser tool ledger while preserving existing call rows, execution identities and authority constraints |
 | v221 | 将工作流完成与待通知义务同事务保存，支持宿主重试和独立租约，保留已交付历史与完成输出 | atomically persist workflow completion notifications for host retries and independent claims, preserving delivered history and completed outputs |
 | v222 | 保存暂停的浏览器网页请求及审批来源，记录摘要、有效期和发送状态，支持过期与重启清理 | persist paused browser page requests and their approval source, including digests, expiry and dispatch state for expiry and restart cleanup |
+| v223 | 重建 hook 审计表以接纳 operator 脚本 hook 动作，绑定触发器以引擎观察值为准 | rebuild the hook audit table to admit the operator script hook action; the binding trigger treats the engine's observed script denial as authoritative |
+| v224 | 重建 hook 审计表以接纳 user_prompt_submit 生命周期事件 | rebuild the hook audit table to admit the user_prompt_submit lifecycle event |
+| v225 | 重建 hook 审计表以接纳 approval_requested 审批等待事件，保留已有不可变收据和诊断绑定约束 | rebuild the hook audit table to admit the approval_requested lifecycle event while preserving immutable receipts and diagnostic binding guards |
+| v226 | 扩展 hook 审计事件以保存 post_tool_failure，保留脚本和已有生命周期审计约束 | admit post_tool_failure audits while preserving script bindings and previous lifecycle events |
+| v227 | 重建 hook 审计表以接纳 turn_end 生命周期事件 | rebuild the hook audit table to admit the turn_end lifecycle event |
+| v228 | 重建 hook 审计表以接纳 post_compaction 生命周期事件 | rebuild the hook audit table to admit the post_compaction lifecycle event |
+| v229 | hook 已发生边界截断过量观测输出，审计保存 output_capped 并保留既有事件和脚本拒绝绑定 | cap post-occurrence hook observations and admit output_capped audits while preserving prior event and script bindings |
 
 </details>

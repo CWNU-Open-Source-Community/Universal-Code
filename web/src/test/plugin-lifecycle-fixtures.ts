@@ -14,7 +14,7 @@ export function pluginHistory(): PluginHistoryView {
 export function hookDiagnostics(): HookDiagnosticsView {
   return { protocol_version: "hook-diagnostics.v1", run_id: "run-one", workspace_id: "project-one", omitted_declarations: 0,
     declarations: [{ installation_id: "plugin-current", plugin_id: "first-plugin", package_fingerprint: "c".repeat(64), installation_state: "enabled",
-      active: true, scope: "local", hook_id: "guard", event: "pre_tool", action: "deny", failure_policy: "deny", timeout_ms: 100, tool_names: ["file_write"], remove_fields: [] }],
+      active: true, scope: "local", hook_id: "guard", event: "pre_tool", action: "deny", failure_policy: "deny", timeout_ms: 100, tool_names: ["file_write"], tool_pattern: "", remove_fields: [], async: false }],
     observations: [{ id: "observed-one", plugin_id: "first-plugin", hook_id: "guard", event: "pre_tool", action: "deny", package_fingerprint: "d".repeat(64),
       run_id: "run-one", workspace_id: "project-one", tool_name: "file_write", outcome: "completed", decision: "rejected", created_at: "2026-10-10T01:00:00Z" },
       { id: "historical-one", plugin_id: "first-plugin", hook_id: "guard", event: "pre_tool", run_id: "run-one", workspace_id: "project-one",

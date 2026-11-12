@@ -219,7 +219,44 @@ func (a *App) newLifecycleHookEngine() *hooks.Engine {
 	if err != nil {
 		return nil
 	}
-	return hooks.NewEngine(a.store).WithLoader(service.ActiveHooks)
+	return hooks.NewEngine(a.store).WithLoader(a.hookRegistrations(service)).
+		WithScriptExecutor(a.newScriptHookExecutor())
+}
+
+// hookRegistrations merges enabled plugin hook declarations with the
+// operator-owned script hook declarations. Operator scripts live under the
+// home hooks directory and never come from workspace or repository content.
+func (a *App) hookRegistrations(service *plugins.Service) func(context.Context) ([]hooks.Registration, error) {
+	return func(ctx context.Context) ([]hooks.Registration, error) {
+		registrations, err := service.ActiveHooks(ctx)
+		if err != nil {
+			return nil, err
+		}
+		operator, err := hooks.LoadOperatorScriptHooks(ctx, a.scriptHooksDir())
+		if err != nil {
+			return nil, err
+		}
+		return hooks.MergeRegistrations(registrations, operator)
+	}
+}
+
+func (a *App) scriptHooksDir() string {
+	if a == nil || a.home == "" || !filepath.IsAbs(a.home) {
+		return ""
+	}
+	return filepath.Clean(filepath.Join(a.home, "hooks.d"))
+}
+
+func (a *App) newScriptHookExecutor() hooks.ScriptExecutor {
+	dir := a.scriptHooksDir()
+	if dir == "" {
+		return nil
+	}
+	executor, err := hooks.NewProcessScriptExecutor(dir)
+	if err != nil {
+		return nil
+	}
+	return executor
 }
 
 func (a *App) newDockerSandboxProposalExecutor() *application.DockerSandboxProposalExecutor {
