@@ -122,7 +122,7 @@ export function useV2Navigation() {
   }, [leave]);
   const back = () => {
     const route = location.route;
-    const returnToResourceParent = (target: V2Route) => {
+    const returnToParent = (target: V2Route) => {
       // Reuse a known parent entry. Replacing it would leave two identical pages
       // in the stack; unknown predecessors and direct links still need a target.
       if (location.index > 0 && window.history.state?.v2PreviousHash === routeHash(target)) window.history.back();
@@ -130,16 +130,15 @@ export function useV2Navigation() {
     };
     if (route.section) {
       const source = { ...route, section: undefined };
-      if (route.kind === "run" || route.kind === "session") returnToResourceParent(source);
-      else navigate(source, true);
+      returnToParent(source);
     }
     else if (route.kind === "run" || route.kind === "session") {
-      if (route.threadID) navigate({ kind: "thread", threadID: route.threadID, panel: "records" }, true);
-      else returnToResourceParent({ kind: "history" });
+      if (route.threadID) returnToParent({ kind: "thread", threadID: route.threadID, panel: "records" });
+      else returnToParent({ kind: "history" });
     }
     else if (route.kind === "automations")
-      navigate(route.threadID ? { kind: "thread", threadID: route.threadID } : { kind: "new" }, true);
-    else if (route.panel === "records") navigate({ kind: "thread", threadID: route.threadID }, true);
+      returnToParent(route.threadID ? { kind: "thread", threadID: route.threadID } : { kind: "new" });
+    else if (route.panel === "records") returnToParent({ kind: "thread", threadID: route.threadID });
     else if (location.index > 0) window.history.back();
     else if (route.kind === "history") navigate({ kind: "new" }, true);
   };
