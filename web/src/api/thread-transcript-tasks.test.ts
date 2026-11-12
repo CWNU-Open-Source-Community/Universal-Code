@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { APIClient } from "./client";
 import type { ThreadTranscriptItemView } from "./types";
 import { mergeThreadTranscriptItems } from "../components/thread-transcript";
+import { projectThreadNarrative } from "../v2/projection/narrative";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -37,6 +38,10 @@ it.each([
   expect(result.items[0].task).toEqual(metadata);
   const projected = mergeThreadTranscriptItems(result.items, [], null, "stopped");
   expect(projected[0].task).toEqual(metadata);
+  const narrative = projectThreadNarrative(projected);
+  expect(narrative[0].task).toMatchObject({ id: metadata.id, inputMessageID: metadata.input_message_id,
+    state: metadata.state, runId: item.run_id });
+  if (metadata.state === "completed") expect(narrative[0].task?.finalMessageID).toBe(projected[0].id);
   if (metadata.state === "completed") expect(projected[0].task?.final_message_id).toBe(projected[0].id);
 });
 
