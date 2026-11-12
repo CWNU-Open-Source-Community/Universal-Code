@@ -112,6 +112,57 @@ it("preserves descriptive Markdown labels and shortens bare URLs and inline file
   expect(screen.queryByRole("link", { name: "1.0" })).not.toBeInTheDocument();
 });
 
+it("keeps an absolute code example distinct from the delivered relative file link", async () => {
+  const bridge = native();
+  const example = "/home/xxx/clawd/ws-demo/pelican-bicycle.html";
+  messages(`[pelican-bicycle.html](pelican-bicycle.html)\n\n我之所以没给你形如 \`${example}\` 的绝对路径，是因为它只是示例。`);
+  const links = screen.getAllByRole("link", { name: "pelican-bicycle.html" });
+  expect(links).toHaveLength(2);
+  for (const code of screen.getAllByText(example, { exact: true })) {
+    expect(code.tagName).toBe("CODE");
+    expect(code.closest("a")).toBeNull();
+  }
+  fireEvent.contextMenu(links[1]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "在资源管理器中显示" }));
+  await waitFor(() => expect(bridge.ChatResourceAction).toHaveBeenCalledWith({ version: "desktop_chat_resource.v1", workspace_id: "workspace", run_id: "historical-run", path: "pelican-bicycle.html", action: "reveal" }));
+  expect(bridge.ChatResourceAction).toHaveBeenCalledTimes(1);
+});
+
+it.each(["C:/project/pelican-bicycle.html", "C:\\project\\pelican-bicycle.html", "/Users/me/project/pelican-bicycle.html"])("preserves absolute inline code literally: %s", (path) => {
+  native(); messages(`说明中的 \`${path}\`。`);
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  for (const code of screen.getAllByText(path, { exact: true })) expect(code.tagName).toBe("CODE");
+});
+
+it("retains complete bare absolute paths and author labels on explicit Markdown links", () => {
+  native();
+  messages("/home/other/pelican-bicycle.html\n\n[作者的文件标签](/home/other/pelican-bicycle.html)");
+  expect(screen.getAllByRole("link", { name: "/home/other/pelican-bicycle.html" })).toHaveLength(2);
+  expect(screen.getAllByRole("link", { name: "作者的文件标签" })).toHaveLength(2);
+  expect(screen.queryByRole("link", { name: "pelican-bicycle.html" })).not.toBeInTheDocument();
+});
+
+it("shows a localized, dismissible workspace error outside the message paragraph", async () => {
+  const bridge = native();
+  bridge.ChatResourceAction.mockRejectedValueOnce(new Error("File must be inside this workspace"));
+  messages("前文[查看文件](/home/other/pelican-bicycle.html)后文。");
+  const link = screen.getAllByRole("link", { name: "查看文件" })[1];
+  const paragraph = link.closest("p")!;
+  const originalText = paragraph.textContent;
+  fireEvent.contextMenu(link);
+  fireEvent.click(screen.getByRole("menuitem", { name: "在资源管理器中显示" }));
+  const notice = await screen.findByRole("alert");
+  expect(notice).toHaveTextContent("此路径不在这条消息的工作区内");
+  expect(notice).not.toHaveTextContent("File must be inside");
+  expect(notice).toHaveClass("v2-resource-notice");
+  expect(paragraph).not.toContainElement(notice);
+  expect(paragraph.textContent).toBe(originalText);
+  expect(bridge.ChatResourceAction).toHaveBeenCalledWith(expect.objectContaining({ run_id: "historical-run", path: "/home/other/pelican-bicycle.html", action: "reveal" }));
+  fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(link).toHaveFocus();
+});
+
 it("renders generated images from the historical workspace and opens their copyable viewer", async () => {
   const bridge = native();
   bridge.ReadChatResource.mockResolvedValue({ version: "desktop_chat_resource.v1", name: "result.png", path: "D:/project/result.png", relative_path: "result.png", mime_type: "image/png", data_base64: "aW1hZ2U=" });

@@ -1,4 +1,4 @@
-import { parseProjectFileLink } from "../../lib/chat-resources";
+import { absoluteFilePath, parseProjectFileLink } from "../../lib/chat-resources";
 
 type Node = { type: string; value?: string; url?: string; children?: Node[]; position?: { start: { offset?: number }; end: { offset?: number } } };
 const pathLike = /^(?:[a-z]:[\\/]|\.?\.?[\\/]|[\w@.-]+[\\/])[^\r\n]*\.[\w-]+(?:(?:#L|:)\d+(?::\d+)?)?$|^[\w.-]+\.[a-z][a-z\d]*(?:(?:#L|:)\d+(?::\d+)?)?$/iu;
@@ -10,6 +10,10 @@ export function remarkResourceLinks() {
       if (!parent.children || ["link", "image", "code", "html"].includes(parent.type)) return;
       parent.children = parent.children.flatMap((node): Node[] => {
         if (node.type === "inlineCode" && pathLike.test(node.value ?? "") && parseProjectFileLink(node.value!)) {
+          // Absolute code paths may be examples or refer to another machine.
+          // Preserve their literal text; an explicit Markdown link can still
+          // offer native actions for an absolute file in this workspace.
+          if (absoluteFilePath(parseProjectFileLink(node.value!)!.path)) return [node];
           return [{ type: "link", url: node.value, children: [{ type: "text", value: node.value }] }];
         }
         if (node.type === "text") {
