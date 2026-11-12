@@ -10,7 +10,6 @@ const changedEvent = workspaceTabsChangedEvent;
 export const defaultWorkspaceWidth = 440;
 export const minWorkspaceWidth = 340;
 export const maxWorkspaceWidth = 960;
-const maxPersistedThreads = 48;
 const maxTabsPerThread = 12;
 
 export type WorkspaceFileTab = {
@@ -294,7 +293,8 @@ function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWo
   // or after a clock adjustment, so the new state remains authoritative.
   const updatedAt = Math.max(Date.now(), current.updatedAt + 1);
   let updated = sanitizeThreadState({ ...candidate, updatedAt }) ?? emptyThreadWorkspaceState();
-  const persisted = persistent ? readAllPersisted()[key] : undefined;
+  const persistedThreads = persistent ? readAllPersisted() : {};
+  const persisted = persistedThreads[key];
   if (persistent && !persisted && !memoryFallback.has(key) && readLegacyThreadState(threadID) && !updated.notice) {
     updated = { ...updated, notice: workspaceLegacyTabsNotice };
   }
@@ -315,13 +315,9 @@ function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWo
     updated = { ...updated, notice: undefined };
   }
   memoryFallback.set(key, updated);
-  const all = { ...readAllPersisted(), [key]: updated };
-  const entries = Object.entries(all)
-    .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
-    .slice(0, maxPersistedThreads);
   const payload: PersistedWorkspaceStore = {
     version: 1,
-    threads: Object.fromEntries(entries),
+    threads: { ...persistedThreads, [key]: updated },
   };
   try {
     const encoded = JSON.stringify(payload);

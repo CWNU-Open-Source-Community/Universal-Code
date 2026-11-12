@@ -50,6 +50,15 @@ describe("workspace-tabs store", () => {
     useConnectionStore.setState({ apiBaseURL: undefined });
   });
 
+  it("preserves previously saved task tabs when more than 48 tasks are used", () => {
+    for (let index = 0; index < 50; index++) {
+      openWorkspaceFile(`task-${index}`, { path: `file-${index}.ts` });
+    }
+    resetWorkspaceTabsMemoryCache();
+    expect(getThreadWorkspaceState("task-0").tabs).toMatchObject([{ path: "file-0.ts" }]);
+    expect(getThreadWorkspaceState("task-49").tabs).toMatchObject([{ path: "file-49.ts" }]);
+  });
+
   it("does not reuse unscoped in-memory tabs after reconnecting", () => {
     const noIdentity = { data_store_id: "" } as HealthView;
     useConnectionStore.getState().connect("first", noIdentity);
