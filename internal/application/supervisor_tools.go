@@ -370,7 +370,13 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 			return nil, errors.New(
 				"provider requested command runtime outside its advertised Code/Deliver adapter authority")
 		}
-		payload, err := toolgateway.NormalizeSupervisorToolPayload(name, call.Arguments)
+		var payload json.RawMessage
+		var err error
+		if name == toolgateway.CommandRuntimeTool {
+			payload, err = toolgateway.NormalizeCommandRuntimePayloadForAdapter(call.Arguments, configured.CommandRuntime.Adapter)
+		} else {
+			payload, err = toolgateway.NormalizeSupervisorToolPayload(name, call.Arguments)
+		}
 		if err != nil {
 			return nil, err
 		}
