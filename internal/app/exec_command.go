@@ -80,10 +80,10 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 			err  error
 		}
 		read := make(chan stdinRead, 1)
-		go func() {
-			raw, readErr := io.ReadAll(os.Stdin)
+		go func(input *os.File) {
+			raw, readErr := io.ReadAll(input)
 			read <- stdinRead{data: raw, err: readErr}
-		}()
+		}(os.Stdin)
 		select {
 		case result := <-read:
 			if result.err != nil {
