@@ -34,6 +34,7 @@ type Host struct {
 	finishOnce sync.Once
 	lease      *ControlLease
 	pending    map[*nativeRequest]struct{}
+	popups     map[*nativePopup]struct{}
 	subclassID uintptr
 }
 
@@ -68,7 +69,7 @@ func NewHost(ctx context.Context, options HostOptions) (*Host, error) {
 		return nil, err
 	}
 	profileHash := sha256.Sum256([]byte(filepath.Clean(options.UserDataDir)))
-	h := &Host{options: options, profileID: hex.EncodeToString(profileHash[:]), tabs: map[string]*nativePage{}, wake: make(chan struct{}, 1), finished: make(chan struct{}), pending: map[*nativeRequest]struct{}{}}
+	h := &Host{options: options, profileID: hex.EncodeToString(profileHash[:]), tabs: map[string]*nativePage{}, wake: make(chan struct{}, 1), finished: make(chan struct{}), pending: map[*nativeRequest]struct{}{}, popups: map[*nativePopup]struct{}{}}
 	go h.dispatchEvents()
 	ready := make(chan error, 1)
 	err := options.Dispatcher.Invoke(ctx, func() error {
@@ -246,6 +247,9 @@ func (h *Host) closeOnUI() {
 	for _, p := range pages {
 		p.closeOnUI()
 	}
+	for popup := range h.popups {
+		popup.finishOnUI(nil)
+	}
 	if h.env != nil {
 		h.env.release()
 		h.env = nil
@@ -407,6 +411,11 @@ func (p *nativePage) closeOnUI() {
 			pending.finishOnUI(false)
 		}
 	}
+	for popup := range p.host.popups {
+		if popup.opener == p {
+			popup.finishOnUI(nil)
+		}
+	}
 	for _, c := range connections {
 		c.closeOnUI()
 	}
@@ -470,10 +479,20 @@ func (p *nativePage) installEvents() error {
 			return 0
 		}},
 		{coreNavigationCompleted, "{D33A35BF-1C49-4F98-93AB-006E0533FE1C}", func(_, args uintptr) uintptr {
+			var succeeded int32
+			if args == 0 || comCall((*comObject)(unsafe.Pointer(args)), 3, uintptr(unsafe.Pointer(&succeeded))) != nil {
+				succeeded = 0
+			}
 			p.mu.Lock()
 			p.state.Loading = false
+			if succeeded == 0 {
+				p.state.Error = "Navigation failed"
+			}
 			p.mu.Unlock()
 			p.refreshState()
+			if succeeded != 0 && !p.State().Closed {
+				p.host.emit(Event{Kind: "navigated", State: p.State()})
+			}
 			return 0
 		}},
 		{coreSourceChanged, "{3C067F9F-5388-4772-8B48-79F7EF1AB37C}", func(_, args uintptr) uintptr { p.refreshState(); return 0 }},
@@ -484,10 +503,7 @@ func (p *nativePage) installEvents() error {
 			return 0
 		}},
 		{coreNewWindowRequested, "{D4C185FE-C81C-4989-97AF-2D3FA7AB5651}", func(_, args uintptr) uintptr {
-			a := (*comObject)(unsafe.Pointer(args))
-			_ = comCall(a, 6, 1)
-			url, _ := getString(a, 3)
-			p.host.emit(Event{Kind: "popup", State: p.State(), URL: url})
+			p.openPopup((*comObject)(unsafe.Pointer(args)))
 			return 0
 		}},
 		{coreWindowClose, "{5C19E9E0-092F-486B-AFFA-CA8231913039}", func(_, args uintptr) uintptr { _ = p.host.options.Dispatcher.Post(func() { p.closeOnUI() }); return 0 }},

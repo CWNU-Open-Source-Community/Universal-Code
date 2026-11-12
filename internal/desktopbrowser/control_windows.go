@@ -124,6 +124,11 @@ func (l *ControlLease) Release(ctx context.Context) error {
 				pending.finishOnUI(false)
 			}
 		}
+		for popup := range h.popups {
+			if popup.lease == l {
+				popup.finishOnUI(nil)
+			}
+		}
 		h.mu.Lock()
 		if h.lease == l {
 			h.lease = nil

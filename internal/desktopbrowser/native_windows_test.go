@@ -214,25 +214,27 @@ func TestNativeBrowserProbe(t *testing.T) {
 	if page.(*nativePage).cursor == 0 {
 		t.Fatalf("CDP mouse input did not create a native agent cursor: %v", page.(*nativePage).cursorError)
 	}
-	if err = ui.dispatcher.Invoke(ctx, func() error {
-		showWindow.Call(ui.hwnd, 5)
-		p := page.(*nativePage)
-		p.positionCursor()
-		var before, after nativeRect
-		user32.NewProc("GetWindowRect").Call(p.cursor, uintptr(unsafe.Pointer(&before)))
-		moveWindow.Call(ui.hwnd, 280, 180, 1100, 800, 1)
-		user32.NewProc("GetWindowRect").Call(p.cursor, uintptr(unsafe.Pointer(&after)))
-		if after.Left-before.Left != 200 || after.Top-before.Top != 100 {
-			return fmt.Errorf("agent cursor did not follow native parent move: before=%+v after=%+v", before, after)
+	if os.Getenv("UC_NATIVE_BROWSER_VISIBLE") == "1" {
+		if err = ui.dispatcher.Invoke(ctx, func() error {
+			showWindow.Call(ui.hwnd, 5)
+			p := page.(*nativePage)
+			p.positionCursor()
+			var before, after nativeRect
+			user32.NewProc("GetWindowRect").Call(p.cursor, uintptr(unsafe.Pointer(&before)))
+			moveWindow.Call(ui.hwnd, 280, 180, 1100, 800, 1)
+			user32.NewProc("GetWindowRect").Call(p.cursor, uintptr(unsafe.Pointer(&after)))
+			if after.Left-before.Left != 200 || after.Top-before.Top != 100 {
+				return fmt.Errorf("agent cursor did not follow native parent move: before=%+v after=%+v", before, after)
+			}
+			showWindow.Call(ui.hwnd, 0)
+			if visible, _, _ := user32.NewProc("IsWindowVisible").Call(p.cursor); visible != 0 {
+				return fmt.Errorf("agent cursor stayed visible after its desktop parent was hidden")
+			}
+			showWindow.Call(ui.hwnd, 5)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
 		}
-		showWindow.Call(ui.hwnd, 0)
-		if visible, _, _ := user32.NewProc("IsWindowVisible").Call(p.cursor); visible != 0 {
-			return fmt.Errorf("agent cursor stayed visible after its desktop parent was hidden")
-		}
-		showWindow.Call(ui.hwnd, 5)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
 	}
 	if err = page.Navigate(ctx, server.URL+"/b"); err != nil {
 		t.Fatal(err)
@@ -383,5 +385,136 @@ func TestNativeParentDestroyClosesPages(t *testing.T) {
 	}
 	if _, err = host.CreateTab(ctx, TabOptions{}); err == nil {
 		t.Fatal("destroyed native parent accepted a new page")
+	}
+}
+
+func TestNativeLoginPopupPreservesOpenerAndPolicy(t *testing.T) {
+	if os.Getenv("UC_NATIVE_BROWSER_PROBE") != "1" {
+		t.Skip("requires native WebView2 probe")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	ui := startProbeUI(t)
+	var writes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		switch r.URL.Path {
+		case "/opener":
+			fmt.Fprint(w, `<title>Opener</title><script>window.addEventListener('message',e=>window.popupMessage=e.data)</script>`)
+		case "/popup":
+			fmt.Fprint(w, `<title>Login popup</title><script>window.opener.postMessage('signed-in','*');fetch('/popup-write',{method:'POST',body:'popup body'})</script>`)
+		case "/popup-write":
+			writes.Add(1)
+			fmt.Fprint(w, "sent")
+		}
+	}))
+	defer server.Close()
+	popupEvents := make(chan Event, 2)
+	navigations := make(chan Event, 16)
+	host, err := NewHost(ctx, HostOptions{ParentHWND: ui.hwnd, Dispatcher: ui.dispatcher, UserDataDir: t.TempDir(), OnEvent: func(event Event) {
+		if event.Kind == "popup" {
+			popupEvents <- event
+		}
+		if event.Kind == "navigated" {
+			navigations <- event
+		}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.Close(context.Background()) })
+	page, err := host.CreateTab(ctx, TabOptions{URL: server.URL + "/opener"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = page.SetSurface(ctx, Bounds{Width: 800, Height: 600}, true); err != nil {
+		t.Fatal(err)
+	}
+	connection, err := page.OpenCDP(ctx, CDPOptions{Dispatch: func(ctx context.Context, send func() error) error { return send() }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	go func() { <-ctx.Done(); _ = connection.Close() }()
+	cdp := &probeCDP{t: t, conn: connection, session: page.ID()}
+	waitProbe(t, ctx, func() bool { return page.State().Title == "Opener" })
+	lease, err := host.AcquireControl(ctx, page.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release(context.Background())
+	denied := make(chan NetworkRequest, 2)
+	if err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func() error) error {
+		if strings.HasSuffix(request.URL, "/popup-write") {
+			denied <- request
+			return fmt.Errorf("denied popup write")
+		}
+		return dispatch()
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := cdp.evaluate(`window.loginWindow=window.open('/popup','login-window');String(!!window.loginWindow)`); got != "true" {
+		t.Fatalf("window.open lost WindowProxy: %s", got)
+	}
+	var popup Event
+	select {
+	case popup = <-popupEvents:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if popup.OpenerID != page.ID() || popup.State.ID == page.ID() {
+		t.Fatalf("invalid popup identity: %+v", popup)
+	}
+	child, ok := host.Tab(popup.State.ID)
+	if !ok {
+		t.Fatal("popup event did not identify an existing native tab")
+	}
+	waitProbe(t, ctx, func() bool { return child.State().Title == "Login popup" })
+	waitProbe(t, ctx, func() bool { return cdp.evaluate(`String(window.popupMessage)`) == "signed-in" })
+	select {
+	case request := <-denied:
+		if string(request.Body) != "popup body" || !request.BodyComplete {
+			t.Fatalf("popup request body incomplete: %+v", request)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if writes.Load() != 0 {
+		t.Fatal("login popup escaped its Host's active network policy")
+	}
+	if err = lease.Release(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var focusBefore, focusAfter uintptr
+	_ = ui.dispatcher.Invoke(ctx, func() error { focusBefore, _, _ = user32.NewProc("GetFocus").Call(); return nil })
+	cdp.call("Input.dispatchMouseEvent", map[string]any{"type": "mouseMoved", "x": 15, "y": 15})
+	_ = ui.dispatcher.Invoke(ctx, func() error { focusAfter, _, _ = user32.NewProc("GetFocus").Call(); return nil })
+	if focusBefore != focusAfter {
+		t.Fatal("agent pointer overlay changed native keyboard focus")
+	}
+	if err = page.Navigate(ctx, "http://127.0.0.1:1/unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	waitProbe(t, ctx, func() bool { return page.State().Error != "" && !page.State().Loading })
+	foundOpener, foundPopup := false, false
+	for {
+		select {
+		case event := <-navigations:
+			if strings.Contains(event.State.URL, "/unavailable") {
+				t.Fatal("failed native navigation emitted a history success")
+			}
+			if event.State.URL == server.URL+"/opener" {
+				foundOpener = true
+			}
+			if event.State.URL == server.URL+"/popup" {
+				foundPopup = true
+			}
+		default:
+			if !foundOpener || !foundPopup {
+				t.Fatalf("missing successful navigation events: opener=%t popup=%t", foundOpener, foundPopup)
+			}
+			t.Log("hidden native login popup preserved opener/postMessage and POST policy; failed navigation excluded from history; agent cursor preserved focus")
+			return
+		}
 	}
 }

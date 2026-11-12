@@ -40,11 +40,14 @@ type State struct {
 }
 
 // Event callbacks run serially outside the UI thread. State always contains a
-// complete snapshot. Kinds are state, closed, popup, fullscreen, and user_input.
+// complete snapshot. Kinds are state, navigated, closed, popup, and fullscreen.
+// A popup event identifies an ALREADY created page in State.ID; OpenerID is its
+// source page. The shell adopts Host.Tab(State.ID), never creates/navigates it.
 type Event struct {
 	Kind       string
 	State      State
 	URL        string
+	OpenerID   string
 	Fullscreen bool
 }
 
