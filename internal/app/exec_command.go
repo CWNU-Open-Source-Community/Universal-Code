@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/idgen"
@@ -22,12 +24,16 @@ import (
 	"cyberagent-workbench/internal/workspace"
 )
 
-// execCommand implements `cyberagent exec`: one non-interactive prompt, one
-// fresh Run, the ordinary Thread turn machinery executing the agent loop in
-// this process, the final assistant reply on stdout. Approval waits, budget
-// exhaustion, and failures surface as a non-zero exit with the run status;
-// pre-arranged execution permissions are the operator's responsibility, and
-// no flag here can widen them.
+// execCommand implements `cyberagent exec`: one non-interactive prompt
+// executed through the ordinary Thread turn machinery, the final assistant
+// reply on stdout. With --continue, the prompt continues an existing Thread:
+// the turn machinery delivers it as a follow-up turn on the Thread's still
+// running Run, or creates a successor Run inheriting workspace, permission,
+// and budget when the previous one is terminal. Process-local runtime
+// capabilities come from the operator's fresh permission flags in both
+// modes; the Run's durable Ask/Auto/Full selection still governs every
+// dispatch, and no flag here can widen it. Approval waits, budget
+// exhaustion, and failures surface as a non-zero exit with the run status.
 func (a *App) execCommand(ctx context.Context, args []string) error {
 	// SIGINT (and SIGTERM where the platform delivers it) becomes a clean
 	// cancellation instead of a hard process kill: the turn machinery records
@@ -40,7 +46,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		return err
 	}
 	fs := newFlagSet("exec", a.errOut)
-	workspaceName := fs.String("workspace", "", "workspace name (required)")
+	workspaceName := fs.String("workspace", "", "workspace name (required for fresh runs)")
 	profile := fs.String("profile", string(domain.ProfileCode), "mission profile")
 	route := fs.String("route", "", "model route; empty selects the profile's default route")
 	maxTurns := fs.Int("max-turns", domain.DefaultBudget().MaxTurns, "maximum agent turns")
@@ -49,6 +55,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	maxCostUSD := fs.Float64("max-cost-usd", 0, "maximum model cost in USD; zero means unset")
 	timeout := fs.Duration("timeout", 0, "whole-execution deadline; zero means no deadline")
 	stdin := fs.Bool("stdin", false, "read the prompt from stdin instead of the positional argument")
+	continueThread := fs.String("continue", "", "continue an existing Thread by id; the Thread carries its own Run, workspace, profile, and permission selection")
 	jsonOutput := fs.Bool("json", false, "emit a structured JSON result")
 	instructions := fs.String("instructions", "",
 		"fix extra operator instructions as a Thread context pin for this invocation")
@@ -66,6 +73,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"max-cost-usd": true, "timeout": true, "stdin": false, "json": false,
 		"instructions":              true,
 		"output-last-message":       true,
+		"continue":                  true,
 		"enable-permission-control": false, "enable-danger-full-access": false,
 		"confirm-full": false,
 	})); err != nil {
@@ -102,10 +110,11 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return errors.New(`usage: cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--instructions <text>] [--timeout 30m] [--json]`)
+		return errors.New(`usage: cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--instructions <text>] [--timeout 30m] [--json] [--continue <thread-id>]`)
 	}
-	if strings.TrimSpace(*workspaceName) == "" {
-		return errors.New("exec requires --workspace <name>")
+	continueID := strings.TrimSpace(*continueThread)
+	if continueID == "" && strings.TrimSpace(*workspaceName) == "" {
+		return errors.New("exec requires --workspace <name> (or --continue <thread-id>)")
 	}
 	// Validate the fixed instructions before any Run exists: a late pin
 	// failure would otherwise strand a created Run, and the operator gets the
@@ -121,52 +130,73 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		defer cancel()
 	}
 
-	selectedProfile, err := domain.ParseProfile(*profile)
-	if err != nil {
-		return err
-	}
-	workspaceRecord, err := a.store.GetWorkspaceByName(ctx, workspace.Slug(*workspaceName))
-	if err != nil {
-		return err
-	}
-	budget := domain.Budget{MaxTurns: *maxTurns, MaxToolCalls: *maxToolCalls}
-	effective, rejections, err := projectconfig.ResolveWorkspace(ctx, workspaceRecord.RootPath,
-		selectedProfile, budget, toolgateway.TypedActionIDs())
-	if err != nil {
-		return fmt.Errorf("project config fail-closed: %w", err)
-	}
-	if len(rejections) != 0 {
-		return fmt.Errorf("project config rejection: field=%s reason=%s",
-			rejections[0].Field, rejections[0].Reason)
-	}
-	discovered, err := projectconfig.DiscoverInstructions(ctx, workspaceRecord.RootPath, ".")
-	if err != nil {
-		return fmt.Errorf("project instruction discovery fail-closed: %w", err)
+	var threadID, runID string
+
+	if continueID != "" {
+		// Continue mode: resolve the Thread's latest Run. Process-local
+		// runtime capabilities come from the operator's fresh flags exactly
+		// as in fresh mode — the flags enable this process's adapters and
+		// never widen the Run's durable permission selection, which still
+		// governs every dispatch. The turn machinery creates a successor Run
+		// when the previous one is terminal (inheriting workspace,
+		// permission, and budget) or delivers the message as a follow-up
+		// turn on the still running Run.
+		threadID, runID, err = a.resolveContinueThread(ctx, continueID)
+		if err != nil {
+			return err
+		}
+	} else {
+		selectedProfile, err := domain.ParseProfile(*profile)
+		if err != nil {
+			return err
+		}
+		workspaceRecord, err := a.store.GetWorkspaceByName(ctx, workspace.Slug(*workspaceName))
+		if err != nil {
+			return err
+		}
+		budget := domain.Budget{MaxTurns: *maxTurns, MaxToolCalls: *maxToolCalls}
+		effective, rejections, err := projectconfig.ResolveWorkspace(ctx, workspaceRecord.RootPath,
+			selectedProfile, budget, toolgateway.TypedActionIDs())
+		if err != nil {
+			return fmt.Errorf("project config fail-closed: %w", err)
+		}
+		if len(rejections) != 0 {
+			return fmt.Errorf("project config rejection: field=%s reason=%s",
+				rejections[0].Field, rejections[0].Reason)
+		}
+		discovered, err := projectconfig.DiscoverInstructions(ctx, workspaceRecord.RootPath, ".")
+		if err != nil {
+			return fmt.Errorf("project instruction discovery fail-closed: %w", err)
+		}
+		_, run, err := application.NewRunService(a.store).
+			WithLifecycleHooks(a.newLifecycleHookEngine()).Create(ctx, application.CreateRunRequest{
+			Goal:        clipExecGoal(prompt),
+			Profile:     *profile,
+			WorkspaceID: workspaceRecord.ID,
+			ModelRoute:  *route,
+			Interactive: true,
+			Budget: domain.Budget{MaxTurns: *maxTurns, MaxTokens: *maxTokens,
+				MaxToolCalls: *maxToolCalls, MaxCostUSD: *maxCostUSD,
+				TimeoutSeconds: int64(timeout.Seconds())},
+			ProjectConfig:       effective,
+			ProjectInstructions: &discovered,
+			RequestedBy:         "cli_exec_operator",
+		})
+		if err != nil {
+			return err
+		}
+		runID = run.ID
+		threadID = domain.InitialThreadID(run.ID)
 	}
 
-	capabilities := cliExecutionPermissionCapabilities(*enablePermissionControl, *enableFullAccess)
-	_, run, err := application.NewRunService(a.store).
-		WithLifecycleHooks(a.newLifecycleHookEngine()).Create(ctx, application.CreateRunRequest{
-		Goal:        clipExecGoal(prompt),
-		Profile:     *profile,
-		WorkspaceID: workspaceRecord.ID,
-		ModelRoute:  *route,
-		Interactive: true,
-		Budget: domain.Budget{MaxTurns: *maxTurns, MaxTokens: *maxTokens,
-			MaxToolCalls: *maxToolCalls, MaxCostUSD: *maxCostUSD,
-			TimeoutSeconds: int64(timeout.Seconds())},
-		ProjectConfig:       effective,
-		ProjectInstructions: &discovered,
-		RequestedBy:         "cli_exec_operator",
-	})
-	if err != nil {
-		return err
-	}
 	// The same foreground runtime contract the other in-process CLI surfaces
 	// use (approval continuation, run wake): the invocation owns its adapters,
 	// the Run's durable permission selection never changes, and the capability
-	// ceiling comes from the Run's Ask/Auto/Full snapshot.
-	releaseFull, err := a.activateCLIInvocationFull(ctx, run.ID, capabilities, *confirmFull)
+	// ceiling comes from the Run's Ask/Auto/Full snapshot. The operator's
+	// fresh flags enable this process's adapters in both modes; they never
+	// widen the durable selection.
+	capabilities := cliExecutionPermissionCapabilities(*enablePermissionControl, *enableFullAccess)
+	releaseFull, err := a.activateExecInvocationFull(ctx, threadID, runID, capabilities, *confirmFull, continueID != "")
 	if err != nil {
 		return err
 	}
@@ -180,12 +210,12 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		_ = runtime.close()
 	}()
 	dependencies := runtime.dependencies(a)
-	drydocks, err := a.newRunFileDrydockService(ctx, run.ID)
+	drydocks, err := a.newRunFileDrydockService(ctx, runID)
 	if err != nil {
 		return err
 	}
 	dependencies.Drydocks = drydocks
-	if _, configured, err := a.store.GetConfiguredStandardCodePresetOperation(ctx, run.ID); err != nil {
+	if _, configured, err := a.store.GetConfiguredStandardCodePresetOperation(ctx, runID); err != nil {
 		return err
 	} else if configured {
 		delivery, err := application.NewStandardCodeDeliveryService(a.store, drydocks)
@@ -194,28 +224,30 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		}
 		dependencies.StandardCodeDelivery = delivery
 	}
-	turns := application.NewThreadTurnService(a.store,
+	turns := application.NewThreadTurnServiceWithExecutionCapabilities(a.store,
 		application.NewRunLifecycleControlService(a.store).WithLifecycleHooks(a.newLifecycleHookEngine()),
-		application.NewRunExecutionHandoffWithRuntime(a.store, a.router, a.checker, dependencies))
+		application.NewRunExecutionHandoffWithRuntime(a.store, a.router, a.checker, dependencies), capabilities)
 	if fixedInstructions != "" {
-		if err := pinExecInstructions(ctx, turns, domain.InitialThreadID(run.ID),
+		if err := pinExecInstructions(ctx, turns, threadID,
 			fixedInstructions); err != nil {
 			// A created Run with a failed pin would sit idle until its budget
 			// expires. Cancel it on a bounded detached context so the
 			// operator gets a terminal Run, and report the Run ID if even
 			// the cancellation fails. The pin error stays primary.
-			cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			if _, cancelErr := application.NewRunService(a.store).Cancel(cancelCtx, run.ID); cancelErr != nil {
-				err = fmt.Errorf("%w (run %s could not be cancelled: %v)", err, run.ID, cancelErr)
+			if continueID == "" {
+				cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				if _, cancelErr := application.NewRunService(a.store).Cancel(cancelCtx, runID); cancelErr != nil {
+					err = fmt.Errorf("%w (run %s could not be cancelled: %v)", err, runID, cancelErr)
+				}
+				cancel()
 			}
-			cancel()
 			return err
 		}
 	}
 	oneShot := application.NewOneShotService(a.store, turns)
 	result, err := oneShot.Run(ctx, application.OneShotRequest{
 		Version:      domain.ThreadMessageProtocolVersion,
-		ThreadID:     domain.InitialThreadID(run.ID),
+		ThreadID:     threadID,
 		Content:      prompt,
 		OperationKey: idgen.New("cli-exec"),
 		RequestedBy:  "cli_exec_operator",
@@ -243,14 +275,49 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	} else {
 		fmt.Fprintln(a.out, result.Reply)
 	}
-	// The supervisor's turn_finish stop reason is the completion signal for a
-	// one-shot task; waiting_approval, root_wait, and failures exit non-zero
-	// with the reason and run status.
 	if result.StopReason != "turn_finish" {
 		return fmt.Errorf("exec turn did not finish: stop_reason=%s turn_status=%s run_status=%s",
 			result.StopReason, result.TurnStatus, result.RunStatus)
 	}
 	return nil
+}
+
+// resolveContinueThread looks up an existing Thread and its latest Run for
+// --continue mode. It returns identities only: the process-local runtime
+// capabilities come from the operator's fresh flags exactly as in fresh
+// mode — the flags enable this process's adapters and never widen the Run's
+// durable permission selection, which still governs every dispatch.
+func (a *App) resolveContinueThread(ctx context.Context,
+	threadID string,
+) (string, string, error) {
+	thread, err := a.store.GetThread(ctx, strings.TrimSpace(threadID))
+	if err != nil {
+		if apperror.CodeOf(err) == apperror.CodeNotFound ||
+			errors.Is(err, sql.ErrNoRows) {
+			return "", "", apperror.New(apperror.CodeNotFound,
+				fmt.Sprintf("continue thread %s: not found", strings.TrimSpace(threadID)))
+		}
+		return "", "", fmt.Errorf("continue thread: %w", err)
+	}
+	if thread.Status != domain.ThreadActive {
+		return "", "", apperror.New(apperror.CodeFailedPrecondition,
+			fmt.Sprintf("continue thread %s: status is %s; only active threads can be continued",
+				thread.ID, thread.Status))
+	}
+	runLookupID := thread.ActiveRunID
+	if runLookupID == "" {
+		runLookupID = thread.LastRunID
+	}
+	run, err := a.store.GetRun(ctx, runLookupID)
+	if err != nil {
+		if apperror.CodeOf(err) == apperror.CodeNotFound ||
+			errors.Is(err, sql.ErrNoRows) {
+			return "", "", apperror.New(apperror.CodeNotFound,
+				fmt.Sprintf("continue thread %s: no Run to continue", thread.ID))
+		}
+		return "", "", fmt.Errorf("continue thread Run lookup: %w", err)
+	}
+	return thread.ID, run.ID, nil
 }
 
 // clipExecGoal clips the prompt to the run-creation goal limit without
