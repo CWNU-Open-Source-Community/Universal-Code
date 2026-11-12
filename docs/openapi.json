@@ -70212,7 +70212,8 @@
               "browser_snapshot",
               "browser_click",
               "browser_type",
-              "browser_screenshot"
+              "browser_screenshot",
+              "browser_move"
             ],
             "type": "string"
           },

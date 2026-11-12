@@ -36,7 +36,7 @@ func TestAgentBrowserTargetStrictSnapshotAndExclusiveChoice(t *testing.T) {
 		t.Fatal("definition missing")
 	}
 	var schema map[string]any
-	if json.Unmarshal(definition.InputSchema, &schema) != nil || len(schema["oneOf"].([]any)) != 2 {
-		t.Fatal("schema lost exclusive choices")
+	if json.Unmarshal(definition.InputSchema, &schema) != nil || len(schema["oneOf"].([]any)) != 3 {
+		t.Fatal("schema lost exclusive ref, target or coordinate choices")
 	}
 }

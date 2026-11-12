@@ -256,7 +256,7 @@ func TestAgentBrowserFirstNavigationAdvertisedDurableAndNeverRepeated(t *testing
 			}
 		}
 	}
-	if len(seen) != 9 {
+	if len(seen) != 10 || !seen["browser_move"] {
 		t.Fatalf("tools %v", seen)
 	}
 	prepared, e := prepareSupervisorToolCalls([]llm.ToolCall{{ID: "model-1", Name: "browser_navigate", Arguments: json.RawMessage(`{"version":"browser_navigate.v2","url":"https://example.org/#dynamic"}`)}}, turn.Run.ID, 1, 1, turn.Mode.Surface, turn.Mode.Phase, st.base.executionPermission.Mode, false, false, options)

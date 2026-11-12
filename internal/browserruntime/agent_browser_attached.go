@@ -20,8 +20,8 @@ type AgentBrowserConnection interface {
 	Close() error
 }
 
-// AgentBrowserControlLease is issued by the trusted native host after it has
-// disabled user input. Cancel immediately fences queued protocol writes. A
+// AgentBrowserControlLease is issued by the trusted native host for agent dispatch.
+// Ordinary human input does not revoke it. Cancel fences queued protocol writes. A
 // revoked lease is never reactivated: another attachment gets a fresh lease.
 type AgentBrowserControlLease interface {
 	Check(context.Context) error
@@ -51,6 +51,18 @@ type AgentBrowserAttachedPage struct {
 	Connection           AgentBrowserConnection
 	Lease                AgentBrowserControlLease
 	InstallNetworkPolicy func(context.Context, AgentBrowserAttachedNetworkPolicy) error
+}
+
+// AgentBrowserAttachedEvents is the page event subscription required by an
+// exact-page transport. Missing navigation/resize events can leave stale refs
+// usable; an adapter must deliver these on the attachment's logical SessionID.
+func AgentBrowserAttachedEvents() []string {
+	return []string{
+		"Page.frameStartedLoading", "Page.frameStoppedLoading", "Page.lifecycleEvent",
+		"Page.frameNavigated", "Page.navigatedWithinDocument", "Page.frameResized",
+		"DOM.documentUpdated", "Page.javascriptDialogOpening", "Page.javascriptDialogClosed",
+		"Inspector.detached", "Inspector.targetCrashed", "Page.screencastFrame",
+	}
 }
 
 // AttachAgentBrowser controls the exact native page the user already sees.

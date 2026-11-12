@@ -170,6 +170,7 @@ func threadActivityToolLabel(name toolgateway.ToolName) string {
 		toolgateway.BrowserNavigateTool:    "浏览器导航", toolgateway.BrowserSnapshotTool: "读取页面快照",
 		toolgateway.BrowserClickTool: "点击页面元素", toolgateway.BrowserTypeTool: "填写页面输入",
 		toolgateway.BrowserScreenshotTool: "截取页面画面",
+		toolgateway.BrowserMoveTool:       "移动页面指针",
 	}
 	if label := labels[name]; label != "" {
 		return label

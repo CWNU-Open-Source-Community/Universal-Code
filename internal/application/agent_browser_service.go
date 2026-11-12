@@ -330,7 +330,7 @@ func (s *AgentBrowserService) authorityForAdvertisement(ctx context.Context, run
 	return s.authorityLocked(a, true)
 }
 func (s *AgentBrowserService) Capabilities(ctx context.Context, runID string) (AgentBrowserCapabilities, error) {
-	c := AgentBrowserCapabilities{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, SupportedActions: []string{"browser_status", "browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_screenshot", "browser_scroll", "browser_key", "browser_upload"}}
+	c := AgentBrowserCapabilities{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, SupportedActions: []string{"browser_status", "browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_screenshot", "browser_scroll", "browser_key", "browser_upload", "browser_move"}}
 	a, e := s.currentAuthority(ctx, runID)
 	if e != nil {
 		c.RefusalReason = e.Error()
@@ -546,7 +546,7 @@ func refreshBrowserModelTools(existing []llm.ToolSpec, c toolgateway.BrowserActi
 		names := toolgateway.BrowserActionToolNames()
 		definition := toolgateway.BrowserActionToolDefinition
 		if c.ProtocolVersion == toolgateway.AgentBrowserAuthorityVersion {
-			names = append(names, toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool)
+			names = append(names, toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool, toolgateway.BrowserMoveTool)
 			definition = toolgateway.AgentBrowserToolDefinition
 		}
 		for _, name := range names {

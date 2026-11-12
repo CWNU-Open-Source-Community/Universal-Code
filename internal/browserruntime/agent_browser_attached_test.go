@@ -1,9 +1,13 @@
 package browserruntime
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,6 +48,7 @@ type attachedTestConnection struct {
 	closed   chan struct{}
 	once     sync.Once
 	methods  []string
+	mouse    []map[string]any
 	url      string
 	session  string
 }
@@ -73,11 +78,27 @@ func (c *attachedTestConnection) WriteJSON(value any) error {
 	}
 	c.mu.Lock()
 	c.methods = append(c.methods, in.Method)
+	if in.Method == "Input.dispatchMouseEvent" {
+		var params map[string]any
+		if err := json.Unmarshal(in.Params, &params); err != nil {
+			c.mu.Unlock()
+			return err
+		}
+		c.mouse = append(c.mouse, params)
+	}
 	c.mu.Unlock()
 	var result any = map[string]any{}
 	switch in.Method {
 	case "Page.getFrameTree":
 		result = map[string]any{"frameTree": map[string]any{"frame": map[string]any{"id": "frame", "loaderId": "loader", "url": c.url}}}
+	case "Page.getLayoutMetrics":
+		result = map[string]any{"cssLayoutViewport": map[string]any{"clientWidth": 800, "clientHeight": 600}}
+	case "Page.captureScreenshot":
+		var data bytes.Buffer
+		if err := png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 1600, 1200))); err != nil {
+			return err
+		}
+		result = map[string]any{"data": base64.StdEncoding.EncodeToString(data.Bytes())}
 	case "DOM.getDocument":
 		result = map[string]any{"root": map[string]any{"backendNodeId": 1}}
 	}
@@ -274,5 +295,74 @@ func TestAttachedBrowserInvalidConfigurationReleasesLease(t *testing.T) {
 	}
 	if lease.released.Load() != 1 {
 		t.Fatal("rejected attachment retained native control")
+	}
+}
+
+func TestAttachedBrowserCoordinatesUseSamePageAndRejectResizeOrNavigation(t *testing.T) {
+	req, page, wire, _, _ := attachedFixture(t)
+	r, err := AttachAgentBrowser(t.Context(), req, page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close(context.Background())
+	point := AgentBrowserPoint{X: 40, Y: 30, DocumentEpoch: r.Status().DocumentEpoch, Viewport: AgentBrowserViewport{Width: 800, Height: 600}}
+	if result, err := r.MovePointer(t.Context(), point); err != nil || result.SessionID != req.Authority.SessionID {
+		t.Fatalf("move=%+v err=%v", result, err)
+	}
+	if result, err := r.ClickPoint(t.Context(), point); err != nil || !result.Dispatched {
+		t.Fatalf("point click=%+v err=%v", result, err)
+	}
+	wire.mu.Lock()
+	before := len(wire.methods)
+	wire.mu.Unlock()
+	resized := point
+	resized.Viewport.Width = 900
+	if _, err := r.ClickPoint(t.Context(), resized); !errors.Is(err, ErrAgentBrowserStaleReference) {
+		t.Fatalf("resized point accepted: %v", err)
+	}
+	r.onEvent(cdpWireMessage{SessionID: wire.session, Method: "Page.navigatedWithinDocument", Params: json.RawMessage(`{"frameId":"frame","url":"https://example.com/new"}`)})
+	if _, err := r.ClickPoint(t.Context(), point); !errors.Is(err, ErrAgentBrowserStaleReference) {
+		t.Fatalf("old document point accepted: %v", err)
+	}
+	wire.mu.Lock()
+	after := append([]string(nil), wire.methods[before:]...)
+	wire.mu.Unlock()
+	for _, method := range after {
+		if method == "Input.dispatchMouseEvent" {
+			t.Fatal("stale point reached native input")
+		}
+	}
+	if err := r.life.Err(); err != nil {
+		t.Fatal("ordinary human navigation revoked agent authorization")
+	}
+}
+
+func TestAttachedBrowserUsesVisibleViewportAndScreenshotPixelScale(t *testing.T) {
+	req, page, wire, _, _ := attachedFixture(t)
+	r, err := AttachAgentBrowser(t.Context(), req, page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close(context.Background())
+	if _, err := r.NavigateWithViewport(t.Context(), wire.url, AgentBrowserViewport{Width: 390, Height: 844}); err == nil || wire.called("Emulation.setDeviceMetricsOverride") || wire.called("Page.navigate") {
+		t.Fatalf("native pane was emulated or navigated: %v", err)
+	}
+	shot, err := r.Screenshot(t.Context())
+	if err != nil || shot.Viewport == nil || *shot.Viewport != (AgentBrowserViewport{Width: 800, Height: 600}) || shot.ImageWidth != 1600 || shot.ImageHeight != 1200 {
+		t.Fatalf("incorrect CSS to screenshot pixel mapping: viewport=%+v image=%dx%d err=%v", shot.Viewport, shot.ImageWidth, shot.ImageHeight, err)
+	}
+	if _, err := r.Scroll(t.Context(), 0, 120); err != nil {
+		t.Fatal(err)
+	}
+	wire.mu.Lock()
+	event := wire.mouse[len(wire.mouse)-1]
+	wire.mu.Unlock()
+	if event["type"] != "mouseWheel" || event["x"] != float64(400) || event["y"] != float64(300) {
+		t.Fatalf("scroll outside visible native viewport: %+v", event)
+	}
+	before := r.Status().DocumentEpoch
+	r.onEvent(cdpWireMessage{SessionID: wire.session, Method: "Page.frameResized", Params: json.RawMessage(`{}`)})
+	if r.Status().DocumentEpoch <= before || r.life.Err() != nil {
+		t.Fatal("native resize did not invalidate document references or cancelled agent")
 	}
 }

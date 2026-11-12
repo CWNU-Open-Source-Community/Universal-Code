@@ -18,7 +18,7 @@ func TestSupervisorBrowserTimeoutIncludesDarwinLaunch(t *testing.T) {
 			toolgateway.BrowserNavigateTool, toolgateway.BrowserSnapshotTool,
 			toolgateway.BrowserScreenshotTool, toolgateway.BrowserClickTool,
 			toolgateway.BrowserTypeTool, toolgateway.BrowserKeyTool,
-			toolgateway.BrowserScrollTool, toolgateway.BrowserStatusTool,
+			toolgateway.BrowserScrollTool, toolgateway.BrowserStatusTool, toolgateway.BrowserMoveTool,
 			toolgateway.WebFetchTool,
 		} {
 			t.Run(goos+"/"+string(name), func(t *testing.T) {

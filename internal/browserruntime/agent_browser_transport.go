@@ -71,7 +71,7 @@ var agentBrowserCDPMethods = map[string]bool{
 	"Page.enable":            true, "DOM.enable": true, "Runtime.enable": true, "Accessibility.enable": true,
 	"Network.enable": true, "Network.setBlockedURLs": true, "Network.setBypassServiceWorker": true,
 	"Fetch.enable": false, "Fetch.continueRequest": false, "Fetch.failRequest": false,
-	"Page.getFrameTree": true, "Page.createIsolatedWorld": true, "Page.navigate": true, "Page.captureScreenshot": true,
+	"Page.getFrameTree": true, "Page.getLayoutMetrics": true, "Page.createIsolatedWorld": true, "Page.navigate": true, "Page.captureScreenshot": true,
 	"Page.setLifecycleEventsEnabled": true,
 	"DOM.getDocument":                true, "DOM.resolveNode": true, "DOM.scrollIntoViewIfNeeded": true, "DOM.focus": true,
 	// Upload sets file paths on one snapshot-resolved file input; the

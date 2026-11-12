@@ -130,14 +130,17 @@ type AgentBrowserInteraction struct {
 }
 
 type AgentBrowserScreenshot struct {
-	SessionID     string    `json:"session_id"`
-	CanonicalURL  string    `json:"canonical_url"`
-	DocumentEpoch uint64    `json:"document_epoch"`
-	MediaType     string    `json:"media_type"`
-	SHA256        string    `json:"sha256"`
-	Bytes         int       `json:"bytes"`
-	PNG           []byte    `json:"-"`
-	CompletedAt   time.Time `json:"completed_at"`
+	Viewport      *AgentBrowserViewport `json:"viewport,omitempty"`
+	ImageWidth    int                   `json:"image_width,omitempty"`
+	ImageHeight   int                   `json:"image_height,omitempty"`
+	SessionID     string                `json:"session_id"`
+	CanonicalURL  string                `json:"canonical_url"`
+	DocumentEpoch uint64                `json:"document_epoch"`
+	MediaType     string                `json:"media_type"`
+	SHA256        string                `json:"sha256"`
+	Bytes         int                   `json:"bytes"`
+	PNG           []byte                `json:"-"`
+	CompletedAt   time.Time             `json:"completed_at"`
 }
 
 type AgentBrowserCleanup struct {

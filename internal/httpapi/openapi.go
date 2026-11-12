@@ -3619,7 +3619,7 @@ var openAPIFieldEnums = map[string][]string{
 		string(toolgateway.GitHubEvidenceReadTool), string(toolgateway.BrowserStatusTool),
 		string(toolgateway.BrowserNavigateTool), string(toolgateway.BrowserSnapshotTool),
 		string(toolgateway.BrowserClickTool), string(toolgateway.BrowserTypeTool),
-		string(toolgateway.BrowserScreenshotTool)},
+		string(toolgateway.BrowserScreenshotTool), string(toolgateway.BrowserMoveTool)},
 	"ThreadActivityToolDetailView.agent_role":                  {string(domain.AgentRoleRoot), string(domain.AgentRoleSpecialist), "unknown"},
 	"ThreadActivityToolDetailView.status":                      {string(domain.SupervisorToolPending), string(domain.SupervisorToolCompleted), string(domain.SupervisorToolDenied), string(domain.SupervisorToolFailed)},
 	"ThreadActivityCommandDetailView.execution_environment":    {"Workspace Sandbox", "Host · Full Access", "Legacy execution boundary"},

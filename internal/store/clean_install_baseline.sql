@@ -6235,7 +6235,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
 			'code_type_hierarchy',
 			'browser_status', 'browser_navigate', 'browser_snapshot',
-			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload')),
+			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload', 'browser_move')),
 		CHECK((tool_name IN ('host_command_propose', 'mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_glob',
 			'workspace_grep', 'workspace_change', 'workspace_apply', 'workspace_delete',
 			'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'run_tests', 'web_search', 'source_search', 'web_fetch', 'web_citation',
@@ -6244,7 +6244,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
 			'code_type_hierarchy',
 			'browser_status', 'browser_navigate', 'browser_snapshot',
-			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload')
+			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload', 'browser_move')
 			AND length(authority_json) BETWEEN 2 AND 4096 AND json_valid(authority_json) = 1)
 			OR (tool_name NOT IN ('mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_glob',
 				'workspace_grep', 'workspace_change', 'workspace_apply', 'workspace_delete',
@@ -6254,7 +6254,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
 			'code_type_hierarchy',
 			'browser_status', 'browser_navigate', 'browser_snapshot',
-			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload')
+			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload', 'browser_move')
 				AND authority_json = '')),
 		CHECK(status IN ('pending', 'completed', 'denied', 'failed')),
 		CHECK((status = 'pending' AND result_json = '' AND error_code = '' AND completed_at IS NULL)

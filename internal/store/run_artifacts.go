@@ -268,7 +268,7 @@ func validateArtifactSourceTx(ctx context.Context, tx *sql.Tx, request artifact.
 		"workspace_list", "workspace_read", "workspace_glob", "workspace_grep",
 		"workspace_change", "workspace_apply", "workspace_delete",
 		"browser_status", "browser_navigate", "browser_snapshot", "browser_click",
-		"browser_type", "browser_screenshot", "browser_scroll", "browser_key", "browser_upload":
+		"browser_type", "browser_screenshot", "browser_scroll", "browser_key", "browser_upload", "browser_move":
 		var runID, sessionID, workspaceID, toolName string
 		if err := tx.QueryRowContext(ctx, `SELECT run_id, session_id, workspace_id, tool_name
 			FROM run_tool_calls WHERE id = ?`, request.SourceID).

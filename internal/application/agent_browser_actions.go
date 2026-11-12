@@ -20,6 +20,11 @@ import (
 	"cyberagent-workbench/internal/toolgateway"
 )
 
+type agentBrowserPointerRuntime interface {
+	ClickPoint(context.Context, browserruntime.AgentBrowserPoint) (browserruntime.AgentBrowserInteraction, error)
+	MovePointer(context.Context, browserruntime.AgentBrowserPoint) (browserruntime.AgentBrowserInteraction, error)
+}
+
 func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, scope toolgateway.AgentBrowserExecutionScope, name toolgateway.ToolName, raw json.RawMessage) (toolgateway.BrowserActionExecutionResult, error) {
 	a := scope.Authority
 	if e := a.Validate(); e != nil {
@@ -208,8 +213,21 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 			slot.titleURL = snapshot.CanonicalURL
 			s.mu.Unlock()
 		}
-	case toolgateway.BrowserClickTool:
-		value, e = r.Click(ctx, p.SnapshotID, p.ElementRef)
+	case toolgateway.BrowserClickTool, toolgateway.BrowserMoveTool:
+		if p.Point != nil {
+			pointer, ok := r.(agentBrowserPointerRuntime)
+			if !ok {
+				return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("browser coordinate input is unavailable")
+			}
+			point := browserruntime.AgentBrowserPoint{X: p.Point.X, Y: p.Point.Y, DocumentEpoch: p.Point.DocumentEpoch, Viewport: browserruntime.AgentBrowserViewport{Width: p.Point.Viewport.Width, Height: p.Point.Viewport.Height}}
+			if name == toolgateway.BrowserMoveTool {
+				value, e = pointer.MovePointer(ctx, point)
+			} else {
+				value, e = pointer.ClickPoint(ctx, point)
+			}
+		} else {
+			value, e = r.Click(ctx, p.SnapshotID, p.ElementRef)
+		}
 	case toolgateway.BrowserTypeTool:
 		value, e = r.Type(ctx, p.SnapshotID, p.ElementRef, p.Value, p.Mode == "replace")
 	case toolgateway.BrowserUploadTool:
