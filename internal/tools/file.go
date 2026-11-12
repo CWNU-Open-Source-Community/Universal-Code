@@ -102,7 +102,7 @@ func (t ListWorkspaceTool) Run(ctx context.Context, call Call) (Result, error) {
 		return interruptedResult(err), err
 	}
 	fs := t.FS.withFallback(call.WorkingDir)
-	path := strings.TrimSpace(call.Args["path"])
+	path := call.Args["path"]
 	if path == "" {
 		path = "."
 	}
@@ -168,7 +168,9 @@ func (fs WorkspaceFS) resolveForWrite(requested string, allowMissingParents bool
 	if strings.TrimSpace(fs.Root) == "" {
 		return "", errors.New("workspace root is required")
 	}
-	requested = strings.TrimSpace(requested)
+	if requested != strings.TrimSpace(requested) {
+		return "", errors.New("file path cannot contain surrounding whitespace")
+	}
 	if requested == "" || requested == "." {
 		return "", errors.New("file path is required")
 	}
@@ -282,7 +284,9 @@ func (fs WorkspaceFS) resolveExisting(requested string) (string, error) {
 	if strings.TrimSpace(fs.Root) == "" {
 		return "", errors.New("workspace root is required")
 	}
-	requested = strings.TrimSpace(requested)
+	if requested != strings.TrimSpace(requested) {
+		return "", errors.New("workspace path cannot contain surrounding whitespace")
+	}
 	if requested == "" {
 		requested = "."
 	}

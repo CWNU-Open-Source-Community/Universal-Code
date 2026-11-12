@@ -17,6 +17,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/browserruntime"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/webevidence"
 )
 
@@ -332,5 +333,43 @@ func TestAgentBrowserDownloadListAndReleaseEndpoint(t *testing.T) {
 		strings.NewReader(`{"version":"agent_browser_download_release.v1"}`))
 	if denied.Code != http.StatusUnauthorized {
 		t.Fatalf("release accepted a read token: %d", denied.Code)
+	}
+}
+
+func TestAgentBrowserStatusSurfacesDeclaredOrigins(t *testing.T) {
+	fixture := newAPIFixture(t)
+	stub := &agentBrowserHTTPStub{}
+	stub.view = application.AgentBrowserView{Version: "agent_browser_status.v1", RunID: fixture.run.ID,
+		State: "idle", Headless: true, UpdatedAt: time.Now().UTC(),
+		Capabilities: application.AgentBrowserCapabilities{Available: true, CanStart: true,
+			DeclaredOrigins: []string{"https://example.org:443", "http://localhost:3000"}}}
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, AgentBrowserController: stub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/runs/" + fixture.run.ID + "/agent-browser"
+	response := performRequest(t, api, http.MethodGet, path, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
+	var view AgentBrowserStatusView
+	decodeDataStatus(t, response, http.StatusOK, &view)
+	if len(view.DeclaredOrigins) != 2 || view.DeclaredOrigins[0] != "https://example.org:443" {
+		t.Fatalf("declared origins not projected: %+v", view.DeclaredOrigins)
+	}
+	stub.view.Capabilities.DeclaredOrigins = nil
+	response = performRequest(t, api, http.MethodGet, path, testAccessToken, "127.0.0.1:8765", "127.0.0.1:45000", nil)
+	var unscoped AgentBrowserStatusView
+	decodeDataStatus(t, response, http.StatusOK, &unscoped)
+	if len(unscoped.DeclaredOrigins) != 0 {
+		t.Fatalf("unscoped session must omit declared origins: %+v", unscoped.DeclaredOrigins)
+	}
+}
+
+func TestRunViewCarriesBrowserOrigins(t *testing.T) {
+	scoped := runView(domain.Run{ID: "run-origins", Config: domain.RunConfig{BrowserOrigins: []string{"https://example.org:443"}}})
+	if len(scoped.Config.BrowserOrigins) != 1 || scoped.Config.BrowserOrigins[0] != "https://example.org:443" {
+		t.Fatalf("run view must carry the declared origins: %+v", scoped.Config.BrowserOrigins)
+	}
+	unscoped := runView(domain.Run{ID: "run-plain"})
+	if len(unscoped.Config.BrowserOrigins) != 0 {
+		t.Fatalf("unscoped run view must omit the field: %+v", unscoped.Config.BrowserOrigins)
 	}
 }

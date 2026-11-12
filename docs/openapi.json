@@ -7328,7 +7328,7 @@
       "get": {
         "operationId": "getRunAgentBrowser",
         "summary": "Read the Agent browser state",
-        "description": "Reads the Run's process-local Agent browser status without starting a browser or executing an action. Excludes runtime authority and profile/DevTools handles.",
+        "description": "Reads the Run's process-local Agent browser status without starting a browser or executing an action. Excludes runtime authority and profile/DevTools handles. Scoped sessions surface their operator-declared origins in declared_origins.",
         "tags": [
           "Runs"
         ],
@@ -30463,7 +30463,7 @@
       "get": {
         "operationId": "exportThread",
         "summary": "Export a Thread",
-        "description": "Returns the complete self-contained Thread, Mission, Run chain, Run-local Sessions, message provenance, and Thread/Run audit events. The HTTP response limit fails closed instead of silently truncating history.",
+        "description": "Returns the self-contained Thread, Mission, Run chain, Run-local Sessions, message provenance, and Thread/Run audit events. The messages, events, and audit-events sections each hold the first 1000 rows in chronological order and report a longer ledger through their truncated flags.",
         "tags": [
           "Threads"
         ],
@@ -36371,6 +36371,102 @@
         "x-cyberagent-read-only": false
       }
     },
+    "/api/v1/workspaces/{workspace_id}/image-attachments/request": {
+      "get": {
+        "operationId": "inspectWorkspaceImageUpload",
+        "summary": "Observe an original image upload without retrying",
+        "description": "GET with the original Idempotency-Key only reads the image stored for that workspace and upload key. not_received does not rule out an upload still arriving. No reservation, upload or model call.",
+        "tags": [
+          "Workspaces"
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "description": "Workspace identity",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00-\\x1f\\x7f]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Opaque retry key; only a domain-separated digest is persisted",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 16,
+              "pattern": "^\\S+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WorkspaceImageUploadObservationView"
+                    },
+                    "request_id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": "api.v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "request_id",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "414": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/ResourceExhausted"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        },
+        "x-cyberagent-read-only": true
+      }
+    },
     "/api/v1/workspaces/{workspace_id}/image-attachments/{image_id}": {
       "get": {
         "operationId": "readWorkspaceImage",
@@ -37879,6 +37975,12 @@
           },
           "cleanup_pending": {
             "type": "boolean"
+          },
+          "declared_origins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "document_epoch": {
             "format": "int64",
@@ -60919,6 +61021,12 @@
       "RunConfigView": {
         "additionalProperties": false,
         "properties": {
+          "browser_origins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "continuity_context_fingerprint": {
             "type": "string"
           },
@@ -71330,11 +71438,17 @@
             },
             "type": "array"
           },
+          "audit_events_truncated": {
+            "type": "boolean"
+          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/ThreadEventView"
             },
             "type": "array"
+          },
+          "events_truncated": {
+            "type": "boolean"
           },
           "exported_at": {
             "format": "date-time",
@@ -71345,6 +71459,9 @@
               "$ref": "#/components/schemas/ThreadMessageView"
             },
             "type": "array"
+          },
+          "messages_truncated": {
+            "type": "boolean"
           },
           "mission": {
             "$ref": "#/components/schemas/MissionView"
@@ -71387,7 +71504,10 @@
           "sessions",
           "messages",
           "events",
-          "audit_events"
+          "audit_events",
+          "messages_truncated",
+          "events_truncated",
+          "audit_events_truncated"
         ],
         "type": "object"
       },
@@ -79282,6 +79402,25 @@
           "byte_size",
           "width",
           "height"
+        ],
+        "type": "object"
+      },
+      "WorkspaceImageUploadObservationView": {
+        "additionalProperties": false,
+        "properties": {
+          "image": {
+            "$ref": "#/components/schemas/WorkspaceImage"
+          },
+          "state": {
+            "enum": [
+              "not_received",
+              "stored"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
         ],
         "type": "object"
       },

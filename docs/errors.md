@@ -21,6 +21,8 @@ The HTTP API returns these codes in its versioned error envelope and hides inter
 
 Provider failures use a separate `llm.Outcome` classification before mapping into this contract. Exhausted retryable transport failures map to `UNAVAILABLE`; rate limits map to `RESOURCE_EXHAUSTED`; invalid/permanent responses map to `FAILED_PRECONDITION`; caller cancellation and model deadlines map to `CANCELLED` and `DEADLINE_EXCEEDED`. The original typed Provider error remains available through Go error unwrapping, while persisted and user-facing text is redacted.
 
+An HTTP body interrupted before its declared length or final transfer chunk is a retryable network failure. It uses the existing attempt, backoff and Run-budget limits. Malformed complete response data, oversized events and cleanly closed streams missing a provider completion marker remain non-retryable protocol failures.
+
 Run tool-call budget exhaustion also returns `RESOURCE_EXHAUSTED`/CLI exit 8 from direct Gateway-backed commands. The first rejected call beyond the configured limit appends one `tool.budget_exhausted` Run event; repeated attempts remain rejected without duplicating that event. Use `cyberagent run usage <run-id>` to inspect the durable counter and exhaustion timestamp.
 
 A second worker attempting to execute a Run with an active schema v17 execution lease receives `CONFLICT`/CLI exit 4. The caller should inspect `cyberagent run lease <run-id>` and retry after the current execution finishes or the lease expires. Stale lease generations also return `CONFLICT`; they are never silently accepted and do not consume tool budget.

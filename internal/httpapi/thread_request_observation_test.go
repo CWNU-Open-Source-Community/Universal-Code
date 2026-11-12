@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"strings"
@@ -52,6 +54,82 @@ func TestThreadRequestObservationHTTPReadsAfterRestartWithoutControlOrModel(t *t
 	decodeDataStatus(t, response, http.StatusOK, &got)
 	if got.State != "not_received" || got.Settled || got.RunID != "" {
 		t.Fatalf("missing lookup created work: %#v", got)
+	}
+}
+
+func TestThreadRequestObservationHTTPMCPInputSurvivesRestart(t *testing.T) {
+	fixture := newAPIFixture(t)
+	runs := application.NewRunService(fixture.store)
+	_, run, err := runs.Create(t.Context(), application.CreateRunRequest{
+		Goal: "Observe MCP selection", Profile: "review", WorkspaceID: fixture.workspace.ID, Interactive: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runs.Start(t.Context(), run.ID); err != nil {
+		t.Fatal(err)
+	}
+	threadID := domain.InitialThreadID(run.ID)
+	key := "http-observe-mcp-original"
+	intent := domain.ThreadMessageIntentRequest{
+		ThreadID: threadID, OperationKey: key, RequestedBy: "http_thread_operator", Content: "Use selected MCP context",
+		MCPReferences: []domain.MCPReference{
+			{ServerID: "selected-mcp", CapabilityFingerprint: strings.Repeat("a", 64), Method: "resources/read", Arguments: json.RawMessage(`{"uri":"fixture://notes"}`)},
+			{ServerID: "selected-mcp", CapabilityFingerprint: strings.Repeat("a", 64), Method: "prompts/get", Arguments: json.RawMessage(`{"name":"review","arguments":{"language":"Go"}}`)},
+		},
+	}
+	if _, err := fixture.store.ReserveThreadMessageIntent(t.Context(), intent); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := fixture.store.CommitThreadMessage(t.Context(), intent, run.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := store.Open(fixture.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	// The observation server has no model, MCP client, or execution controller.
+	api, err := New(reopened, Config{AccessToken: testAccessToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(api)
+	defer server.Close()
+	before, err := reopened.ExportThread(t.Context(), threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+			server.URL+ThreadCollectionPath+"/"+threadID+"/turn-request", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Authorization", "Bearer "+testAccessToken)
+		request.Header.Set("Idempotency-Key", key)
+		response, err := server.Client().Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var envelope struct {
+			Data ThreadRequestObservationView `json:"data"`
+		}
+		err = json.NewDecoder(response.Body).Decode(&envelope)
+		_ = response.Body.Close()
+		if err != nil || response.StatusCode != http.StatusOK || envelope.Data.State != "received" ||
+			envelope.Data.Settled || envelope.Data.MessageID != queued.Message.ID || envelope.Data.MessageStatus != "pending" {
+			t.Fatalf("MCP input could not be confirmed after restart: status=%d result=%#v err=%v", response.StatusCode, envelope.Data, err)
+		}
+	}
+	after, err := reopened.ExportThread(t.Context(), threadID)
+	after.ExportedAt = before.ExportedAt
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("MCP observation changed history: %v", err)
 	}
 }
 

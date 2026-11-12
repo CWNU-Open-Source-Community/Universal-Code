@@ -198,12 +198,12 @@ func (boundaryErrorReader) Close() error               { return nil }
 
 func TestProviderStreamProtocolFailuresRemainNonRetryable(t *testing.T) {
 	for _, adapter := range []string{"anthropic", "openai", "responses", "ollama"} {
-		for _, control := range []string{"malformed", "missing_terminal", "oversize", "unexpected_eof"} {
+		for _, control := range []string{"malformed", "missing_terminal", "oversize", "reader_error"} {
 			t.Run(adapter+"/"+control, func(t *testing.T) {
 				provider := boundaryProvider(t, adapter, "http://127.0.0.1:1", &http.Client{})
 				var body io.ReadCloser
-				if control == "unexpected_eof" {
-					body = boundaryErrorReader{io.ErrUnexpectedEOF}
+				if control == "reader_error" {
+					body = boundaryErrorReader{errors.New("fixture reader failed")}
 				} else {
 					payload := boundaryPartialStream(adapter)
 					if control != "missing_terminal" {
