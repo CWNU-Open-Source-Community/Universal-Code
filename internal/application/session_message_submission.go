@@ -115,11 +115,17 @@ func (s *SessionMessageSubmissionService) Submit(ctx context.Context,
 	if missionErr != nil {
 		return SubmitSessionMessageResult{}, apperror.Normalize(missionErr)
 	}
-	if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.UserPromptSubmit,
-		run.ID, mission.WorkspaceID, hooks.BuildUserPromptSubmitPayload(
-			hooks.UserPromptSubmitPayload{SessionID: linkedSession.ID, RunID: run.ID,
-				Content: content})); err != nil {
-		return SubmitSessionMessageResult{}, err
+	submitted, err := sessionPromptAlreadySubmitted(ctx, s.store, linkedSession.ID, operationKey)
+	if err != nil {
+		return SubmitSessionMessageResult{}, apperror.Normalize(err)
+	}
+	if !submitted {
+		if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.UserPromptSubmit,
+			run.ID, mission.WorkspaceID, hooks.BuildUserPromptSubmitPayload(
+				hooks.UserPromptSubmitPayload{SessionID: linkedSession.ID, RunID: run.ID,
+					Content: content})); err != nil {
+			return SubmitSessionMessageResult{}, err
+		}
 	}
 	queued, err := s.store.EnqueueOperatorSteering(ctx,
 		domain.EnqueueOperatorSteeringRequest{

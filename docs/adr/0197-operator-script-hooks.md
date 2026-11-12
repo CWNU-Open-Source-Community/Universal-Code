@@ -103,6 +103,11 @@ runtime would not count as support.
   a file swapped between them is a TOCTOU residual. Exploiting it requires
   writing inside `hooks.d`, which is already operator-level power; the pinned
   digest still bounds what a script may contain.
+- The pinned digest covers only the declared script file, not the modules
+  it imports. A Node or Python helper can change a hook's behavior without
+  changing the pinned hash or audit fingerprint; module resolution is
+  confined to the hook's own directory, but helpers themselves are trusted
+  operator files, not digest-pinned ones.
 - The declared timeout kills the direct child only. A script that leaves a
   background child holding its stdout pipe fails the execution closed after
   the wait grace period instead of leaking the pipe.

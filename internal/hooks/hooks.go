@@ -172,8 +172,8 @@ func (d Declaration) Validate() error {
 		}
 		// The web parser's trim check also strips a leading BOM; reject it
 		// here so the projection and the parser agree on every byte.
-		if strings.ContainsRune(d.ToolPattern, '\uFEFF') {
-			return errors.New("hook tool pattern contains a byte order mark")
+		if strings.ContainsRune(d.ToolPattern, '\uFEFF') || strings.ContainsAny(d.ToolPattern, "\n\r\t") {
+			return errors.New("hook tool pattern contains a byte order mark or control character")
 		}
 		if _, err := regexp.Compile(d.ToolPattern); err != nil {
 			return fmt.Errorf("hook tool pattern does not compile: %w", err)
@@ -454,9 +454,13 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 		err := e.apply(hookCtx, registration, input, &result)
 		cancel()
 		if err != nil {
-			if declaration.FailurePolicy == FailureDeny {
+			if errors.Is(err, ErrScriptIntegrity) || declaration.FailurePolicy == FailureDeny {
 				result.Denied = true
-				result.Reason = "hook " + declaration.ID + " failed closed"
+				if errors.Is(err, ErrScriptIntegrity) {
+					result.Reason = "hook " + declaration.ID + " integrity verification failed"
+				} else {
+					result.Reason = "hook " + declaration.ID + " failed closed"
+				}
 				_ = e.record(context.WithoutCancel(ctx), registration, input, "failed_closed", true)
 				return result, nil
 			}

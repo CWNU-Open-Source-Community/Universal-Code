@@ -239,6 +239,59 @@ func TestEngineScriptActionFollowsFailurePolicyOnExecutorError(t *testing.T) {
 	}
 }
 
+func TestEngineScriptActionIntegrityFailureFailsClosedRegardlessOfPolicy(t *testing.T) {
+	sink := &scriptedAuditSink{}
+	executor := &stubScriptExecutor{err: ErrScriptIntegrity}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+	if err := engine.Replace([]Registration{scriptRegistration(PreTool, FailureContinue, 100)}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell",
+		Payload: json.RawMessage(`{}`)})
+	if err != nil || !result.Denied || len(result.Executed) != 0 ||
+		sink.records[0].Outcome != "failed_closed" ||
+		sink.records[0].Rejected == nil || !*sink.records[0].Rejected {
+		t.Fatalf("integrity failure with continue policy did not fail closed: result=%#v records=%#v err=%v", result, sink.records, err)
+	}
+}
+
+func TestEngineScriptActionDeletedScriptFailsClosedWithContinuePolicy(t *testing.T) {
+	dir := t.TempDir()
+	spec := writeScriptForTest(t, dir, "guard.ps1", echoScriptBody(t, `{"protocol_version":"restricted-hooks.v1","denied":false}`))
+	spec.Interpreter = scriptInterpreterForTest(t)
+	executor, err := NewProcessScriptExecutor(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &scriptedAuditSink{}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+	reg := Registration{
+		PluginID:          OperatorPluginID,
+		PluginFingerprint: testHookDigest("plugin"),
+		Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion,
+			ID:              "deleted-script-guard",
+			Event:           PreTool,
+			Action:          ActionScript,
+			FailurePolicy:   FailureContinue,
+			TimeoutMillis:   5_000,
+			Script:          &spec,
+		},
+	}
+	if err := engine.Replace([]Registration{reg}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, spec.Path)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell", Payload: json.RawMessage(`{}`)})
+	if err != nil || !result.Denied || len(result.Executed) != 0 ||
+		len(sink.records) == 0 || sink.records[0].Outcome != "failed_closed" ||
+		sink.records[0].Rejected == nil || !*sink.records[0].Rejected {
+		t.Fatalf("deleted script with continue policy did not fail closed: result=%#v records=%#v err=%v", result, sink.records, err)
+	}
+}
+
 func TestEngineScriptActionTimeoutFollowsFailurePolicy(t *testing.T) {
 	engine := NewEngine(nil).WithScriptExecutor(waitingScriptExecutor{})
 	if err := engine.Replace([]Registration{scriptRegistration(PreTool, FailureDeny, 80)}); err != nil {
@@ -425,6 +478,9 @@ func TestDeclarationToolPatternValidation(t *testing.T) {
 		{"oversized pattern", nil, "^" + strings.Repeat("a", MaxToolPatternBytes+1)},
 		{"uncompilable pattern", nil, "^mcp_([a-z"},
 		{"pattern with NUL", nil, "mcp\x00"},
+		{"pattern with newline", nil, "^shell$|\n"},
+		{"pattern with carriage return", nil, "^shell$|\r"},
+		{"pattern with tab", nil, "^shell$|\t"},
 		{"pattern with byte order mark", nil, "\uFEFF^mcp_.*"},
 		{"pattern on non-tool event", nil, "^mcp_.*"},
 	}
