@@ -9,14 +9,14 @@ export function V2ApprovalModeControl({ mode, fullActivation, fullUnavailableRea
   const { t } = useLocale();
   const choices = [
     { mode: "ask", label: t("请求批准", "Request approval"), icon: UserCheck,
-      detail: t("运行影响可核验的常规操作；普通公网请求需批准。",
-        "Run routine operations with verifiable effects; ordinary public network requests need approval.") },
+      detail: t("文件、命令与网页操作按请求批准。",
+        "Request approval for file, command, and web operations.") },
     { mode: "auto", label: t("帮我批准", "Approve for me"), icon: ShieldCheck,
-      detail: t("可自动批准已核验的常规操作和普通公网请求。",
-        "Verified routine operations and ordinary public network requests may be approved automatically.") },
+      detail: t("自动审核文件、命令与网页操作，必要时向你确认。",
+        "Review file, command, and web operations automatically; ask you when needed.") },
     { mode: "full", label: t("完全访问权限", "Full access"), icon: ShieldOff,
-      detail: t("减少逐次批准；实际访问仍受系统、供应商和运行环境限制。",
-        "Reduce per-operation approval; access remains subject to system, provider, and runtime limits.") },
+      detail: t("允许文件、本机命令与公共网络访问，无需逐次批准。",
+        "Allow file, local command, and public network access without per-operation approval.") },
   ] as const;
   const activationLabels: Record<FullActivationState, string> = {
     inactive: t("未激活", "inactive"), active: t("已激活", "active"),
@@ -178,8 +178,8 @@ export function V2ApprovalModeControl({ mode, fullActivation, fullUnavailableRea
     {error && <p className="v2-inline-error" role="alert">{error.trim() || t("权限更新失败", "Failed to update permissions")}</p>}
     {confirmationOpen && <V2ConfirmDialog open busy={pending}
       confirmLabel={coldFull ? t("确认重新激活", "Confirm reactivation") : t("确认启用", "Confirm activation")} danger
-      description={t("将请求无需逐次批准的文件、命令和网络访问，可能造成数据丢失或敏感信息泄露。实际可用范围仍受操作系统、供应商和运行环境限制。",
-        "Requests file, command, and network access without per-operation approval. This may cause data loss or expose sensitive information. Actual access remains limited by the operating system, provider, and runtime.")}
+      description={t("允许访问项目文件、执行本机命令和访问公共网络，无需逐次批准。可能造成数据丢失或敏感信息泄露；已设置的环境与网络限制仍然有效。",
+        "Allow project file access, local commands, and public network access without per-operation approval. This may cause data loss or expose sensitive information. Configured environment and network restrictions still apply.")}
       onCancel={cancel} onConfirm={confirm} returnFocusRef={returnFocusRef}
       title={coldFull ? t("重新激活完全访问权限？", "Reactivate Full access?") : t("启用完全访问权限？", "Enable Full access?")} />}
   </div>;

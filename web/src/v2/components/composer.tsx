@@ -501,8 +501,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
               onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void addFiles(files); }} />}
           {!threadID && newThreadControls}
           {threadID && threadControls?.(hasUnsentDraft)}
-          {threadID && <V2PermissionControl client={client} threadID={threadID}
-            onOpenModelSettings={onManageModels ? () => onManageModels(false) : undefined} />}
+          {threadID && <V2PermissionControl client={client} threadID={threadID} />}
         </div>
         <div className="v2-composer-actions">
           {onManageModels && (threadID || onPendingModelRouteChange) &&

@@ -33,7 +33,7 @@ describe.each(["menu", "settings"] as const)("V2ApprovalModeControl English %s",
       .map((item) => item.getAttribute("aria-label"))).toEqual(["Request approval", "Approve for me", "Full access"]);
     expect(screen.getByText("Execution permissions")).toBeVisible();
     expect(screen.getByText("Full access inactive")).toBeVisible();
-    expect(screen.getByRole(role, { name: "Request approval" })).toHaveAccessibleDescription(/public network requests need approval/u);
+    expect(screen.getByRole(role, { name: "Request approval" })).toHaveAccessibleDescription(/approval for file, command, and web operations/u);
     expect(screen.queryByText(/Read-only claims are checked against actual effects/u)).not.toBeInTheDocument();
     expect(view.container.textContent).not.toMatch(/[\u3400-\u9fff]/u);
     await user.click(screen.getByRole(role, { name: "Approve for me" }));
@@ -46,7 +46,8 @@ describe.each(["menu", "settings"] as const)("V2ApprovalModeControl English %s",
     await open(user); await user.click(screen.getByRole(role, { name: "Full access" }));
     const dialog = screen.getByRole("dialog", { name: "Enable Full access?" });
     expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
-    expect(within(dialog).getByText(/operating system, provider, and runtime/u)).toBeVisible();
+    expect(within(dialog).getByText(/project file access, local commands, and public network access/u)).toBeVisible();
+    expect(within(dialog).getByText(/Configured environment and network restrictions still apply/u)).toBeVisible();
     expect(dialog.textContent).not.toMatch(/[\u3400-\u9fff]/u);
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(initial.onRequestChange).not.toHaveBeenCalled();
@@ -184,7 +185,8 @@ describe.each(["menu", "settings"] as const)("V2ApprovalModeControl %s", (varian
     await user.click(screen.getByRole(role, { name: "完全访问权限" }));
     const dialog = screen.getByRole("dialog", { name: "启用完全访问权限？" });
     expect(initial.onRequestChange).not.toHaveBeenCalled();
-    expect(within(dialog).getByText(/操作系统、供应商和运行环境限制/u)).toBeInTheDocument();
+    expect(within(dialog).getByText(/访问项目文件、执行本机命令和访问公共网络/u)).toBeInTheDocument();
+    expect(within(dialog).getByText(/已设置的环境与网络限制仍然有效/u)).toBeInTheDocument();
     const close = within(dialog).getByRole("button", { name: "关闭" });
     const confirm = within(dialog).getByRole("button", { name: "确认启用" });
     expect(close).toHaveFocus();
