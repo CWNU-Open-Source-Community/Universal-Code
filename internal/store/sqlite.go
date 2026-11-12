@@ -1032,7 +1032,7 @@ func normalizeStoredFileEdit(edit fileedit.Edit) (fileedit.Edit, error) {
 	if strings.TrimSpace(edit.WorkspaceID) == "" {
 		return fileedit.Edit{}, errors.New("workspace id is required")
 	}
-	if strings.TrimSpace(edit.Path) == "" {
+	if edit.Path == "" {
 		return fileedit.Edit{}, errors.New("file edit path is required")
 	}
 	if strings.TrimSpace(edit.Status) == "" {

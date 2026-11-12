@@ -42,3 +42,8 @@ export function formatBytes(value: number): string {
 export function shortID(value: string): string {
   return value.length > 16 ? `${value.slice(0, 8)}...${value.slice(-5)}` : value;
 }
+
+// Keep an otherwise invisible space distinguishable from a neighboring name.
+export function formatWorkspacePathLabel(path: string): string {
+  return path.split("/").some((part) => part !== part.trim()) ? JSON.stringify(path) : path;
+}

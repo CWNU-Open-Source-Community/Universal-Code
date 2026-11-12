@@ -11,6 +11,7 @@ import (
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestProposalAndCredentialHTTPControlsAreDefaultOff(t *testing.T) {
@@ -35,13 +36,17 @@ func TestProposalAndCredentialHTTPControlsAreDefaultOff(t *testing.T) {
 
 func TestFileEditProposalHTTPRequiresGoSourceAndNeverWritesFile(t *testing.T) {
 	fixture := newAPIFixture(t)
-	const relativePath = "proposal-source.txt"
+	const relativePath = " "
 	original := "original Workspace content\n"
 	proposed := "operator-proposed content\n"
-	absolutePath := filepath.Join(fixture.workspace.RootPath, relativePath)
+	absolutePath, err := rootfs.ExactAbsolutePath(filepath.Join(fixture.workspace.RootPath, relativePath))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(absolutePath, []byte(original), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = os.Remove(absolutePath) })
 	proposalService := application.NewFileEditProposalService(fixture.store,
 		policy.NewDefaultChecker())
 	api, err := New(fixture.store, Config{AccessToken: testAccessToken,
@@ -95,7 +100,7 @@ func TestFileEditProposalHTTPRequiresGoSourceAndNeverWritesFile(t *testing.T) {
 		recoveryPath, testAccessToken, "", "", nil)
 	var recovery FileEditProposalRecoveryView
 	decodeDataStatus(t, recoveryResponse, http.StatusOK, &recovery)
-	if recovery.EditID != result.Edit.ID || recovery.OriginalContent != original ||
+	if recovery.EditID != result.Edit.ID || recovery.Path != relativePath || recovery.OriginalContent != original ||
 		recovery.ProposedContent != proposed || recovery.Stale || recovery.Editable ||
 		!recovery.ReviewRequired || recovery.FileWrite {
 		t.Fatalf("durable proposal recovery widened authority: %#v", recovery)

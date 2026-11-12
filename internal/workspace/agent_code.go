@@ -20,6 +20,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
 
@@ -662,8 +663,8 @@ func (w agentWorkspace) resolvePath(relative string, allowMissingFinal, allowMis
 					"workspace path casing does not match the stored entry")
 			}
 			if (allowMissingFinal && last) || allowMissingParents {
-				target := filepath.Join(append([]string{current}, components[index:]...)...)
-				if !explorerWithinRoot(w.root, target) {
+				target, err := rootfs.ExactAbsolutePath(filepath.Join(append([]string{current}, components[index:]...)...))
+				if err != nil || !explorerWithinRoot(w.root, target) {
 					return "", nil, apperror.New(apperror.CodePolicyDenied,
 						"workspace path cannot leave the workspace")
 				}
@@ -672,7 +673,11 @@ func (w agentWorkspace) resolvePath(relative string, allowMissingFinal, allowMis
 			return "", nil, apperror.New(apperror.CodeNotFound,
 				"workspace entry was not found")
 		}
-		current = filepath.Join(current, component)
+		current, err = rootfs.ExactAbsolutePath(filepath.Join(current, component))
+		if err != nil {
+			return "", nil, apperror.New(apperror.CodeFailedPrecondition,
+				"workspace entry could not be inspected")
+		}
 		info, err := os.Lstat(current)
 		if err != nil {
 			return "", nil, apperror.New(apperror.CodeFailedPrecondition,
@@ -856,7 +861,7 @@ func normalizeAgentPath(value string, allowRoot bool) (string, error) {
 	if value == "" && allowRoot {
 		value = "."
 	}
-	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
+	if value == "" || !utf8.ValidString(value) ||
 		utf8.RuneCountInString(value) > MaxExplorerPathRunes || strings.ContainsRune(value, 0) ||
 		filepath.IsAbs(value) || filepath.VolumeName(value) != "" || strings.ContainsAny(value, `\:`) {
 		return "", apperror.New(apperror.CodeInvalidArgument,
@@ -873,7 +878,8 @@ func normalizeAgentPath(value string, allowRoot bool) (string, error) {
 		return "", apperror.New(apperror.CodePolicyDenied,
 			"workspace path cannot leave the workspace")
 	}
-	if clean != value || (!allowRoot && clean == ".") || (original == "" && !allowRoot) {
+	if clean != value || !filepath.IsLocal(filepath.FromSlash(clean)) ||
+		(!allowRoot && clean == ".") || (original == "" && !allowRoot) {
 		return "", apperror.New(apperror.CodeInvalidArgument,
 			"workspace path must be canonical")
 	}

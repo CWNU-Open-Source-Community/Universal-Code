@@ -1302,7 +1302,8 @@
           "source": "web/src",
           "versions": [
             1,
-            2
+            2,
+            3
           ],
           "mode": "write-current"
         }
@@ -1313,7 +1314,8 @@
           "source": "web/src",
           "versions": [
             1,
-            2
+            2,
+            3
           ],
           "status": "active"
         }
@@ -1356,6 +1358,7 @@
         "universal-code.turn-notifications.v1",
         "universal-code.workspace-tabs.v1",
         "universal-code.workspace-tabs.v2",
+        "universal-code.workspace-tabs.v3",
         "v2_file_upload.v1"
       ],
       "retired_identifiers": [

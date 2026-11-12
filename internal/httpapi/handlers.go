@@ -427,7 +427,7 @@ func (a *API) workspaceExplorer(request *http.Request,
 	requestedPath, present := "", false
 	if items, ok := request.URL.Query()["path"]; ok {
 		present = true
-		if len(items) == 1 && items[0] == strings.TrimSpace(items[0]) {
+		if len(items) == 1 {
 			requestedPath = items[0]
 		}
 	}

@@ -184,6 +184,58 @@ async function openFiles(page: Page) {
   await expect(page.getByRole("button", { name: "关闭文件面板", exact: true })).toBeVisible();
 }
 
+test("two windows keep both tab additions when writes overlap", async ({ page, context }) => {
+  await connect(page);
+  await importProject(page);
+  await submitRead(page);
+  await openFiles(page);
+  const tabs = (target: Page) => target.getByRole("tablist", { name: "右侧工作区标签" }).getByRole("tab");
+  await expect(tabs(page)).toHaveCount(1);
+
+  const other = await context.newPage();
+  await other.goto(page.url());
+  await reconnect(other);
+  await expect(tabs(other)).toHaveCount(1);
+
+  // Hold the real IndexedDB store open in a third transaction until both
+  // windows have requested an update based on the same visible state.
+  await page.evaluate(() => new Promise<void>((ready, reject) => {
+    const open = indexedDB.open("universal-code.workspace-tabs.v3");
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const transaction = db.transaction("records", "readwrite");
+      const store = transaction.objectStore("records");
+      let released = false;
+      window.addEventListener("release-workspace-storage-test", () => { released = true; }, { once: true });
+      transaction.oncomplete = () => db.close();
+      transaction.onabort = () => { db.close(); reject(transaction.error); };
+      const hold = () => {
+        store.get("current").onsuccess = () => {
+          ready();
+          if (!released) hold();
+        };
+      };
+      hold();
+    };
+  }));
+  try {
+    await Promise.all([page, other].map(async (target) => {
+      await target.getByRole("button", { name: "新建或切换工作区标签" }).click();
+      await target.getByRole("menuitem", { name: "新建文件标签" }).click();
+      await expect(tabs(target)).toHaveCount(1);
+    }));
+  } finally {
+    await page.evaluate(() => window.dispatchEvent(new Event("release-workspace-storage-test")));
+  }
+
+  await expect(tabs(page)).toHaveCount(3);
+  await expect(tabs(other)).toHaveCount(3);
+  await other.reload();
+  await reconnect(other);
+  await expect(tabs(other)).toHaveCount(3);
+});
+
 async function editReadme(page: Page) {
   const files = page.locator(".v2-file-drawer");
   await files.getByRole("tab", { name: /^README\.md/u }).or(files.getByRole("button", { name: /^README\.md/u })).first().click();

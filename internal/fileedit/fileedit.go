@@ -11,11 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/tools"
 )
 
@@ -712,7 +714,7 @@ func (m *Manager) approveDelete(ctx context.Context, edit Edit,
 	return m.store.SaveFileEdit(ctx, edit)
 }
 
-func stageAtomicReplacement(root *os.Root, target string, content string,
+func stageAtomicReplacement(root *rootfs.ExactRoot, target string, content string,
 	mode os.FileMode,
 ) (string, error) {
 	if root == nil {
@@ -723,7 +725,7 @@ func stageAtomicReplacement(root *os.Root, target string, content string,
 	for attempt := 0; attempt < 32; attempt++ {
 		path = filepath.Join(filepath.Dir(target), stagingFilePrefix+newID("stage"))
 		var err error
-		file, err = root.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		file, err = root.CreateExclusive(path, 0o600)
 		if err == nil {
 			break
 		}
@@ -882,7 +884,7 @@ func InspectStaging(workspaceRoot string, path string, proposedHash string,
 	return result, nil
 }
 
-func stagingFileMatches(root *os.Root, path string, expected os.FileInfo,
+func stagingFileMatches(root *rootfs.ExactRoot, path string, expected os.FileInfo,
 	proposedHash string,
 ) (bool, error) {
 	file, err := root.Open(path)
@@ -908,7 +910,7 @@ func stagingFileMatches(root *os.Root, path string, expected os.FileInfo,
 	return hex.EncodeToString(sum[:]) == proposedHash, nil
 }
 
-func syncRootParentDirectory(root *os.Root, path string) {
+func syncRootParentDirectory(root *rootfs.ExactRoot, path string) {
 	if root == nil {
 		return
 	}
@@ -1013,24 +1015,27 @@ func (m *Manager) fail(ctx context.Context, edit Edit, cause error) (Edit, error
 }
 
 func normalizePath(path string) (string, error) {
-	if path != strings.TrimSpace(path) {
-		return "", errors.New("file path cannot contain surrounding whitespace")
+	if !utf8.ValidString(path) || strings.ContainsFunc(path, unicode.IsControl) {
+		return "", errors.New("file path must be valid text without control characters")
 	}
 	if path == "" || path == "." {
 		return "", errors.New("file path is required")
 	}
-	if filepath.IsAbs(path) {
+	if filepath.IsAbs(path) || filepath.VolumeName(path) != "" {
 		return "", errors.New("path must be relative to the workspace")
 	}
 	clean := filepath.Clean(path)
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
 		return "", fmt.Errorf("path escapes workspace: %s", path)
 	}
+	if !filepath.IsLocal(clean) {
+		return "", errors.New("path must be relative to the workspace")
+	}
 	return filepath.ToSlash(clean), nil
 }
 
 func openWorkspaceRootForFile(workspaceRoot string, path string, createParents ...bool) (
-	*os.Root, string, string, error,
+	*rootfs.ExactRoot, string, string, error,
 ) {
 	relPath, err := normalizePath(path)
 	if err != nil {
@@ -1045,7 +1050,7 @@ func openWorkspaceRootForFile(workspaceRoot string, path string, createParents .
 	if err != nil {
 		return nil, "", "", err
 	}
-	canonicalRoot, err := filepath.Abs(workspaceRoot)
+	canonicalRoot, err := rootfs.ExactAbsolutePath(workspaceRoot)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -1053,11 +1058,11 @@ func openWorkspaceRootForFile(workspaceRoot string, path string, createParents .
 	if err != nil {
 		return nil, "", "", err
 	}
-	root, err := os.OpenRoot(canonicalRoot)
+	root, err := rootfs.OpenExactRoot(canonicalRoot)
 	if err != nil {
 		return nil, "", "", err
 	}
-	fail := func(cause error) (*os.Root, string, string, error) {
+	fail := func(cause error) (*rootfs.ExactRoot, string, string, error) {
 		_ = root.Close()
 		return nil, "", "", cause
 	}
@@ -1083,7 +1088,7 @@ type workspaceReadError struct {
 
 func (e *workspaceReadError) Error() string { return e.message }
 
-func readProposalTextFromRoot(root *os.Root, path string) (string, bool, error) {
+func readProposalTextFromRoot(root *rootfs.ExactRoot, path string) (string, bool, error) {
 	content, exists, err := readCurrentTextFromRoot(root, path)
 	if known, ok := err.(*workspaceReadError); ok {
 		code := apperror.CodeFailedPrecondition
@@ -1095,7 +1100,7 @@ func readProposalTextFromRoot(root *os.Root, path string) (string, bool, error) 
 	return content, exists, err
 }
 
-func readCurrentTextFromRoot(root *os.Root, path string) (string, bool, error) {
+func readCurrentTextFromRoot(root *rootfs.ExactRoot, path string) (string, bool, error) {
 	if root == nil {
 		return "", false, errors.New("workspace root handle is required")
 	}
@@ -1137,7 +1142,7 @@ func readCurrentTextFromRoot(root *os.Root, path string) (string, bool, error) {
 	return string(data), true, nil
 }
 
-func currentHashFromRoot(root *os.Root, path string) (string, error) {
+func currentHashFromRoot(root *rootfs.ExactRoot, path string) (string, error) {
 	current, exists, err := readCurrentTextFromRoot(root, path)
 	if err != nil {
 		return "", err
@@ -1145,7 +1150,7 @@ func currentHashFromRoot(root *os.Root, path string) (string, error) {
 	return contentHash(current, exists), nil
 }
 
-func sameRootFile(root *os.Root, left string, right string) (bool, error) {
+func sameRootFile(root *rootfs.ExactRoot, left string, right string) (bool, error) {
 	leftInfo, err := root.Stat(left)
 	if err != nil {
 		return false, err

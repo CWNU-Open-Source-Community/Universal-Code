@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/session"
 )
 
@@ -72,8 +73,8 @@ func TestExplorerRejectsEscapeLinksAndBinaryContent(t *testing.T) {
 	if _, err := Explore(root, "workspace-explorer", "../outside.txt"); apperror.CodeOf(err) != apperror.CodePolicyDenied {
 		t.Fatalf("path escape error=%v", err)
 	}
-	if _, err := Explore(root, "workspace-explorer", " binary.bin "); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
-		t.Fatalf("surrounding whitespace error=%v", err)
+	if _, err := Explore(root, "workspace-explorer", "binary.bin "); apperror.CodeOf(err) != apperror.CodeNotFound {
+		t.Fatalf("missing spaced file error=%v", err)
 	}
 	for _, path := range []string{"src/../binary.bin", `src\binary.bin`, "C:binary.bin"} {
 		if _, err := Explore(root, "workspace-explorer", path); apperror.CodeOf(err) != apperror.CodeInvalidArgument {
@@ -91,6 +92,46 @@ func TestExplorerRejectsEscapeLinksAndBinaryContent(t *testing.T) {
 	}
 	if _, err := Explore(root, "workspace-explorer", "outside-link"); apperror.CodeOf(err) != apperror.CodePolicyDenied {
 		t.Fatalf("symbolic link error=%v", err)
+	}
+}
+
+func TestExplorerListsSearchesAndReviewsExactWhitespacePaths(t *testing.T) {
+	root := t.TempDir()
+	native := func(relative string) string {
+		t.Helper()
+		path, err := rootfs.ExactAbsolutePath(filepath.Join(root, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	const directory = " src "
+	const name = "notes.txt "
+	const relative = directory + "/" + name
+	const content = "only the exact path has this phrase\n"
+	dir := native(directory)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := os.WriteFile(native(relative), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	listing, err := Explore(root, "workspace-explorer", directory)
+	if err != nil || len(listing.Entries) != 1 || listing.Entries[0].Path != relative || listing.Entries[0].Name != name {
+		t.Fatalf("listing did not preserve names: %#v, %v", listing.Entries, err)
+	}
+	snapshot, err := Explore(root, "workspace-explorer", relative)
+	if err != nil || snapshot.Path != relative || snapshot.Provenance.SourceRef != relative || snapshot.Content != content {
+		t.Fatalf("preview did not preserve identity: %#v, %v", snapshot, err)
+	}
+	search, err := Search(root, "workspace-explorer", "exact path")
+	if err != nil || len(search.Results) != 1 || search.Results[0].Path != relative {
+		t.Fatalf("search did not find the exact path: %#v, %v", search.Results, err)
+	}
+	review, tooLarge, err := ReadReviewFile(root, relative, 1024)
+	if err != nil || tooLarge || string(review) != content {
+		t.Fatalf("review read %q, limited=%v, error=%v", review, tooLarge, err)
 	}
 }
 

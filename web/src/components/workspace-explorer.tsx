@@ -3,7 +3,7 @@ import { useMutation, useQuery, type UseQueryResult } from "@tanstack/react-quer
 import { ArrowLeft, File, Folder, FolderOpen, Paperclip, Pencil, Search, ShieldCheck, X } from "lucide-react";
 import type { APIClient } from "../api/client";
 import type { WorkspaceExplorerView, WorkspaceSearchView } from "../api/types";
-import { formatBytes } from "../lib/format";
+import { formatBytes, formatWorkspacePathLabel } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { EmptyState, ErrorState, LoadingState, StatusBadge } from "./common";
 import { WorkspaceFileQuote, type WorkspaceQuoteResult } from "./workspace-file-quote";
@@ -134,7 +134,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
         <ArrowLeft aria-hidden="true" size={16} />
       </button>
       <FolderOpen aria-hidden="true" size={16} />
-      <code>{snapshot.path}</code>
+      <code>{formatWorkspacePathLabel(snapshot.path)}</code>
       {snapshot.truncated && <StatusBadge status="truncated" />}
       {snapshot.kind === "file" && onSelectReference && <button className="compact-command"
         disabled={query.isFetching} onClick={() => onSelectReference(snapshot)} type="button">
@@ -186,7 +186,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
             <button disabled={!entry.readable || query.isFetching}
               onClick={() => navigate(entry.path)} type="button">
               <Icon aria-hidden="true" size={16} />
-              <span>{entry.name}</span>
+              <span>{formatWorkspacePathLabel(entry.name)}</span>
               <small>{entry.kind === "file" ? formatBytes(entry.size_bytes) : entry.kind}</small>
             </button>
           </div>;
