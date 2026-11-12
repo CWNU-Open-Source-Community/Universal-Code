@@ -10228,6 +10228,7 @@ export interface components {
         HookDeclarationView: {
             action: string;
             active: boolean;
+            async: boolean;
             event: string;
             failure_policy: string;
             hook_id: string;

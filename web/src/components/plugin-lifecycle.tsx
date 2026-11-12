@@ -169,7 +169,7 @@ function HookRecords({ value }: { value: HookDiagnosticsView }) {
     <ul>{value.declarations.map((item) => <li key={`${item.installation_id}/${item.hook_id}`}>
       <div><strong>{item.plugin_id} / {item.hook_id}</strong><span>{item.active ? t("已加载", "Loaded") : item.installation_state === "revoked" ? t("安装已撤销", "Installation revoked") : item.installation_state === "rolled_back" ? t("此版本已停用", "Version retired") : t("等待启用 Hooks 能力", "Awaiting Hook enablement")}</span></div>
       <p>{events[item.event]} · {actions[item.action]}</p>
-      <p>{t("规则范围：本机任务", "Rule scope: local tasks")}{item.tool_names.length ? ` · ${item.tool_names.join(", ")}` : item.tool_pattern ? ` · /${item.tool_pattern}/` : item.event === "pre_tool" || item.event === "post_tool" ? ` · ${t("全部工具", "All tools")}` : ""}</p>
+      <p>{t("规则范围：本机任务", "Rule scope: local tasks")}{item.tool_names.length ? ` · ${item.tool_names.join(", ")}` : item.tool_pattern ? ` · /${item.tool_pattern}/` : item.event === "pre_tool" || item.event === "post_tool" ? ` · ${t("全部工具", "All tools")}` : ""}{item.async ? ` · ${t("后台观测", "background tap")}` : ""}</p>
       {item.remove_fields.length > 0 && <p>{t("移除参数", "Removed fields")}: {item.remove_fields.join(", ")}</p>}
       <details><summary>{t("规则详细记录", "Rule details")}</summary><p>{t("失败处理", "Failure policy")}: {item.failure_policy === "deny" ? t("拒绝当前操作", "Reject the operation") : t("继续当前操作", "Continue the operation")} · {item.timeout_ms} ms</p>
         <p>{t("安装状态", "Installation state")}: {item.installation_state}</p><p><code>{item.package_fingerprint}</code></p></details>

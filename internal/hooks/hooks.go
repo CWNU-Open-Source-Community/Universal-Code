@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -34,6 +35,8 @@ const (
 	MaxHookTimeoutMillis = 2_000
 	MaxHookIdentityRunes = 256
 	MaxToolPatternBytes  = 256
+	MaxAsyncConcurrent      = 8
+	MaxAsyncAuditConcurrent = MaxDeclarations
 )
 
 type Event string
@@ -96,6 +99,7 @@ type Declaration struct {
 	ToolPattern     string        `json:"tool_pattern,omitempty"`
 	RemoveFields    []string      `json:"remove_fields,omitempty"`
 	Message         string        `json:"message,omitempty"`
+	Async           bool          `json:"async,omitempty"`
 	Script          *ScriptSpec   `json:"script,omitempty"`
 }
 
@@ -123,6 +127,18 @@ func (d Declaration) Validate() error {
 	}
 	if d.Action == ActionDeny && d.Event == PostTool {
 		return errors.New("post_tool hooks cannot retroactively deny a completed call")
+	}
+	if d.Async {
+		// Asynchronous hooks are observation taps: the boundary returns
+		// before they finish, so they can never deny, annotate the live
+		// result, narrow tool arguments, or honor a fail-closed policy —
+		// declaring one would silently turn fail-closed into fail-open.
+		if d.Action != ActionRecord && d.Action != ActionScript {
+			return errors.New("only record and script hooks may run asynchronously")
+		}
+		if d.FailurePolicy != FailureContinue {
+			return errors.New("asynchronous hooks require the continue failure policy")
+		}
 	}
 	if d.Action == ActionScript {
 		if d.Script == nil {
@@ -307,12 +323,25 @@ type Engine struct {
 	sink          AuditSink
 	now           func() time.Time
 	loader        func(context.Context) ([]Registration, error)
-	scriptRunner  ScriptExecutor
+	scriptRunner    ScriptExecutor
+	asyncSlots      chan struct{}
+	asyncAuditSlots chan struct{}
+	droppedAudits   atomic.Uint64
 }
 
 func NewEngine(sink AuditSink) *Engine {
 	return &Engine{sink: sink, now: func() time.Time { return time.Now().UTC() },
-		generation: emptyGeneration()}
+		generation: emptyGeneration(), asyncSlots: make(chan struct{}, MaxAsyncConcurrent),
+		asyncAuditSlots: make(chan struct{}, MaxAsyncAuditConcurrent)}
+}
+
+// DroppedAudits reports the number of asynchronous hook audits dropped due to
+// audit pool saturation under extreme load.
+func (e *Engine) DroppedAudits() uint64 {
+	if e == nil {
+		return 0
+	}
+	return e.droppedAudits.Load()
 }
 
 // WithScriptExecutor wires the host-owned script execution adapter. Without it,
@@ -420,6 +449,10 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 		}
 		if declaration.Event != input.Event ||
 			!matchesTool(declaration.ToolNames, toolPattern, input.ToolName) {
+			continue
+		}
+		if declaration.Async {
+			e.launchAsync(input, registration)
 			continue
 		}
 		hookCtx, cancel := context.WithTimeout(ctx,
@@ -531,6 +564,62 @@ func (e *Engine) apply(ctx context.Context, registration Registration, input Inp
 		return errors.New("unsupported hook action")
 	}
 	return nil
+}
+
+// launchAsync runs one observation-only hook outside the boundary. The
+// boundary never waits for it: the result is discarded, only the audit ledger
+// records the outcome, and an engine at its concurrency ceiling skips the run
+// with a failed_continue audit row instead of blocking the caller. The audit
+// row for a skipped or timed-out fire is written on its own detached context
+// so a saturated engine or an expired hook deadline can never suppress it.
+func (e *Engine) launchAsync(input Input, registration Registration) {
+	// Copy the payload before the goroutine starts: the caller may reuse its
+	// buffer after Execute returns.
+	payload := append(json.RawMessage(nil), input.Payload...)
+	detached := context.WithoutCancel(context.Background())
+	select {
+	case e.asyncSlots <- struct{}{}:
+	default:
+		if e.asyncAuditSlots != nil {
+			select {
+			case e.asyncAuditSlots <- struct{}{}:
+				go func() {
+					defer func() { <-e.asyncAuditSlots }()
+					defer func() { _ = recover() }()
+					_ = e.record(detached, registration, input, "failed_continue", false)
+				}()
+			default:
+				e.droppedAudits.Add(1)
+			}
+		} else {
+			e.droppedAudits.Add(1)
+		}
+		return
+	}
+	go func() {
+		defer func() { <-e.asyncSlots }()
+		// A panic in a background hook would otherwise take the whole host
+		// down; synchronous hooks propagate to the caller instead.
+		defer func() { _ = recover() }()
+		asyncCtx, cancel := context.WithTimeout(detached,
+			time.Duration(registration.Declaration.TimeoutMillis)*time.Millisecond)
+		defer cancel()
+		// The registration is a shallow copy whose slices and script pointer
+		// are immutable after Replace; a concurrent registry swap never
+		// mutates what this goroutine sees. The throwaway result carries the
+		// bounded payload so background scripts observe the same input as
+		// synchronous ones, and discards any denial an asynchronous script
+		// prints: background hooks cannot block.
+		throwaway := Result{Payload: append(json.RawMessage(nil), payload...)}
+		err := e.apply(asyncCtx, registration, Input{Event: input.Event,
+			RunID: input.RunID, WorkspaceID: input.WorkspaceID,
+			ToolName: input.ToolName, Payload: payload}, &throwaway)
+		outcome := "completed"
+		if err != nil {
+			outcome = "failed_continue"
+		}
+		_ = e.record(context.WithoutCancel(detached), registration, input, outcome, false)
+	}()
 }
 
 func (e *Engine) record(ctx context.Context, registration Registration, input Input,

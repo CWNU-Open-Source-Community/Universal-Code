@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestScriptSpecValidateRejectsInvalidSpecifications(t *testing.T) {
@@ -120,12 +122,27 @@ func TestScriptOutputValidateAndParseRejectsUntrustedOutput(t *testing.T) {
 }
 
 type scriptedAuditSink struct {
+	mu      sync.Mutex
 	records []AuditRecord
 }
 
 func (s *scriptedAuditSink) RecordHookAudit(_ context.Context, record AuditRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.records = append(s.records, record)
 	return nil
+}
+
+func (s *scriptedAuditSink) snapshot() []AuditRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]AuditRecord(nil), s.records...)
+}
+
+func (s *scriptedAuditSink) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.records)
 }
 
 type stubScriptExecutor struct {
@@ -589,4 +606,436 @@ func TestEngineLoaderFailsClosedOnUncompilablePattern(t *testing.T) {
 	if err == nil {
 		t.Fatal("loader-provided uncompilable pattern did not fail the boundary closed")
 	}
+}
+
+type gatedScriptExecutor struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (g *gatedScriptExecutor) ExecuteScript(ctx context.Context,
+	invocation ScriptInvocation,
+) (ScriptOutput, error) {
+	if g.started != nil {
+		g.started <- struct{}{}
+	}
+	if g.release != nil {
+		<-g.release
+	}
+	return ScriptOutput{ProtocolVersion: ProtocolVersion}, nil
+}
+
+func TestDeclarationAsyncValidation(t *testing.T) {
+	spec := ScriptSpec{Interpreter: "python", Path: "tap.py", SHA256: testHookDigest("script")}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "tap",
+		Event: PreTool, Action: ActionScript, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, Async: true, Script: &spec}).Validate(); err != nil {
+		t.Fatalf("async script hook was rejected: %v", err)
+	}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "tap",
+		Event: PostTool, Action: ActionRecord, FailurePolicy: FailureContinue,
+		TimeoutMillis: 100, Async: true}).Validate(); err != nil {
+		t.Fatalf("async post_tool record hook was rejected: %v", err)
+	}
+	for _, broken := range []struct {
+		name   string
+		action Action
+	}{
+		{"async deny", ActionDeny},
+		{"async annotate", ActionAnnotate},
+		{"async narrow", ActionNarrow},
+	} {
+		declaration := Declaration{ProtocolVersion: ProtocolVersion, ID: "tap",
+			Event: PreTool, Action: broken.action, FailurePolicy: FailureDeny,
+			TimeoutMillis: 100, Async: true, Message: "blocked"}
+		if err := declaration.Validate(); err == nil {
+			t.Fatalf("%s was accepted asynchronously", broken.name)
+		}
+	}
+}
+
+func TestEngineAsyncScriptRunsAfterBoundaryReturns(t *testing.T) {
+	executor := &gatedScriptExecutor{started: make(chan struct{}, 1), release: make(chan struct{})}
+	sink := &scriptedAuditSink{}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+	if err := engine.Replace([]Registration{{PluginID: OperatorPluginID,
+		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "tap", Event: PreTool,
+			Action: ActionScript, FailurePolicy: FailureContinue, TimeoutMillis: 5_000,
+			Async: true, Script: &ScriptSpec{Interpreter: "python", Path: "tap.py",
+				SHA256: testHookDigest("script")}}}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell",
+		Payload: json.RawMessage(`{"path":"a"}`)})
+	if err != nil || result.Denied || len(result.Executed) != 0 || len(result.Annotations) != 0 {
+		t.Fatalf("async hook leaked into the synchronous result: %#v err=%v", result, err)
+	}
+	select {
+	case <-executor.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("async script never started")
+	}
+	close(executor.release)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && sink.count() == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	records := sink.snapshot()
+	if len(records) != 1 || records[0].Outcome != "completed" ||
+		records[0].Rejected == nil || *records[0].Rejected {
+		t.Fatalf("async audit records=%#v", records)
+	}
+}
+
+func TestEngineAsyncRecordHookAuditsWithoutBlockingResult(t *testing.T) {
+	sink := &scriptedAuditSink{}
+	engine := NewEngine(sink)
+	if err := engine.Replace([]Registration{{PluginID: "plugin-a",
+		PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "tap", Event: RunCompleted,
+			Action: ActionRecord, FailurePolicy: FailureContinue, TimeoutMillis: 100,
+			Async: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(t.Context(), Input{Event: RunCompleted, RunID: "run-1"})
+	if err != nil || len(result.Executed) != 0 {
+		t.Fatalf("async record hook touched the result: %#v err=%v", result, err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && sink.count() == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	records := sink.snapshot()
+	if len(records) != 1 || records[0].Event != RunCompleted ||
+		records[0].Outcome != "completed" {
+		t.Fatalf("async record audit records=%#v", records)
+	}
+}
+
+func TestEngineAsyncHooksSkipWhenConcurrencyCeilingReached(t *testing.T) {
+	executor := &gatedScriptExecutor{
+		started: make(chan struct{}, MaxAsyncConcurrent),
+		release: make(chan struct{}),
+	}
+	sink := &scriptedAuditSink{}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+	registrations := make([]Registration, 0, MaxAsyncConcurrent+1)
+	for index := 0; index < MaxAsyncConcurrent+1; index++ {
+		registrations = append(registrations, Registration{PluginID: OperatorPluginID,
+			PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+				ProtocolVersion: ProtocolVersion,
+				ID:              fmt.Sprintf("tap-%d", index), Event: PreTool,
+				Action: ActionScript, FailurePolicy: FailureContinue, TimeoutMillis: 5_000,
+				Async: true, Script: &ScriptSpec{Interpreter: "python",
+					Path:   fmt.Sprintf("tap-%d.py", index),
+					SHA256: testHookDigest(fmt.Sprintf("tap-%d", index))}}})
+	}
+	if err := engine.Replace(registrations); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell",
+		Payload: json.RawMessage(`{}`)})
+	if err != nil || result.Denied {
+		t.Fatalf("async ceiling execute failed: %#v err=%v", result, err)
+	}
+	started := 0
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		started = len(executor.started)
+		if started == MaxAsyncConcurrent {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if started != MaxAsyncConcurrent {
+		t.Fatalf("expected %d concurrent async hooks, saw %d", MaxAsyncConcurrent, started)
+	}
+	// Only the ceiling-exceeded hook has settled; the eight running taps have
+	// not finished and have written nothing yet.
+	skipDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(skipDeadline) && sink.count() == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	settled := sink.snapshot()
+	if len(settled) != 1 || settled[0].Outcome != "failed_continue" {
+		t.Fatalf("expected exactly one skip audit row: %#v", settled)
+	}
+	close(executor.release)
+	auditDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(auditDeadline) && sink.count() < MaxAsyncConcurrent+1 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	records := sink.snapshot()
+	if len(records) != MaxAsyncConcurrent+1 {
+		t.Fatalf("expected an audit row for every async hook: %d rows", len(records))
+	}
+	for _, record := range records[1:] {
+		if record.Outcome != "completed" || record.Rejected == nil || *record.Rejected {
+			t.Fatalf("released async hook audit is wrong: %#v", record)
+		}
+	}
+}
+
+func TestEngineAsyncScriptFailureRecordsFailedContinue(t *testing.T) {
+	executor := &stubScriptExecutor{err: errors.New("interpreter unavailable")}
+	sink := &scriptedAuditSink{}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+	if err := engine.Replace([]Registration{{PluginID: OperatorPluginID,
+		PluginFingerprint: testHookDigest("script"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "tap", Event: RunStarted,
+			Action: ActionScript, FailurePolicy: FailureContinue, TimeoutMillis: 100,
+			Async: true, Script: &ScriptSpec{Interpreter: "python", Path: "tap.py",
+				SHA256: testHookDigest("script")}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Execute(t.Context(), Input{Event: RunStarted, RunID: "run-1"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && sink.count() == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	records := sink.snapshot()
+	if len(records) != 1 || records[0].Outcome != "failed_continue" ||
+		records[0].Rejected == nil || *records[0].Rejected {
+		t.Fatalf("async failure audit records=%#v", records)
+	}
+}
+
+type payloadCapturingExecutor struct {
+	mu          sync.Mutex
+	invocations []ScriptInvocation
+}
+
+func (c *payloadCapturingExecutor) ExecuteScript(_ context.Context,
+	invocation ScriptInvocation,
+) (ScriptOutput, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.invocations = append(c.invocations, invocation)
+	return ScriptOutput{ProtocolVersion: ProtocolVersion}, nil
+}
+
+func TestEngineAsyncScriptReceivesPayloadAndSurvivesTimeoutAudit(t *testing.T) {
+	capturing := &payloadCapturingExecutor{}
+	sink := &scriptedAuditSink{}
+	engine := NewEngine(sink).WithScriptExecutor(capturing)
+	if err := engine.Replace([]Registration{{PluginID: OperatorPluginID,
+		PluginFingerprint: testHookDigest("script"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "tap", Event: PreTool,
+			Action: ActionScript, FailurePolicy: FailureContinue, TimeoutMillis: 100,
+			Async: true, ToolPattern: `^mcp_.*`,
+			Script: &ScriptSpec{Interpreter: "python", Path: "tap.py",
+				SHA256: testHookDigest("script")}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "mcp_github_read",
+		Payload: json.RawMessage(`{"path":"a"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && sink.count() == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	records := sink.snapshot()
+	if len(records) != 1 || records[0].Outcome != "completed" {
+		t.Fatalf("async tap audit records=%#v", records)
+	}
+	if len(capturing.invocations) != 1 ||
+		string(capturing.invocations[0].Payload) != `{"path":"a"}` {
+		t.Fatalf("background script did not receive the payload: %#v",
+			capturing.invocations)
+	}
+}
+
+func TestEngineAsyncTimeoutStillWritesAudit(t *testing.T) {
+	sink := &scriptedAuditSink{}
+	engine := NewEngine(sink).WithScriptExecutor(waitingScriptExecutor{})
+	if err := engine.Replace([]Registration{{PluginID: OperatorPluginID,
+		PluginFingerprint: testHookDigest("script"), Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion, ID: "slow-tap", Event: PreTool,
+			Action: ActionScript, FailurePolicy: FailureContinue, TimeoutMillis: 80,
+			Async: true, Script: &ScriptSpec{Interpreter: "python", Path: "slow.py",
+				SHA256: testHookDigest("script")}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell",
+		Payload: json.RawMessage(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && sink.count() == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	records := sink.snapshot()
+	if len(records) != 1 || records[0].Outcome != "failed_continue" ||
+		records[0].Rejected == nil || *records[0].Rejected {
+		t.Fatalf("timed-out async hook audit records=%#v", records)
+	}
+}
+
+func TestDeclarationAsyncRejectsFailClosedPolicy(t *testing.T) {
+	spec := ScriptSpec{Interpreter: "python", Path: "tap.py", SHA256: testHookDigest("script")}
+	if err := (Declaration{ProtocolVersion: ProtocolVersion, ID: "tap",
+		Event: PreTool, Action: ActionScript, FailurePolicy: FailureDeny,
+		TimeoutMillis: 100, Async: true, Script: &spec}).Validate(); err == nil {
+		t.Fatal("async script hook accepted the fail-closed policy")
+	}
+}
+
+type slowAuditSink struct {
+	delay time.Duration
+	scriptedAuditSink
+}
+
+func (s *slowAuditSink) RecordHookAudit(ctx context.Context, record AuditRecord) error {
+	select {
+	case <-time.After(s.delay):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return s.scriptedAuditSink.RecordHookAudit(ctx, record)
+}
+
+func TestEngineAsyncCeilingDoesNotBlockCallerWhenAuditSinkIsSlow(t *testing.T) {
+	executor := &gatedScriptExecutor{
+		started: make(chan struct{}, MaxAsyncConcurrent),
+		release: make(chan struct{}),
+	}
+	defer close(executor.release)
+	sink := &slowAuditSink{delay: 300 * time.Millisecond}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+	registrations := make([]Registration, 0, MaxAsyncConcurrent+1)
+	for index := 0; index < MaxAsyncConcurrent+1; index++ {
+		registrations = append(registrations, Registration{PluginID: OperatorPluginID,
+			PluginFingerprint: testHookDigest("plugin"), Declaration: Declaration{
+				ProtocolVersion: ProtocolVersion,
+				ID:              fmt.Sprintf("slow-audit-tap-%d", index), Event: PreTool,
+				Action: ActionScript, FailurePolicy: FailureContinue, TimeoutMillis: 5_000,
+				Async: true, Script: &ScriptSpec{Interpreter: "python",
+					Path:   fmt.Sprintf("tap-%d.py", index),
+					SHA256: testHookDigest(fmt.Sprintf("tap-%d", index))}}})
+	}
+	if err := engine.Replace(registrations); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	result, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell",
+		Payload: json.RawMessage(`{}`)})
+	elapsed := time.Since(start)
+	if err != nil || result.Denied {
+		t.Fatalf("async ceiling execute failed: %#v err=%v", result, err)
+	}
+	if elapsed >= 150*time.Millisecond {
+		t.Fatalf("async boundary blocked caller for %v (expected < 150ms)", elapsed)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && sink.count() == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	records := sink.snapshot()
+	if len(records) == 0 || records[0].Outcome != "failed_continue" {
+		t.Fatalf("expected background skip audit row, got %#v", records)
+	}
+}
+
+type blockingAuditSink struct {
+	mu      sync.Mutex
+	block   chan struct{}
+	records []AuditRecord
+}
+
+func (s *blockingAuditSink) RecordHookAudit(ctx context.Context, record AuditRecord) error {
+	select {
+	case <-s.block:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, record)
+	return nil
+}
+
+func (s *blockingAuditSink) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.records)
+}
+
+func TestEngineAsyncAuditPoolOverloadTracksDroppedAudits(t *testing.T) {
+	executor := &gatedScriptExecutor{
+		started: make(chan struct{}, MaxAsyncConcurrent),
+		release: make(chan struct{}),
+	}
+	defer close(executor.release)
+	sink := &blockingAuditSink{block: make(chan struct{})}
+	engine := NewEngine(sink).WithScriptExecutor(executor)
+
+	reg := Registration{
+		PluginID:          OperatorPluginID,
+		PluginFingerprint: testHookDigest("plugin"),
+		Declaration: Declaration{
+			ProtocolVersion: ProtocolVersion,
+			ID:              "saturated-tap",
+			Event:           PreTool,
+			Action:          ActionScript,
+			FailurePolicy:   FailureContinue,
+			TimeoutMillis:   5_000,
+			Async:           true,
+			Script: &ScriptSpec{
+				Interpreter: "python",
+				Path:        "tap.py",
+				SHA256:      testHookDigest("tap"),
+			},
+		},
+	}
+	if err := engine.Replace([]Registration{reg}); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < MaxAsyncConcurrent; i++ {
+		_, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell", Payload: json.RawMessage(`{}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < MaxAsyncConcurrent; i++ {
+		select {
+		case <-executor.started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for execution slots to fill")
+		}
+	}
+
+	for i := 0; i < MaxAsyncAuditConcurrent; i++ {
+		_, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell", Payload: json.RawMessage(`{}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(engine.asyncAuditSlots) < MaxAsyncAuditConcurrent {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	start := time.Now()
+	_, err := engine.Execute(t.Context(), Input{Event: PreTool, ToolName: "shell", Payload: json.RawMessage(`{}`)})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed >= 100*time.Millisecond {
+		t.Fatalf("overloaded execute blocked for %v (expected < 100ms)", elapsed)
+	}
+
+	if dropped := engine.DroppedAudits(); dropped != 1 {
+		t.Fatalf("expected 1 dropped audit, got %d", dropped)
+	}
+
+	close(sink.block)
 }

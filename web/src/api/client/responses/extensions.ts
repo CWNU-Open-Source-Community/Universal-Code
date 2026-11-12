@@ -429,7 +429,7 @@ export function parseHookDiagnostics(value: unknown, runID: string, workspaceID:
     throw new APIRequestError("Hook diagnostic scope is invalid", "INVALID_RESPONSE", 502);
   }
   for (const item of value.declarations) {
-    if (!hasExactKeys(item, ["installation_id", "plugin_id", "package_fingerprint", "installation_state", "active", "scope", "hook_id", "event", "action", "failure_policy", "timeout_ms", "tool_names", "tool_pattern", "remove_fields"]) ||
+    if (!hasExactKeys(item, ["installation_id", "plugin_id", "package_fingerprint", "installation_state", "active", "scope", "hook_id", "event", "action", "failure_policy", "timeout_ms", "tool_names", "tool_pattern", "remove_fields", "async"]) ||
       !boundedIdentity(item.installation_id) || !boundedIdentity(item.plugin_id) || !isSHA256(item.package_fingerprint) ||
       !pluginStates.includes(String(item.installation_state)) || typeof item.active !== "boolean" || (item.active && item.installation_state !== "enabled") ||
       item.scope !== "local" || !boundedIdentity(item.hook_id) || !hookEvents.includes(String(item.event)) || !hookActions.includes(String(item.action)) ||
@@ -438,7 +438,9 @@ export function parseHookDiagnostics(value: unknown, runID: string, workspaceID:
       typeof item.tool_pattern !== "string" || item.tool_pattern.length > 256 ||
       item.tool_pattern.trim() !== item.tool_pattern ||
       /[ --]/.test(item.tool_pattern) ||
-      (item.tool_pattern !== "" && (item.tool_names.length > 0 || (item.event !== "pre_tool" && item.event !== "post_tool")))) {
+      (item.tool_pattern !== "" && (item.tool_names.length > 0 || (item.event !== "pre_tool" && item.event !== "post_tool"))) ||
+      typeof item.async !== "boolean" ||
+      (item.async && !["record", "script"].includes(String(item.action)))) {
       throw new APIRequestError("Hook declaration projection is invalid", "INVALID_RESPONSE", 502);
     }
   }

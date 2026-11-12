@@ -52245,6 +52245,9 @@
           "active": {
             "type": "boolean"
           },
+          "async": {
+            "type": "boolean"
+          },
           "event": {
             "type": "string"
           },
@@ -52310,7 +52313,8 @@
           "timeout_ms",
           "tool_names",
           "tool_pattern",
-          "remove_fields"
+          "remove_fields",
+          "async"
         ],
         "type": "object"
       },
