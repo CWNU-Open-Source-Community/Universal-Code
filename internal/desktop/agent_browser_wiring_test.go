@@ -146,7 +146,11 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 		"Inspect tools without elevated execution permission",
 		"desktop-agent-browser-restricted-turn-0001")
 	profile, err := plane.stateStore.GetRunExecutionProfile(t.Context(), restrictedThread.Run.ID)
-	if err != nil || profile.Profile != domain.RunExecutionProfilePreview {
+	wantProfile := domain.RunExecutionProfilePreview
+	if runtime.GOOS == "windows" {
+		wantProfile = domain.RunExecutionProfileLocal
+	}
+	if err != nil || profile.Profile != wantProfile {
 		t.Fatalf("ordinary chat default execution profile=%+v err=%v", profile, err)
 	}
 	// Match the live desktop sequence: finish the first Ask reply, then select
@@ -183,7 +187,7 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 	}
 	assertDesktopCurrentApproval(t, plane, permissionCapabilities, next.RunID, domain.RunExecutionPermissionFull)
 	profile, err = plane.stateStore.GetRunExecutionProfile(t.Context(), next.RunID)
-	if err != nil || profile.Profile != domain.RunExecutionProfilePreview {
+	if err != nil || profile.Profile != wantProfile {
 		t.Fatalf("Full confirmation changed the default execution profile: %+v err=%v", profile, err)
 	}
 	var bound httpapi.ThreadExecutionPermissionControlView
@@ -206,10 +210,11 @@ func TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests(t *testing.T) {
 			t.Fatalf("confirmed Full successor omitted %s: %v", name, desktopSourceWiringToolNames(captured[2].Tools))
 		}
 	}
-	for _, name := range []string{"command_runtime", "browser_navigate"} {
-		if _, found := successorTools[name]; found {
-			t.Fatalf("default preview/browser-off configuration unexpectedly advertised %s", name)
-		}
+	if _, found := successorTools["command_runtime"]; found != (runtime.GOOS == "windows") {
+		t.Fatalf("ordinary desktop command schema available=%t profile=%s", found, profile.Profile)
+	}
+	if _, found := successorTools["browser_navigate"]; found {
+		t.Fatal("explicit browser-off configuration unexpectedly advertised browser navigation")
 	}
 	for _, name := range []string{"browser_navigate", "browser_scroll", "browser_key", "browser_upload"} {
 		_, fullFound := fullTools[name]

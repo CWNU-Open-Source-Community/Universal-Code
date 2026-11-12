@@ -34,6 +34,7 @@ type ThreadTurnService struct {
 	lifecycleHooks   *hooks.Engine
 	runtimeAuthority *domain.ExecutionPermissionRuntimeAuthority
 	evidence         *EvidenceAttachmentService
+	commandDefaults  *threadCommandDefaults
 	turnMu           sync.Mutex
 	activeTurns      map[string]*activeThreadTurn
 }
@@ -346,6 +347,9 @@ func (s *ThreadTurnService) prepareSubmissionLifecycleMode(ctx context.Context,
 	normalized SubmitThreadMessageRequest, result ExecuteThreadTurnResult, automatic bool,
 ) (ExecuteThreadTurnResult, error) {
 	submission := result.Submission
+	if err := s.prepareDefaultCommandProfile(ctx, submission.Run); err != nil {
+		return result, err
+	}
 	switch submission.Run.Status {
 	case domain.RunCreated:
 		controlled, err := s.lifecycle.Apply(ctx, ControlRunLifecycleRequest{
@@ -478,6 +482,9 @@ func (s *ThreadTurnService) advancePastExhaustedBudget(ctx context.Context, requ
 func (s *ThreadTurnService) pendingEpochConfiguration(ctx context.Context,
 	store threadEpochTransitionStore, threadRecord domain.Thread, active domain.Run,
 ) (bool, error) {
+	if pending, err := s.defaultCommandNeedsSuccessor(ctx, active); err != nil || pending {
+		return pending, err
+	}
 	if reader, ok := s.threads.store.(threadModelRoutePreferenceReader); ok {
 		preference, found, err := reader.GetThreadModelRoutePreference(ctx, threadRecord.ID)
 		if err != nil {

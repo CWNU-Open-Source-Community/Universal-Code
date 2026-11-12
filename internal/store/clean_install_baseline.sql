@@ -19955,7 +19955,7 @@ CREATE TRIGGER trg_run_execution_profile_snapshot_insert
 						WHERE previous.run_id = NEW.run_id
 							AND previous.revision = NEW.revision - 1
 							AND previous.protocol_version = NEW.protocol_version
-							AND previous.profile != NEW.profile
+							AND (previous.profile != NEW.profile OR (previous.revision = 1 AND previous.profile = 'preview' AND NEW.profile = 'preview'))
 							AND previous.policy_version = NEW.policy_version
 							AND julianday(NEW.created_at) >= julianday(previous.created_at)
 					))

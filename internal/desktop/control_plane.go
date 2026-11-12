@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -918,6 +919,9 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		stateStore, lifecycleControl, executionControl,
 		config.ExecutionPermissionCapabilities).WithModelRouteRegistry(models).
 		WithLifecycleHooks(hookEngine)
+	if runtime.GOOS == "windows" && config.RunExecutionEnabled {
+		threadTurnControl.WithDefaultCommandRuntime(commandRuntime)
+	}
 	var threadPeerMessages *application.ThreadPeerMessageService
 	if config.RunExecutionEnabled && config.ModelControlEnabled && config.ControlToken != "" {
 		threadPeerMessages = application.NewThreadPeerMessageService(stateStore, threadTurnControl)

@@ -520,7 +520,8 @@ func migrationPlan() []migration {
 		migration{Version: 230, Name: "Independent project browser network access", Statements: browserNetworkAccessStatements},
 		migration{Version: 231, Name: "Authority-bound same-page Agent pointer movement", Statements: agentBrowserMoveSupervisorLedgerStatements(), DisableForeignKeys: true},
 		migration{Version: 232, Name: "Authority-bound workspace image reads", Statements: workspaceImageSupervisorLedgerStatements(), DisableForeignKeys: true})
-	return append(previous, migration{Version: 233, Name: "Idle current Thread Full permission reactivation", Statements: idleThreadFullReactivationStatements(previous)})
+	previous = append(previous, migration{Version: 233, Name: "Idle current Thread Full permission reactivation", Statements: idleThreadFullReactivationStatements(previous)})
+	return append(previous, migration{Version: 234, Name: "Explicit initial Preview execution selection", Statements: explicitInitialPreviewStatements(previous)})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

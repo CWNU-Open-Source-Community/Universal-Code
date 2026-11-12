@@ -223,7 +223,7 @@ func (s RunExecutionProfileSnapshot) Next(id string, profile RunExecutionProfile
 	if !profile.Valid() {
 		return RunExecutionProfileSnapshot{}, fmt.Errorf("invalid Run execution profile %q", profile)
 	}
-	if profile == s.Profile {
+	if profile == s.Profile && !(s.IsDefaultPreview() && profile == RunExecutionProfilePreview) {
 		return RunExecutionProfileSnapshot{}, errors.New(
 			"Run execution profile transition must change profile")
 	}
@@ -237,6 +237,13 @@ func (s RunExecutionProfileSnapshot) Next(id string, profile RunExecutionProfile
 			"Run execution profile transition time cannot move backwards")
 	}
 	return next, nil
+}
+
+// IsDefaultPreview identifies the initial compatibility snapshot, before an
+// operator has selected an execution environment. An explicit Preview choice
+// receives revision 2 even when the initial profile already says Preview.
+func (s RunExecutionProfileSnapshot) IsDefaultPreview() bool {
+	return s.Profile == RunExecutionProfilePreview && s.Revision == 1
 }
 
 func CanChangeRunExecutionProfile(status RunStatus) bool {
