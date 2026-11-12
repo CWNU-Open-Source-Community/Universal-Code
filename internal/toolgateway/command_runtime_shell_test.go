@@ -14,6 +14,18 @@ import (
 func TestCommandRuntimeDefaultShellPublishedSchemaAndNormalization(t *testing.T) {
 	adapter := commandruntimeadapter.HostUnsandboxed(strings.Repeat("a", 64))
 	definition := CommandRuntimeDefinitionForAdapter(adapter)
+	t.Logf("published host command schema: %d bytes", len(definition.InputSchema))
+	var structure struct {
+		OneOf []map[string]json.RawMessage `json:"oneOf"`
+	}
+	if err := json.Unmarshal(definition.InputSchema, &structure); err != nil {
+		t.Fatal(err)
+	}
+	for _, branch := range structure.OneOf {
+		if _, duplicated := branch["properties"]; duplicated {
+			t.Fatal("input branch duplicated the shared field definitions")
+		}
+	}
 	compiler := jsonschema.NewCompiler()
 	if err := compiler.AddResource("default-shell.json", bytes.NewReader(definition.InputSchema)); err != nil {
 		t.Fatal(err)
@@ -37,6 +49,7 @@ func TestCommandRuntimeDefaultShellPublishedSchemaAndNormalization(t *testing.T)
 		{"null_background", `{"command":"echo ok","run_in_background":null}`, false},
 		{"empty_cwd", `{"command":"echo ok","cwd":""}`, false},
 		{"mixed", `{"command":"echo ok","version":"command-runtime.v2","action":"run"}`, false},
+		{"legacy_with_simple_field", `{"version":"command-runtime.v2","action":"list","timeout":1000}`, false},
 		{"shell_override", `{"command":"echo ok","shell":"cmd.exe"}`, false},
 		{"foreground_long", `{"command":"echo ok","timeout":25001}`, false},
 		{"foreground_false_long", `{"command":"echo ok","timeout":25001,"run_in_background":false}`, false},
@@ -60,6 +73,10 @@ func TestCommandRuntimeDefaultShellPublishedSchemaAndNormalization(t *testing.T)
 			input, durable, err := normalizeCommandRuntimePayload(canonical)
 			if err != nil || !bytes.Equal(canonical, durable) || len(input.Commands) != 1 {
 				t.Fatalf("not a canonical durable v2 call: %s err=%v", canonical, err)
+			}
+			_ = json.Unmarshal(canonical, &value)
+			if err := schema.Validate(value); err != nil {
+				t.Fatalf("published shared schema rejected the equivalent legacy input: %s %v", canonical, err)
 			}
 			command := input.Commands[0]
 			if command.Profile != runner.DefaultCommandRuntimeShellProfile() || command.Network != runner.CommandRuntimeNetworkHost ||

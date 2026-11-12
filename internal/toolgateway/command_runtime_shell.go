@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/runner"
@@ -79,14 +80,33 @@ func NormalizeCommandRuntimePayloadForAdapter(payload json.RawMessage, adapter c
 
 func commandRuntimeDefaultShellDefinition(definition ToolDefinition) ToolDefinition {
 	simple := json.RawMessage(fmt.Sprintf(`{"type":"object","additionalProperties":false,"required":["command"],"properties":{"command":{"type":"string","minLength":1,"maxLength":65536,"description":"Command text in the host-selected default shell: PowerShell on Windows, Bash on other native hosts. Programs are resolved by that shell; a missing program or nonzero exit is returned as a failed Job result."},"cwd":{"type":"string","minLength":1,"maxLength":4096,"description":"Workspace-relative working directory. Defaults to the workspace root (.)."},"timeout":{"type":"integer","minimum":1,"maximum":%d,"description":"Milliseconds. Foreground defaults to %d and permits at most %d. Background defaults to %d."},"run_in_background":{"type":"boolean","description":"Default false. True starts a Run-owned shared-service Job that can coexist with authorized edits. Read/wait/cancel that original job_id using the version/action form."}},"allOf":[{"if":{"properties":{"run_in_background":{"const":true}},"required":["run_in_background"]},"then":{},"else":{"properties":{"timeout":{"maximum":%d}}}}]}`, runner.MaxCommandRuntimeTimeout.Milliseconds(), DefaultCommandRuntimeForegroundMillis, MaxCommandRuntimeForegroundMillis, runner.MaxCommandRuntimeTimeout.Milliseconds(), MaxCommandRuntimeForegroundMillis))
-	var legacySchema, simpleSchema struct {
+	type inputSchema struct {
 		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+		AllOf      json.RawMessage            `json:"allOf"`
 	}
+	var legacySchema, simpleSchema inputSchema
 	if err := json.Unmarshal(definition.InputSchema, &legacySchema); err != nil {
 		panic(err)
 	}
 	if err := json.Unmarshal(simple, &simpleSchema); err != nil {
 		panic(err)
+	}
+	type inputBranch struct {
+		Required      []string        `json:"required"`
+		AllOf         json.RawMessage `json:"allOf"`
+		PropertyNames struct {
+			Enum []string `json:"enum"`
+		} `json:"propertyNames"`
+	}
+	branches := make([]inputBranch, 0, 2)
+	for _, schema := range []inputSchema{simpleSchema, legacySchema} {
+		branch := inputBranch{Required: schema.Required, AllOf: schema.AllOf}
+		for key := range schema.Properties {
+			branch.PropertyNames.Enum = append(branch.PropertyNames.Enum, key)
+		}
+		sort.Strings(branch.PropertyNames.Enum)
+		branches = append(branches, branch)
 	}
 	for key, value := range simpleSchema.Properties {
 		legacySchema.Properties[key] = value
@@ -95,8 +115,8 @@ func commandRuntimeDefaultShellDefinition(definition ToolDefinition) ToolDefinit
 		Type                 string                     `json:"type"`
 		AdditionalProperties bool                       `json:"additionalProperties"`
 		Properties           map[string]json.RawMessage `json:"properties"`
-		OneOf                []json.RawMessage          `json:"oneOf"`
-	}{"object", false, legacySchema.Properties, []json.RawMessage{simple, definition.InputSchema}})
+		OneOf                []inputBranch              `json:"oneOf"`
+	}{"object", false, legacySchema.Properties, branches})
 	if err != nil {
 		panic(err)
 	}
