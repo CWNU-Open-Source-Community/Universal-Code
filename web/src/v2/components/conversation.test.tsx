@@ -921,7 +921,7 @@ describe("V2Conversation", () => {
     await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
     expect(await screen.findByText("正在发送消息")).toBeInTheDocument();
     expect(screen.queryByText("正在工作")).not.toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "对话统计" })).toHaveTextContent("2 轮 56 步");
+    expect(screen.getByRole("group", { name: "对话统计" })).toHaveTextContent("2 次输入 · 56 步");
     expect(screen.queryByText(/停止会取消/u)).not.toBeInTheDocument();
 
     const completed = detail("thread-a").thread;
