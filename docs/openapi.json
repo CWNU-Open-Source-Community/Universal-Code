@@ -30463,7 +30463,7 @@
       "get": {
         "operationId": "exportThread",
         "summary": "Export a Thread",
-        "description": "Returns the complete self-contained Thread, Mission, Run chain, Run-local Sessions, message provenance, and Thread/Run audit events. The HTTP response limit fails closed instead of silently truncating history.",
+        "description": "Returns the self-contained Thread, Mission, Run chain, Run-local Sessions, message provenance, and Thread/Run audit events. The messages, events, and audit-events sections each hold the first 1000 rows in chronological order and report a longer ledger through their truncated flags.",
         "tags": [
           "Threads"
         ],
@@ -71429,11 +71429,17 @@
             },
             "type": "array"
           },
+          "audit_events_truncated": {
+            "type": "boolean"
+          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/ThreadEventView"
             },
             "type": "array"
+          },
+          "events_truncated": {
+            "type": "boolean"
           },
           "exported_at": {
             "format": "date-time",
@@ -71444,6 +71450,9 @@
               "$ref": "#/components/schemas/ThreadMessageView"
             },
             "type": "array"
+          },
+          "messages_truncated": {
+            "type": "boolean"
           },
           "mission": {
             "$ref": "#/components/schemas/MissionView"
@@ -71486,7 +71495,10 @@
           "sessions",
           "messages",
           "events",
-          "audit_events"
+          "audit_events",
+          "messages_truncated",
+          "events_truncated",
+          "audit_events_truncated"
         ],
         "type": "object"
       },

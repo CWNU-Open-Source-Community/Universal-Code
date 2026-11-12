@@ -5210,7 +5210,7 @@ export interface paths {
         };
         /**
          * Export a Thread
-         * @description Returns the complete self-contained Thread, Mission, Run chain, Run-local Sessions, message provenance, and Thread/Run audit events. The HTTP response limit fails closed instead of silently truncating history.
+         * @description Returns the self-contained Thread, Mission, Run chain, Run-local Sessions, message provenance, and Thread/Run audit events. The messages, events, and audit-events sections each hold the first 1000 rows in chronological order and report a longer ledger through their truncated flags.
          */
         get: operations["exportThread"];
         put?: never;
@@ -14983,10 +14983,13 @@ export interface components {
         };
         ThreadExportView: {
             audit_events: components["schemas"]["ThreadRunAuditEventView"][];
+            audit_events_truncated: boolean;
             events: components["schemas"]["ThreadEventView"][];
+            events_truncated: boolean;
             /** Format: date-time */
             exported_at: string;
             messages: components["schemas"]["ThreadMessageView"][];
+            messages_truncated: boolean;
             mission: components["schemas"]["MissionView"];
             missions: components["schemas"]["MissionView"][];
             /** @enum {string} */
