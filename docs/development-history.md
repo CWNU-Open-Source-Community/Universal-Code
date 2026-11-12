@@ -297,5 +297,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v226 | 扩展 hook 审计事件以保存 post_tool_failure，保留脚本和已有生命周期审计约束 | admit post_tool_failure audits while preserving script bindings and previous lifecycle events |
 | v227 | 重建 hook 审计表以接纳 turn_end 生命周期事件 | rebuild the hook audit table to admit the turn_end lifecycle event |
 | v228 | 重建 hook 审计表以接纳 post_compaction 生命周期事件 | rebuild the hook audit table to admit the post_compaction lifecycle event |
+| v229 | hook 已发生边界截断过量观测输出，审计保存 output_capped 并保留既有事件和脚本拒绝绑定 | cap post-occurrence hook observations and admit output_capped audits while preserving prior event and script bindings |
 
 </details>

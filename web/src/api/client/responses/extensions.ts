@@ -447,7 +447,7 @@ export function parseHookDiagnostics(value: unknown, runID: string, workspaceID:
   for (const item of value.observations) {
     if (!isRecord(item) || !hasOnlyKeys(item, ["id", "plugin_id", "hook_id", "package_fingerprint", "event", "action", "run_id", "workspace_id", "tool_name", "outcome", "decision", "created_at"]) ||
       !boundedIdentity(item.id) || !boundedIdentity(item.plugin_id) || !boundedIdentity(item.hook_id) || !hookEvents.includes(String(item.event)) ||
-      !["completed", "failed_closed", "failed_continue"].includes(String(item.outcome)) || !["rejected", "continued", "unknown"].includes(String(item.decision)) ||
+      !["completed", "failed_closed", "failed_continue", "output_capped"].includes(String(item.outcome)) || !["rejected", "continued", "unknown"].includes(String(item.decision)) ||
       !validDate(item.created_at) || (item.run_id !== undefined && !boundedIdentity(item.run_id)) || (item.workspace_id !== undefined && !boundedIdentity(item.workspace_id)) ||
       (item.tool_name !== undefined && !boundedText(item.tool_name, 256)) || (runID && item.run_id !== runID) ||
       ((runID || workspaceID) && item.workspace_id !== value.workspace_id) ||

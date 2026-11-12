@@ -213,3 +213,15 @@ it("accepts post_compaction declarations and observations", async () => {
  const result = await new APIClient("read").hookDiagnostics("run-one", "project-one");
  expect(result.declarations[0].event).toBe("post_compaction");
 });
+
+it("accepts capped observation receipts and rejects a false denial binding", async () => {
+ const value = hookDiagnostics();
+ value.observations[0].outcome = "output_capped";
+ value.observations[0].decision = "continued";
+ vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(value)));
+ const result = await new APIClient("read").hookDiagnostics("run-one", "project-one");
+ expect(result.observations[0].outcome).toBe("output_capped");
+ value.observations[0].decision = "rejected";
+ vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(value)));
+ await expect(new APIClient("read").hookDiagnostics("run-one", "project-one")).rejects.toThrow();
+});

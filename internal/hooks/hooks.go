@@ -514,12 +514,14 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 				result.Reason = "hook " + declaration.ID + " audit failed closed"
 				return result, nil
 			}
-			continue
+		} else {
+			result.Executed = append(result.Executed, registration.PluginID+"/"+declaration.ID)
 		}
-		result.Executed = append(result.Executed,
-			registration.PluginID+"/"+declaration.ID)
 		if result.Denied {
 			break
+		}
+		if postOccurrenceEvent(input.Event) && capObservationOutput(&result) {
+			_ = e.record(context.WithoutCancel(ctx), registration, input, "output_capped", false)
 		}
 		if len(result.Annotations) > MaxAnnotations {
 			return Result{}, errors.New("hook annotation output exceeds its limit")
@@ -536,6 +538,42 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 		}
 	}
 	return result, nil
+}
+
+// Post-occurrence observations cannot retroactively fail completed work.
+func postOccurrenceEvent(event Event) bool {
+	switch event {
+	case PostTool, PostToolFailure, RunCompleted, SessionClosed, TurnEnd, PostCompaction:
+		return true
+	default:
+		return false
+	}
+}
+
+// Cap hook-produced output. Payload has its own input bound and remains intact
+// so later script hooks observe the same input after an earlier hook is capped.
+func capObservationOutput(result *Result) bool {
+	capped := false
+	if len(result.Annotations) > MaxAnnotations {
+		result.Annotations = result.Annotations[:MaxAnnotations]
+		capped = true
+	}
+	for {
+		produced := *result
+		produced.Payload = nil
+		encoded, err := json.Marshal(produced)
+		if err != nil || len(encoded) <= MaxOutputBytes {
+			return capped
+		}
+		if len(result.Annotations) > 0 {
+			result.Annotations = result.Annotations[:len(result.Annotations)-1]
+		} else if len(result.Executed) > 0 {
+			result.Executed = result.Executed[1:]
+		} else {
+			return capped
+		}
+		capped = true
+	}
 }
 
 func (e *Engine) apply(ctx context.Context, registration Registration, input Input,
