@@ -1,6 +1,6 @@
 # 工具调用对照：Codex、DeepSeek Harness、Claude Code
 
-核查日期：2026-11-12。本文依据官方源码和官方文档，区分工具本身、工具调用编排和宿主权限。结论是：Universal Code 应先补齐本地图片读取，再按需要增加安全的原生并发；PTC 可以作为后续优化，但不是具备完整 Agent 工具能力的前提。
+核查日期：2026-11-12。本文依据官方源码和官方文档，区分工具本身、工具调用编排和宿主权限。本次优先补齐本地图片读取和已有工具的实际调用链；原生并发与 PTC 是后续优化，PTC 不是具备完整 Agent 工具能力的前提。
 
 ## 比较基准
 
@@ -66,6 +66,36 @@ Claude 的官方 API PTC 则是 Messages API 的一项功能：模型在 code-ex
 因此，当前差距包括“没有本地图片工具”和“原生批量仍串行”。四轮边界会产生一次不提供工具的模型决策及后续上下文续接成本，但它不是任务结束条件；引入 PTC 不应被当作修复整任务只能调用 16 次的方案。
 
 ## 建议顺序
+
+### 本次现场核查
+
+常用工作能力按实际工具入口核对如下。“已有”表示存在注册和执行实现；下发仍取决于当前运行配置，并不表示每项都在本次进行了完整交互验收。
+
+| 工作能力 | 本项目入口 | 本次结论 |
+| --- | --- | --- |
+| 浏览目录、读文件、按名称或内容搜索 | `workspace_list/read/glob/grep` | 已有；现场任务实际调用成功。 |
+| 创建、修改、移动、删除与撤销文件 | `workspace_change/apply/delete` | 已有；写入仍经过现有精确修改和授权流程。 |
+| 查看本地图片 | `workspace_view_image` | 本次补齐，像素进入支持视觉的模型请求。 |
+| 执行脚本、运行测试与管理进程 | `command_runtime`、`run_tests` | 已有；`preview` 不提供进程执行，需匹配可用的执行适配器。 |
+| 操作真实浏览器 | `browser_status/navigate/snapshot/click/type/scroll/key/upload/move/screenshot` | 已有；修复 Windows 冷启动隐藏页的输入与截图，验证真实本地网页流程。 |
+| 搜索网页、抓取内容及引用 | `web_search`、`source_search`、`web_fetch`、`web_citation` | 已有；与真实浏览器交互是不同能力。 |
+| 扩展工具发现与调用 | `mcp_tool_search`、`mcp_tool_call` | 已有；保持服务目录和每次调用的授权。 |
+| 代码导航与诊断 | `code_*`：symbols、definition、references、hover、diagnostics 等 | 已有；需要工作区对应的代码服务。 |
+| 历史、记忆、技能与委派 | `history_*`、`note_create`、`work_item_create`、`skill_read`、`specialist_delegation_propose`、`child_task_propose` | 已有；不能因为这些仍可见，就认为执行类工具也已就绪。 |
+
+入口依据：[`toolgateway/registry.go`](../../internal/toolgateway/registry.go)、[`toolgateway/agent_code.go`](../../internal/toolgateway/agent_code.go)、[`application/supervisor_tools.go`](../../internal/application/supervisor_tools.go)。
+
+两次相关运行的持久配置均为 `execution_profile=preview`、`browser_network_access=off`，所以模型没有收到进程执行和浏览器工具。制作 SVG 的运行有成功的目录浏览、文本读取、搜索、修改提议和写入记录；不能根据后续回复中的“没有文件工具”判断这些能力不存在。旧记录没有保存完整的请求工具清单，也不能从持久 Full 选择反推当时进程内的激活状态。
+
+另用隔离数据库复现了一个实际问题：Full 选择仍保存、进程授权已失效时，旧代码会过滤基础工具而继续请求模型。此次增加了模型调用前检查和可用工具清单；清单来自实际请求的 schemas，并给出有效文件根目录、执行环境，以及被配置关闭或未连接的能力。四批工具后的调度回复会明确说明工具只是暂时收起，继续执行时将重新校验并提供。
+
+基础工具方面，此次增加 `workspace_view_image`，使用现有工作区读权限与排除规则读取 PNG、JPEG、WebP，保存实际图片并经图片通道发送给有视觉能力的模型。文本模型收到明确的未提供像素说明。此工具不把 SVG/HTML 源码视为已渲染的页面；本地网页仍通过所属工作区的服务、导航、DOM 和截图验证。
+
+Windows 真实调用链还暴露了隐藏 WebView2 页面的两个缺陷：从未显示过的页面接收点击后可能不触发 DOM 事件，截图请求可能长期不返回。修复让 Agent 持有页面期间的隐藏原生子窗口在空区域内渲染，保持不可见、不可命中、不抢焦点；切换可见页面、关闭与释放控制时恢复。截图失败有独立期限并保留 DOM 能力。隔离的原生测试实际启动本地服务、导航、点击，再检查页面颜色确实出现在保存的 PNG 中；没有操作用户前台窗口。
+
+图片保存与模型装配按当前 root Agent 和精确的持久调用校验。隔离测试覆盖有视觉/无视觉/视觉未知、原文件删除后的原图重放、同一路径更新后的再次查看，以及同工作区其他合法图片回执的错配拒绝。同路径重读在初版也能成功；此次加固的是可独立核对的调用绑定。
+
+Full 未就绪的恢复说明沿原有聊天错误路径显示，并支持失败记录重放；普通提供商错误继续使用脱敏文案。没有修改用户现场的权限选择、执行环境或浏览器网络设置。
 
 | 优先级 | 改动 | 具体完成条件 |
 | --- | --- | --- |
