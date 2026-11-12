@@ -10,9 +10,10 @@ import (
 const AgentBrowserProtocolVersion = "agent-browser-runtime.v1"
 
 var (
-	ErrAgentBrowserStaleReference = errors.New("browser reference is stale; obtain a new snapshot")
-	ErrAgentBrowserClosed         = errors.New("agent browser session is closed")
-	ErrAgentBrowserTargetChanged  = errors.New("browser target changed or is obscured; obtain a new snapshot")
+	ErrAgentBrowserStaleReference        = errors.New("browser reference is stale; obtain a new snapshot")
+	ErrAgentBrowserClosed                = errors.New("agent browser session is closed")
+	ErrAgentBrowserTargetChanged         = errors.New("browser target changed or is obscured; obtain a new snapshot")
+	ErrAgentBrowserScreenshotUnavailable = errors.New("browser screenshot is unavailable; show the browser tab and retry, or use browser_snapshot for DOM inspection")
 )
 
 // AgentBrowserAuthority is supplied by the trusted application composition root,

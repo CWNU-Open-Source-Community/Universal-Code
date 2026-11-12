@@ -97,6 +97,24 @@ func (l *ControlLease) InstallNetworkPolicy(ctx context.Context, policy NetworkP
 	}); err != nil {
 		return err
 	}
+	if err := l.host.options.Dispatcher.Invoke(ctx, func() error {
+		if err := l.Check(ctx); err != nil {
+			return err
+		}
+		l.host.mu.Lock()
+		page := l.host.tabs[l.pageID]
+		l.host.mu.Unlock()
+		if page == nil {
+			return ErrClosed
+		}
+		page.cancelHiddenCaptureOnUI("native browser control changed during screenshot")
+		if !page.surfaceVisible {
+			return page.beginMaskedRenderingOnUI()
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
 	go func() {
 		select {
 		case <-policy.Done:
@@ -130,10 +148,14 @@ func (l *ControlLease) Release(ctx context.Context) error {
 			}
 		}
 		h.mu.Lock()
+		page := h.tabs[l.pageID]
 		if h.lease == l {
 			h.lease = nil
 		}
 		h.mu.Unlock()
+		if page != nil && page.maskedRendering {
+			return page.endMaskedRenderingOnUI()
+		}
 		return nil
 	})
 }

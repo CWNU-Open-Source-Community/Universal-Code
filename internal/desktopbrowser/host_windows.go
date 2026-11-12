@@ -53,6 +53,9 @@ type nativePage struct {
 	connections      map[*pageConnection]struct{}
 	closed           bool
 	networkCapable   bool
+	hiddenCapture    *hiddenPageCapture // UI thread only
+	maskedRendering  bool               // UI thread only; empty native window region
+	surfaceVisible   bool               // UI thread only; renderer-requested surface
 }
 
 func NewHost(ctx context.Context, options HostOptions) (*Host, error) {
@@ -363,14 +366,32 @@ func (p *nativePage) SetSurface(ctx context.Context, bounds Bounds, visible bool
 		return errors.New("invalid native browser bounds")
 	}
 	return p.withUI(ctx, func() error {
+		if p.hiddenCapture != nil && !p.surfaceVisible && !visible && (bounds.Width == 0 || bounds.Height == 0) {
+			// Repeated acknowledgements of an already hidden surface must not
+			// interrupt its bounded, region-isolated background capture.
+			return nil
+		}
+		p.cancelHiddenCaptureOnUI("native browser surface changed during screenshot; observe the page again")
 		if !visible && (bounds.Width == 0 || bounds.Height == 0) {
+			p.surfaceVisible = false
+			if p.agentRenderingNeededOnUI() {
+				return p.beginMaskedRenderingOnUI()
+			}
 			// Unmounting or switching a tab hides its native window without
 			// collapsing the document that a background Agent may still use.
+			if p.maskedRendering {
+				return p.endMaskedRenderingOnUI()
+			}
 			showWindow.Call(p.container, 0)
 			if p.cursor != 0 {
 				showWindow.Call(p.cursor, 0)
 			}
 			return comCall(p.controller, controllerPutIsVisible, 0)
+		}
+		if p.maskedRendering {
+			if err := p.endMaskedRenderingOnUI(); err != nil {
+				return err
+			}
 		}
 		var parent nativeRect
 		if ok, _, _ := getClientRect.Call(p.host.options.ParentHWND, uintptr(unsafe.Pointer(&parent))); ok == 0 {
@@ -398,12 +419,16 @@ func (p *nativePage) SetSurface(ctx context.Context, bounds Bounds, visible bool
 			return err
 		}
 		var value uintptr
-		if visible && bounds.Width > 0 && bounds.Height > 0 {
+		p.surfaceVisible = visible && bounds.Width > 0 && bounds.Height > 0
+		if p.surfaceVisible {
 			value = 1
 			showWindow.Call(p.container, 5)
 			setWindowPos.Call(p.container, 0, 0, 0, 0, 0, 0x1|0x2|0x10)
 		} else {
 			showWindow.Call(p.container, 0)
+		}
+		if !p.surfaceVisible && p.agentRenderingNeededOnUI() {
+			return p.beginMaskedRenderingOnUI()
 		}
 		if err := comCall(p.controller, controllerPutIsVisible, value); err != nil {
 			return err
@@ -416,6 +441,7 @@ func (p *nativePage) Close(ctx context.Context) error {
 	return p.host.options.Dispatcher.Invoke(ctx, func() error { p.closeOnUI(); return nil })
 }
 func (p *nativePage) closeOnUI() {
+	p.cancelHiddenCaptureOnUI("native browser page closed during screenshot")
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()

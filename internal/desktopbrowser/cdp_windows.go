@@ -183,9 +183,32 @@ func (c *pageConnection) WriteJSON(value any) error {
 			return ErrClosed
 		}
 		return c.options.Dispatch(ctx, func() error {
+			var capture *hiddenPageCapture
+			if request.Method == "Page.captureScreenshot" && c.page.hiddenCapture != nil {
+				c.enqueue(map[string]any{"id": request.ID, "sessionId": c.page.id, "error": map[string]any{"code": -32000, "message": "native browser screenshot already in progress"}})
+				return nil
+			}
+			if request.Method == "Page.captureScreenshot" {
+				var err error
+				capture, err = c.beginHiddenCaptureOnUI(request.ID)
+				if err != nil {
+					c.enqueue(map[string]any{"id": request.ID, "sessionId": c.page.id, "error": map[string]any{"code": -32000, "message": err.Error()}})
+					return nil
+				}
+			}
 			method, _ := windows.UTF16PtrFromString(request.Method)
 			params, _ := windows.UTF16PtrFromString(string(request.Params))
 			completed := newHandler("{5C4889F0-5EF6-4C5A-952C-D8F1B92D0574}", func(hr, result uintptr) uintptr {
+				if capture != nil {
+					current, err := capture.finishOnUI()
+					if !current {
+						return 0
+					}
+					if err != nil {
+						c.enqueue(map[string]any{"id": request.ID, "sessionId": c.page.id, "error": map[string]any{"code": -32000, "message": err.Error()}})
+						return 0
+					}
+				}
 				response := map[string]any{"id": request.ID, "sessionId": c.page.id}
 				if err := hresult(request.Method, hr); err != nil {
 					response["error"] = map[string]any{"code": -32000, "message": err.Error()}
@@ -204,6 +227,10 @@ func (c *pageConnection) WriteJSON(value any) error {
 				return 0
 			})
 			err := comCall(c.page.core, coreCallDevTools, uintptr(unsafe.Pointer(method)), uintptr(unsafe.Pointer(params)), completed.pointer())
+			if err != nil && capture != nil {
+				_, restoreErr := capture.finishOnUI()
+				err = errors.Join(err, restoreErr)
+			}
 			if err == nil {
 				c.page.updateAgentCursor(request.Method, request.Params)
 			}
@@ -251,6 +278,9 @@ func (c *pageConnection) Close() error {
 }
 func (c *pageConnection) closeOnUI() {
 	c.fail(nil)
+	if c.page.hiddenCapture != nil && c.page.hiddenCapture.connection == c {
+		c.page.cancelHiddenCaptureOnUI("native browser screenshot connection closed")
+	}
 	for _, subscription := range c.subscriptions {
 		_ = comCall(subscription.receiver, 4, uintptr(subscription.token))
 		subscription.receiver.release()

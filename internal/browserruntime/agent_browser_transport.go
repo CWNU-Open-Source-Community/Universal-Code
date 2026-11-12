@@ -183,6 +183,9 @@ func (c *agentBrowserCDP) call(ctx context.Context, session, method string, para
 		return ErrAgentBrowserClosed
 	case message := <-reply:
 		if message.Error != nil {
+			if method == "Page.captureScreenshot" {
+				return ErrAgentBrowserScreenshotUnavailable
+			}
 			return fmt.Errorf("browser protocol %s failed (%d)", method, message.Error.Code)
 		}
 		if len(message.Result) == 0 {

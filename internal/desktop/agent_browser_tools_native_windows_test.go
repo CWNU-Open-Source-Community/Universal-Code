@@ -106,7 +106,7 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 			if err := os.Mkdir(root, 0700); err != nil {
 				t.Fatal(err)
 			}
-			html := `<!doctype html><title>Agent tool preview</title><h1>Workspace preview</h1><button onclick="document.querySelector('output').textContent='Clicked by agent'">Verify preview</button><output>Not clicked</output>`
+			html := `<!doctype html><title>Agent tool preview</title><style>body{background:#9b5713}</style><h1>Workspace preview</h1><button onclick="document.querySelector('output').textContent='Clicked by agent';document.body.style.background='#13579b'">Verify preview</button><output>Not clicked</output>`
 			if err := os.WriteFile(filepath.Join(root, "index.html"), []byte(html), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -155,6 +155,22 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 				if err := shared.Close(cleanup); err != nil {
 					t.Error(err)
 				}
+				// WebView2 releases metrics files asynchronously after Close. This
+				// test owns only this exact TempDir subtree, never a user profile.
+				profileRoot := filepath.Join(home, "shared-browser")
+				if !filepath.IsAbs(profileRoot) || filepath.Dir(profileRoot) != filepath.Clean(home) {
+					t.Error("invalid isolated profile cleanup root")
+					return
+				}
+				for deadline := time.Now().Add(10 * time.Second); ; {
+					if err := os.RemoveAll(profileRoot); err == nil {
+						break
+					} else if time.Now().After(deadline) {
+						t.Errorf("isolated profile cleanup: %v", err)
+						break
+					}
+					time.Sleep(25 * time.Millisecond)
+				}
 			})
 			view, err := shared.Open(ctx, SharedBrowserOpenRequest{WorkspaceID: "native-tool-workspace", RunID: run.ID})
 			if err != nil {
@@ -168,8 +184,8 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 			if !ok {
 				t.Fatal("host created no native tab")
 			}
-			// The root HWND stays hidden; this only enables rendering in its child.
-			if err := page.SetSurface(ctx, desktopbrowser.Bounds{Width: 800, Height: 600}, true); err != nil {
+			// Neither root nor child is shown, including during navigation/input.
+			if err := page.SetSurface(ctx, desktopbrowser.Bounds{Width: 800, Height: 600}, false); err != nil {
 				t.Fatal(err)
 			}
 			manager, err := runner.NewPlatformCommandRuntimeManager(st, idgen.New("native-preview-command-owner"))
@@ -270,6 +286,9 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 					}
 					add("browser_click", map[string]any{"version": "browser_click.v2", "snapshot_id": snap.SnapshotID, "target": map[string]any{"name": "Verify preview", "role": "button"}})
 				case 3:
+					if err := page.SetSurface(callCtx, desktopbrowser.Bounds{}, false); err != nil {
+						return nil, err
+					}
 					var receipt browserruntime.AgentBrowserInteraction
 					if err := nativeBrowserToolResult(req, "browser_click", &receipt); err != nil {
 						return nil, err
@@ -340,6 +359,21 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 			}
 			if artifactPath == "" {
 				t.Fatal("missing native screenshot")
+			}
+			pixels, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(artifactPath, "workspace:///"))))
+			if err != nil {
+				t.Fatal(err)
+			}
+			capture, err := png.Decode(bytes.NewReader(pixels))
+			if err != nil {
+				t.Fatal(err)
+			}
+			red, green, blue, alpha := capture.At(400, 400).RGBA()
+			// WebView2 may color-manage PNG output through the Windows display
+			// profile. The fixture's solid blue must still be rendered, not a
+			// transparent/white image caused by the empty native window region.
+			if !(blue > green && green > red && blue-red > 0x4040 && alpha == 0xffff) {
+				t.Fatalf("hidden capture did not render actual page background: %x %x %x %x", red, green, blue, alpha)
 			}
 			observer := observeSharedBrowserNativePage(t, ctx, page)
 			if got := observer.evaluate(`document.querySelector('output').textContent`); got != "Clicked by agent" {

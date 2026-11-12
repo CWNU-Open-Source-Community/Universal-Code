@@ -50,6 +50,7 @@ type attachedTestConnection struct {
 	methods            []string
 	mouse              []map[string]any
 	hoverChangesTarget bool
+	screenshotError    bool
 	url                string
 	session            string
 }
@@ -96,6 +97,11 @@ func (c *attachedTestConnection) WriteJSON(value any) error {
 	case "Page.getLayoutMetrics":
 		result = map[string]any{"cssLayoutViewport": map[string]any{"clientWidth": 800, "clientHeight": 600}}
 	case "Page.captureScreenshot":
+		if c.screenshotError {
+			reply, _ := json.Marshal(cdpWireMessage{ID: in.ID, SessionID: in.SessionID, Error: &cdpWireError{Code: -32000}})
+			c.messages <- reply
+			return nil
+		}
 		var data bytes.Buffer
 		if err := png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 1600, 1200))); err != nil {
 			return err
@@ -140,6 +146,27 @@ func attachedFixture(t *testing.T) (AgentBrowserStartRequest, AgentBrowserAttach
 	req := AgentBrowserStartRequest{HomePath: t.TempDir(), Product: BrowserProductEdge, RuntimeDeadline: time.Now().Add(time.Minute), Authority: AgentBrowserAuthority{RunID: "run", ManagerBootID: "boot", SessionID: "agent-session", Generation: 1, PermissionSnapshotID: "permission", PermissionRevision: 1, PermissionActivation: 1, RunAuthorizationFence: 1, PermissionMode: "ask"}, NetworkMode: AgentBrowserNetworkInternet, CheckAuthority: func(context.Context, AgentBrowserAuthority) error { return nil }, ReviewNetworkWrite: func(_ context.Context, _ AgentBrowserNetworkRequest, dispatch func() error) error { return dispatch() }}
 	page := AgentBrowserAttachedPage{PageID: "native-page", SessionID: wire.session, Connection: wire, Lease: lease, InstallNetworkPolicy: func(_ context.Context, p AgentBrowserAttachedNetworkPolicy) error { *policy = p; return nil }}
 	return req, page, wire, lease, policy
+}
+
+func TestAttachedScreenshotRefusalPreservesSessionAndDOM(t *testing.T) {
+	req, page, wire, _, _ := attachedFixture(t)
+	wire.screenshotError = true
+	r, err := AttachAgentBrowser(t.Context(), req, page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = r.Close(context.Background()) })
+	if _, err := r.Screenshot(t.Context()); !errors.Is(err, ErrAgentBrowserScreenshotUnavailable) {
+		t.Fatalf("screenshot refusal=%v", err)
+	}
+	select {
+	case <-r.Done():
+		t.Fatal("screenshot refusal cancelled the shared page session")
+	default:
+	}
+	if _, err := r.document(t.Context()); err != nil {
+		t.Fatalf("DOM inspection after screenshot refusal: %v", err)
+	}
 }
 
 func TestAttachedBrowserUsesExactExistingPageAndRetainsItsProfile(t *testing.T) {

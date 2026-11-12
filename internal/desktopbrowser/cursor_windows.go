@@ -111,7 +111,7 @@ func (p *nativePage) positionCursor() {
 	visible, _, _ := user32.NewProc("IsWindowVisible").Call(p.container)
 	parentVisible, _, _ := user32.NewProc("IsWindowVisible").Call(p.host.options.ParentHWND)
 	minimized, _, _ := user32.NewProc("IsIconic").Call(p.host.options.ParentHWND)
-	if visible == 0 || parentVisible == 0 || minimized != 0 {
+	if visible == 0 || parentVisible == 0 || minimized != 0 || p.maskedRendering {
 		showWindow.Call(p.cursor, 0)
 		return
 	}

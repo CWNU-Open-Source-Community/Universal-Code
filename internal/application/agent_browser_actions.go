@@ -324,6 +324,9 @@ func normalizeAgentBrowserActionError(err error) error {
 	if errors.Is(err, browserruntime.ErrAgentBrowserStaleReference) {
 		return apperror.Wrap(apperror.CodeFailedPrecondition, "stale_browser_reference: snapshot or input invalidated the old refs; obtain a new snapshot before the next input; never automatically repeat an outcome_unknown action", err)
 	}
+	if errors.Is(err, browserruntime.ErrAgentBrowserScreenshotUnavailable) {
+		return apperror.Wrap(apperror.CodeFailedPrecondition, browserruntime.ErrAgentBrowserScreenshotUnavailable.Error(), err)
+	}
 	return apperror.Wrap(apperror.CodeFailedPrecondition, "Agent browser action failed", err)
 }
 
