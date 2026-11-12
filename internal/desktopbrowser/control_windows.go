@@ -13,8 +13,8 @@ import (
 )
 
 // ControlLease is an explicit, revocable exclusive agent lease over a Host's
-// profile. It implements the application's lease structurally. Acquiring it
-// disables native input; normal/manual browsing never acquires a lease.
+// profile. It implements the application's lease structurally. It fences agent
+// commands only; native user input remains available throughout the lease.
 type ControlLease struct {
 	host      *Host
 	pageID    string
@@ -45,9 +45,6 @@ func (h *Host) AcquireControl(ctx context.Context, pageID string) (*ControlLease
 			}
 		}
 		h.lease = lease
-		for _, page := range h.tabs {
-			user32.NewProc("EnableWindow").Call(page.container, 0)
-		}
 		return nil
 	})
 	if err != nil {
@@ -120,8 +117,8 @@ func (l *ControlLease) Release(ctx context.Context) error {
 		l.released = true
 		l.mu.Unlock()
 		h := l.host
-		// Abort paused requests before making native input available. A request
-		// approved for an old lease must never continue under user ownership.
+		// An approved but paused request belongs to this lease and cannot
+		// migrate to a later agent or to unrestricted manual browsing.
 		for pending := range h.pending {
 			if pending.lease == l {
 				pending.finishOnUI(false)
@@ -130,9 +127,6 @@ func (l *ControlLease) Release(ctx context.Context) error {
 		h.mu.Lock()
 		if h.lease == l {
 			h.lease = nil
-			for _, page := range h.tabs {
-				user32.NewProc("EnableWindow").Call(page.container, 1)
-			}
 		}
 		h.mu.Unlock()
 		return nil

@@ -40,6 +40,8 @@ type nativePage struct {
 	host             *Host
 	id               string
 	container        uintptr
+	cursor           uintptr
+	emulatedWidth    float64
 	controller, core *comObject
 	handlers         []*comHandler
 	mu               sync.RWMutex
@@ -169,8 +171,6 @@ func (h *Host) CreateTab(ctx context.Context, options TabOptions) (Page, error) 
 						if leased {
 							if !page.networkCapable {
 								err = errors.New("native browser agent control requires WebView2 request-source-kinds support")
-							} else {
-								user32.NewProc("EnableWindow").Call(page.container, 0)
 							}
 						}
 					}

@@ -204,6 +204,9 @@ func (c *pageConnection) WriteJSON(value any) error {
 				return 0
 			})
 			err := comCall(c.page.core, coreCallDevTools, uintptr(unsafe.Pointer(method)), uintptr(unsafe.Pointer(params)), completed.pointer())
+			if err == nil {
+				c.page.updateAgentCursor(request.Method, request.Params)
+			}
 			completed.release()
 			return err
 		})
