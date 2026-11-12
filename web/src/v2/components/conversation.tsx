@@ -627,6 +627,10 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     return narrative.filter((entry) => {
       if (recoveryRepresentsNotice(entry, detailQuery.data?.recovery)) return false;
       const source = entry.kind === "user" ? transcriptSources.get(entry.id) : undefined;
+      // The main input stays pending until the whole task commits, including
+      // internal tool continuations. Its exact task binding proves it has
+      // already started; only inputs still waiting belong solely to the queue.
+      if (source?.task && source.task.input_message_id === source.canonical_id) return true;
       return !(source?.source === "operator" && source.kind === "operator_input" && source.status === "pending" &&
         source.durable && !source.provisional && source.run_id === queueBinding?.runID &&
         source.source_ref && queuedIDs.has(source.source_ref));
