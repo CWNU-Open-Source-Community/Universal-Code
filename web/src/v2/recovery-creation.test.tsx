@@ -50,6 +50,28 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("first-message creation recovery", () => {
+  it("leaves a handled current image error to its action row while preserving other scopes and the creation guard", async () => {
+    const client = fixture();
+    const view = mount(client);
+    const intent = prepare(view);
+    const current = `image-upload:${JSON.stringify([workspaceID, ""])}:v2-image-upload-current`;
+    const other = `image-upload:${JSON.stringify([workspaceID, "other-thread"])}:v2-image-upload-other`;
+    act(() => { view.store().write(current, false); view.store().reject(current); });
+    fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "重新核对" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(() => view.helper().prepare(request, request.goal, files, request.goal)).toThrow("格式异常");
+    act(() => { view.store().write(other, false); view.store().reject(other); });
+    await screen.findByRole("alert");
+    act(() => view.store().remove(current));
+    expect(screen.getByRole("alert")).toHaveTextContent("格式异常");
+    expect(view.store().read(other, null)).toBe(false);
+    expect(view.store().read(`creation:${intent.operationID}`, null)).toEqual(intent);
+    expect(() => view.helper().prepare(request, request.goal, files, request.goal)).toThrow("格式异常");
+    expect(client.inspectThreadCreationRequest).not.toHaveBeenCalled();
+    expect(client.createThread).not.toHaveBeenCalled();
+  });
+
   it("rechecks a failed global load after the last damaged image record is discarded and retains the unknown creation", async () => {
     const client = fixture();
     const view = mount(client);
@@ -89,8 +111,11 @@ describe("first-message creation recovery", () => {
       view.store().write("image-upload:damaged", false);
       view.store().reject("image-upload:damaged");
     });
+    const globalGuard = vi.spyOn(view.store(), "assertReadable");
     fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
     await screen.findByRole("alert");
+    expect(screen.getByRole("alert")).toHaveTextContent("原创建请求无法可靠核对");
+    expect(globalGuard).toHaveBeenCalledWith();
     act(() => view.store().remove("image-upload:damaged"));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("原创建请求无法可靠核对"));
     expect(view.store().read(`creation:${intent.operationID}`, null)).toEqual(altered);

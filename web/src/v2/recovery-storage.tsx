@@ -24,6 +24,7 @@ export interface V2RecoveryStore {
   remove(key: string): void;
   entries<T>(prefix: string): Array<[string, T]>;
   invalidKeys(prefix: string): string[];
+  getWarning(excludedInvalidPrefix?: string): string | null;
   assertReadable(prefix?: string): void;
   reject(key: string): void;
   markUnsaved(key: string, message: string): void;
@@ -50,6 +51,7 @@ class RecoveryStorage implements V2RecoveryStore {
   private readonly failures = new Map<string, string>();
   private readonly unsaved = new Map<string, string>();
   private warning: string | null = null;
+  private warningSources = "[[],[]]";
   private warningNotificationQueued = false;
 
   constructor(private readonly prefix: string) {}
@@ -68,9 +70,10 @@ class RecoveryStorage implements V2RecoveryStore {
   }
 
   private updateWarning(): void {
-    const warning = this.failures.values().next().value ?? this.unsaved.values().next().value ?? null;
-    if (warning === this.warning) return;
-    this.warning = warning;
+    const sources = JSON.stringify([[...this.failures], [...this.unsaved]]);
+    if (sources === this.warningSources) return;
+    this.warningSources = sources;
+    this.warning = this.failures.values().next().value ?? this.unsaved.values().next().value ?? null;
     // Reads can occur during render. Notify warning consumers after that render,
     // rather than updating another component from inside a lazy initializer.
     if (this.warningNotificationQueued) return;
@@ -230,7 +233,16 @@ class RecoveryStorage implements V2RecoveryStore {
     this.warningListeners.add(listener);
     return () => { this.warningListeners.delete(listener); };
   };
-  getWarning = (): string | null => this.warning;
+  getWarning = (excludedInvalidPrefix?: string): string | null => {
+    if (!excludedInvalidPrefix) return this.warning;
+    for (const [operation, message] of this.failures) {
+      const invalid = operation.startsWith("invalid:") || operation.startsWith("read:") && message === INVALID_RECORD;
+      const key = operation.slice(operation.indexOf(":") + 1);
+      if (invalid && key.startsWith(excludedInvalidPrefix)) continue;
+      return message;
+    }
+    return this.unsaved.values().next().value ?? null;
+  };
 
   connect(): () => void {
     const onStorage = (event: StorageEvent) => {
@@ -271,11 +283,11 @@ export function useV2RecoveryStore(): V2RecoveryStore | null {
 const noSubscription = () => () => {};
 const noWarning = () => null;
 
-export function useV2PersistenceWarning(): string | null {
+export function useV2PersistenceWarning(excludedInvalidPrefix?: string): string | null {
   const { t } = useLocale();
   const context = useContext(RecoveryContext);
-  const warning = useSyncExternalStore(context?.store?.subscribeWarning ?? noSubscription,
-    context?.store?.getWarning ?? noWarning, noWarning);
+  const read = useCallback(() => context?.store?.getWarning(excludedInvalidPrefix) ?? null, [context?.store, excludedInvalidPrefix]);
+  const warning = useSyncExternalStore(context?.store?.subscribeWarning ?? noSubscription, read, noWarning);
   const message = warning ?? context?.warning;
   return message ? localUIMessage(message, t) : null;
 }

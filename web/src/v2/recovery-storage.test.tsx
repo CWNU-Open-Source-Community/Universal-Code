@@ -16,6 +16,49 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("V2 scoped recovery storage", () => {
+  it("projects only current-draft invalid image warnings and notices an equal-message second source", async () => {
+    const prefix = `image-upload:${JSON.stringify(["workspace-one", ""])}:`;
+    const other = `image-upload:${JSON.stringify(["workspace-one", "another-thread"])}:original`;
+    const current = prefix + "original";
+    const { result, rerender } = renderHook(({ excluded }: { excluded?: string }) => ({ store: useV2RecoveryStore()!, warning: useV2PersistenceWarning(excluded) }),
+      { wrapper, initialProps: { excluded: prefix as string | undefined } });
+    act(() => { result.current.store.write(current, false); result.current.store.reject(current); });
+    await waitFor(() => expect(result.current.store.getWarning()).toContain("格式异常"));
+    expect(result.current.warning).toBeNull();
+    rerender({ excluded: undefined });
+    expect(result.current.warning).toContain("格式异常");
+    rerender({ excluded: prefix });
+    expect(result.current.warning).toBeNull();
+    expect(() => result.current.store.assertReadable()).toThrow(V2PersistenceError);
+    act(() => { result.current.store.write(other, false); result.current.store.reject(other); });
+    await waitFor(() => expect(result.current.warning).toContain("格式异常"));
+    act(() => result.current.store.remove(current));
+    expect(result.current.warning).toContain("格式异常");
+    expect(result.current.store.read(other, null)).toBe(false);
+    expect(() => result.current.store.assertReadable()).toThrow(V2PersistenceError);
+    act(() => result.current.store.remove(other));
+    await waitFor(() => expect(result.current.warning).toBeNull());
+  });
+
+  it("keeps other-workspace, denied reads and unsaved warnings visible beside a handled image error", async () => {
+    const prefix = `image-upload:${JSON.stringify(["workspace-one", ""])}:`;
+    const other = `image-upload:${JSON.stringify(["workspace-two", ""])}:original`;
+    const { result } = renderHook(() => ({ store: useV2RecoveryStore()!, warning: useV2PersistenceWarning(prefix) }), { wrapper });
+    act(() => result.current.store.reject(prefix + "original"));
+    expect(result.current.warning).toBeNull();
+    act(() => result.current.store.reject(other));
+    await waitFor(() => expect(result.current.warning).toContain("格式异常"));
+    act(() => result.current.store.remove(other));
+    await waitFor(() => expect(result.current.warning).toBeNull());
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
+    act(() => result.current.store.read(prefix + "denied", null));
+    await waitFor(() => expect(result.current.warning).toContain("无法读取"));
+    expect(result.current.store.invalidKeys(prefix)).not.toContain(prefix + "denied");
+    getItem.mockRestore();
+    act(() => { result.current.store.read(prefix + "denied", null); result.current.store.markUnsaved("draft:other", "Unsaved draft"); });
+    await waitFor(() => expect(result.current.warning).toBe("Unsaved draft"));
+  });
+
   it("retains unsaved draft warnings across reads and other writes until that draft saves or is discarded", async () => {
     const { result } = renderHook(() => ({ store: useV2RecoveryStore()!, warning: useV2PersistenceWarning() }), { wrapper });
     act(() => {
@@ -186,6 +229,7 @@ describe("V2 scoped recovery storage", () => {
     await waitFor(() => expect(result.current.warning).toContain("格式异常"));
     expect(window.localStorage.getItem(badKey)).toBe(envelope("preserve"));
     expect(result.current.store.invalidKeys("draft:")).toEqual([]);
+    expect(result.current.store.getWarning("draft:")).toContain("格式异常");
   });
 
   it("preserves an existing record when JSON encoding or explicit removal fails", async () => {
