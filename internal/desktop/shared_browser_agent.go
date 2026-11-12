@@ -91,14 +91,12 @@ func (s *SharedBrowserService) attachPage(ctx context.Context, request browserru
 	session.agentLease = lease
 	session.state.ControlOwner = "agent"
 	session.mu.Unlock()
-	connection, err = page.OpenCDP(ctx, desktopbrowser.CDPOptions{Dispatch: lease.Dispatch, Events: []string{
-		"Page.frameStartedLoading", "Page.frameStoppedLoading", "Page.lifecycleEvent", "Page.frameNavigated", "Page.navigatedWithinDocument", "DOM.documentUpdated", "Page.javascriptDialogOpening", "Page.javascriptDialogClosed", "Inspector.detached", "Inspector.targetCrashed", "Page.screencastFrame",
-	}})
+	connection, err = page.OpenCDP(ctx, desktopbrowser.CDPOptions{Dispatch: lease.Dispatch, Events: browserruntime.AgentBrowserAttachedEvents()})
 	if err != nil {
 		return browserruntime.AgentBrowserAttachedPage{}, err
 	}
 	return browserruntime.AgentBrowserAttachedPage{PageID: page.ID(), SessionID: page.ID(), Connection: connection, Lease: lease, InstallNetworkPolicy: func(ctx context.Context, policy browserruntime.AgentBrowserAttachedNetworkPolicy) error {
-		return lease.InstallNetworkPolicy(ctx, desktopbrowser.NetworkPolicy{Done: policy.Done, ReviewRequest: func(ctx context.Context, request desktopbrowser.NetworkRequest, send func() error) error {
+		return lease.InstallNetworkPolicy(ctx, desktopbrowser.NetworkPolicy{Done: policy.Done, ReviewRequest: func(ctx context.Context, request desktopbrowser.NetworkRequest, send func(context.Context) error) error {
 			return policy.ReviewRequest(ctx, browserruntime.AgentBrowserAttachedNetworkRequest{ID: request.ID, FrameID: request.FrameID, Method: request.Method, URL: request.URL, Body: request.Body, BodyComplete: request.BodyComplete}, send)
 		}})
 	}}, nil
