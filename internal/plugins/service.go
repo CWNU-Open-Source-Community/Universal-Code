@@ -365,6 +365,12 @@ func (s *Service) ActiveHooks(ctx context.Context) ([]hooks.Registration, error)
 			continue
 		}
 		for _, declaration := range installation.Manifest.Hooks {
+			if declaration.Action == hooks.ActionScript {
+				// Script hooks are operator-owned; pre-existing staged
+				// manifests that declare one stay inert instead of binding
+				// the operator's script executor.
+				continue
+			}
 			result = append(result, hooks.Registration{PluginID: installation.Manifest.ID,
 				PluginFingerprint: installation.PackageFingerprint, Declaration: declaration})
 		}

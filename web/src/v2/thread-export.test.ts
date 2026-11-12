@@ -126,6 +126,35 @@ it("keeps ZWJ emoji families whole when truncating export filenames", () => {
   expect(threadExportFilename(`${prefix}a${family}`, "text")).toBe(`conversation-${prefix}a.txt`);
 });
 
+it.each(["markdown", "text"] as const)("bounds UTF-8 filename bytes for long multilingual titles (%s)", (format) => {
+  const filename = threadExportFilename("文".repeat(100), format);
+  expect(new TextEncoder().encode(filename).length).toBeLessThanOrEqual(255);
+  expect(filename).toMatch(format === "markdown" ? /^conversation-文+\.md$/u : /^conversation-文+\.txt$/u);
+});
+
+it("fits whole emoji clusters within the filename byte limit", () => {
+  const family = "👨‍👩‍👧‍👦";
+  const filename = threadExportFilename(family.repeat(100), "markdown");
+  expect(new TextEncoder().encode(filename).length).toBeLessThanOrEqual(255);
+  expect(filename).toBe(`conversation-${family.repeat(9)}.md`);
+});
+
+it("uses the fallback when even one grapheme exceeds the filename byte limit", () => {
+  const oversized = `a${"\u0301".repeat(200)}`;
+  expect(threadExportFilename(oversized, "text")).toBe("conversation-export.txt");
+});
+
+it("also bounds filename bytes when Intl.Segmenter is unavailable", () => {
+  vi.stubGlobal("Intl", {});
+  try {
+    const filename = threadExportFilename("😀".repeat(100), "text");
+    expect(new TextEncoder().encode(filename).length).toBeLessThanOrEqual(255);
+    expect(filename).toBe(`conversation-${"😀".repeat(59)}.txt`);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("rejects missing full bodies instead of returning partial history", async () => {
   const get = vi.fn(async (path: string) => {
     if (path.endsWith("second")) throw new Error("body unavailable");

@@ -2201,6 +2201,7 @@
 .v2-detail-facts strong { color: var(--v2-ink); font-size: 12px; overflow-wrap: anywhere; text-transform: none; }
 .v2-shell .v2-open-legacy { background: var(--prayu-primary-bg); border: 1px solid var(--prayu-primary-border); border-radius: 10px; color: var(--prayu-primary-fg); box-shadow: 0 2px 8px var(--prayu-primary-shadow), inset 0 1px 0 var(--prayu-glass-highlight); height: 38px; margin: auto 16px 16px; }
 .v2-toast { backdrop-filter: blur(24px); background: var(--v2-floating-surface); border: 1px solid var(--v2-border); border-radius: 11px; bottom: 18px; box-shadow: 0 12px 32px rgb(0 0 0 / 16%); left: 50%; padding: 10px 14px; position: fixed; transform: translateX(-50%); z-index: 600; }
+.v2-persistence-conflicts { bottom: 74px; max-height: calc(100vh - 110px); max-width: calc(100vw - 32px); overflow: auto; }
 .v2-toast:has(> .v2-retry-action) { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 14px; max-width: calc(100vw - 32px); width: max-content; }
 
 .sr-only,

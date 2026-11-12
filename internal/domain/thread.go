@@ -240,4 +240,12 @@ type ThreadExport struct {
 	Messages        []ThreadMessage       `json:"messages"`
 	Events          []ThreadEvent         `json:"events"`
 	AuditEvents     []ThreadRunAuditEvent `json:"audit_events"`
+	// Bulk sections are bounded exports of the Thread's durable history;
+	// each truncated flag reports that the section holds the first section
+	// cap of rows from a longer ledger, so an operator reading the export
+	// knows the remainder exists without the response growing without bound
+	// on long-lived Threads.
+	MessagesTruncated    bool `json:"messages_truncated"`
+	EventsTruncated      bool `json:"events_truncated"`
+	AuditEventsTruncated bool `json:"audit_events_truncated"`
 }

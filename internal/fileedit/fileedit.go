@@ -999,7 +999,9 @@ func (m *Manager) fail(ctx context.Context, edit Edit, cause error) (Edit, error
 }
 
 func normalizePath(path string) (string, error) {
-	path = strings.TrimSpace(path)
+	if path != strings.TrimSpace(path) {
+		return "", errors.New("file path cannot contain surrounding whitespace")
+	}
 	if path == "" || path == "." {
 		return "", errors.New("file path is required")
 	}
