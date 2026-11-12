@@ -48,3 +48,22 @@ it("rejects an upload receipt from another workspace instead of showing its imag
   await expect(new APIClient("read", "/api/v1", "write").uploadWorkspaceImage("workspace-1", file, "original-upload-key"))
     .rejects.toThrow("图片上传结果与原图不一致");
 });
+
+it("observes an original image upload with read authority and rejects foreign or malformed receipts", async () => {
+  const response = (data: unknown) => new Response(JSON.stringify({ version: "api.v1", data, request_id: "image-observation" }),
+    { headers: { "Content-Type": "application/json", "X-CyberAgent-API-Version": "api.v1" } });
+  const fetcher = vi.fn().mockResolvedValueOnce(response({ state: "stored", image: metadata }))
+    .mockResolvedValueOnce(response({ state: "not_received" }))
+    .mockResolvedValueOnce(response({ state: "stored", image: { ...metadata, workspace_id: "other-workspace" } }))
+    .mockResolvedValueOnce(response({ state: "not_received", image: metadata }));
+  vi.stubGlobal("fetch", fetcher);
+  const client = new APIClient("read", "/api/v1", "write");
+  expect(await client.inspectWorkspaceImageUpload("workspace-1", "original-image-upload-key")).toEqual({ state: "stored", image: metadata });
+  expect(await client.inspectWorkspaceImageUpload("workspace-1", "original-image-upload-key")).toEqual({ state: "not_received" });
+  for (let index = 0; index < 2; index++) await expect(client.inspectWorkspaceImageUpload("workspace-1", "original-image-upload-key")).rejects.toThrow("无法核对");
+  const [url, init] = fetcher.mock.calls[0] as [string, RequestInit];
+  expect(url).toContain("/workspaces/workspace-1/image-attachments/request");
+  expect(init.method).toBe("GET");
+  expect(new Headers(init.headers).get("Authorization")).toBe("Bearer read");
+  expect(new Headers(init.headers).get("Idempotency-Key")).toBe("original-image-upload-key");
+});

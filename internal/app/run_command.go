@@ -1939,6 +1939,9 @@ func (a *App) runShow(ctx context.Context, service *application.RunService, args
 		run.ID, mission.ID, run.Status, mission.Goal, mission.Profile, mode.Surface,
 		mode.Phase, mode.Revision, mode.PolicyVersion, mission.WorkspaceID, run.SessionID,
 		run.Config.ModelRoute, run.Config.Interactive, scope, budget, run.CreatedAt.Format(time.RFC3339), run.UpdatedAt.Format(time.RFC3339))
+	if len(run.Config.BrowserOrigins) != 0 {
+		fmt.Fprintf(a.out, "browser_origins: %s\n", strings.Join(run.Config.BrowserOrigins, ", "))
+	}
 	if run.StartedAt != nil {
 		fmt.Fprintf(a.out, "started_at: %s\n", run.StartedAt.Format(time.RFC3339))
 	}

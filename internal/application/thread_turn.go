@@ -48,6 +48,7 @@ type threadEpochTransitionStore interface {
 }
 
 type ExecuteThreadTurnRequest struct {
+	onSubmitted   func(SubmitThreadMessageResult)
 	queued        *SubmitThreadMessageResult
 	automatic     bool
 	plan          *threadPlanCommitBinding
@@ -226,6 +227,9 @@ func (s *ThreadTurnService) execute(ctx context.Context,
 		return ExecuteThreadTurnResult{}, err
 	}
 	result := ExecuteThreadTurnResult{Submission: submission, Replayed: submission.Replayed}
+	if request.onSubmitted != nil {
+		request.onSubmitted(submission)
+	}
 	// Ordinary steering may queue only after the confirmation message itself
 	// has passed its atomic plan/input binding and entered the existing journal.
 	s.turnMu.Lock()
@@ -658,7 +662,19 @@ func (s *ThreadTurnService) findCompletedReplay(ctx context.Context,
 							return ExecuteThreadTurnResult{}, true, closeErr
 						} else if closed {
 							if failure.MessageID == message.ID {
-								return ExecuteThreadTurnResult{Replayed: true}, true, failedProductTurnError(failure)
+								// The retry sealed this message's failed
+								// handoff. Return the full submission and
+								// session — exactly like an already-sealed
+								// failure — so the one-shot caller can recover
+								// the committed partial reply.
+								linkedSession, sessionErr := s.threads.store.GetSession(ctx, run.SessionID)
+								if sessionErr != nil {
+									return ExecuteThreadTurnResult{}, false, apperror.Normalize(sessionErr)
+								}
+								executed := ExecuteRunHandoffResult{Handoff: handoff, Execution: executionResultFromHandoff(handoff), Replayed: true}
+								result := ExecuteThreadTurnResult{Submission: SubmitThreadMessageResult{Thread: threadRecord, Run: run, Session: linkedSession, Message: queued.Message, PredecessorRunID: continuation.PredecessorRunID, SuccessorCreated: continuation.SuccessorCreated, Replayed: true}, Execution: &executed, Replayed: true}
+								mergeThreadTurnExecution(&result, executed)
+								return result, true, failedProductTurnError(failure)
 							}
 							continue
 						}

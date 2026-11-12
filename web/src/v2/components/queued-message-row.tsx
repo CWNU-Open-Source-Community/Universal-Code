@@ -107,11 +107,13 @@ function QueueMessageMenu({ trigger, message, editDisabled, onClose, onEdit, onD
   const { t } = useLocale();
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
+  const positionedAnchor = useRef<{ top: number; left: number } | null>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useLayoutEffect(() => {
     const anchor = trigger.current?.getBoundingClientRect(), menu = ref.current?.getBoundingClientRect();
     if (!anchor || !menu) return;
+    positionedAnchor.current = { top: anchor.top, left: anchor.left };
     setPosition({ left: Math.max(8, Math.min(anchor.right - menu.width, window.innerWidth - menu.width - 8)),
       top: Math.max(8, anchor.bottom + menu.height + 8 > window.innerHeight ? anchor.top - menu.height - 4 : anchor.bottom + 4) });
   }, [trigger, message.prepared]);
@@ -129,6 +131,10 @@ function QueueMessageMenu({ trigger, message, editDisabled, onClose, onEdit, onD
       }
     };
     const move = (event: Event) => {
+      const anchor = trigger.current?.getBoundingClientRect();
+      // Opening after native focus/scroll can deliver an older scroll event.
+      if (event.type === "scroll" && anchor?.top === positionedAnchor.current?.top &&
+        anchor?.left === positionedAnchor.current?.left) return;
       if (!ref.current?.contains(event.target as Node)) { trigger.current?.focus({ preventScroll: true }); closeRef.current(); }
     };
     window.addEventListener("click", outside);

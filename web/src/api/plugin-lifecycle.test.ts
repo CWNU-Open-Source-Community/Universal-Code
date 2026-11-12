@@ -74,6 +74,27 @@ it.each(["scope", "rejection", "message", "historical", "active"])("rejects Hook
   await expect(new APIClient("read").hookDiagnostics("run-one", "project-one")).rejects.toThrow();
 });
 
+it.each(["rejected", "continued"] as const)("accepts completed script hook observation with %s decision", async (decision) => {
+  const value = hookDiagnostics();
+  value.observations.push({
+    id: "script-observation",
+    plugin_id: "operator",
+    hook_id: "script-guard",
+    event: "pre_tool",
+    action: "script",
+    package_fingerprint: "e".repeat(64),
+    run_id: "run-one",
+    workspace_id: "project-one",
+    tool_name: "file_write",
+    outcome: "completed",
+    decision,
+    created_at: "2026-10-10T02:00:00Z",
+  });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(value)));
+  const result = await new APIClient("read").hookDiagnostics("run-one", "project-one");
+  expect(result.observations.find((item) => item.id === "script-observation")?.decision).toBe(decision);
+});
+
 it("refuses lifecycle writes locally on a read connection", async () => {
   const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
   const client = new APIClient("read");

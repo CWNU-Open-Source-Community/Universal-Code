@@ -138,7 +138,7 @@ cyberagent exec --workspace demo "Fix the flaky parser test and run the suite"
 cyberagent exec --workspace demo --json --timeout 30m --stdin < task.md
 ```
 
-`--workspace` is required; `--profile` (default `code`), `--route`,
+`--workspace` is required for fresh Runs; `--profile` (default `code`), `--route`,
 `--max-turns`, `--max-tokens`, `--max-tool-calls`, and `--max-cost-usd` map
 onto the ordinary Run creation contract. `--timeout` carries a durable
 `Budget.TimeoutSeconds` on the Run and also bounds the process wall clock;
@@ -147,27 +147,159 @@ tasks are out of scope for v1. The command creates a
 fresh Run and Thread, executes the agent loop synchronously, prints the last
 committed assistant reply on stdout, and exits non-zero unless the supervisor
 finished the task (`turn_finish`; approval waits, continuation stops, and
-budget exhaustion report their stop reason). `--json` emits
-`{run_id, thread_id, status, stop_reason, turn_status, reply}` instead of the
-bare reply. `--stream` streams run events to stdout as JSON lines in real
+budget exhaustion report their stop reason). `--json` emits `{run_id, thread_id, status, stop_reason, turn_status, reply, usage}` instead of the
+bare reply. Unattended runs cannot widen permissions: pre-arrange execution
+grants the same way you would for any Run. `--instructions "<text>"` fixes
+extra operator guidance for the invocation: the text is validated against the
+Thread context pin contract (nonempty UTF-8, no NUL, at most 8192 characters,
+no protected secret content), stored as an operator context pin on the
+invocation's Thread, and delivered as a protected fixed-requirement section on
+every turn — including follow-up turns on the same Thread. It never widens
+authority: pin text stays below system policy and can never grant tools,
+permissions, or policy exceptions. The pin is visible in the Thread's context
+pin state and can be edited or removed there like any operator pin.
+
+`--output-last-message <file>`
+additionally writes the final assistant reply to a file (created or
+truncated; new files use Unix permission bits 0600, Windows stays ACL-controlled) before
+the final reply is printed, so cron jobs and CI steps get a reliable
+file sink for the reply regardless of the output format; a failed write
+fails the command. A paused turn records its committed reply at the pause
+point; the file is empty only when the turn failed before committing any
+reply. Paths with surrounding whitespace are rejected. In stream mode,
+events are emitted during execution and the file is finalized before the reply on stderr.
+
+Ctrl-C (SIGINT; SIGTERM where the
+platform delivers it) does not kill the process mid-write: it cancels the
+invocation cleanly, the turn machinery records the durable stop through a
+detached context, the Run stays recoverable for a follow-up `thread send`,
+and exec exits non-zero — exit `7` for a cancellation, exit `9` for a
+`--timeout` deadline. On Windows, a console close, logoff, or shutdown can
+terminate the process before the cancellation is recorded: the Run may then
+not be ready for `thread send`, and exit code 7 is not guaranteed for those
+exits.
+
+`--stream` streams run events to stdout as JSON lines in real
 time (headless.v1 protocol); the final reply goes to stderr, so scripts can
 pipe stdout for live monitoring while capturing the reply separately.
 `--stream` and `--json` are mutually exclusive. The stream stops
 automatically after the turn ends (no terminal state needed) —
-waiting_approval, paused, and failed outcomes all exit cleanly with their
-stop reason.
-Unattended runs cannot widen permissions: pre-arrange execution grants the
-same way you would for any Run.
+waiting_approval, paused, and failed outcomes retain their non-zero exit status.
 
 `cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
 回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
-权限、审批与预算规则原样生效。`--workspace` 必填；`--profile`（默认 `code`）、
+权限、审批与预算规则原样生效。创建新 Run 时 `--workspace` 必填；`--profile`（默认 `code`）、
 `--route`、`--max-turns`、`--max-tokens`、`--max-tool-calls`、`--max-cost-usd`
 与 `--timeout` 对应普通 Run 创建契约。命令创建全新的 Run 与 Thread、同步执行
 agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 supervisor 以
 `turn_finish` 结束任务（等待审批、继续等待与预算耗尽都会报告其停止原因）
 否则以非零码退出。`--json` 输出
-`{run_id, thread_id, status, stop_reason, turn_status, reply}` 取代纯回复文本。
+`{run_id, thread_id, status, stop_reason, turn_status, reply, usage}` 取代纯回复文本。无人值守运行不能放宽
+权限：执行授权需要与任何 Run 一样预先安排。`--instructions "<文本>"` 为本次
+调用固定额外的操作者指令：文本先按 Thread context pin 契约校验（非空 UTF-8、
+无 NUL、最多 8192 字符、不含受保护的密钥内容），以操作者 context pin 的形式
+存入本次调用的 Thread，并在每个 turn 作为受保护的固定要求小节交付——包括同一
+Thread 上的后续 turn。它不放宽任何权限：pin 文本始终低于系统策略，永远不能
+授予工具、权限或策略例外。pin 在 Thread 的 context pin 状态中可见，可以像
+其他操作者 pin 一样在那里编辑或移除。
+
+`--output-last-message <文件>`
+会先把最终助手回复写入文件（创建或截断；新文件的 Unix 权限位为 0600，Windows 由 ACL
+控制）再打印最终回复，cron
+作业与 CI 步骤因此获得与输出格式无关的可靠文件汇；写入失败将使命令失败。
+turn 在暂停点的已提交回复会写入文件；仅当 turn 在提交任何回复前失败时文
+件才为空。路径首尾包含空白时会明确拒绝。stream 模式下事件在执行期间输出，
+文件会在最终回复打印到 stderr 前写入。
+
+#### Continuing a Thread / 继续既有 Thread
+
+`--continue <thread-id>` continues an existing Thread instead of creating a
+fresh one: the message becomes a follow-up turn on the Thread's still running
+Run, or — when the previous Run is terminal — creates a successor Run that
+inherits the workspace, permission selection, and budget. The fresh-run flags
+(`--workspace`, `--profile`, `--route`, `--max-turns`, `--max-tokens`,
+`--max-tool-calls`, `--max-cost-usd`) are ignored in continue mode because
+the Thread carries its own configuration. Process-local runtime capabilities
+still come from the operator's fresh flags
+(`--enable-permission-control`, `--enable-danger-full-access`,
+`--confirm-full`) exactly as in fresh mode: they enable this process's
+adapters, never widen the Run's durable permission selection, and are not
+persisted — re-present a grant when a continuation turn needs it. The output
+and exit-code contract is identical to fresh mode.
+
+```powershell
+cyberagent exec --continue thread-run-20261110-a1b2c3d4e5f6 "Now run the suite and report"
+cyberagent exec --continue thread-run-20261110-a1b2c3d4e5f6 --json --enable-permission-control --enable-danger-full-access "Apply the fix you proposed"
+```
+
+`--continue <thread-id>` 继续既有 Thread 而非创建新 Run：消息成为仍在运行的
+Run 的后续 turn；前一个 Run 已终结时则创建继承 workspace、权限选择与预算的
+后继 Run。fresh-run 专用旗标（`--workspace`、`--profile`、`--route`、
+`--max-turns`、`--max-tokens`、`--max-tool-calls`、`--max-cost-usd`）在
+continue 模式下被忽略——Thread 自带配置。进程本地的运行时能力仍来自操作者
+的全新旗标（`--enable-permission-control`、`--enable-danger-full-access`、
+`--confirm-full`），与 fresh 模式完全一致：这些旗标启用本进程的适配器、
+永不放宽 Run 的持久权限选择、也不会被持久化——后续 turn 需要授权时请重新
+出示。输出与退出码契约与 fresh 模式相同。
+
+Ctrl-C（SIGINT；平台支持的
+SIGTERM）不会在写入中途杀死进程：它干净地取消本次调用，turn 机制通过脱离的
+上下文记录持久停止，Run 保持可恢复状态供后续 `thread send` 继续使用，exec
+以非零码退出——取消对应退出码 `7`，`--timeout` 超时对应退出码 `9`。Windows
+上的控制台关闭、注销或关机可能在取消被记录之前终止进程：Run 可能尚未恢复
+到可 `thread send` 的状态，这些退出不保证退出码 7。
+
+#### Attaching files / 附加文件
+
+`--attach <path>` (repeatable, at most 4 files, each at most 5 MiB) imports a
+file into the Run's workspace and pins it to the invocation's message. The
+store applies the same contract as every upload surface: bounded filename,
+validated MIME type, whole-token redaction of readable text, and a
+content-based readability classification. Readable UTF-8 files are delivered
+to the model as bounded text excerpts marked as untrusted evidence; other
+files are saved with exact bytes and listed in an original-file inventory the
+command runtime exposes through its fixed attachments directory. Attachment
+content never grants authority. Works in both fresh and `--continue` mode
+(continue imports into the Thread's workspace); combine freely with
+`--stdin` and `--json`.
+
+```powershell
+cyberagent exec --workspace demo --attach build-output.txt --attach notes.md "Diagnose the failure and propose a fix"
+cyberagent exec --continue thread-run-20261111-a1b2c3d4e5f6 --attach retry-matrix.md "Extend the analysis with this data"
+```
+
+`--attach <路径>`（可重复，最多 4 个文件，每个最大 5 MiB）把文件导入 Run 的
+workspace 并固定到本次调用的消息上。存储层套用与所有上传面相同的契约：受限
+文件名、校验 MIME 类型、可读文本的整词脱敏，以及基于内容的可读性分类。可读
+的 UTF-8 文件以有界文本摘录的形式交付给模型并标记为不可信证据；其他文件
+（含被 MIME 注册表归为二进制的类型，如 Windows 上的 .csv）以精确字节保存，
+并列入 command runtime 通过固定附件目录暴露的原始文件清单。
+附件内容永不授予权威。fresh 与 `--continue` 模式均可用（continue 导入到
+Thread 的 workspace）；可与 `--stdin`、`--json` 自由组合。
+
+#### Attaching images / 附加图片
+
+`--image <path>` (repeatable, at most 4) imports a PNG, JPEG, or WebP image
+into the Run's workspace and pins it to the invocation's message. The store
+decodes and bounds every upload (5 MiB, 8192 px per side, 16 Mpx total), and
+the selected model must have an established vision capability — the turn
+refuses with an explicit error otherwise, before any model call. Image bytes
+are delivered to the vision model as untrusted data with their exact
+provenance; images never grant authority. Combine freely with `--attach`,
+`--stdin`, and `--json`.
+
+```powershell
+cyberagent exec --workspace demo --image screenshot.png "What does this error dialog say?"
+cyberagent exec --continue thread-run-20261111-a1b2c3d4e5f6 --image chart.png --json "Compare with the numbers you reported"
+```
+
+`--image <路径>`（可重复，最多 4 张）把 PNG、JPEG 或 WebP 图片导入 Run 的
+workspace 并固定到本次调用的消息上。存储层解码并限制每次上传（5 MiB、单边
+8192 px、总 16 Mpx），且所选模型必须具备已确认的 vision 能力——否则 turn
+在任何模型调用之前以明确错误拒绝。图片字节以不可信数据连同精确来源交付给
+vision 模型；图片永不授予权威。可与 `--attach`、`--stdin`、`--json` 自由
+组合。
+
 `--stream` 将 run 事件实时以 JSON 行流式输出到 stdout（headless.v1 协议）；
 最终回复输出到 stderr，脚本可分别管道监控进度与捕获回复。`--stream` 与
 `--json` 互斥。流在 turn 结束后自动收尾（无需 Run 达到终态）：exporter

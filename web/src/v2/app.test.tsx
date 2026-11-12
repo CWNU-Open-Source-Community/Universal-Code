@@ -194,7 +194,9 @@ describe("V2Workbench adjacent chat navigation", () => {
     await screen.findByRole("heading", { name: "常规", level: 1 });
     stays();
     fireEvent.click(screen.getByRole("button", { name: "返回应用" }));
-    fireEvent.click(screen.getByRole("button", { name: "历史记录" }));
+    const history = await screen.findByRole("button", { name: "历史记录" });
+    expect(window.location.hash).toBe(`#/threads/${createdThread.id}`);
+    fireEvent.click(history);
     expect(window.location.hash).toBe("#/history");
     stays();
     fireEvent.keyDown(window, { key: "o", code: "KeyO", ctrlKey: true, shiftKey: true });
