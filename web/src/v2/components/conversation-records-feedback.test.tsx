@@ -8,7 +8,9 @@ import { useState } from "react";
 import type { APIClient } from "../../api/client";
 import type { ThreadReview } from "../../api/task-delivery";
 import type { ThreadDetailView, ThreadTranscriptItemView, WorkspaceView } from "../../api/types";
+import type { HealthView } from "../../api/types";
 import { FileEditDraftProvider, useFileEditLeaveEntry } from "../../components/file-edit-drafts";
+import { useConnectionStore } from "../../state/connection";
 import { getThreadWorkspaceState } from "../workspace-tabs";
 import { V2Conversation } from "./conversation";
 
@@ -243,6 +245,28 @@ it("keeps chat and draft visible beside records and reuses the loaded transcript
   expect(await screen.findByRole("complementary", { name: "执行记录" })).toBeVisible();
   expect(vi.mocked(client.getPage).mock.calls.length).toBe(reads);
   expect(editor).toHaveValue(originalDraft); expectNoWrites();
+});
+
+it("offers old tab restoration again after dismissing the initial notice", async () => {
+  const legacyKey = "universal-code.workspace-tabs.v1";
+  localStorage.setItem(legacyKey, JSON.stringify({ version: 1, threads: { "thread-a": {
+    tabs: [{ id: "file:1", kind: "file", path: "old.ts" }], activeTabID: "file:1", open: true, updatedAt: 1,
+  } } }));
+  useConnectionStore.setState({ health: { data_store_id: "legacy-test" } as HealthView });
+  try {
+    setup(true);
+    const user = userEvent.setup();
+    const panel = await screen.findByRole("dialog", { name: "执行记录" });
+    await user.click(within(panel).getByRole("button", { name: "暂不恢复" }));
+    await user.click(within(panel).getByRole("button", { name: "新建或切换工作区标签" }));
+    await user.click(within(panel).getByRole("menuitem", { name: "查看旧标签恢复选项" }));
+    expect(within(panel).getByText(/确认属于当前连接后可恢复/)).toBeVisible();
+    await user.click(within(panel).getByRole("button", { name: "恢复旧标签" }));
+    expect(getThreadWorkspaceState("thread-a").tabs).toMatchObject([{ path: "old.ts" }]);
+  } finally {
+    localStorage.removeItem(legacyKey);
+    act(() => useConnectionStore.setState({ health: null }));
+  }
 });
 
 it("closes selected details before the compact records workspace and restores focus", async () => {

@@ -113,7 +113,7 @@ function workspaceThreadKey(threadID: string): { key: string; persistent: boolea
 
 // Bind delayed callbacks to the connection that started them.
 export function workspaceScopeKey(threadID: string): string {
-  return workspaceThreadKey(threadID).key;
+  return JSON.stringify([workspaceThreadKey(threadID).key, useConnectionStore.getState().connectionGeneration]);
 }
 
 function normalizeFilePath(path: string): string {
@@ -386,6 +386,16 @@ export function restoreLegacyWorkspaceTabs(threadID: string) {
   const legacy = readLegacyThreadState(threadID);
   if (!legacy) return;
   writeThreadWorkspaceState(threadID, () => ({ ...legacy, notice: undefined }));
+}
+
+export function hasLegacyWorkspaceTabs(threadID: string): boolean {
+  return Boolean(readLegacyThreadState(threadID));
+}
+
+export function promptLegacyWorkspaceTabs(threadID: string) {
+  if (!hasLegacyWorkspaceTabs(threadID)) return;
+  writeThreadWorkspaceState(threadID, (state) => state.notice === workspaceLegacyTabsNotice
+    ? state : { ...state, notice: workspaceLegacyTabsNotice });
 }
 
 function tryAddTab(

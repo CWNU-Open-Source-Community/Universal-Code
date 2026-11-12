@@ -36,8 +36,10 @@ import {
   closeWorkspaceTab,
   defaultWorkspaceWidth,
   focusWorkspaceSingletonTab,
+  hasLegacyWorkspaceTabs,
   maxWorkspaceWidth,
   minWorkspaceWidth,
+  promptLegacyWorkspaceTabs,
   resolveWorkspaceStorageConflict,
   restoreLegacyWorkspaceTabs,
   selectWorkspaceTab,
@@ -651,6 +653,12 @@ export function V2WorkspaceDock({
                 }} role="menuitem" type="button">
                   <Microscope aria-hidden="true" size={15} /><span>{t("执行记录", "Execution records")}</span>
                 </button>
+                {hasLegacyWorkspaceTabs(threadID) && <button onClick={() => {
+                  setAddMenuOpen(false);
+                  promptLegacyWorkspaceTabs(threadID);
+                }} role="menuitem" type="button">
+                  <FolderTree aria-hidden="true" size={15} /><span>{t("查看旧标签恢复选项", "Review old tabs for restore")}</span>
+                </button>}
               </div>
             )}
           </div>
@@ -712,7 +720,7 @@ export function V2WorkspaceDock({
             <button type="button" onClick={() => resolveWorkspaceStorageConflict(threadID, "local")}>{t("保留本窗口标签", "Keep this window's tabs")}</button>
             <button type="button" onClick={() => resolveWorkspaceStorageConflict(threadID, "remote")}>{t("使用另一窗口标签", "Use the other window's tabs")}</button>
           </> : state.notice === workspaceLegacyTabsNotice ? <>
-            <button type="button" onClick={() => restoreLegacyWorkspaceTabs(threadID)}>{t("恢复旧标签", "Restore old tabs")}</button>
+            <button type="button" onClick={() => leaveFileEdit(() => restoreLegacyWorkspaceTabs(threadID))}>{t("恢复旧标签", "Restore old tabs")}</button>
             <button type="button" onClick={() => clearWorkspaceNotice(threadID)}>{t("暂不恢复", "Not now")}</button>
           </> : <button
             aria-label={t("关闭提示", "Dismiss notice")}

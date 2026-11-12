@@ -11,10 +11,12 @@ import {
   focusWorkspaceFiles,
   focusWorkspaceSingletonTab,
   getThreadWorkspaceState,
+  hasLegacyWorkspaceTabs,
   maxWorkspaceTabsLimitNotice,
   maxWorkspaceWidth,
   minWorkspaceWidth,
   openWorkspaceFile,
+  promptLegacyWorkspaceTabs,
   resetWorkspaceTabsMemoryCache,
   resolveWorkspaceStorageConflict,
   restoreLegacyWorkspaceTabs,
@@ -83,6 +85,21 @@ describe("workspace-tabs store", () => {
     expect(getThreadWorkspaceState("switch").terminalShellName).toBeUndefined();
   });
 
+  it("ignores delayed callbacks after reconnecting to the same data store", () => {
+    const health = { data_store_id: "store-one" } as HealthView;
+    useConnectionStore.getState().connect("first", health);
+    openWorkspaceFile("reconnected", { path: "current.ts" });
+    const oldScope = workspaceScopeKey("reconnected");
+    useConnectionStore.getState().connect("second", health);
+    updateWorkspaceFileTabPath("reconnected", "file:1", "stale.ts", oldScope);
+    setWorkspaceTerminalSession("reconnected", "old-session", undefined, oldScope);
+    setWorkspaceTerminalShell("reconnected", "old-shell", oldScope);
+    expect(getThreadWorkspaceState("reconnected")).toMatchObject({
+      tabs: [{ path: "current.ts" }], terminalSessionID: "",
+    });
+    expect(getThreadWorkspaceState("reconnected").terminalShellName).toBeUndefined();
+  });
+
   it("preserves unscoped legacy tabs and restores them only after explicit choice", () => {
     const legacyKey = "universal-code.workspace-tabs.v1";
     const original = JSON.stringify({ version: 1, threads: { legacy: { tabs: [{ id: "file:1", kind: "file", path: "old.ts" }],
@@ -91,6 +108,11 @@ describe("workspace-tabs store", () => {
     try {
       expect(getThreadWorkspaceState("legacy").tabs).toEqual([]);
       openWorkspaceFile("legacy", { path: "new.ts" });
+      expect(getThreadWorkspaceState("legacy").notice).toBe(workspaceLegacyTabsNotice);
+      clearWorkspaceNotice("legacy");
+      expect(getThreadWorkspaceState("legacy").notice).toBeUndefined();
+      expect(hasLegacyWorkspaceTabs("legacy")).toBe(true);
+      promptLegacyWorkspaceTabs("legacy");
       expect(getThreadWorkspaceState("legacy").notice).toBe(workspaceLegacyTabsNotice);
       restoreLegacyWorkspaceTabs("legacy");
       expect(getThreadWorkspaceState("legacy").tabs).toMatchObject([{ path: "old.ts" }]);
@@ -166,6 +188,24 @@ describe("workspace-tabs store", () => {
     read.mockRestore();
     expect(localStorage.getItem(workspaceTabsStorageKey)).toBe(original);
     expect(getThreadWorkspaceState("read-failure").tabs).toMatchObject([{ path: "existing.ts" }, { path: "local.ts" }]);
+  });
+
+  it("does not overwrite malformed data that appears during an update", () => {
+    openWorkspaceFile("late-corruption", { path: "existing.ts" });
+    const originalGet = Storage.prototype.getItem;
+    const originalSet = Storage.prototype.setItem;
+    let reads = 0;
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+      if (key === workspaceTabsStorageKey && ++reads === 2) originalSet.call(this, key, "{broken");
+      return originalGet.call(this, key);
+    });
+    const write = vi.spyOn(Storage.prototype, "setItem");
+    openWorkspaceFile("late-corruption", { path: "local.ts" });
+    expect(write).not.toHaveBeenCalled();
+    read.mockRestore();
+    write.mockRestore();
+    expect(localStorage.getItem(workspaceTabsStorageKey)).toBe("{broken");
+    expect(getThreadWorkspaceState("late-corruption").tabs).toMatchObject([{ path: "existing.ts" }, { path: "local.ts" }]);
   });
 
   it("uses the latest saved tabs even when another window's clock is behind", () => {

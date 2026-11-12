@@ -30,7 +30,7 @@ export interface V2RecoveryStore {
   subscribePrefix?(prefix: string, listener: () => void): () => void;
 }
 
-type PersistentConflict = { id: number; key: string; changedAgain: boolean; keepLocal: () => void; useRemote: () => void };
+type PersistentConflict = { id: number; key: string; changedAgain: boolean; unsavedOnly: boolean; keepLocal: () => void; useRemote: () => void };
 let nextPersistentBindingID = 0;
 
 function decodeRecord(raw: string): unknown {
@@ -264,6 +264,12 @@ class RecoveryStorage implements V2RecoveryStore {
   }
 }
 
+type RecoveryStoreEntry = { prefix: string; store: RecoveryStorage; providers: number };
+const recoveryStoreEntries = new Map<string, RecoveryStoreEntry>();
+
+// Test isolation; live entries are retained while they contain unresolved edits.
+export function resetV2RecoveryStorageMemory() { recoveryStoreEntries.clear(); }
+
 const RecoveryContext = createContext<{ store: RecoveryStorage | null; warning: string | null } | null>(null);
 
 export function V2RecoveryProvider({ client, scopeID, children }: {
@@ -273,11 +279,26 @@ export function V2RecoveryProvider({ client, scopeID, children }: {
 }) {
   const scope = scopeID?.trim() ?? "";
   const origin = typeof window === "undefined" ? "" : window.location.origin;
-  const store = useMemo(() => scope && origin ? new RecoveryStorage(
-    `${VERSION}:${encodeURIComponent(origin)}:${encodeURIComponent(client.baseURL)}:${encodeURIComponent(scope)}:`,
-  ) : null, [origin, client.baseURL, scope]);
+  const entry = useMemo(() => {
+    if (!scope || !origin) return null;
+    const prefix = `${VERSION}:${encodeURIComponent(origin)}:${encodeURIComponent(client.baseURL)}:${encodeURIComponent(scope)}:`;
+    return recoveryStoreEntries.get(prefix) ?? { prefix, store: new RecoveryStorage(prefix), providers: 0 };
+  }, [origin, client.baseURL, scope]);
+  const store = entry?.store ?? null;
   const context = useMemo(() => ({ store, warning: store ? null : UNSUPPORTED }), [store]);
-  useEffect(() => store?.connect(), [store]);
+  useEffect(() => {
+    if (!entry) return;
+    entry.providers++;
+    recoveryStoreEntries.set(entry.prefix, entry);
+    const disconnect = entry.store.connect();
+    return () => {
+      disconnect();
+      entry.providers--;
+      if (entry.providers === 0 && entry.store.getConflicts().length === 0 && recoveryStoreEntries.get(entry.prefix) === entry) {
+        recoveryStoreEntries.delete(entry.prefix);
+      }
+    };
+  }, [entry]);
   return <RecoveryContext.Provider value={context}>{children}</RecoveryContext.Provider>;
 }
 
@@ -306,7 +327,9 @@ export function V2PersistenceConflicts() {
     store?.getConflicts ?? getNoConflicts, getNoConflicts);
   if (!conflicts.length) return null;
   return <div className="v2-toast v2-persistence-conflicts" role="alert">{conflicts.map((conflict) => <div key={conflict.id}>
-    <p>{conflict.changedAgain
+    <p>{conflict.unsavedOnly
+      ? t("本窗口的编辑尚未保存，请重试保存或使用已保存的版本。", "This window's edits could not be saved. Retry saving or use the saved version.")
+      : conflict.changedAgain
       ? t("另一窗口再次修改了同一条记录，请重新选择要保存的版本。", "The other window changed this record again. Please choose which version to keep.")
       : t("另一窗口修改了同一条记录。本窗口的未保存编辑已保留，请选择要保存的版本。",
         "Another window changed the same record. Your unsaved edits are preserved; choose which version to keep.")}</p>
@@ -330,12 +353,12 @@ export function useV2PersistentState<T>(key: string, initial: T | (() => T)): [T
     current.current = { id: ++nextPersistentBindingID, store, key, fallback, value, base: value, dirty: false, writing: false };
   }
   const binding = current.current;
-  const registerConflict = (observedRemote: T, changedAgain = false) => {
+  const registerConflict = (observedRemote: T, changedAgain = false, unsavedOnly = false) => {
     const target = binding.store;
     if (!target) return;
     const unsavedKey = `persistent:${binding.id}:${binding.key}`;
     target.markUnsaved(unsavedKey, WRITE_FAILED);
-    target.setConflict({ id: binding.id, key: binding.key, changedAgain,
+    target.setConflict({ id: binding.id, key: binding.key, changedAgain, unsavedOnly,
       keepLocal: () => {
         binding.writing = true;
         try {
@@ -376,7 +399,7 @@ export function useV2PersistentState<T>(key: string, initial: T | (() => T)): [T
         binding.base = value; binding.dirty = false;
         binding.store.discardUnsaved(`persistent:${binding.id}:${binding.key}`, binding.key);
         binding.store.clearConflict(binding.id);
-      } catch { binding.dirty = true; binding.store.markUnsaved(`persistent:${binding.id}:${binding.key}`, WRITE_FAILED); }
+      } catch { binding.dirty = true; registerConflict(binding.base, false, true); }
       finally { binding.writing = false; }
     }
     rerender();

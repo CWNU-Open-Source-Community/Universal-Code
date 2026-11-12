@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
-import { V2PersistenceConflicts, V2PersistenceError, V2RecoveryProvider, useV2PersistenceWarning, useV2PersistentState, useV2RecoveryStore } from "./recovery-storage";
+import { V2PersistenceConflicts, V2PersistenceError, V2RecoveryProvider, resetV2RecoveryStorageMemory, useV2PersistenceWarning, useV2PersistentState, useV2RecoveryStore } from "./recovery-storage";
 
 const client = { baseURL: "/api/v1" };
 function wrapper({ children }: { children: ReactNode }) {
@@ -13,7 +13,7 @@ function storageKey(key: string, scope = "database-one", baseURL = "/api/v1") {
 function envelope(value: unknown) { return JSON.stringify({ version: "v2_recovery.v1", value }); }
 
 beforeEach(() => window.localStorage.clear());
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); resetV2RecoveryStorageMemory(); vi.restoreAllMocks(); });
 
 describe("V2 scoped recovery storage", () => {
   it("retains unsaved draft warnings across reads and other writes until that draft saves or is discarded", async () => {
@@ -321,6 +321,28 @@ describe("V2 scoped recovery storage", () => {
     act(() => window.dispatchEvent(new StorageEvent("storage", { key: storageKey("draft:a") })));
     expect(result.current[0]).toBe("saved");
     read.mockRestore();
+  });
+
+  it("retains failed edits across component unmount and connection changes", () => {
+    function Probe() {
+      const [value, setValue] = useV2PersistentState("draft:a", "");
+      return <input aria-label="draft" value={value} onChange={(event) => setValue(event.target.value)} />;
+    }
+    const screenFor = (scope: string, visible = true) => <V2RecoveryProvider client={client} scopeID={scope}>
+      {visible && <Probe />}<V2PersistenceConflicts />
+    </V2RecoveryProvider>;
+    localStorage.setItem(storageKey("draft:a"), envelope("saved"));
+    const view = render(screenFor("database-one"));
+    const fail = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "unsaved" } });
+    fail.mockRestore();
+    view.rerender(screenFor("database-one", false));
+    view.rerender(screenFor("database-two"));
+    expect(screen.getByLabelText("draft")).toHaveValue("");
+    view.rerender(screenFor("database-one"));
+    fireEvent.click(screen.getByRole("button", { name: "保留本窗口版本" }));
+    expect(screen.getByLabelText("draft")).toHaveValue("unsaved");
+    expect(localStorage.getItem(storageKey("draft:a"))).toBe(envelope("unsaved"));
   });
 
   it("catches unavailable storage for reads and enumeration but makes writes and removals fail", async () => {
