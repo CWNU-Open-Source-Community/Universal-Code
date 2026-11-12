@@ -33,8 +33,6 @@ export function V2ExtensionSettings({ client, threadID, workspaces = [], onOpenT
         type="button">{t("重试", "Retry")}</button></p>}
   </>;
   return <div className="v2-shared-settings">
-    <p className="v2-settings-lead">{threadID ? t(`当前任务：${thread.data?.thread.title}。代码智能状态按其工作区读取。`, `Current task: ${thread.data?.thread.title}. Code intelligence status is read from its workspace. `)
-      : t("选择接入工作区以添加服务器，或查看下方已登记状态。", "Select a workspace to add servers, or view registered entries below. ")}{t("每条记录标明实际范围。关闭会停用对应扩展或安装，并影响使用它的任务。", "Each entry shows its scope. Turning it off disables the extension or installation and affects tasks using it.")}</p>
     {!threadID && <label className="extension-scope-picker">{t("接入工作区", "Workspace to connect")}
       <select aria-label={t("接入工作区", "Workspace to connect")} value={workspaceID} onChange={(event) => setWorkspaceID(event.target.value)}>
         <option value="">{t("全部已登记状态（选择工作区以接入）", "All registered entries (select a workspace to connect)")}</option>
@@ -60,9 +58,7 @@ export function V2SkillSettings({ client, desktop }: { client: APIClient; deskto
       protocol_version: "skill_package_removal_request.v1", skill, confirm_remove: true,
     }, operationKey),
   };
-  return <><h1>{t("Skill 包", "Skill packages")}</h1><p className="v2-settings-lead">
-    {t("将已有技能包加入本地技能库，再在任务中使用。加载与执行遵循该任务的权限和审批。", "Add skill packages to the local library for use in tasks. Loading and execution follow the task's permissions and approvals.")}
-  </p><section className="v2-settings-section v2-shared-settings"><div className="v2-settings-card v2-skill-settings-card">
+  return <><h1>{t("Skill 包", "Skill packages")}</h1><section className="v2-settings-section v2-shared-settings"><div className="v2-settings-card v2-skill-settings-card">
     {desktop ? <>
       <p>{t("先预览 ZIP 包的结构、来源与文件，再确认安装到 Code 或 Cyber 工作面。", "Preview the ZIP package's structure, source, and files before confirming installation to Code or Cyber.")}</p>
       <button className="settings-action" onClick={() => setPreviewOpen(true)} type="button">{t("预览 Skill 包", "Preview skill package")}</button>
@@ -94,9 +90,7 @@ export function V2RecordPreferences({ onOpenHistory }: {
     setNavigation(value);
     applyRunNavigationMode(value);
   };
-  return <><h1>{t("记录显示", "Record preferences")}</h1><p className="v2-settings-lead">
-    {t("选择适合你的列表间距与运行记录导航，偏好会保存在本机。任务权限与执行状态在任务设置中管理。", "Choose list spacing and run navigation preferences, saved on this device. Manage task permissions and execution state in task settings.")}
-  </p><section className="v2-settings-section v2-shared-settings"><div className="v2-settings-card v2-record-preferences">
+  return <><h1>{t("记录显示", "Record preferences")}</h1><section className="v2-settings-section v2-shared-settings"><div className="v2-settings-card v2-record-preferences">
     <div><strong>{t("记录间距", "Record spacing")}</strong><div className="v2-setting-segmented" role="group" aria-label={t("记录间距", "Record spacing")}>
       {(["comfortable", "compact"] as const).map((value) => <button aria-pressed={density === value}
         key={value} onClick={() => changeDensity(value)} type="button">{value === "compact" ? t("紧凑", "Compact") : t("舒展", "Comfortable")}</button>)}
