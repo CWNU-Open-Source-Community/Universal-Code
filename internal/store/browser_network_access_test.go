@@ -39,9 +39,9 @@ func TestBrowserNetworkSuccessorUsesLatestCommittedPreference(t *testing.T) {
 	}
 }
 
-func TestSchemaV223PreservesLegacyBrowserChoiceAndDefaultsNewRunsOff(t *testing.T) {
+func TestSchemaV230PreservesLegacyBrowserChoiceAndDefaultsNewRunsOff(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy-browser.db")
-	st := openHistoricalTestDatabase(t, path, 222)
+	st := openHistoricalTestDatabase(t, path, 229)
 	_, run := createStructuredToolTestRun(t, t.Context(), st, "legacy scoped browser")
 	legacy := run.Config
 	legacy.BrowserNetworkAccess, legacy.BrowserNetworkRevision = "", 0
@@ -50,7 +50,7 @@ func TestSchemaV223PreservesLegacyBrowserChoiceAndDefaultsNewRunsOff(t *testing.
 	if _, err := st.db.Exec(`UPDATE runs SET config_json=? WHERE id=?`, string(raw), run.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.applyMigration(t.Context(), migrationPlan()[222]); err != nil {
+	if err := st.applyMigration(t.Context(), migrationPlan()[229]); err != nil {
 		t.Fatal(err)
 	}
 	var preserved string
@@ -73,7 +73,7 @@ func TestSchemaV223PreservesLegacyBrowserChoiceAndDefaultsNewRunsOff(t *testing.
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if version, err := st.SchemaVersion(t.Context()); err != nil || version != 223 {
+	if version, err := st.SchemaVersion(t.Context()); err != nil || version != 230 {
 		t.Fatalf("version=%d %v", version, err)
 	}
 }

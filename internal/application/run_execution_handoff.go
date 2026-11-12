@@ -32,8 +32,9 @@ type RunExecutionHandoffStore interface {
 }
 
 type RunExecutionHandoffService struct {
-	store      RunExecutionHandoffStore
-	supervisor *AgentRunner
+	store          RunExecutionHandoffStore
+	supervisor     *AgentRunner
+	lifecycleHooks *hooks.Engine
 }
 
 type ExecuteRunHandoffRequest struct {
@@ -184,8 +185,11 @@ func (s *RunExecutionHandoffService) WithCodeIntel(
 func (s *RunExecutionHandoffService) WithLifecycleHooks(
 	engine *hooks.Engine,
 ) *RunExecutionHandoffService {
-	if s != nil && s.supervisor != nil {
-		s.supervisor.WithLifecycleHooks(engine)
+	if s != nil {
+		s.lifecycleHooks = engine
+		if s.supervisor != nil {
+			s.supervisor.WithLifecycleHooks(engine)
+		}
 	}
 	return s
 }
@@ -270,6 +274,18 @@ func (s *RunExecutionHandoffService) execute(ctx context.Context,
 		}
 	}
 
+	workspaceID := ""
+	if s.lifecycleHooks != nil {
+		run, lookupErr := s.store.GetRun(ctx, normalized.RunID)
+		if lookupErr != nil {
+			return ExecuteRunHandoffResult{Handoff: handoff}, apperror.Normalize(lookupErr)
+		}
+		mission, lookupErr := s.store.GetMission(ctx, run.MissionID)
+		if lookupErr != nil {
+			return ExecuteRunHandoffResult{Handoff: handoff}, apperror.Normalize(lookupErr)
+		}
+		workspaceID = mission.WorkspaceID
+	}
 	execution := ExecutionResult{RunID: handoff.Operation.RunID,
 		Steps: make([]LifecycleResult, 0), RunStatus: domain.RunRunning}
 	err = s.supervisor.withRunExecutionLease(ctx, handoff.Operation.RunID,
@@ -289,6 +305,16 @@ func (s *RunExecutionHandoffService) execute(ctx context.Context,
 		}
 		return ExecuteRunHandoffResult{Handoff: handoff, Execution: execution,
 			Replayed: replayedOperation}, apperror.Normalize(err)
+	}
+	// The turn_end boundary fires when the Supervisor turn has completed and
+	// the handoff result is durably persisted. Observation only.
+	if stored.Result != nil {
+		_ = executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.TurnEnd,
+			normalized.RunID, workspaceID, map[string]any{
+				"run_id":          normalized.RunID,
+				"stop_reason":     stored.Result.StopReason,
+				"run_status":      string(stored.Result.RunStatus),
+				"steps_completed": stored.Result.StepsCompleted})
 	}
 	return ExecuteRunHandoffResult{Handoff: stored, Execution: execution,
 		Replayed: replayedOperation}, nil

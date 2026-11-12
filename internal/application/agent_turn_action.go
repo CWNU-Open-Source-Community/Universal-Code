@@ -139,7 +139,11 @@ func (s *AgentRunner) commitAgentRootAction(ctx context.Context, turn *domain.Su
 			return result, false, s.recordFailure(ctx, &result, hookErr, 0)
 		}
 		if waiting {
-			return supervisorApprovalWaitingResult(result, rounds), false, nil
+			waiting, waitErr := s.supervisorApprovalWaitingResult(ctx, turn, result, rounds)
+			if waitErr != nil {
+				return result, false, waitErr
+			}
+			return waiting, false, nil
 		}
 		if added {
 			return result, true, nil

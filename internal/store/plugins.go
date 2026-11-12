@@ -420,12 +420,12 @@ func (s *SQLiteStore) RevokePluginPublisher(ctx context.Context,
 func (s *SQLiteStore) RecordHookAudit(ctx context.Context, audit hooks.AuditRecord) error {
 	if strings.TrimSpace(audit.PluginID) == "" || strings.TrimSpace(audit.HookID) == "" ||
 		!audit.Event.Valid() || (audit.Outcome != "completed" && audit.Outcome != "failed_closed" &&
-		audit.Outcome != "failed_continue") || audit.CreatedAt.IsZero() {
+		audit.Outcome != "failed_continue" && audit.Outcome != "output_capped") || audit.CreatedAt.IsZero() {
 		return apperror.New(apperror.CodeInvalidArgument, "plugin hook audit is invalid")
 	}
 	if (audit.PluginFingerprint != "" || audit.Action != "" || audit.Rejected != nil) &&
 		(len(audit.PluginFingerprint) != 64 || strings.Trim(audit.PluginFingerprint, "0123456789abcdef") != "" || !audit.Action.Valid() || audit.Rejected == nil ||
-			*audit.Rejected != (audit.Outcome == "failed_closed" || audit.Action == hooks.ActionDeny && audit.Outcome == "completed")) {
+			*audit.Rejected != hookRejectedBinding(audit)) {
 		return apperror.New(apperror.CodeInvalidArgument, "plugin hook decision binding is invalid")
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO plugin_hook_audits
@@ -437,6 +437,25 @@ func (s *SQLiteStore) RecordHookAudit(ctx context.Context, audit hooks.AuditReco
 }
 
 type pluginInstallationScanner interface{ Scan(...any) error }
+
+// hookRejectedBinding mirrors the engine's audit binding. Declared denies are
+// rejected by their action alone; script denials come from the script's bounded
+// output, so the engine's observed decision is authoritative for that action.
+func hookRejectedBinding(audit hooks.AuditRecord) bool {
+	if audit.Outcome == "failed_closed" {
+		return true
+	}
+	if audit.Outcome != "completed" {
+		return false
+	}
+	if audit.Action == hooks.ActionDeny {
+		return true
+	}
+	if audit.Action == hooks.ActionScript {
+		return *audit.Rejected
+	}
+	return false
+}
 
 func getPluginInstallation(ctx context.Context, queryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row

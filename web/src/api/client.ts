@@ -834,6 +834,11 @@ export class APIClient implements ClientFeatures {
     return this.workspacesClient.downloadWorkspaceImage(metadata, signal);
   }
 
+  inspectWorkspaceImageUpload(workspaceID: string, operationKey: string, signal?: AbortSignal):
+    Promise<{ state: "not_received" | "stored"; image?: WorkspaceImageAttachment }> {
+    return this.workspacesClient.inspectWorkspaceImageUpload(workspaceID, operationKey, signal);
+  }
+
   downloadVerifiedImage(path: string, metadata: { mime_type: string; byte_size: number; sha256: string },
     signal?: AbortSignal): Promise<Blob> {
     return this.workspacesClient.downloadVerifiedImage(path, metadata, signal);

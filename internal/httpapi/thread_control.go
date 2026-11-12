@@ -617,7 +617,9 @@ func (a *API) threadExport(request *http.Request, threadID string) (any, *Page, 
 	return ThreadExportView{Missions: missions, ProtocolVersion: value.ProtocolVersion,
 		ExportedAt: value.ExportedAt, Thread: threadView(value.Thread, activeStatus),
 		Mission: missionView(value.Mission), Runs: runs, Sessions: sessions, Messages: messages,
-		Events: eventViews, AuditEvents: auditViews}, nil, nil
+		Events: eventViews, AuditEvents: auditViews,
+		MessagesTruncated: value.MessagesTruncated, EventsTruncated: value.EventsTruncated,
+		AuditEventsTruncated: value.AuditEventsTruncated}, nil, nil
 }
 
 func matchThreadMutationPath(requestPath string) (string, string, bool) {
@@ -857,7 +859,7 @@ func (a *API) serveThreadMutationControl(writer http.ResponseWriter, request *ht
 		}
 		result, err := application.NewThreadServiceWithExecutionCapabilities(
 			a.store, a.executionPermissionCapabilities).WithModelRouteRegistry(
-			a.modelRegistry).Submit(request.Context(),
+			a.modelRegistry).WithLifecycleHooks(a.lifecycleHooks).Submit(request.Context(),
 			application.SubmitThreadMessageRequest{Version: view.Version, ThreadID: threadID,
 				Content: view.Content, OperationKey: operationKey,
 				RequestedBy: "http_thread_operator"})

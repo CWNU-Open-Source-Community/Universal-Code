@@ -149,7 +149,15 @@ committed assistant reply on stdout, and exits non-zero unless the supervisor
 finished the task (`turn_finish`; approval waits, continuation stops, and
 budget exhaustion report their stop reason). `--json` emits `{run_id, thread_id, status, reply}` instead of the
 bare reply. Unattended runs cannot widen permissions: pre-arrange execution
-grants the same way you would for any Run.
+grants the same way you would for any Run. `--instructions "<text>"` fixes
+extra operator guidance for the invocation: the text is validated against the
+Thread context pin contract (nonempty UTF-8, no NUL, at most 8192 characters,
+no protected secret content), stored as an operator context pin on the
+invocation's Thread, and delivered as a protected fixed-requirement section on
+every turn — including follow-up turns on the same Thread. It never widens
+authority: pin text stays below system policy and can never grant tools,
+permissions, or policy exceptions. The pin is visible in the Thread's context
+pin state and can be edited or removed there like any operator pin.
 
 `cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
 回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
@@ -160,7 +168,13 @@ agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 
 `turn_finish` 结束任务（等待审批、继续等待与预算耗尽都会报告其停止原因）
 否则以非零码退出。`--json` 输出
 `{run_id, thread_id, status, reply}` 取代纯回复文本。无人值守运行不能放宽
-权限：执行授权需要与任何 Run 一样预先安排。
+权限：执行授权需要与任何 Run 一样预先安排。`--instructions "<文本>"` 为本次
+调用固定额外的操作者指令：文本先按 Thread context pin 契约校验（非空 UTF-8、
+无 NUL、最多 8192 字符、不含受保护的密钥内容），以操作者 context pin 的形式
+存入本次调用的 Thread，并在每个 turn 作为受保护的固定要求小节交付——包括同一
+Thread 上的后续 turn。它不放宽任何权限：pin 文本始终低于系统策略，永远不能
+授予工具、权限或策略例外。pin 在 Thread 的 context pin 状态中可见，可以像
+其他操作者 pin 一样在那里编辑或移除。
 
 ### 补充消息与排队 / Follow-up messages and queue
 

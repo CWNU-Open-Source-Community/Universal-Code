@@ -36,7 +36,8 @@ function unavailableText(code: AgentBrowserStatus["unavailable_code"], t: Locale
     case "full_access_required": return t("浏览器当前不可用，请检查任务权限。", "The browser is unavailable. Check task permissions.");
     case "run_unavailable": return t("当前执行的浏览器不可用。", "The browser is unavailable for this run.");
     case "session_unavailable": return t("上一浏览器会话正在清理。", "The previous browser session is being cleaned up.");
-    default: return t("浏览器暂不可用。", "The browser is currently unavailable.");
+    case "runtime_unavailable": return t("浏览器暂不可用。", "The browser is currently unavailable.");
+    default: return t("当前环境没有可用的 Agent 浏览器运行时，请检查本机浏览器和执行权限配置。", "No Agent browser runtime is available in this environment. Check the local browser and execution permissions.");
   }
 }
 
@@ -98,14 +99,9 @@ function AgentBrowserView({ client, runID, running, onClose }: { client: APIClie
       <div className="v2-agent-browser-actions">{canClose && <button type="button" disabled={close.isPending} onClick={() => close.mutate(current.session_id!)}>{t("停止浏览器", "Stop browser")}</button>}{dismissButton}</div></header>
     <div className="v2-agent-browser-body">
     {!current.available && unavailableText(current.unavailable_code, t) && <p className="v2-agent-browser-note" role="status">{unavailableText(current.unavailable_code, t)}</p>}
-<<<<<<< HEAD
-    {current.available && !active && <p className="v2-agent-browser-note">{current.headless ? t("页面将在独立的后台浏览器中打开，通过实时画面和截图查看。", "Pages open in a separate background browser and are shown as a live view and screenshots.") : t("页面将在独立浏览器窗口中打开。", "Pages open in a separate browser window.")}</p>}
     {current.available && current.declared_origins && current.declared_origins.length > 0 && <p className="v2-agent-browser-note">{t("已声明的导航来源：", "Declared navigation origins: ")}{current.declared_origins.join(", ")}</p>}
-    {current.headless && active && current.session_id && <AgentBrowserLiveView client={client} runID={runID} sessionID={current.session_id} />}
-=======
     {current.headless && active && current.session_id && <AgentBrowserLiveView key={current.session_id}
       client={client} runID={runID} sessionID={current.session_id} onLiveChange={setLiveSessionID} />}
->>>>>>> 8ac3e78d (fix(web): show browser frames only after drawing)
     {(current.title || current.url) && <div className="v2-agent-browser-page">
       {current.title && <strong>{current.title}</strong>}
       {current.url && <a href={current.url} target="_blank" rel="noreferrer">{current.url}<ExternalLink size={14} /></a>}

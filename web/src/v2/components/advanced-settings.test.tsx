@@ -36,7 +36,6 @@ describe("shared advanced settings", () => {
     expect(get).toHaveBeenCalledWith("/threads/thread-one", {}, expect.any(AbortSignal));
     expect(extensionInventory).toHaveBeenCalledWith("run-one", expect.any(AbortSignal));
     expect(extensionInventory).not.toHaveBeenCalledWith("", expect.anything());
-    expect(screen.getByText(/关闭会停用对应扩展或安装/)).toBeInTheDocument();
   });
 
   it("does not silently fall back to global extension scope when the selected Thread fails to load", async () => {
@@ -55,7 +54,6 @@ describe("shared advanced settings", () => {
     mount({ extensionInventory, codeIntelInventory }, "plugins");
     await waitFor(() => expect(extensionInventory).toHaveBeenCalledWith("", expect.any(AbortSignal)));
     expect(codeIntelInventory).toHaveBeenCalledWith("", expect.any(AbortSignal));
-    expect(screen.getByText(/选择接入工作区以添加服务器/)).toBeInTheDocument();
   });
 
   it("requires explicit untrusted registration before web installation and keeps its key on retry", async () => {

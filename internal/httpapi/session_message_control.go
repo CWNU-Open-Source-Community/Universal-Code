@@ -208,10 +208,12 @@ func (a *API) serveSessionMessageControl(writer http.ResponseWriter,
 		}); ok {
 			result, err = live.SubmitCurrentSteering(request.Context(), submission)
 		} else {
-			result, err = application.NewSessionMessageSubmissionService(a.store).Submit(request.Context(), submission)
+			result, err = application.NewSessionMessageSubmissionService(a.store).
+				WithLifecycleHooks(a.lifecycleHooks).Submit(request.Context(), submission)
 		}
 	} else {
-		result, err = application.NewSessionMessageSubmissionService(a.store).Submit(request.Context(), submission)
+		result, err = application.NewSessionMessageSubmissionService(a.store).
+			WithLifecycleHooks(a.lifecycleHooks).Submit(request.Context(), submission)
 	}
 	if err != nil {
 		a.writeError(writer, requestID, err, 0)

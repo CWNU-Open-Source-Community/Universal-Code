@@ -21,7 +21,7 @@ func (a *App) threadCommand(ctx context.Context, args []string) error {
 	if err := a.ensureStore(); err != nil {
 		return err
 	}
-	service := application.NewThreadService(a.store)
+	service := application.NewThreadService(a.store).WithLifecycleHooks(a.newLifecycleHookEngine())
 	switch args[0] {
 	case "create":
 		return a.threadCreate(ctx, args[1:])

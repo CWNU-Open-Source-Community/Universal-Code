@@ -1456,7 +1456,7 @@ func TestOpenAPIRoutesMatchAuthenticatedLiveHandlers(t *testing.T) {
 				request.Header.Set("Content-Type", "application/json")
 				response = httptest.NewRecorder()
 				fixture.api.ServeHTTP(response, request)
-			} else if spec.OperationID == "inspectThreadCreationRequest" || spec.OperationID == "inspectThreadTurnRequest" || spec.OperationID == "inspectThreadPlanRequest" || spec.OperationID == "inspectWorkspaceFileUpload" {
+			} else if spec.OperationID == "inspectThreadCreationRequest" || spec.OperationID == "inspectThreadTurnRequest" || spec.OperationID == "inspectThreadPlanRequest" || spec.OperationID == "inspectWorkspaceFileUpload" || spec.OperationID == "inspectWorkspaceImageUpload" {
 				request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1"+requestPath, nil)
 				request.Host, request.RemoteAddr = "127.0.0.1:8765", "127.0.0.1:45000"
 				request.Header.Set("Authorization", "Bearer "+testAccessToken)

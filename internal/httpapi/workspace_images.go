@@ -28,6 +28,11 @@ type WorkspaceImageView struct {
 	Image domain.WorkspaceImage `json:"image"`
 }
 
+type WorkspaceImageUploadObservationView struct {
+	State string                 `json:"state"`
+	Image *domain.WorkspaceImage `json:"image,omitempty"`
+}
+
 type workspaceImageStore interface {
 	SaveWorkspaceImage(context.Context, string, string, string, string, []byte) (domain.WorkspaceImage, error)
 	GetWorkspaceImage(context.Context, string, string) (domain.WorkspaceImage, []byte, error)
@@ -85,6 +90,36 @@ func (a *API) serveWorkspaceImage(writer http.ResponseWriter, request *http.Requ
 		}
 		if err := validatePathIdentity(imageID); err != nil {
 			a.writeError(writer, requestID, err, 0)
+			return
+		}
+		if imageID == "request" {
+			if content {
+				a.writeError(writer, requestID, apperror.New(apperror.CodeInvalidArgument, "Image upload lookup cannot request content"), 0)
+				return
+			}
+			key, err := sessionControlIdempotencyKey(request.Header, "image upload lookup")
+			if err != nil {
+				a.writeError(writer, requestID, err, 0)
+				return
+			}
+			reader, ok := a.store.(interface {
+				GetWorkspaceImageByOperationKey(context.Context, string, string) (domain.WorkspaceImage, bool, error)
+			})
+			if !ok {
+				a.writeError(writer, requestID, apperror.New(apperror.CodeNotFound, "Image upload lookup is unavailable"), 0)
+				return
+			}
+			image, found, err := reader.GetWorkspaceImageByOperationKey(request.Context(), workspaceID, key)
+			if err != nil {
+				a.writeError(writer, requestID, err, 0)
+				return
+			}
+			value := WorkspaceImageUploadObservationView{State: "not_received"}
+			if found {
+				value.State, value.Image = "stored", &image
+			}
+			writer.Header().Set("Cache-Control", "no-store")
+			a.writeSuccess(writer, requestID, value, nil)
 			return
 		}
 		image, data, err := store.GetWorkspaceImage(request.Context(), workspaceID, imageID)

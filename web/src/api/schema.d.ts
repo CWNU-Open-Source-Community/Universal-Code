@@ -5234,7 +5234,7 @@ export interface paths {
         };
         /**
          * Export a Thread
-         * @description Returns the complete self-contained Thread, Mission, Run chain, Run-local Sessions, message provenance, and Thread/Run audit events. The HTTP response limit fails closed instead of silently truncating history.
+         * @description Returns the self-contained Thread, Mission, Run chain, Run-local Sessions, message provenance, and Thread/Run audit events. The messages, events, and audit-events sections each hold the first 1000 rows in chronological order and report a longer ledger through their truncated flags.
          */
         get: operations["exportThread"];
         put?: never;
@@ -6243,6 +6243,26 @@ export interface paths {
          * @description Validates original PNG/JPEG/WebP bytes and binds the upload key to exact bytes and display metadata. At most 5 MiB, 8192 pixels per side and 16 Mi pixels. No filesystem path, URL retrieval or execution authority.
          */
         post: operations["uploadWorkspaceImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/image-attachments/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe an original image upload without retrying
+         * @description GET with the original Idempotency-Key only reads the image stored for that workspace and upload key. not_received does not rule out an upload still arriving. No reservation, upload or model call.
+         */
+        get: operations["inspectWorkspaceImageUpload"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -10291,6 +10311,7 @@ export interface components {
         HookDeclarationView: {
             action: string;
             active: boolean;
+            async: boolean;
             event: string;
             failure_policy: string;
             hook_id: string;
@@ -10303,6 +10324,7 @@ export interface components {
             /** Format: int32 */
             timeout_ms: number;
             tool_names: string[];
+            tool_pattern: string;
         };
         HookDiagnosticsView: {
             declarations: components["schemas"]["HookDeclarationView"][];
@@ -12470,6 +12492,7 @@ export interface components {
             ui_evidence: components["schemas"]["VerificationFeatureReadinessView"];
         };
         RunConfigView: {
+            browser_origins?: string[];
             continuity_context_fingerprint?: string;
             interactive: boolean;
             model_route: string;
@@ -15045,10 +15068,13 @@ export interface components {
         };
         ThreadExportView: {
             audit_events: components["schemas"]["ThreadRunAuditEventView"][];
+            audit_events_truncated: boolean;
             events: components["schemas"]["ThreadEventView"][];
+            events_truncated: boolean;
             /** Format: date-time */
             exported_at: string;
             messages: components["schemas"]["ThreadMessageView"][];
+            messages_truncated: boolean;
             mission: components["schemas"]["MissionView"];
             missions: components["schemas"]["MissionView"][];
             /** @enum {string} */
@@ -17026,6 +17052,11 @@ export interface components {
             /** Format: int32 */
             width: number;
             workspace_id: string;
+        };
+        WorkspaceImageUploadObservationView: {
+            image?: components["schemas"]["WorkspaceImage"];
+            /** @enum {string} */
+            state: "not_received" | "stored";
         };
         WorkspaceImageUploadRequestView: {
             data_base64: string;
@@ -32211,6 +32242,46 @@ export interface operations {
             413: components["responses"]["RequestEntityTooLarge"];
             414: components["responses"]["RequestTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["ResourceExhausted"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Unavailable"];
+            504: components["responses"]["GatewayTimeout"];
+        };
+    };
+    inspectWorkspaceImageUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque retry key; only a domain-separated digest is persisted */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Workspace identity */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WorkspaceImageUploadObservationView"];
+                        request_id: string;
+                        /** @constant */
+                        version: "api.v1";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            414: components["responses"]["RequestTooLarge"];
             429: components["responses"]["ResourceExhausted"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];

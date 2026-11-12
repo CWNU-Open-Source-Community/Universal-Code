@@ -26,7 +26,7 @@ func newMigrationFixtureRunService(t testing.TB, state *SQLiteStore) *applicatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version >= 223 {
+	if version >= 230 {
 		return application.NewRunService(state)
 	}
 	if version >= 178 {
