@@ -68,8 +68,10 @@ type NetworkRequest struct {
 // NetworkPolicy covers every page/worker request in a Host while an explicit
 // control lease is active. ReviewRequest must call dispatch once to approve;
 // returning nil without calling it still blocks the request.
+// dispatch takes the review operation's live context and returns only after
+// native deferral completion. A later review error cannot undo a sent request.
 type NetworkPolicy struct {
-	ReviewRequest func(context.Context, NetworkRequest, func() error) error
+	ReviewRequest func(context.Context, NetworkRequest, func(context.Context) error) error
 	Done          <-chan struct{}
 }
 

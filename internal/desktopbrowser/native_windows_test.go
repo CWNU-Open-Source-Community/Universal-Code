@@ -5,6 +5,7 @@ package desktopbrowser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -270,7 +271,7 @@ func TestNativeBrowserProbe(t *testing.T) {
 	var seen atomic.Int32
 	var bodyMu sync.Mutex
 	bodies := map[string]bool{}
-	err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func() error) error {
+	err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func(context.Context) error) error {
 		seen.Add(1)
 		if strings.HasSuffix(request.URL, "/write") {
 			bodyMu.Lock()
@@ -278,7 +279,7 @@ func TestNativeBrowserProbe(t *testing.T) {
 			bodyMu.Unlock()
 			return fmt.Errorf("denied by probe")
 		}
-		return dispatch()
+		return dispatch(ctx)
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -444,12 +445,12 @@ func TestNativeLoginPopupPreservesOpenerAndPolicy(t *testing.T) {
 	}
 	defer lease.Release(context.Background())
 	denied := make(chan NetworkRequest, 2)
-	if err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func() error) error {
+	if err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func(context.Context) error) error {
 		if strings.HasSuffix(request.URL, "/popup-write") {
 			denied <- request
 			return fmt.Errorf("denied popup write")
 		}
-		return dispatch()
+		return dispatch(ctx)
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -517,4 +518,128 @@ func TestNativeLoginPopupPreservesOpenerAndPolicy(t *testing.T) {
 			return
 		}
 	}
+}
+
+func TestNativeNetworkDispatchContextFencesQueuedRequest(t *testing.T) {
+	if os.Getenv("UC_NATIVE_BROWSER_PROBE") != "1" {
+		t.Skip("requires native WebView2 probe")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	ui := startProbeUI(t)
+	var writes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/write" {
+			writes.Add(1)
+			fmt.Fprint(w, "sent")
+			return
+		}
+		fmt.Fprint(w, "<!doctype html><title>Queue source</title>")
+	}))
+	defer server.Close()
+	host, err := NewHost(ctx, HostOptions{ParentHWND: ui.hwnd, Dispatcher: ui.dispatcher, UserDataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.Close(context.Background()) })
+	page, err := host.CreateTab(ctx, TabOptions{URL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitProbe(t, ctx, func() bool { return page.State().Title == "Queue source" })
+	connection, err := page.OpenCDP(ctx, CDPOptions{Dispatch: func(ctx context.Context, send func() error) error { return send() }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	go func() { <-ctx.Done(); _ = connection.Close() }()
+	cdp := &probeCDP{t: t, conn: connection, session: page.ID()}
+	lease, err := host.AcquireControl(ctx, page.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, cancelOp := context.WithCancel(ctx)
+	defer cancelOp()
+	reviewStarted, beginSend := make(chan struct{}), make(chan struct{})
+	sendResult := make(chan error, 1)
+	if err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func(context.Context) error) error {
+		if !strings.HasSuffix(request.URL, "/write") {
+			return dispatch(ctx)
+		}
+		close(reviewStarted)
+		select {
+		case <-beginSend:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		err := dispatch(op)
+		sendResult <- err
+		return err
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	cdp.call("Runtime.evaluate", map[string]any{"expression": "fetch('/write',{method:'POST',body:'queued'}).then(()=>window.fetchSettled=true).catch(()=>window.fetchSettled=true)"})
+	select {
+	case <-reviewStarted:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	blocked, unblock := make(chan struct{}), make(chan struct{})
+	if err = ui.dispatcher.Post(func() { close(blocked); <-unblock }); err != nil {
+		t.Fatal(err)
+	}
+	<-blocked
+	close(beginSend)
+	waitProbe(t, ctx, func() bool {
+		ui.dispatcher.mu.Lock()
+		defer ui.dispatcher.mu.Unlock()
+		return len(ui.dispatcher.queue) > 0
+	})
+	cancelOp()
+	close(unblock)
+	select {
+	case err = <-sendResult:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("queued HTTP dispatch ignored cancelled operation: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	waitProbe(t, ctx, func() bool { return cdp.evaluate("String(window.fetchSettled)") == "true" })
+	if writes.Load() != 0 {
+		t.Fatal("cancelled queued HTTP request reached the server")
+	}
+	if err = lease.Release(ctx); err != nil {
+		t.Fatal(err)
+	}
+	lease, err = host.AcquireControl(ctx, page.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release(context.Background())
+	dispatched, reviewReturn := make(chan struct{}), make(chan struct{})
+	if err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func(context.Context) error) error {
+		err := dispatch(ctx)
+		if strings.HasSuffix(request.URL, "/write") && err == nil {
+			close(dispatched)
+			select {
+			case <-reviewReturn:
+			case <-ctx.Done():
+			}
+		}
+		return err
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	cdp.call("Runtime.evaluate", map[string]any{"expression": "fetch('/write',{method:'POST',body:'actual'})"})
+	select {
+	case <-dispatched:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	// Keep ReviewRequest blocked after dispatch returns. The native request
+	// must already be sent; no later review-return/allow flag may be required.
+	waitProbe(t, ctx, func() bool { return writes.Load() == 1 })
+	close(reviewReturn)
+	t.Log("hidden native HTTP dispatch completed before review returned; cancelled queued dispatch never reached server")
 }

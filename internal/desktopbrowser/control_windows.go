@@ -239,27 +239,40 @@ func (p *nativePage) interceptRequest(args *comObject) {
 			case <-ctx.Done():
 			}
 		}()
-		approved := false
+		attempted := false
 		var decision sync.Mutex
-		send := func() error {
+		send := func(dispatchCtx context.Context) error {
 			decision.Lock()
 			defer decision.Unlock()
-			if approved {
-				return errors.New("native browser request already approved")
+			if attempted {
+				return errors.New("native browser request dispatch already attempted")
 			}
-			return lease.Dispatch(ctx, func() error { approved = true; return nil })
+			attempted = true
+			if dispatchCtx == nil {
+				return errors.New("native request dispatch requires its live operation context")
+			}
+			// Invoke waits for actual COM completion. The caller's operation
+			// context remains live/pending until the request really resumes and
+			// fences navigation invalidation even when this task was queued.
+			return h.options.Dispatcher.Invoke(dispatchCtx, func() error {
+				return lease.Dispatch(dispatchCtx, func() error {
+					if err := ctx.Err(); err != nil {
+						return err
+					}
+					if pending.finished {
+						return ErrClosed
+					}
+					return pending.finishOnUI(true)
+				})
+			})
 		}
-		err := policy.ReviewRequest(ctx, input, send)
-		decision.Lock()
-		allow := err == nil && approved
-		decision.Unlock()
+		_ = policy.ReviewRequest(ctx, input, send)
 		if postErr := h.options.Dispatcher.Post(func() {
 			defer cancel()
-			// Hold the same revocation lock across completing the native
-			// deferral, the point at which Chromium can send the request.
-			if !allow || lease.Dispatch(ctx, func() error { pending.finishOnUI(true); return nil }) != nil {
-				pending.finishOnUI(false)
-			}
+			// A callback that never dispatched must deny the request. If it
+			// dispatched and subsequently returned an error, COM has already
+			// resumed the request and this idempotent cleanup cannot undo it.
+			pending.finishOnUI(false)
 		}); postErr != nil {
 			cancel()
 		}
@@ -275,18 +288,19 @@ func (p *nativePage) blockRequest(args *comObject) {
 		response.release()
 	}
 }
-func (r *nativeRequest) finishOnUI(allow bool) {
+func (r *nativeRequest) finishOnUI(allow bool) error {
 	if r.finished {
-		return
+		return nil
 	}
 	r.finished = true
 	delete(r.host.pending, r)
 	if !allow {
 		r.page.blockRequest(r.args)
 	}
-	_ = comCall(r.deferral, 3)
+	err := comCall(r.deferral, 3)
 	r.deferral.release()
 	r.args.release()
+	return err
 }
 
 func requestBody(request *comObject) ([]byte, bool) {
