@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/session"
 )
 
@@ -32,13 +33,16 @@ type OneShotStore interface {
 
 // OneShotRequest carries one already-validated prompt for an existing
 // Thread. Run creation stays with the caller so workspace, profile, route,
-// and budget flags remain explicit operator choices.
+// and budget flags remain explicit operator choices. Attachments are
+// workspace-scoped file references the caller imported and validated; the
+// turn machinery pins them to the message and projects their evidence.
 type OneShotRequest struct {
 	Version      string
 	ThreadID     string
 	Content      string
 	OperationKey string
 	RequestedBy  string
+	Attachments  []domain.FileAttachmentReference
 }
 
 // OneShotResult reports the turn outcome: the run and thread identities, the
@@ -76,6 +80,7 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 	result, turnErr := s.turns.Execute(ctx, ExecuteThreadTurnRequest{
 		Version: request.Version, ThreadID: request.ThreadID, Content: content,
 		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy,
+		Attachments: request.Attachments,
 	})
 	// When the turn fails mid-execution, messages committed before the error
 	// are still in the session. Extract any partial reply so the caller gets
