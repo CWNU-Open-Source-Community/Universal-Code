@@ -1,0 +1,52 @@
+{
+  "schema_version": "1",
+  "mode": "ocr_delegate",
+  "base": "5bbdc2b2",
+  "reviewed_head": "feat/browser-origin-visibility staged diff",
+  "review_metadata_excluded": [
+    "docs/reviews/browser-origin-visibility/README.md"
+  ],
+  "reviewers": [
+    "主 agent：切片实现与自审",
+    "review_delegate：六项专项核对（输出契约/安全面/import 修复/测试真实性/再生成完整性/消费方排查），无阻塞发现"
+  ],
+  "summary": {
+    "total_git_changed_files": 6,
+    "review_scope_files": 6,
+    "review_metadata_excluded_count": 1,
+    "unread_in_scope": 0,
+    "coverage_rate": 1.0
+  },
+  "files": [
+    {
+      "path": "internal/app/run_command.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/app/run_command_test.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/httpapi/views.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "internal/httpapi/agent_browser_test.go",
+      "coverage": "full",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "docs/openapi.json",
+      "coverage": "generated",
+      "reviewer": "primary_and_delegate"
+    },
+    {
+      "path": "web/src/api/schema.d.ts",
+      "coverage": "generated",
+      "reviewer": "primary_and_delegate"
+    }
+  ]
+}

@@ -27,7 +27,6 @@ export function V2WebAccessSettings({ mode, targets, onChange, onOpenPermissions
 
   return <>
     <h1>{t("配置", "Configuration")}</h1>
-    <p className="v2-settings-lead">{t("为新对话设置网页访问方式。设置会自动保存，当前对话可在输入区单独调整。", "Set web access for new conversations. Settings are saved automatically; adjust the current conversation in its composer.")}</p>
     <section className="v2-settings-section"><h2>{t("新对话默认设置", "New conversation defaults")}</h2>
       <div className="v2-settings-card v2-web-access-settings">
         <div className="v2-setting-row">

@@ -1,12 +1,16 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { vi } from "vitest";
 import { APIRequestError, type APIClient } from "../api/client";
-import type { EventView, RunEventPollView, RunEventStreamView } from "../api/types";
+import type { EventView, HealthView, RunEventPollView, RunEventStreamView } from "../api/types";
+import { useConnectionStore } from "../state/connection";
 import { clearDesktopRunEventMemory, useRunEventStream } from "./use-run-event-stream";
 
 const runtime = vi.hoisted(() => ({ desktop: true }));
 vi.mock("../lib/desktop-bridge", () => ({ desktopRuntimeActive: () => runtime.desktop }));
+
+beforeEach(() => useConnectionStore.setState({ health: { data_store_id: "store-one" } as HealthView }));
+afterEach(() => useConnectionStore.setState({ health: null }));
 
 describe("useRunEventStream Desktop polling", () => {
   beforeEach(() => {
@@ -35,16 +39,14 @@ describe("useRunEventStream Desktop polling", () => {
 
   it("resumes from bounded module memory after a component remount without browser storage", async () => {
     const localStorageWrite = vi.spyOn(Storage.prototype, "setItem");
-    const firstClient = {
-      pollRunEvents: vi.fn().mockResolvedValue(poll([frame(1, "opaque-1")], "opaque-1", false)),
-    } as unknown as APIClient;
-    const firstHook = renderHook(() => useRunEventStream(firstClient, "run-desktop"));
+    const pollRunEvents = vi.fn().mockResolvedValueOnce(poll([frame(1, "opaque-1")], "opaque-1", false))
+      .mockResolvedValue(poll([frame(2, "opaque-2")], "opaque-2", false));
+    const client = { pollRunEvents } as unknown as APIClient;
+    const firstHook = renderHook(() => useRunEventStream(client, "run-desktop"));
     await waitFor(() => expect(firstHook.result.current.frames).toHaveLength(1));
     firstHook.unmount();
 
-    const pollRunEvents = vi.fn().mockResolvedValue(poll([frame(2, "opaque-2")], "opaque-2", false));
-    const secondClient = { pollRunEvents } as unknown as APIClient;
-    const secondHook = renderHook(() => useRunEventStream(secondClient, "run-desktop"));
+    const secondHook = renderHook(() => useRunEventStream(client, "run-desktop"));
     await waitFor(() => expect(secondHook.result.current.frames.map((item) => item.sequence)).toEqual([1, 2]));
 
     expect(pollRunEvents).toHaveBeenCalledWith("run-desktop", "opaque-1", 100, expect.any(AbortSignal));
@@ -53,19 +55,93 @@ describe("useRunEventStream Desktop polling", () => {
     localStorageWrite.mockRestore();
   });
 
-  it("drops one stale in-memory cursor and restarts exactly once from the durable beginning", async () => {
-    const primeClient = {
-      pollRunEvents: vi.fn().mockResolvedValue(poll([frame(1, "stale-cursor")], "stale-cursor", false)),
+  it("does not reuse another client's frames or cursor for the same Run ID", async () => {
+    const firstClient = {
+      pollRunEvents: vi.fn().mockResolvedValue(poll([frame(1, "old-cursor")], "old-cursor", false)),
     } as unknown as APIClient;
-    const prime = renderHook(() => useRunEventStream(primeClient, "run-desktop"));
+    const first = renderHook(() => useRunEventStream(firstClient, "run-desktop"));
+    await waitFor(() => expect(first.result.current.frames).toHaveLength(1));
+    first.unmount();
+
+    const pollRunEvents = vi.fn().mockReturnValue(new Promise(() => {}));
+    const secondClient = { pollRunEvents } as unknown as APIClient;
+    const second = renderHook(() => useRunEventStream(secondClient, "run-desktop"));
+    expect(second.result.current.frames).toEqual([]);
+    expect(pollRunEvents).toHaveBeenCalledWith("run-desktop", "", 100, expect.any(AbortSignal));
+    second.unmount();
+  });
+
+  it("never exposes the previous client's frames during the first render after a connection switch", async () => {
+    const firstClient = {
+      pollRunEvents: vi.fn().mockResolvedValue(poll([frame(1, "old-cursor")], "old-cursor", false)),
+    } as unknown as APIClient;
+    const secondClient = { pollRunEvents: vi.fn().mockReturnValue(new Promise(() => {})) } as unknown as APIClient;
+    const observed: { client: APIClient; frames: RunEventStreamView[]; status: string }[] = [];
+    const hook = renderHook(({ client }) => {
+      const state = useRunEventStream(client, "run-desktop");
+      useLayoutEffect(() => { observed.push({ client, frames: state.frames, status: state.status }); },
+        [client, state.frames, state.status]);
+      return state;
+    }, { initialProps: { client: firstClient } });
+    await waitFor(() => expect(hook.result.current.frames).toHaveLength(1));
+    hook.rerender({ client: secondClient });
+    expect(observed.filter((entry) => entry.client === secondClient).every((entry) => entry.frames.length === 0)).toBe(true);
+    expect(observed.filter((entry) => entry.client === secondClient).every((entry) => entry.status !== "live")).toBe(true);
+    hook.unmount();
+  });
+
+  it("restarts the same client's active poll when the backing data store changes", async () => {
+    const pollRunEvents = vi.fn().mockResolvedValueOnce(poll([frame(1, "old-cursor")], "old-cursor", false))
+      .mockReturnValue(new Promise(() => {}));
+    const client = { pollRunEvents } as unknown as APIClient;
+    const hook = renderHook(() => useRunEventStream(client, "run-desktop"));
+    await waitFor(() => expect(hook.result.current.frames).toHaveLength(1));
+
+    act(() => useConnectionStore.setState({ health: { data_store_id: "store-two" } as HealthView }));
+    await waitFor(() => expect(pollRunEvents).toHaveBeenCalledTimes(2));
+    expect(pollRunEvents).toHaveBeenLastCalledWith("run-desktop", "", 100, expect.any(AbortSignal));
+    expect(hook.result.current.frames).toEqual([]);
+    hook.unmount();
+  });
+
+  it("ignores a late event page from the previous data store", async () => {
+    let resolveOld!: (value: RunEventPollView) => void;
+    const oldPage = new Promise<RunEventPollView>((resolve) => { resolveOld = resolve; });
+    const fresh = frame(1, "new-cursor");
+    const pollRunEvents = vi.fn().mockReturnValueOnce(oldPage).mockResolvedValue(poll([fresh], fresh.cursor, false));
+    const client = { pollRunEvents } as unknown as APIClient;
+    const hook = renderHook(() => useRunEventStream(client, "run-desktop"));
+    act(() => useConnectionStore.setState({ health: { data_store_id: "store-two" } as HealthView }));
+    await waitFor(() => expect(hook.result.current.frames).toEqual([fresh]));
+    await act(async () => resolveOld(poll([frame(1, "old-cursor")], "old-cursor", false)));
+    expect(hook.result.current.frames).toEqual([fresh]);
+    hook.unmount();
+  });
+
+  it("does not restore cached events when the data-store identity is unavailable", async () => {
+    useConnectionStore.setState({ health: null });
+    const pollRunEvents = vi.fn().mockResolvedValueOnce(poll([frame(1, "old-cursor")], "old-cursor", false))
+      .mockReturnValue(new Promise(() => {}));
+    const client = { pollRunEvents } as unknown as APIClient;
+    const first = renderHook(() => useRunEventStream(client, "run-desktop"));
+    await waitFor(() => expect(first.result.current.frames).toHaveLength(1));
+    first.unmount();
+    const second = renderHook(() => useRunEventStream(client, "run-desktop"));
+    expect(second.result.current.frames).toEqual([]);
+    expect(pollRunEvents).toHaveBeenLastCalledWith("run-desktop", "", 100, expect.any(AbortSignal));
+    second.unmount();
+  });
+
+  it("drops one stale in-memory cursor and restarts exactly once from the durable beginning", async () => {
+    const pollRunEvents = vi.fn().mockResolvedValue(poll([frame(1, "stale-cursor")], "stale-cursor", false));
+    const client = { pollRunEvents } as unknown as APIClient;
+    const prime = renderHook(() => useRunEventStream(client, "run-desktop"));
     await waitFor(() => expect(prime.result.current.frames).toHaveLength(1));
     prime.unmount();
 
     const current = frame(1, "current-cursor");
-    const pollRunEvents = vi.fn()
-      .mockRejectedValueOnce(new APIRequestError("cursor mismatch", "INVALID_ARGUMENT", 400, "req-stale"))
+    pollRunEvents.mockReset().mockRejectedValueOnce(new APIRequestError("cursor mismatch", "INVALID_ARGUMENT", 400, "req-stale"))
       .mockResolvedValue(poll([current], "current-cursor", false));
-    const client = { pollRunEvents } as unknown as APIClient;
     const hook = renderHook(() => useRunEventStream(client, "run-desktop"));
 
     await waitFor(() => expect(hook.result.current.frames).toEqual([current]));
@@ -336,6 +412,33 @@ describe("useRunEventStream browser SSE", () => {
     await act(async () => vi.advanceTimersByTimeAsync(1_000));
     expect(streamRunEvents).toHaveBeenCalledTimes(3);
     expect(connections[2]!.options.cursor).toBe("cursor-replay");
+    hook.unmount();
+  });
+
+  it("restarts once from the beginning when a reconnect cursor is rejected", async () => {
+    const { client, connections, streamRunEvents } = streamClient();
+    const hook = renderHook(() => useRunEventStream(client, "run-web"));
+    await flushMicrotasks();
+    await act(async () => {
+      connections[0]!.options.onFrame(frame(1, "stale-cursor"));
+      connections[0]!.resolve();
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(streamRunEvents).toHaveBeenCalledTimes(2);
+    expect(connections[1]!.options.cursor).toBe("stale-cursor");
+    await act(async () => {
+      connections[1]!.reject(new APIRequestError("cursor rejected", "INVALID_ARGUMENT", 400));
+    });
+    expect(streamRunEvents).toHaveBeenCalledTimes(3);
+    expect(connections[2]!.options.cursor).toBe("");
+    expect(hook.result.current.frames).toEqual([]);
+    await act(async () => {
+      connections[2]!.reject(new APIRequestError("bad request", "INVALID_ARGUMENT", 400));
+    });
+    expect(hook.result.current.status).toBe("stopped");
+    expect(hook.result.current.error).toBe("bad request");
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(streamRunEvents).toHaveBeenCalledTimes(3);
     hook.unmount();
   });
 

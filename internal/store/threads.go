@@ -358,16 +358,27 @@ func (s *SQLiteStore) ListThreadEvents(ctx context.Context, threadID string,
 }
 
 func (s *SQLiteStore) listThreadRunAuditEvents(ctx context.Context,
-	threadID string,
-) ([]domain.ThreadRunAuditEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT event.event_id, event.version,
+	threadID string, limit int,
+) ([]domain.ThreadRunAuditEvent, int, error) {
+	var total int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM thread_runs binding
+		JOIN run_events event ON event.run_id = binding.run_id
+		WHERE binding.thread_id = ?`, strings.TrimSpace(threadID)).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	query := `SELECT event.event_id, event.version,
 		event.run_id, event.mission_id, event.sequence, event.type, event.source,
 		COALESCE(event.subject_id, ''), event.payload_json, event.created_at
 		FROM thread_runs binding JOIN run_events event ON event.run_id = binding.run_id
-		WHERE binding.thread_id = ? ORDER BY binding.ordinal, event.sequence`,
-		strings.TrimSpace(threadID))
+		WHERE binding.thread_id = ? ORDER BY binding.ordinal, event.sequence`
+	args := []any{strings.TrimSpace(threadID)}
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	var out []domain.ThreadRunAuditEvent
@@ -377,12 +388,12 @@ func (s *SQLiteStore) listThreadRunAuditEvents(ctx context.Context,
 		if err := rows.Scan(&item.EventID, &item.Version, &item.RunID, &item.MissionID,
 			&item.Sequence, &item.Type, &item.Source, &item.SubjectID,
 			&item.PayloadJSON, &created); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		item.CreatedAt = parseTS(created)
 		out = append(out, item)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 // ListThreadTranscriptSourceBefore reads the append-only Thread ordering key in
@@ -1128,22 +1139,58 @@ func (s *SQLiteStore) ExportThread(ctx context.Context, threadID string) (domain
 			Route: linkedSession.Route, Status: linkedSession.Status,
 			CreatedAt: linkedSession.CreatedAt, UpdatedAt: linkedSession.UpdatedAt})
 	}
-	messages, err := s.ListThreadMessagesPage(ctx, threadRecord.ID, true, 0, 0)
+	messages, err := s.ListThreadMessagesPage(ctx, threadRecord.ID, true, 0, maxThreadExportSection)
 	if err != nil {
 		return domain.ThreadExport{}, err
 	}
-	events, err := s.ListThreadEvents(ctx, threadRecord.ID, 0)
+	messageTotal, err := s.countThreadExportMessages(ctx, threadRecord.ID)
 	if err != nil {
 		return domain.ThreadExport{}, err
 	}
-	auditEvents, err := s.listThreadRunAuditEvents(ctx, threadRecord.ID)
+	events, err := s.ListThreadEvents(ctx, threadRecord.ID, maxThreadExportSection)
+	if err != nil {
+		return domain.ThreadExport{}, err
+	}
+	var eventTotal int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM thread_events WHERE thread_id = ?`,
+		strings.TrimSpace(threadID)).Scan(&eventTotal); err != nil {
+		return domain.ThreadExport{}, err
+	}
+	auditEvents, auditTotal, err := s.listThreadRunAuditEvents(ctx, threadRecord.ID, maxThreadExportSection)
 	if err != nil {
 		return domain.ThreadExport{}, err
 	}
 	return domain.ThreadExport{ProtocolVersion: domain.ThreadExportProtocolVersion,
 		ExportedAt: time.Now().UTC(), Thread: threadRecord, Mission: mission, Missions: missions,
 		Bindings: bindings, Runs: runs, Sessions: sessions, Messages: messages, Events: events,
-		AuditEvents: auditEvents}, nil
+		AuditEvents:       auditEvents,
+		MessagesTruncated: messageTotal > len(messages), EventsTruncated: eventTotal > len(events),
+		AuditEventsTruncated: auditTotal > len(auditEvents)}, nil
+}
+
+// maxThreadExportSection bounds each bulk section of a Thread export. The
+// export buffers one JSON response per request, and a long-lived Thread's
+// messages, events, and per-run audit events grow without limit — an export
+// of such a Thread previously materialized the entire ledger in memory and
+// in the response. Each section keeps the first section-cap rows in
+// chronological order and reports the remainder through its truncated flag,
+// matching the store's page-size convention elsewhere.
+const maxThreadExportSection = 1000
+
+// countThreadExportMessages totals the exact rows the export's message
+// section draws from — committed session messages plus pending and cancelled
+// steering rows across every bound Run — so the truncation flag reflects the
+// whole ledger even when the section itself is capped.
+func (s *SQLiteStore) countThreadExportMessages(ctx context.Context, threadID string) (int, error) {
+	var total int
+	err := s.db.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM thread_runs binding JOIN session_messages message
+			ON message.session_id = binding.session_id WHERE binding.thread_id = ?)
+		+ (SELECT COUNT(*) FROM thread_runs binding JOIN operator_steering_messages steering
+			ON steering.run_id = binding.run_id AND steering.session_id = binding.session_id
+			WHERE binding.thread_id = ? AND steering.status IN ('pending', 'cancelled'))`,
+		strings.TrimSpace(threadID), strings.TrimSpace(threadID)).Scan(&total)
+	return total, err
 }
 
 func scanThread(row scanner) (domain.Thread, error) {
