@@ -8,7 +8,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | Family | Class | Owner | Active IDs | Persisted/exported |
 | --- | --- | --- | ---: | --- |
 | [activity-event-projection](#activity-event-projection) | `projection` | Run activity and HTTP maintainers | 6 | true |
-| [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 12 | true |
+| [agent-browser-supervisor-ledger](#agent-browser-supervisor-ledger) | `internal-durable` | Agent browser, Supervisor tool, and persistence maintainers | 13 | true |
 | [agent-scheduling-delivery-ledgers](#agent-scheduling-delivery-ledgers) | `internal-durable` | Agent graph, scheduler, and batch-delivery maintainers | 93 | true |
 | [analyzer-interchange](#analyzer-interchange) | `external-durable` | Analyzer contract maintainers | 40 | true |
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 58 | true |
@@ -22,7 +22,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
 | [desktop-terminal-settings](#desktop-terminal-settings) | `internal-durable` | Desktop terminal maintainers | 1 | true |
 | [desktop-verification-settings](#desktop-verification-settings) | `internal-durable` | Desktop verification settings maintainers | 1 | true |
-| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 26 | true |
+| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 27 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
@@ -92,11 +92,12 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `agent-browser-supervisor-ledger-reader` (`v1, v2`, active) at `internal/store`
   - `agent-browser-supervisor-authority-reader` (`v1, v2`, active) at `internal/toolgateway`
 
-<details><summary>12 active identifiers</summary>
+<details><summary>13 active identifiers</summary>
 
 - `agent-browser-actions.v1`
 - `browser_click.v2`
 - `browser_key.v2`
+- `browser_move.v2`
 - `browser_navigate.v2`
 - `browser_screenshot.v2`
 - `browser_screenshot_result.v2`
@@ -808,7 +809,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Readers:
   - `desktop-web-presentation-state-reader` (`v1, v2`, active) at `web/src`
 
-<details><summary>26 active identifiers</summary>
+<details><summary>27 active identifiers</summary>
 
 - `desktop_chat_resource.v1`
 - `desktop_clipboard_files.v1`
@@ -816,6 +817,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `desktop_debug_terminal_agent_input.v1`
 - `desktop_file_selection.v1`
 - `desktop_risk_restart.v1`
+- `desktop_shared_browser.v1`
 - `desktop_skill_package_dialog.v1`
 - `desktop_skill_package_install.v1`
 - `desktop_skill_package_inventory.v1`
