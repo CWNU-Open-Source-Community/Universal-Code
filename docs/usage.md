@@ -1111,19 +1111,32 @@ every DNS answer, rechecks up to three redirects, checks robots, uses a 15-secon
 conservative partial PDF text. Missing SearXNG configuration makes Search unavailable
 without a fallback, while a network-disabled Run publishes no Web tools.
 
-The agent browser has its own operator-declared boundary, independent of the web
-network mode: `cyberagent run create --browser-origin <scheme+host+port>` (repeat
-for up to eight exact origins) pins a scoped browser session for the Run. On ask and
-auto runs the model-driven browser then works inside exactly those origins — local
-dev servers (`http://localhost:3000`) and public pages — without global Full
-activation, navigation outside the set fails with the missing origin named, and a
-declared public name is re-checked at dispatch so it cannot resolve into a private
-or metadata address. Full runs keep their unscoped browser and ignore the
-declarations. Origins are trusted operator input pinned at Run creation; the
-untrusted `.prayu` project snapshot can never widen them. Thread successor runs
-inherit the declaration so a multi-turn conversation keeps its boundary; fork,
-resume, and branch never recreate one from continuity data, and moving the
-thread's project carries the declaration to the recreated Run.
+The agent browser has an independent **Allow internet** switch in
+Settings > Permissions > Browser. It works in Ask, Auto and Full, and
+remembers the choice for new conversations in the project. New projects start
+with browser access off. Enabling it allows ordinary HTTP(S) pages, local dev
+servers, redirects and cross-origin page resources without a site list; file and
+command permissions stay unchanged. A completed task stores the choice for its
+next execution without rewriting the completed run's configuration.
+
+The conversation has no persistent browser card. To inspect the agent's browser
+or stop its session, open App preview and select **View browser**. Closing that
+view stops display polling and streaming; it does not stop the browser session.
+
+Advanced settings optionally restrict the browser to specified websites. The
+list uses exact scheme, hostname and port, with up to eight entries. Turning
+access off preserves the list. CLI creation supports `--browser-network
+off|internet|restricted`; repeat `--browser-origin <scheme+host+port>` for
+restricted access. Without an explicit CLI choice, creation uses the saved
+project preference. Repository configuration cannot grant browser access.
+Follow-up runs inherit the conversation's selection; new branches and moves to
+another project use that project's saved preference.
+
+Changing the selection retires obsolete browser sessions and pending HTTP write
+approvals. Existing upload, download release and intercepted HTTP write approvals
+remain separate from network access. WebSocket traffic is outside Chromium Fetch
+interception and is not covered by those HTTP request approvals. See
+[ADR 0196](adr/0196-independent-browser-network-access.md) for the contract.
 
 Thread source cards and `GET /api/v1/runs/{run_id}/web-evidence` use the same public
 projection as the CLI: canonical link, bounded title, status, fetch/stale time, digest,

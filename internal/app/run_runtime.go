@@ -92,13 +92,12 @@ func (a *App) newCLIExecutionRuntime(ctx context.Context,
 		}
 		r.stop = a.startCLICommandRuntimeReconciler(ctx, r.commands)
 	}
-	if capabilities.DangerFullAccessEnabled {
-		r.browser = application.NewAgentBrowserService(a.store, application.AgentBrowserOptions{
-			HomePath: a.home, Capabilities: capabilities,
-			Headless:        !application.BrowserHeadedFromEnvironment(),
-			SessionLifetime: application.BrowserSessionLifetimeFromEnvironment(), ServiceReadiness: r.commands,
-		})
-	}
+	r.browser = application.NewAgentBrowserService(a.store, application.AgentBrowserOptions{
+		HomePath: a.home, Capabilities: capabilities,
+		Headless:        !application.BrowserHeadedFromEnvironment(),
+		SessionLifetime: application.BrowserSessionLifetimeFromEnvironment(), ServiceReadiness: r.commands,
+		SkipForeignNetworkRequestRecovery: true,
+	})
 	return r, nil
 }
 

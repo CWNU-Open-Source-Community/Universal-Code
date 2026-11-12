@@ -35,9 +35,27 @@ func validateAgentBrowserRequest(request AgentBrowserStartRequest) error {
 		request.RuntimeDeadline.After(time.Now().Add(24*time.Hour)) {
 		return ErrBrowserRuntimeBoundary
 	}
-	if len(request.ScopedOrigins) > 0 {
-		// A scoped session (ADR 0195) is an ask/auto authority confined to its
-		// declared origins; a Full activation never carries a scope.
+	if request.NetworkMode != "" {
+		if a.PermissionMode != "ask" && a.PermissionMode != "auto" && a.PermissionMode != "full" {
+			return ErrBrowserRuntimeBoundary
+		}
+		if request.ReviewNetworkWrite == nil {
+			return ErrBrowserRuntimeBoundary
+		}
+		switch request.NetworkMode {
+		case AgentBrowserNetworkInternet:
+			if len(request.ScopedOrigins) != 0 {
+				return ErrBrowserRuntimeBoundary
+			}
+		case AgentBrowserNetworkRestricted:
+			if _, err := NewAgentBrowserOriginScope(request.ScopedOrigins); err != nil {
+				return ErrBrowserRuntimeBoundary
+			}
+		default:
+			return ErrBrowserRuntimeBoundary
+		}
+	} else if len(request.ScopedOrigins) > 0 {
+		// Compatibility for callers of the original exact-origin API.
 		if _, err := NewAgentBrowserOriginScope(request.ScopedOrigins); err != nil {
 			return ErrBrowserRuntimeBoundary
 		}

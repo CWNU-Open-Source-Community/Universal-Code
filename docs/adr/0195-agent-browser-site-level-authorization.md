@@ -8,6 +8,10 @@
 - References: [issue #491](https://github.com/CWNU-Open-Source-Community/Universal-Code/issues/491) (P1 authorization granularity), ADR 0082 (CDP permission
   ceiling), ADR 0083 (restricted loopback runtime), ADR 0103 (Full access start token)
 
+The default interaction is updated by [ADR 0196](0196-independent-browser-network-access.md):
+browser networking has an independent switch, and this ADR's origin list is an
+optional restricted mode rather than a prerequisite for Ask/Auto browsing.
+
 ## Problem
 
 The agent browser requires live Full activation at two layers — authority creation

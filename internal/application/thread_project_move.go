@@ -109,7 +109,11 @@ func (s *ThreadProjectMoveService) Move(ctx context.Context, r domain.ThreadProj
 			}
 			continuity = &snapshot
 		}
-		prepared, err = prepareRun(ctx, CreateRunRequest{Goal: mission.Goal, Profile: string(mission.Profile), Surface: string(mode.Surface), Phase: string(mode.Phase), WorkspaceID: workspace.ID, ModelRoute: old.Config.ModelRoute, Interactive: true, Budget: old.Budget, RequestedBudget: old.Config.RequestedBudget, BrowserOrigins: old.Config.BrowserOrigins, RequestedBy: r.RequestedBy, ProjectConfig: project, ProjectInstructions: &instructions, ContinuityContext: continuity}, nil)
+		creationRequest, selectionErr := inheritProjectBrowserNetworkAccess(ctx, s.store, CreateRunRequest{Goal: mission.Goal, Profile: string(mission.Profile), Surface: string(mode.Surface), Phase: string(mode.Phase), WorkspaceID: workspace.ID, ModelRoute: old.Config.ModelRoute, Interactive: true, Budget: old.Budget, RequestedBudget: old.Config.RequestedBudget, RequestedBy: r.RequestedBy, ProjectConfig: project, ProjectInstructions: &instructions, ContinuityContext: continuity})
+		if selectionErr != nil {
+			return domain.ThreadProjectMoveResult{}, apperror.Normalize(selectionErr)
+		}
+		prepared, err = prepareRun(ctx, creationRequest, nil)
 		if err != nil {
 			return domain.ThreadProjectMoveResult{}, apperror.Normalize(err)
 		}

@@ -16,9 +16,9 @@ const status = (runID = "run-browser", sessionID = "agent-browser-one") => ({
   cleanup_pending: false, tree_reaped: false, profile_removed: false,
 });
 
-function draw(client: APIClient, runID = "run-browser", onDismiss?: () => void) {
+function draw(client: APIClient, runID = "run-browser", onClose?: () => void) {
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
-  const view = render(<QueryClientProvider client={queries}><V2AgentBrowser client={client} runID={runID} running={false} onDismiss={onDismiss} /></QueryClientProvider>);
+  const view = render(<QueryClientProvider client={queries}><V2AgentBrowser client={client} runID={runID} running={false} onClose={onClose} /></QueryClientProvider>);
   return { ...view, queries };
 }
 
@@ -39,7 +39,8 @@ it("uses a read-only GET and renders only a verified screenshot", async () => {
   expect(postControl).not.toHaveBeenCalled();
   expect(downloadVerifiedImage).toHaveBeenCalledWith(expect.stringContaining("session_id=agent-browser-one"),
     status().screenshot, expect.any(AbortSignal));
-  expect(screen.getByText(/浏览器在后台运行/)).toBeInTheDocument();
+  expect(screen.queryByRole("switch", { name: "允许联网" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/浏览器在后台运行/)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /打开/ })).not.toBeInTheDocument();
 });
 
@@ -208,9 +209,9 @@ it("renders a failed browser with a stop control", async () => {
 });
 
 it.each([
-  ["platform_unsupported", /当前系统尚未提供可用的 Agent 浏览器适配器/],
-  ["full_access_required", /完全访问（Full）/],
-  ["runtime_unavailable", /没有可用的 Agent 浏览器运行时/],
+  ["platform_unsupported", /当前系统暂不支持浏览器/],
+  ["full_access_required", /请检查任务权限/],
+  ["runtime_unavailable", /浏览器暂不可用/],
 ])("shows the actual unavailable state: %s", async (code, message) => {
   const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), available: false, can_start: false,
     session_id: undefined, screenshot: undefined, state: "unavailable", unavailable_code: code })),
@@ -221,36 +222,39 @@ it.each([
   expect(client.postControl).not.toHaveBeenCalled();
 });
 
-it("keeps a dismissed notice hidden across refreshes and shows a new browser session", async () => {
-  const unavailable = { ...status(), available: false, can_start: false, session_id: undefined,
-    screenshot: undefined, state: "unavailable", unavailable_code: "full_access_required" };
-  const get = vi.fn(async () => unavailable as unknown);
+it("shows the offline state without network controls", async () => {
+  const client = { baseURL: "/api/v1", hasControl: true, get: vi.fn(async () => ({ ...status(),
+    available: false, can_start: false, session_id: undefined, screenshot: undefined,
+    state: "unavailable", unavailable_code: "browser_network_off" })),
+    postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
+  draw(client);
+  expect(await screen.findByText("浏览器联网已关闭")).toBeInTheDocument();
+  expect(screen.queryByRole("switch", { name: "允许联网" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/完全访问|Full access|当前环境无法使用/u)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "停止浏览器" })).not.toBeInTheDocument();
+});
+
+it("closes the view without sending a stop request", async () => {
+  const get = vi.fn(async () => ({ ...status(), screenshot: undefined }));
   const client = { baseURL: "/api/v1", get, postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
-  const onDismiss = vi.fn();
-  const view = draw(client, "run-browser", onDismiss);
-  fireEvent.click(await screen.findByRole("button", { name: "关闭浏览器提示" }));
-  expect(screen.queryByRole("region", { name: "Agent 浏览器" })).not.toBeInTheDocument();
-  expect(onDismiss).toHaveBeenCalledTimes(1);
-  get.mockResolvedValue({ ...unavailable, updated_at: "2026-10-19T10:00:00Z" });
-  await act(async () => { await view.queries.refetchQueries({ queryKey: agentBrowserQueryKey(client.baseURL, "run-browser") }); });
-  expect(screen.queryByRole("region", { name: "Agent 浏览器" })).not.toBeInTheDocument();
-  get.mockResolvedValue({ ...status(), screenshot: undefined });
-  await act(async () => { await view.queries.refetchQueries({ queryKey: agentBrowserQueryKey(client.baseURL, "run-browser") }); });
-  expect(await screen.findByText("浏览器正在运行")).toBeInTheDocument();
+  const onClose = vi.fn();
+  draw(client, "run-browser", onClose);
+  fireEvent.click(await screen.findByRole("button", { name: "收起浏览器" }));
+  expect(onClose).toHaveBeenCalledOnce();
   expect(client.postControl).not.toHaveBeenCalled();
 });
 
 it.each([
-  [{ state: "waiting_user" }, "网页需要人工处理；以接管模式（CYBERAGENT_BROWSER_HEADED=1）启动后可在可见窗口人工处理"],
+  [{ state: "waiting_user" }, "网页需要人工处理"],
   [{ state: "ready", failure_code: "action_failed" }, "最近一次页面操作失败，请让 Agent 重新读取页面后再试。"],
-])("dismisses routine activity without stopping it and resurfaces for %o", async (attention, text) => {
+])("shows a changed browser state without stopping it: %o", async (attention, text) => {
   const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), screenshot: undefined })),
     postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
   const view = draw(client);
-  fireEvent.click(await screen.findByRole("button", { name: "关闭浏览器提示" }));
+  await screen.findByText("浏览器正在运行");
   await act(async () => { view.queries.setQueryData(agentBrowserQueryKey(client.baseURL, "run-browser"),
     { ...status(), state: "loading", screenshot: undefined }); });
-  expect(screen.queryByRole("region", { name: "Agent 浏览器" })).not.toBeInTheDocument();
+  expect(await screen.findByText("正在加载网页…")).toBeInTheDocument();
   await act(async () => { view.queries.setQueryData(agentBrowserQueryKey(client.baseURL, "run-browser"),
     { ...status(), ...attention, screenshot: undefined }); });
   expect(await screen.findByText(text)).toBeInTheDocument();
@@ -258,23 +262,25 @@ it.each([
   expect(client.postControl).not.toHaveBeenCalled();
 });
 
-it("allows dismissing a status error and resets dismissal when changing Runs", async () => {
+it("keeps a status error closable and reloadable", async () => {
   const client = { baseURL: "/api/v1", get: vi.fn(async () => { throw new Error("offline"); }),
     postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
-  const view = draw(client);
-  fireEvent.click(await screen.findByRole("button", { name: "关闭浏览器提示" }));
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  view.rerender(<QueryClientProvider client={view.queries}><V2AgentBrowser client={client} runID="run-new" running={false} /></QueryClientProvider>);
+  const onClose = vi.fn();
+  draw(client, "run-browser", onClose);
   expect(await screen.findByRole("alert")).toHaveTextContent("无法读取浏览器状态");
   expect(screen.getByRole("button", { name: "重新读取" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "收起浏览器" }));
+  expect(onClose).toHaveBeenCalledOnce();
 });
 
-it("hides an older server without the status route", async () => {
+it("keeps an unsupported connection closable", async () => {
   const client = { baseURL: "/api/v1", get: vi.fn(async () => { throw new APIRequestError("missing", "NOT_FOUND", 404); }),
     postControl: vi.fn(), downloadVerifiedImage: vi.fn() } as unknown as APIClient;
-  const page = draw(client);
-  await waitFor(() => expect(client.get).toHaveBeenCalled());
-  expect(page.container).toBeEmptyDOMElement();
+  const onClose = vi.fn();
+  draw(client, "run-browser", onClose);
+  expect(await screen.findByRole("alert")).toHaveTextContent("当前连接不支持浏览器");
+  fireEvent.click(screen.getByRole("button", { name: "收起浏览器" }));
+  expect(onClose).toHaveBeenCalledOnce();
 });
 
 function render(ui: ReactElement, options?: RenderOptions) {
@@ -285,6 +291,7 @@ function render(ui: ReactElement, options?: RenderOptions) {
 
 it("streams the live view for the active headless session", async () => {
   vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 1280, height: 900, close: vi.fn() })));
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
   const stream = vi.fn(async (_runID: string, options: { onOpen?: () => void; onFrame: (frame: unknown) => void }) => {
     options.onOpen?.();
     options.onFrame({ version: "agent_browser_screencast.v1", run_id: "run-browser", session_id: "agent-browser-one",
@@ -296,9 +303,57 @@ it("streams the live view for the active headless session", async () => {
   draw(client);
   const canvas = await screen.findByRole("img", { name: "Agent 浏览器实时画面" });
   expect(canvas).toBeInTheDocument();
-  await waitFor(() => expect(screen.getByText(/实时画面（直播流不保存/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText("实时画面")).toBeInTheDocument());
   expect(stream).toHaveBeenCalledWith("run-browser", expect.objectContaining({ signal: expect.any(AbortSignal) }));
   expect(createImageBitmap).toHaveBeenCalled();
+});
+
+it("shows the verified screenshot until a frame is drawn, keeps its original available, and restores it on stream failure", async () => {
+  let resolveBitmap!: (bitmap: ImageBitmap) => void;
+  vi.stubGlobal("createImageBitmap", vi.fn(() => new Promise<ImageBitmap>((resolve) => { resolveBitmap = resolve; })));
+  const drawImage = vi.fn();
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D);
+  let onFrame!: Parameters<APIClient["streamAgentBrowserScreencast"]>[1]["onFrame"];
+  let failStream!: (error: Error) => void;
+  const stream = vi.fn<APIClient["streamAgentBrowserScreencast"]>((_runID, options) => {
+    onFrame = options.onFrame;
+    return new Promise<void>((_resolve, reject) => { failStream = reject; });
+  });
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => status()), postControl: vi.fn(),
+    downloadVerifiedImage: vi.fn(async () => new Blob(["png"], { type: "image/png" })),
+    streamAgentBrowserScreencast: stream } as unknown as APIClient;
+  const view = draw(client);
+  const original = await decodeScreenshot();
+  const screenshot = original.querySelector("img")!;
+  const canvas = view.container.querySelector("canvas")!;
+  expect(canvas).not.toBeVisible(); expect(screenshot).toBeVisible();
+  expect(screen.getByText("正在连接实时画面…")).toBeInTheDocument();
+  act(() => onFrame({ version: "agent_browser_screencast.v1", run_id: "run-browser", session_id: "agent-browser-one",
+    generation: 1, media_type: "image/jpeg", width: 1280, height: 900, data: btoa("frame"), captured_at: "2026-10-28T00:00:00Z" }));
+  expect(canvas).not.toBeVisible(); expect(screenshot).toBeVisible();
+  const close = vi.fn();
+  await act(async () => { resolveBitmap({ width: 1280, height: 900, close } as unknown as ImageBitmap); });
+  expect(drawImage).toHaveBeenCalledOnce(); expect(close).toHaveBeenCalledOnce();
+  expect(canvas).toBeVisible(); expect(screenshot).not.toBeVisible(); expect(original).toBeEnabled();
+  fireEvent.click(original);
+  expect(screen.getByRole("dialog", { name: "图片预览 agent-browser-aaaaaaaaaaaa.png" })).toBeInTheDocument();
+  await act(async () => { failStream(new Error("stream interrupted")); });
+  expect(canvas).not.toBeVisible(); expect(screenshot).toBeVisible();
+  expect(screen.getByText("实时画面暂不可用，已回退到截图。")).toBeInTheDocument();
+});
+
+it("keeps the canvas hidden when a frame cannot be decoded", async () => {
+  vi.stubGlobal("createImageBitmap", vi.fn(async () => { throw new Error("invalid image"); }));
+  const stream = vi.fn<APIClient["streamAgentBrowserScreencast"]>(async (_runID, options) => {
+    options.onFrame({ version: "agent_browser_screencast.v1", run_id: "run-browser", session_id: "agent-browser-one",
+      generation: 1, media_type: "image/jpeg", width: 1280, height: 900, data: btoa("invalid"), captured_at: "2026-10-28T00:00:00Z" });
+  });
+  const client = { baseURL: "/api/v1", get: vi.fn(async () => ({ ...status(), screenshot: undefined })),
+    postControl: vi.fn(), downloadVerifiedImage: vi.fn(), streamAgentBrowserScreencast: stream } as unknown as APIClient;
+  const view = draw(client);
+  await waitFor(() => expect(createImageBitmap).toHaveBeenCalledOnce());
+  expect(view.container.querySelector("canvas")).not.toBeVisible();
+  expect(screen.getByText("正在连接实时画面…")).toBeInTheDocument();
 });
 
 it("falls back to screenshots when the live stream is unavailable", async () => {
@@ -307,7 +362,7 @@ it("falls back to screenshots when the live stream is unavailable", async () => 
     streamAgentBrowserScreencast: vi.fn(async () => { throw new TypeError("stream down"); }) } as unknown as APIClient;
   draw(client);
   expect(await screen.findByText("实时画面暂不可用，已回退到截图。")).toBeInTheDocument();
-  expect(screen.getByRole("img", { name: "Agent 浏览器实时画面" })).not.toHaveClass("is-live");
+  expect(screen.queryByRole("img", { name: "Agent 浏览器实时画面" })).not.toBeInTheDocument();
 });
 
 it("shows the operator-declared origins for a scoped session", async () => {

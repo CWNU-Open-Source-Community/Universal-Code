@@ -31,6 +31,9 @@ func TestExecutionWorkerRealBrowserSurvivesContinue(t *testing.T) {
 	provider := &specialistTestProvider{}
 	st, run, child, _ := newScopedSubagentFixture(t, provider, domain.Budget{MaxTurns: 20, MaxTokens: 10000, MaxToolCalls: 30}, 4, 1000, false, domain.SpecialistAdmission{Worker: &domain.WorkerProfile{}, ToolCallLimit: 12}, "", t.TempDir())
 	caps := workerIsolationFullMode(t, st, run.ID)
+	if _, err := application.ChangeBrowserNetworkAccess(t.Context(), st, nil, domain.ChangeBrowserNetworkAccessRequest{Version: domain.BrowserNetworkAccessVersion, RunID: run.ID, ExpectedRevision: 1, BrowserNetworkAccess: domain.BrowserNetworkInternet, OperationKey: "worker-continuation-internet-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
 	product := browserruntime.BrowserProductEdge
 	if configured := os.Getenv("TRAVERSE_TEST_AGENT_BROWSER_PRODUCT"); configured != "" {
 		product = browserruntime.BrowserProduct(configured)

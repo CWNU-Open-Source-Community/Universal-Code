@@ -1,0 +1,15 @@
+.v2-browser-network-control { display:grid; gap:10px; min-width:0; padding:14px 16px; }
+.v2-browser-network-row { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:24px; }
+.v2-browser-network-row strong { font-size:13px; font-weight:600; }
+.v2-browser-network-control p { font-size:12px; line-height:1.5; margin:0; overflow-wrap:anywhere; }
+.v2-browser-network-control p[role="alert"] { color:var(--v2-danger); }
+.v2-browser-network-control summary { color:var(--v2-muted); cursor:pointer; font-size:12px; }
+.v2-browser-network-advanced { display:grid; gap:10px; padding-top:12px; }
+.v2-browser-network-restricted { display:flex; align-items:center; gap:8px; font-size:13px; }
+.v2-browser-network-sites { display:grid; gap:7px; font-size:12px; }
+.v2-browser-network-sites textarea { background:var(--v2-control); border:1px solid var(--v2-border); border-radius:8px; color:var(--v2-ink); font:inherit; line-height:1.5; min-width:0; padding:8px 10px; resize:vertical; width:100%; }
+.v2-browser-network-advanced > button { justify-self:start; }
+.v2-browser-network-control button:not(.v2-cdp-switch) { background:var(--v2-control); border:1px solid var(--v2-border); border-radius:8px; color:inherit; cursor:pointer; font:inherit; font-size:12px; padding:5px 10px; }
+.v2-browser-network-control button:disabled { cursor:default; opacity:.5; }
+.v2-browser-network-control button:focus-visible, .v2-browser-network-control input:focus-visible,
+.v2-browser-network-control textarea:focus-visible, .v2-browser-network-control summary:focus-visible { outline:2px solid var(--prayu-focus); outline-offset:2px; }

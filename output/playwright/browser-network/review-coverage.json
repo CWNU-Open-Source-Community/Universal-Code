@@ -1,0 +1,447 @@
+{
+  "source_commit": "1fd9cd88d2aceed80b69bd0aedf9670ff8302797",
+  "base_commit": "cfeee05a8724a23c673b0ed9971f2ef6e8de9674",
+  "total_files": 68,
+  "reviewable_files": 45,
+  "reviewed_files": 44,
+  "skipped_files": 1,
+  "coverage_rate": 97.78,
+  "files": [
+    {
+      "path": "cmd/workbenchjourney/main.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "docs/openapi.json",
+      "status": "reviewed",
+      "reading": "generated-schema-and-semantic-diff",
+      "note": "Inspected added operations/schemas and compared JSON objects; all existing paths unchanged. Deterministic/live-handler tests passed."
+    },
+    {
+      "path": "internal/app/run_command.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/agent_browser_actions.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/agent_browser_network.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/agent_browser_network_access.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/agent_browser_readiness.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/agent_browser_service.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/browser_network_access.go",
+      "status": "reviewed",
+      "reading": "full-file",
+      "note": ""
+    },
+    {
+      "path": "internal/application/run_creation.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/run_service.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/thread_branch.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/thread_project_move.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/thread_service.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/application/worker_catalogue.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/browserruntime/agent_browser_network.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/browserruntime/agent_browser_runtime.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/browserruntime/agent_browser_scope.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/browserruntime/agent_browser_start.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/browserruntime/agent_browser_types.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/domain/browser_network_access.go",
+      "status": "reviewed",
+      "reading": "full-file",
+      "note": ""
+    },
+    {
+      "path": "internal/domain/run.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/httpapi/agent_browser.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/httpapi/browser_network_access.go",
+      "status": "reviewed",
+      "reading": "full-file",
+      "note": ""
+    },
+    {
+      "path": "internal/httpapi/openapi.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/httpapi/server.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/store/browser_network_access.go",
+      "status": "reviewed",
+      "reading": "full-file",
+      "note": ""
+    },
+    {
+      "path": "internal/store/browser_network_requests.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/store/clean_install_baseline.sql",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/store/clean_install_baseline_generated.go",
+      "status": "reviewed",
+      "reading": "full-file",
+      "note": ""
+    },
+    {
+      "path": "internal/store/migration_v223.go",
+      "status": "reviewed",
+      "reading": "full-file",
+      "note": ""
+    },
+    {
+      "path": "internal/store/migrations.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/store/sqlite.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/store/threads.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "internal/toolgateway/agent_browser_actions.go",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "protocols/registry.json",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "web/src/api/agent-browser.ts",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "web/src/api/browser-network.ts",
+      "status": "reviewed",
+      "reading": "full-file",
+      "note": ""
+    },
+    {
+      "path": "web/src/api/client.ts",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "web/src/api/client/transport.ts",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "web/src/api/schema.d.ts",
+      "status": "skipped",
+      "reading": "generated",
+      "note": "Generated TypeScript: deterministic generation, typecheck and check:api used instead of line-by-line source review."
+    },
+    {
+      "path": "web/src/v2/components/agent-browser.tsx",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    },
+    {
+      "path": "web/src/v2/components/browser-network-control.css",
+      "status": "reviewed",
+      "reading": "full-file",
+      "note": ""
+    },
+    {
+      "path": "web/src/v2/components/browser-network-control.tsx",
+      "status": "reviewed",
+      "reading": "full-file",
+      "note": ""
+    },
+    {
+      "path": "web/src/v2/components/settings.tsx",
+      "status": "reviewed",
+      "reading": "diff-and-relevant-context",
+      "note": ""
+    }
+  ],
+  "ocr_default_exclusions": [
+    {
+      "path": "docs/adr/0195-agent-browser-site-level-authorization.md",
+      "status": "modified",
+      "insertions": 4,
+      "deletions": 0,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/adr/0196-independent-browser-network-access.md",
+      "status": "added",
+      "insertions": 56,
+      "deletions": 0,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/convergence/protocol-registry.md",
+      "status": "modified",
+      "insertions": 6,
+      "deletions": 4,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/development-history.md",
+      "status": "modified",
+      "insertions": 1,
+      "deletions": 0,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/usage.md",
+      "status": "modified",
+      "insertions": 22,
+      "deletions": 13,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "internal/application/browser_network_access_test.go",
+      "status": "added",
+      "insertions": 70,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/application/worker_browser_continuation_test.go",
+      "status": "modified",
+      "insertions": 3,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/application/worker_browser_isolation_test.go",
+      "status": "modified",
+      "insertions": 3,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/application/worker_browser_job_isolation_test.go",
+      "status": "modified",
+      "insertions": 3,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/application/worker_browser_network_access_test.go",
+      "status": "added",
+      "insertions": 63,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/application/worker_resource_scope_test.go",
+      "status": "modified",
+      "insertions": 3,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/browserruntime/agent_browser_internet_test.go",
+      "status": "added",
+      "insertions": 238,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/browserruntime/agent_browser_network_test.go",
+      "status": "modified",
+      "insertions": 17,
+      "deletions": 3,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/httpapi/browser_network_access_test.go",
+      "status": "added",
+      "insertions": 136,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/httpapi/openapi_test.go",
+      "status": "modified",
+      "insertions": 10,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/store/browser_network_access_test.go",
+      "status": "added",
+      "insertions": 110,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/store/browser_network_requests_test.go",
+      "status": "modified",
+      "insertions": 15,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "internal/store/historical_run_seed_test.go",
+      "status": "modified",
+      "insertions": 15,
+      "deletions": 1,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "web/e2e/agent-browser.spec.ts",
+      "status": "modified",
+      "insertions": 20,
+      "deletions": 6,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "web/src/api/browser-network.test.ts",
+      "status": "added",
+      "insertions": 58,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "web/src/v2/components/agent-browser.test.tsx",
+      "status": "modified",
+      "insertions": 21,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "web/src/v2/components/browser-network-control.test.tsx",
+      "status": "added",
+      "insertions": 155,
+      "deletions": 0,
+      "exclude_reason": "default_path"
+    },
+    {
+      "path": "web/src/v2/components/settings.test.tsx",
+      "status": "modified",
+      "insertions": 2,
+      "deletions": 1,
+      "exclude_reason": "default_path"
+    }
+  ],
+  "independent_review": "Eight backend files read in full on the draft by runtime agent; coordinator reviewed final deltas. Full draft coverage is not asserted for the final branch.",
+  "unresolved_findings": [],
+  "known_runtime_limit": "Existing Chromium Fetch/WebSocket interception limitation reproduced and documented in ADR 0196."
+}

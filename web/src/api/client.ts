@@ -1261,6 +1261,10 @@ export class APIClient implements ClientFeatures {
     return this.transport.patchControl<T>(path, body, signal);
   }
 
+  putControl<T>(path: string, body: unknown, idempotencyKey: string, signal?: AbortSignal): Promise<T> {
+    return this.transport.putControl<T>(path, body, idempotencyKey, signal);
+  }
+
   deleteControl<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
     return this.transport.deleteControl<T>(path, body, signal);
   }

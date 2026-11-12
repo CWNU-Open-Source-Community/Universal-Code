@@ -225,7 +225,7 @@ func newV182SandboxRun(t *testing.T, state *SQLiteStore, root string, budget dom
 	if err := state.SaveWorkspace(t.Context(), WorkspaceRecord{ID: "ws-v182", Name: "v182", RootPath: root}); err != nil {
 		t.Fatal(err)
 	}
-	_, run, err := application.NewRunService(state).Create(t.Context(), application.CreateRunRequest{
+	_, run, err := newMigrationFixtureRunService(t, state).Create(t.Context(), application.CreateRunRequest{
 		Goal: "verify current Sandbox transaction budgets", Profile: "code", WorkspaceID: "ws-v182", Budget: budget})
 	if err != nil {
 		t.Fatal(err)

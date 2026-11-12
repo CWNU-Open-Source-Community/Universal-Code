@@ -1,0 +1,16 @@
+{
+  "runtime_commit": "35bcf7bbea2627d17cc95b63a22d4cf9f5e45b07",
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "browser": "Microsoft Edge",
+  "browser_version": "156.0.4314.58",
+  "permission_mode": "ask",
+  "network_mode": "internet",
+  "declared_origins": 0,
+  "requested_url": "https://example.com/",
+  "canonical_url": "https://example.com/",
+  "snapshot_title": "Example Domain",
+  "nonempty_snapshot_text": true,
+  "test_exit_code": 0,
+  "test_result": "PASS",
+  "initial_attempt": "Navigation and snapshot succeeded; temporary test incorrectly also required title phrase in body text and failed that assertion. Corrected temporary assertion passed on one requested rerun."
+}

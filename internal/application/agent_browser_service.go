@@ -33,6 +33,10 @@ type AgentBrowserOptions struct {
 	Product          browserruntime.BrowserProduct
 	Headless         bool
 	SessionLifetime  time.Duration
+	// Nonexclusive CLI managers can share a database with another live browser
+	// owner. Their startup must preserve that owner's paused request approvals.
+	// The default retains Desktop/API startup recovery of previous boot IDs.
+	SkipForeignNetworkRequestRecovery bool
 }
 type AgentBrowserCapabilities struct {
 	ProtocolVersion  string   `json:"protocol_version"`
@@ -138,7 +142,7 @@ func NewAgentBrowserService(st AgentBrowserStore, options AgentBrowserOptions) *
 		return value, nil
 	}
 	s.available = browserruntime.AgentBrowserPlatformAvailable() && filepath.IsAbs(options.HomePath) && options.Capabilities.Validate() == nil
-	if st, ok := st.(browserNetworkRequestStore); ok {
+	if st, ok := st.(browserNetworkRequestStore); ok && !options.SkipForeignNetworkRequestRecovery {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := st.InvalidateOldBrowserNetworkRequests(ctx, s.boot); err != nil {
 			s.available = false
@@ -183,17 +187,20 @@ func (s *AgentBrowserService) currentAuthority(ctx context.Context, runID string
 	}
 	generation, live := s.options.Capabilities.FullAccessGeneration(permission)
 	if !live || s.options.Capabilities.RuntimeAuthority == nil {
-		return a, agentBrowserUnavailable("Agent browser requires live Full activation")
+		return a, agentBrowserUnavailable("Agent browser execution permission is unavailable")
 	}
-	if permission.Mode != domain.RunExecutionPermissionFull {
-		// Scoped ask/auto sessions (ADR 0195): the Run's operator-declared
-		// origins confine the browser to them. Without a declaration, or under
-		// any other non-Full mode, availability is exactly as before. Full
-		// activation keeps its unscoped authority and ignores declarations.
-		if len(run.Config.BrowserOrigins) == 0 ||
-			(permission.Mode != domain.RunExecutionPermissionAsk && permission.Mode != domain.RunExecutionPermissionAuto) {
-			return a, agentBrowserUnavailable("Agent browser requires live Full activation")
-		}
+	access := run.Config.EffectiveBrowserNetworkAccess(permission.Mode)
+	if access == domain.BrowserNetworkOff {
+		return a, agentBrowserUnavailable("Allow browser internet access to use the Agent browser")
+	}
+	if !access.Valid() || (permission.Mode != domain.RunExecutionPermissionAsk && permission.Mode != domain.RunExecutionPermissionAuto && permission.Mode != domain.RunExecutionPermissionFull) {
+		return a, agentBrowserUnavailable("Agent browser network access is invalid")
+	}
+	a = toolgateway.AgentBrowserCallAuthority{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, RunID: run.ID, MissionID: mission.ID, SessionID: run.SessionID, RootAgentID: root.ID, WorkspaceID: mission.WorkspaceID, Surface: mode.Surface, Phase: mode.Phase, Role: root.Role, Profile: mode.Profile, ModeRevision: mode.Revision, PermissionMode: permission.Mode, PermissionSnapshotID: permission.ID, PermissionRevision: permission.Revision, PermissionActivation: generation}
+	if run.Config.BrowserNetworkAccess != "" {
+		a.BrowserNetworkAccess, a.BrowserNetworkRevision = access, run.Config.EffectiveBrowserNetworkRevision()
+	}
+	if access == domain.BrowserNetworkRestricted {
 		scope, e := browserruntime.NewAgentBrowserOriginScope(run.Config.BrowserOrigins)
 		if e != nil {
 			return a, agentBrowserUnavailable("Agent browser declared origins are invalid")
@@ -202,10 +209,8 @@ func (s *AgentBrowserService) currentAuthority(ctx context.Context, runID string
 		for _, origin := range scope.Origins {
 			declared = append(declared, origin.String())
 		}
-		a = toolgateway.AgentBrowserCallAuthority{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, RunID: run.ID, MissionID: mission.ID, SessionID: run.SessionID, RootAgentID: root.ID, WorkspaceID: mission.WorkspaceID, Surface: mode.Surface, Phase: mode.Phase, Role: root.Role, Profile: mode.Profile, ModeRevision: mode.Revision, PermissionMode: permission.Mode, PermissionSnapshotID: permission.ID, PermissionRevision: permission.Revision, PermissionActivation: generation, DeclaredOrigins: declared, ScopeFingerprint: scope.Fingerprint}
-		return a, nil
+		a.DeclaredOrigins, a.ScopeFingerprint = declared, scope.Fingerprint
 	}
-	a = toolgateway.AgentBrowserCallAuthority{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, RunID: run.ID, MissionID: mission.ID, SessionID: run.SessionID, RootAgentID: root.ID, WorkspaceID: mission.WorkspaceID, Surface: mode.Surface, Phase: mode.Phase, Role: root.Role, Profile: mode.Profile, ModeRevision: mode.Revision, PermissionMode: permission.Mode, PermissionSnapshotID: permission.ID, PermissionRevision: permission.Revision, PermissionActivation: generation}
 	return a, nil
 }
 func (s *AgentBrowserService) authority(ctx context.Context, runID string) (toolgateway.AgentBrowserCallAuthority, error) {
@@ -354,8 +359,9 @@ func (s *AgentBrowserService) unavailableCode(ctx context.Context, runID string)
 		return "runtime_unavailable"
 	}
 	permission, err := s.store.GetRunExecutionPermission(ctx, runID)
-	if err == nil && permission.Mode != domain.RunExecutionPermissionFull {
-		return "full_access_required"
+	run, runErr := s.store.GetRun(ctx, runID)
+	if err == nil && runErr == nil && run.Config.EffectiveBrowserNetworkAccess(permission.Mode) == domain.BrowserNetworkOff {
+		return "browser_network_off"
 	}
 	return "run_unavailable"
 }

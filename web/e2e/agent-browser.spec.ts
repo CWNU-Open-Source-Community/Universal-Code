@@ -19,7 +19,7 @@ test("native Agent Browser uses the production API and visible workbench", async
     if (/\/api\/v1\/runs\/[^/]+\/agent-browser$/u.test(new URL(response.url()).pathname)) statusURL = response.url();
   });
   const readStatus = async () => {
-    expect(statusURL, "the actual browser card must read its status").toBeTruthy();
+    expect(statusURL, "the explicitly opened browser view must read its status").toBeTruthy();
     const response = await page.request.get(statusURL, { headers: { Authorization: `Bearer ${metadata.read_token}` } });
     expect(response.ok()).toBe(true);
     return (await response.json()).data;
@@ -40,14 +40,44 @@ test("native Agent Browser uses the production API and visible workbench", async
   await page.getByRole("textbox", { name: "开始新对话" }).fill("JOURNEY_BROWSER_SETUP: Read README.md and wait for the operator to confirm browser access.");
   await page.getByRole("button", { name: "发送消息", exact: true }).click();
   await expect(page.getByText(/JOURNEY_BROWSER_SETUP_READY/u)).toBeVisible({ timeout: nativeMac ? 60_000 : 30_000 });
-  await page.getByRole("button", { name: "请求批准", exact: true }).click();
-  await page.getByRole("menuitemradio", { name: "完全访问权限", exact: true }).click();
-  await page.getByRole("button", { name: "确认启用", exact: true }).click();
-  await expect(page.getByRole("button", { name: /完全访问权限 · 已激活/u })).toBeVisible();
+  const card = page.getByRole("region", { name: before ? "Agent 浏览器" : "浏览器画面", exact: true });
+  if (before) {
+    await page.getByRole("button", { name: "请求批准", exact: true }).click();
+    await page.getByRole("menuitemradio", { name: "完全访问权限", exact: true }).click();
+    await page.getByRole("button", { name: "确认启用", exact: true }).click();
+    await expect(page.getByRole("button", { name: /完全访问权限 · 已激活/u })).toBeVisible();
+  } else {
+    await expect(card).toHaveCount(0);
+    await expect(page.getByRole("switch", { name: "允许联网", exact: true })).toHaveCount(0);
+    expect(statusURL, "ordinary chat must not poll the browser status").toBe("");
+    await page.screenshot({ path: resolve(evidence!, "after-chat.png") });
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByRole("button", { name: "当前任务权限", exact: true }).click();
+    const internet = page.getByRole("switch", { name: "允许联网", exact: true });
+    await expect(internet).not.toBeChecked();
+    await internet.click();
+    await expect(internet).toBeChecked();
+    await page.screenshot({ path: resolve(evidence!, "after-settings.png") });
+    await page.reload();
+    await page.getByLabel(/查看令牌|Read access token/u).fill(metadata.read_token);
+    await page.getByLabel(/操作令牌|Control access token/u).fill(metadata.control_token);
+    await page.getByRole("button", { name: "连接", exact: true }).click();
+    await expect(internet).toBeChecked();
+    await page.getByRole("button", { name: "返回应用", exact: true }).click();
+    await expect(card).toHaveCount(0);
+    await expect(page.getByRole("switch", { name: "允许联网", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "请求批准", exact: true })).toBeVisible();
+  }
   await page.getByRole("textbox", { name: "继续对话" }).fill("JOURNEY_BROWSER: Use the ordinary browser tools on the owned local test page; enter a query, apply it locally, and capture the actual page.");
   await page.getByRole("button", { name: "发送消息", exact: true }).click();
-  const card = page.getByRole("region", { name: "Agent 浏览器", exact: true });
+  if (!before) {
+    await expect(card).toHaveCount(0);
+    await page.getByRole("button", { name: "应用预览", exact: true }).click();
+    await page.getByRole("button", { name: "查看浏览器", exact: true }).click();
+  }
   await expect(card).toBeVisible();
+  // The view renders its loading state before its first status response arrives.
+  await expect.poll(() => statusURL, { message: "the opened browser view must finish its initial status request" }).not.toBe("");
   if (before) {
     await expect(page.getByText(/JOURNEY_BROWSER_UNAVAILABLE/u)).toBeVisible();
     await expect.poll(async () => (await readStatus()).unavailable_code).toBe("platform_unsupported");
@@ -60,9 +90,12 @@ test("native Agent Browser uses the production API and visible workbench", async
     }, { timeout: nativeMac ? 240_000 : 60_000 }).toBe(true);
     expect(await readStatus(), "browser journey must reach screenshot capture")
       .toMatchObject({ last_action: "browser_screenshot" });
-    const image = card.getByRole("img", { name: /Agent 浏览器页面：Owned Agent Browser check/u });
+    await card.getByRole("button", { name: "查看浏览器截图原图", exact: true }).click();
+    const original = page.getByRole("dialog", { name: /^图片预览 agent-browser-/u });
+    const image = original.getByRole("img", { name: /^agent-browser-/u });
     await expect(image).toBeVisible();
     expect(await image.evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    await original.getByRole("button", { name: "关闭图片预览", exact: true }).click();
   }
   const observed = await readStatus();
   await card.scrollIntoViewIfNeeded();
@@ -82,6 +115,9 @@ test("native Agent Browser uses the production API and visible workbench", async
     harness_revision: process.env.WORKBENCH_JOURNEY_HARNESS_REVISION,
     backend: "production app.ExecuteContext", frontend: "production Vite build", provider: "controlled offline fixture",
     provider_reply_held_for_capture: !before,
-    full_permission_confirmed_in_ui: true, viewport: page.viewportSize(), observed, closed,
+    full_permission_confirmed_in_ui: before, browser_network_enabled_in_ui: !before,
+    browser_network_settings_surface: before ? null : "settings/permissions",
+    browser_view_opened_explicitly: !before,
+    viewport: page.viewportSize(), observed, closed,
   }, null, 2));
 });

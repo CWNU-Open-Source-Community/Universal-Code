@@ -26,13 +26,27 @@ func newMigrationFixtureRunService(t testing.TB, state *SQLiteStore) *applicatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version >= 178 {
+	if version >= 230 {
 		return application.NewRunService(state)
+	}
+	if version >= 178 {
+		return application.NewRunService(historicalBrowserPreferenceStore{state})
 	}
 	return application.NewRunService(legacyRunSeedStore{state})
 }
 
 type legacyRunSeedStore struct{ *SQLiteStore }
+
+// The historical schema cannot contain a browser network preference. Keep
+// fixture setup independent of tables introduced after its pinned version.
+type historicalBrowserPreferenceStore struct{ *SQLiteStore }
+
+func (s historicalBrowserPreferenceStore) GetBrowserNetworkPreference(_ context.Context, workspaceID string) (domain.BrowserNetworkPreference, error) {
+	return domain.BrowserNetworkPreference{WorkspaceID: workspaceID, BrowserNetworkAccess: domain.BrowserNetworkOff}, nil
+}
+func (s legacyRunSeedStore) GetBrowserNetworkPreference(_ context.Context, workspaceID string) (domain.BrowserNetworkPreference, error) {
+	return domain.BrowserNetworkPreference{WorkspaceID: workspaceID, BrowserNetworkAccess: domain.BrowserNetworkOff}, nil
+}
 
 func (s legacyRunSeedStore) CreateMissionRun(ctx context.Context, mission domain.Mission, run domain.Run,
 	mode domain.RunModeSnapshot, linkedSession session.Session, createSession bool, initialEvents []events.Event,

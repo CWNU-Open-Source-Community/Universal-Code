@@ -18,7 +18,7 @@ func TestSchemaV186UpgradePreservesLegacyCreationAndAdmitsBoundedBudget(t *testi
 	if err := state.SaveWorkspace(t.Context(), workspace); err != nil {
 		t.Fatal(err)
 	}
-	mission, legacy, err := application.NewRunService(state).Create(t.Context(), application.CreateRunRequest{Goal: "preserve legacy creation", WorkspaceID: workspace.ID, Profile: "code", Interactive: true, Budget: domain.DefaultBudget(), RequestedBy: "http_control"})
+	mission, legacy, err := newMigrationFixtureRunService(t, state).Create(t.Context(), application.CreateRunRequest{Goal: "preserve legacy creation", WorkspaceID: workspace.ID, Profile: "code", Interactive: true, Budget: domain.DefaultBudget(), RequestedBy: "http_control"})
 	if err != nil {
 		t.Fatal(err)
 	}
