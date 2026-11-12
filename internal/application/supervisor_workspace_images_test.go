@@ -75,7 +75,7 @@ func workspaceImageProjectionFixture(t *testing.T) (*AgentRunner, domain.Supervi
 		Checkpoint: domain.SupervisorCheckpoint{RunID: scope.RunID, AttemptID: "attempt-image", NextTurn: 1}}
 	completed := time.Now().UTC()
 	call := domain.SupervisorToolCall{RunID: scope.RunID, Turn: 1, AttemptID: turn.Checkpoint.AttemptID,
-		AgentID: scope.RootAgentID, AgentAttemptID: turn.Checkpoint.AttemptID, AgentAttribution: domain.AgentAttributionSupervisorRoot,
+		AgentID: scope.RootAgentID, AgentAttemptID: turn.Checkpoint.AttemptID, AgentAttribution: domain.AgentAttributionRecorded,
 		Round: 1, Position: 1, ModelAttempt: 1, CallID: "call-view-image", ToolName: string(toolgateway.WorkspaceViewImageTool),
 		PayloadJSON: `{"version":"agent-code-tools.v1","path":"preview.png"}`, AuthorityJSON: string(rawAuthority),
 		Status: domain.SupervisorToolCompleted, CreatedAt: completed, CompletedAt: &completed}
@@ -111,6 +111,12 @@ func TestSupervisorWorkspaceImagesEnforcesExactCallAndOwner(t *testing.T) {
 		}},
 		{"other root agent", func(turn *domain.SupervisorTurn, _ *domain.SupervisorToolCall, _ *llm.ChatRequest) {
 			turn.Agent.ID = "other-root"
+		}},
+		{"legacy actor attribution", func(_ *domain.SupervisorTurn, call *domain.SupervisorToolCall, _ *llm.ChatRequest) {
+			call.AgentAttribution = domain.AgentAttributionLegacyRoot
+		}},
+		{"operator attribution", func(_ *domain.SupervisorTurn, call *domain.SupervisorToolCall, _ *llm.ChatRequest) {
+			call.AgentAttribution = domain.AgentAttributionOperatorRoot
 		}},
 		{"different result", func(_ *domain.SupervisorTurn, _ *domain.SupervisorToolCall, request *llm.ChatRequest) {
 			request.Messages[0].ToolResults[0].Content = "{}"
@@ -155,6 +161,20 @@ func TestSupervisorWorkspaceImagesEnforcesExactCallAndOwner(t *testing.T) {
 			test.mutate(&turn, &call, &request)
 			if _, err := runner.supervisorWorkspaceImages(t.Context(), turn, request, []domain.SupervisorToolRound{{Calls: []domain.SupervisorToolCall{call}}}, true); err == nil {
 				t.Fatal("mismatched call/image owner was accepted")
+			}
+		})
+	}
+}
+
+func TestSupervisorWorkspaceImagesAcceptsProvenRootAttributionSources(t *testing.T) {
+	for _, source := range []domain.AgentAttributionSource{domain.AgentAttributionRecorded, domain.AgentAttributionSupervisorRoot} {
+		t.Run(string(source), func(t *testing.T) {
+			runner, turn, call := workspaceImageProjectionFixture(t)
+			call.AgentAttribution = source
+			request := llm.ChatRequest{Messages: []llm.Message{{Role: "user", ToolResults: []llm.ToolResult{{ToolCallID: call.CallID, Content: call.ResultJSON}}}}}
+			projected, err := runner.supervisorWorkspaceImages(t.Context(), turn, request, []domain.SupervisorToolRound{{Calls: []domain.SupervisorToolCall{call}}}, true)
+			if err != nil || len(projected.Messages[0].Images) != 1 {
+				t.Fatalf("valid %s root image rejected: %v", source, err)
 			}
 		})
 	}

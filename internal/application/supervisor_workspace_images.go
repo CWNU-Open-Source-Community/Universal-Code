@@ -45,7 +45,8 @@ func (s *AgentRunner) supervisorWorkspaceImages(ctx context.Context, turn domain
 			canonical, payloadErr := toolgateway.NormalizeAgentCodePayload(toolgateway.WorkspaceViewImageTool, json.RawMessage(call.PayloadJSON))
 			if err != nil || payloadErr != nil || call.Validate() != nil || result.IsError || result.Content != call.ResultJSON ||
 				call.RunID != turn.Run.ID || call.AttemptID != turn.Checkpoint.AttemptID || call.Turn != turn.Checkpoint.NextTurn ||
-				call.AgentAttribution != domain.AgentAttributionSupervisorRoot || call.AgentID != authority.RootAgentID ||
+				(call.AgentAttribution != domain.AgentAttributionRecorded && call.AgentAttribution != domain.AgentAttributionSupervisorRoot) ||
+				call.AgentID != authority.RootAgentID ||
 				authority.RootAgentID != turn.Agent.ID || call.AgentAttemptID != call.AttemptID || authority.Worker != nil ||
 				authority.RunID != turn.Run.ID || authority.MissionID != turn.Mission.ID || authority.SessionID != turn.Run.SessionID ||
 				authority.WorkspaceID != turn.Mission.WorkspaceID || string(canonical) != call.PayloadJSON ||
