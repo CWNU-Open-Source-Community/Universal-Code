@@ -147,7 +147,7 @@ describe("shared advanced settings", () => {
       ] }), listPriceSnapshots: vi.fn().mockResolvedValue({ items: [] }) }, "models");
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     expect(screen.queryByRole("textbox", { name: "价格文档" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /高级模型设置/ }));
+    await user.click(screen.getByRole("button", { name: /默认模型与价格/ }));
     await user.selectOptions(await screen.findByRole("combobox", { name: "新对话默认模型" }), "sample/two");
     expect(screen.queryByRole("combobox", { name: "review 模型路由" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "保存新对话默认模型" }));
@@ -169,7 +169,7 @@ describe("shared advanced settings", () => {
     mount({ modelAvailability: vi.fn().mockResolvedValue({ providers: [], routes: [] }),
       listPriceSnapshots: vi.fn().mockResolvedValue({ items: [] }) }, "advanced-models");
     expect(screen.getByRole("heading", { name: "模型", level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /高级模型设置/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /默认模型与价格/ })).toHaveAttribute("aria-expanded", "true");
     expect(await screen.findByRole("region", { name: "高级模型设置" })).toBeInTheDocument();
   });
 
@@ -185,7 +185,7 @@ describe("shared advanced settings", () => {
     await user.clear(displayName);
     await user.type(displayName, "尚未保存的名称");
     rerenderSection("advanced-models");
-    await waitFor(() => expect(screen.getByRole("button", { name: /高级模型设置/ }))
+    await waitFor(() => expect(screen.getByRole("button", { name: /默认模型与价格/ }))
       .toHaveAttribute("aria-expanded", "true"));
     expect(screen.getByRole("textbox", { name: "显示名称" })).toHaveValue("尚未保存的名称");
     expect(await screen.findByRole("region", { name: "高级模型设置" })).toBeInTheDocument();

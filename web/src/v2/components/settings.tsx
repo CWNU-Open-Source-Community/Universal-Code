@@ -399,7 +399,7 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
   const advancedPanel = <section className="v2-model-advanced">
       <button aria-expanded={advancedOpen} className="v2-model-advanced-toggle"
         onClick={() => setAdvancedOpen((open) => !open)} type="button">
-        {t("高级模型设置：默认模型、能力诊断与费用预算", "Advanced model settings: defaults, capabilities & cost budgets")}
+        {t("默认模型与价格", "Default model and pricing")}
       </button>
       {advancedOpen && <><p>{t("新对话可在输入区直接选模型；这里管理未单独选择时的默认值。价格表只用于启用金额上限的任务。", "Choose a model directly in a new conversation. Set defaults here for tasks without a specific selection. Pricing is only used for tasks with a cost limit.")}</p>
         <ModelAvailabilitySettings client={client} /></>}
