@@ -42,9 +42,7 @@ export function UsageSettings({ client, threadID = "", onOpenThread }: { client:
 
   return <div className="v2-usage">
     <header className="v2-usage-heading"><div><h1>{t("用量统计", "Usage")}</h1>
-      <p>{scopedThreadID
-        ? t("当前聊天所有轮次的模型调用与本地费用", "Model usage and local costs in the current chat")
-        : t("Universal-Code 的模型调用与本地费用", "Model usage and local costs in Universal-Code")}</p></div>
+      </div>
       <div className="v2-usage-controls"><div className="v2-setting-segmented" role="group" aria-label={t("统计聊天范围", "Usage scope")}>
         <button type="button" aria-pressed={!scopedThreadID} onClick={() => setCurrentChat(false)}>{t("所有聊天", "All chats")}</button>
         <button type="button" aria-pressed={!!scopedThreadID} disabled={!threadID} onClick={() => setCurrentChat(true)}>{t("当前聊天", "Current chat")}</button>

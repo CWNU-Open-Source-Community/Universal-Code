@@ -9,15 +9,20 @@ import (
 	"io"
 	"mime"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/fileattachment"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/projectconfig"
+	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/workspace"
 )
@@ -33,6 +38,13 @@ import (
 // dispatch, and no flag here can widen it. Approval waits, budget
 // exhaustion, and failures surface as a non-zero exit with the run status.
 func (a *App) execCommand(ctx context.Context, args []string) error {
+	// SIGINT (and SIGTERM where the platform delivers it) becomes a clean
+	// cancellation instead of a hard process kill: the turn machinery records
+	// the durable handoff failure through context.WithoutCancel, the Run stays
+	// recoverable for follow-up thread sends, and exec exits non-zero
+	// (cancelled → exit 7; a --timeout deadline → exit 9).
+	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 	if err := a.ensureStore(); err != nil {
 		return err
 	}
@@ -50,6 +62,10 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	var attachPaths repeatedString
 	fs.Var(&attachPaths, "attach", "attach a file to the prompt; repeatable, at most 4, each at most 5 MiB")
 	jsonOutput := fs.Bool("json", false, "emit a structured JSON result")
+	instructions := fs.String("instructions", "",
+		"fix extra operator instructions as a Thread context pin for this invocation")
+	outputLastMessage := fs.String("output-last-message", "",
+		"write the final assistant reply to this file; empty disables it")
 	enablePermissionControl := fs.Bool("enable-permission-control", false,
 		"enable the operator-approval runtime for this process")
 	enableFullAccess := fs.Bool("enable-danger-full-access", false,
@@ -60,27 +76,59 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"workspace": true, "profile": true, "route": true,
 		"max-turns": true, "max-tokens": true, "max-tool-calls": true,
 		"max-cost-usd": true, "timeout": true, "stdin": false, "json": false,
-		"continue": true, "attach": true,
+		"instructions":              true,
+		"output-last-message":       true,
+		"continue":                  true,
+		"attach":                    true,
 		"enable-permission-control": false, "enable-danger-full-access": false,
 		"confirm-full": false,
 	})); err != nil {
 		return err
 	}
+	if *outputLastMessage != strings.TrimSpace(*outputLastMessage) {
+		return errors.New("exec --output-last-message path cannot contain surrounding whitespace")
+	}
 	prompt := strings.Join(fs.Args(), " ")
 	if *stdin {
-		raw, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("read prompt from stdin: %w", err)
+		// Cancellation must unblock an idle stdin read: Ctrl-C while waiting
+		// for piped input should exit with the cancelled code instead of
+		// hanging until input arrives — io.ReadAll alone never observes the
+		// context. The abandoned reader goroutine may stay blocked on EOF;
+		// the process is exiting anyway.
+		type stdinRead struct {
+			data []byte
+			err  error
 		}
-		prompt = string(raw)
+		read := make(chan stdinRead, 1)
+		go func(input *os.File) {
+			raw, readErr := io.ReadAll(input)
+			read <- stdinRead{data: raw, err: readErr}
+		}(os.Stdin)
+		select {
+		case result := <-read:
+			if result.err != nil {
+				return fmt.Errorf("read prompt from stdin: %w", result.err)
+			}
+			prompt = string(result.data)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return errors.New(`usage: cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--timeout 30m] [--json] [--continue <thread-id>]`)
+		return errors.New(`usage: cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--instructions <text>] [--timeout 30m] [--json] [--continue <thread-id>]`)
 	}
 	continueID := strings.TrimSpace(*continueThread)
 	if continueID == "" && strings.TrimSpace(*workspaceName) == "" {
 		return errors.New("exec requires --workspace <name> (or --continue <thread-id>)")
+	}
+	// Validate the fixed instructions before any Run exists: a late pin
+	// failure would otherwise strand a created Run, and the operator gets the
+	// same text contract (UTF-8, no NUL, 8192-rune cap, no redacted secrets)
+	// the interactive Thread pin surface enforces.
+	fixedInstructions, err := normalizeExecInstructions(*instructions)
+	if err != nil {
+		return err
 	}
 	if *timeout > 0 {
 		var cancel context.CancelFunc
@@ -90,7 +138,6 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 
 	var threadID, runID, workspaceID string
 	var attachmentRefs []domain.FileAttachmentReference
-	var err error
 
 	if continueID != "" {
 		// Continue mode: resolve the Thread's latest Run. Process-local
@@ -180,7 +227,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	// fresh flags enable this process's adapters in both modes; they never
 	// widen the durable selection.
 	capabilities := cliExecutionPermissionCapabilities(*enablePermissionControl, *enableFullAccess)
-	releaseFull, err := a.activateCLIInvocationFull(ctx, runID, capabilities, *confirmFull)
+	releaseFull, err := a.activateExecInvocationFull(ctx, threadID, runID, capabilities, *confirmFull, continueID != "")
 	if err != nil {
 		return err
 	}
@@ -208,9 +255,26 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		}
 		dependencies.StandardCodeDelivery = delivery
 	}
-	turns := application.NewThreadTurnService(a.store,
+	turns := application.NewThreadTurnServiceWithExecutionCapabilities(a.store,
 		application.NewRunLifecycleControlService(a.store).WithLifecycleHooks(a.newLifecycleHookEngine()),
-		application.NewRunExecutionHandoffWithRuntime(a.store, a.router, a.checker, dependencies))
+		application.NewRunExecutionHandoffWithRuntime(a.store, a.router, a.checker, dependencies), capabilities)
+	if fixedInstructions != "" {
+		if err := pinExecInstructions(ctx, turns, threadID,
+			fixedInstructions); err != nil {
+			// A created Run with a failed pin would sit idle until its budget
+			// expires. Cancel it on a bounded detached context so the
+			// operator gets a terminal Run, and report the Run ID if even
+			// the cancellation fails. The pin error stays primary.
+			if continueID == "" {
+				cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				if _, cancelErr := application.NewRunService(a.store).Cancel(cancelCtx, runID); cancelErr != nil {
+					err = fmt.Errorf("%w (run %s could not be cancelled: %v)", err, runID, cancelErr)
+				}
+				cancel()
+			}
+			return err
+		}
+	}
 	oneShot := application.NewOneShotService(a.store, turns)
 	result, err := oneShot.Run(ctx, application.OneShotRequest{
 		Version:      domain.ThreadMessageProtocolVersion,
@@ -220,25 +284,45 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		RequestedBy:  "cli_exec_operator",
 		Attachments:  attachmentRefs,
 	})
+	// The last-message file is written before the standard output, so a
+	// failed write fails the command instead of leaving a stale file beside
+	// a success exit code. The reply may be empty when the turn paused
+	// before producing one; the file then records that emptiness.
+	if target := *outputLastMessage; target != "" {
+		if err := os.WriteFile(target, []byte(result.Reply), 0o600); err != nil {
+			return fmt.Errorf("write --output-last-message %s: %w", target, err)
+		}
+	}
+	if *jsonOutput {
+		// A failed handoff can transition the Run after the result snapshot
+		// was taken; report the current durable status. A lookup failure
+		// keeps the snapshot and never masks the turn error below.
+		if run, runErr := a.store.GetRun(ctx, result.RunID); runErr == nil {
+			result.RunStatus = string(run.Status)
+		}
+		encoder := json.NewEncoder(a.out)
+		if encodeErr := encoder.Encode(map[string]any{"run_id": result.RunID,
+			"thread_id": result.ThreadID, "status": result.RunStatus,
+			"stop_reason": result.StopReason, "turn_status": result.TurnStatus,
+			"reply": result.Reply,
+			"usage": map[string]any{
+				"input_tokens":  result.InputTokens,
+				"output_tokens": result.OutputTokens,
+				"total_tokens":  result.TotalTokens,
+				"duration_ms":   result.DurationMs,
+				"turns":         result.TurnCount,
+			}}); encodeErr != nil {
+			return encodeErr
+		}
+	} else if result.Reply != "" {
+		fmt.Fprintln(a.out, result.Reply)
+	}
 	if err != nil {
 		return err
 	}
-	// Both output modes emit the structured result / reply to stdout first,
-	// then the exit code reflects the outcome: the supervisor's turn_finish
-	// stop reason is the completion signal for a one-shot task;
-	// waiting_approval, root_wait, and failures exit non-zero with the reason
-	// and run status.
-	if *jsonOutput {
-		encoder := json.NewEncoder(a.out)
-		if err := encoder.Encode(map[string]any{"run_id": result.RunID,
-			"thread_id": result.ThreadID, "status": result.RunStatus,
-			"stop_reason": result.StopReason, "turn_status": result.TurnStatus,
-			"reply": result.Reply}); err != nil {
-			return err
-		}
-	} else {
-		fmt.Fprintln(a.out, result.Reply)
-	}
+	// The supervisor's turn_finish stop reason is the completion signal for a
+	// one-shot task; waiting_approval, root_wait, and failures exit non-zero
+	// with the reason and run status.
 	if result.StopReason != "turn_finish" {
 		return fmt.Errorf("exec turn did not finish: stop_reason=%s turn_status=%s run_status=%s",
 			result.StopReason, result.TurnStatus, result.RunStatus)
@@ -262,6 +346,11 @@ func (a *App) resolveContinueThread(ctx context.Context,
 				fmt.Sprintf("continue thread %s: not found", strings.TrimSpace(threadID)))
 		}
 		return "", "", fmt.Errorf("continue thread: %w", err)
+	}
+	if thread.Status != domain.ThreadActive {
+		return "", "", apperror.New(apperror.CodeFailedPrecondition,
+			fmt.Sprintf("continue thread %s: status is %s; only active threads can be continued",
+				thread.ID, thread.Status))
 	}
 	runLookupID := thread.ActiveRunID
 	if runLookupID == "" {
@@ -293,6 +382,54 @@ func clipExecGoal(prompt string) string {
 	return clipped
 }
 
+// normalizeExecInstructions validates the exec --instructions value before any
+// Run is created. An unset flag means no fixed instructions; a whitespace-only
+// value is an operator mistake and fails loudly. Otherwise the text must
+// satisfy the Thread context pin contract and carry no protected secret
+// content, mirroring the interactive pin surface's storage gate.
+func normalizeExecInstructions(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return "", errors.New("exec --instructions requires nonempty text")
+	}
+	if err := domain.ValidateContextPinText(text); err != nil {
+		return "", fmt.Errorf("exec --instructions: %w", err)
+	}
+	if text != redact.String(text) {
+		return "", errors.New("exec --instructions: remove protected secrets before fixing them as context guidance")
+	}
+	return text, nil
+}
+
+// pinExecInstructions fixes the invocation's extra operator instructions as a
+// Thread context pin before the first turn. The ordinary pin delivery — an
+// integrity-checked, operator-confirmed fixed requirement selected as a
+// protected section every turn — carries them for this Run and any successor
+// the Thread creates, with the same authority ceiling as every other pin: the
+// text never grants tools, permissions, or policy exceptions.
+func pinExecInstructions(ctx context.Context, turns *application.ThreadTurnService,
+	threadID, text string) error {
+	state, err := turns.InspectContextPins(ctx, threadID)
+	if err != nil {
+		return fmt.Errorf("exec instructions pin inspect: %w", err)
+	}
+	if _, err := turns.ControlContextPin(ctx, domain.ThreadContextPinControl{
+		Version:          domain.ThreadContextPinsVersion,
+		ThreadID:         threadID,
+		Action:           "add",
+		ExpectedRevision: state.Revision,
+		Text:             text,
+		OperationKey:     idgen.New("cli-exec-pin"),
+		RequestedBy:      "cli_exec_operator",
+	}); err != nil {
+		return fmt.Errorf("exec instructions pin: %w", err)
+	}
+	return nil
+}
+
 // importExecAttachments reads each requested file and imports it into the
 // Run's workspace as an immutable attachment before the turn starts. The
 // store applies the same contract as every upload surface (5 MiB cap,
@@ -313,11 +450,11 @@ func (a *App) importExecAttachments(ctx context.Context,
 	service := application.NewFileAttachmentService(a.store)
 	references := make([]domain.FileAttachmentReference, 0, len(paths))
 	for index, rawPath := range paths {
-		path := strings.TrimSpace(rawPath)
+		path := rawPath
 		if path == "" {
 			return nil, fmt.Errorf("exec --attach requires a file path (empty value at position %d)", index+1)
 		}
-		data, err := os.ReadFile(path)
+		data, err := readExecInputFile(path, fileattachment.MaxBytes)
 		if err != nil {
 			return nil, fmt.Errorf("exec --attach %s: %w", path, err)
 		}

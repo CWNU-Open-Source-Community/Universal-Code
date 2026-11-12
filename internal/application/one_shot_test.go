@@ -150,3 +150,29 @@ func TestOneShotRunDetectsSupervisorPause(t *testing.T) {
 		t.Fatalf("unfinished supervisor turn reported finish: %#v", result)
 	}
 }
+
+func TestOneShotReplayReturnsItsOwnReplyAfterLaterTurn(t *testing.T) {
+	_, service, run := oneShotFixture(t, []string{
+		rootActionResponse(domain.RootActionFinish, "First reply.", "done", ""),
+		rootActionResponse(domain.RootActionFinish, "Second reply.", "done", ""),
+	})
+	first := application.OneShotRequest{
+		Version: domain.ThreadMessageProtocolVersion, ThreadID: domain.InitialThreadID(run.ID),
+		Content: "First task", OperationKey: "one-shot-first-replay", RequestedBy: "cli_exec_operator",
+	}
+	if _, err := service.Run(t.Context(), first); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.Content, second.OperationKey = "Second task", "one-shot-second-replay"
+	if _, err := service.Run(t.Context(), second); err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := service.Run(t.Context(), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.Reply != "First reply." {
+		t.Fatalf("replay returned another turn's reply: %q", replayed.Reply)
+	}
+}

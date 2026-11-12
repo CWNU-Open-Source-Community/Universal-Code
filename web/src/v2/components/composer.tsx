@@ -189,17 +189,17 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const inputRef = useRef<MarkdownInputHandle>(null);
   const promptHistory = usePromptHistory({ client, threadID, scope, value: content,
     blocked: Boolean(disabled || submitting || references.files.length || mcp.references.length || images.images.length ||
-      images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending ||
+      images.uploading || images.pending || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending ||
       nativeClipboard.busy || importStatus.busy || managedDraft?.state.conflict || managedDraft?.state.error),
     apply: setContent, atBoundary: (direction) => inputRef.current?.atHistoryBoundary(direction) ?? false });
   const normalized = content.trim();
   const [editorExpanded, setEditorExpanded] = useState(false);
-  const hasUnsentDraft = Boolean(normalized || references.files.length || mcp.references.length || images.images.length || images.uploading || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
+  const hasUnsentDraft = Boolean(normalized || references.files.length || mcp.references.length || images.images.length || images.uploading || images.pending || attachments.attachments.length || attachments.uploading || attachments.pending || nativeClipboard.pending || nativeClipboard.busy || importStatus.busy ||
     managedDraft?.state.conflict || managedDraft?.state.error);
   const byteLength = new TextEncoder().encode(normalized).byteLength;
   const attachmentByteLength = new TextEncoder().encode(content).byteLength;
   const textAttachmentDisabled = attachmentsDisabled || !client.hasThreadControl || !workspaceID || importStatus.busy || images.uploading ||
-    attachments.uploading || attachments.pending || nativeClipboard.busy || nativeClipboard.pending ||
+    images.pending || attachments.uploading || attachments.pending || nativeClipboard.busy || nativeClipboard.pending ||
     Boolean(managedDraft?.state.conflict || managedDraft?.state.error);
   const convertTextToAttachment = async () => {
     if (textAttachmentDisabled || !content) return;
@@ -237,7 +237,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const fingerprint = JSON.stringify([normalized, references.files, imageIdentities(images.images), fileAttachmentIdentities(attachments.attachments), mcpReferenceIdentities(mcp.references)]);
   const sameMessagePending = pendingContents.current.has(fingerprint) ||
     pendingSubmissions.some(({ input }) => JSON.stringify([input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments), mcpReferenceIdentities(input.mcpReferences)]) === fingerprint);
-  const ready = !disabled && !submitDisabled && !creatingLocalChat && !managedDraft?.state.conflict && !managedDraft?.state.error && !images.uploading && !attachments.uploading && !attachments.pending && !nativeClipboard.pending && !nativeClipboard.busy && !importStatus.busy && (!images.images.length || imageCapability.allowed) && !sameMessagePending && Boolean(workspaceID) && (byteLength > 0 || images.images.length > 0 || attachments.attachments.length > 0 || mcp.references.length > 0) &&
+  const ready = !disabled && !submitDisabled && !creatingLocalChat && !managedDraft?.state.conflict && !managedDraft?.state.error && !images.uploading && !images.pending && !attachments.uploading && !attachments.pending && !nativeClipboard.pending && !nativeClipboard.busy && !importStatus.busy && (!images.images.length || imageCapability.allowed) && !sameMessagePending && Boolean(workspaceID) && (byteLength > 0 || images.images.length > 0 || attachments.attachments.length > 0 || mcp.references.length > 0) &&
     byteLength <= maximumContentBytes && !(fileReferenceUnavailableReason && (references.files.length > 0 || mcp.references.length > 0));
   // Low-priority hints share a single caption line instead of stacking.
   const draftSavedLocally = Boolean(recovery) && !persistenceWarning &&
@@ -409,6 +409,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     const files = clipboardFiles(event.dataTransfer);
     if (files.length) { event.preventDefault(); event.stopPropagation(); void addFiles(files); }
   }} onDragOver={images.onDragOver}>
+    {images.notice}
     <div className="v2-composer-surface">
       <button className="v2-composer-compact-trigger" type="button" aria-label={t("展开消息编辑器", "Expand message editor")} disabled={disabled}
         onClick={() => { setEditorExpanded(true); requestAnimationFrame(() => inputRef.current?.focus()); }}>{inputPlaceholder}</button>
