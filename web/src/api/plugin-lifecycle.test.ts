@@ -74,6 +74,31 @@ it.each(["scope", "rejection", "message", "historical", "active"])("rejects Hook
   await expect(new APIClient("read").hookDiagnostics("run-one", "project-one")).rejects.toThrow();
 });
 
+it.each(["missing", "both", "event", "oversize", "untrimmed", "control"])("rejects Hook tool_pattern drift: %s", async (drift) => {
+  const value = hookDiagnostics();
+  if (drift === "missing") delete (value.declarations[0] as { tool_pattern?: string }).tool_pattern;
+  if (drift === "both") value.declarations[0].tool_pattern = "^file_.*";
+  if (drift === "event") {
+    value.declarations[0].tool_names = [];
+    value.declarations[0].tool_pattern = "^file_.*";
+    value.declarations[0].event = "run_started";
+  }
+  if (drift === "oversize") {
+    value.declarations[0].tool_names = [];
+    value.declarations[0].tool_pattern = "^" + "a".repeat(257);
+  }
+  if (drift === "untrimmed") {
+    value.declarations[0].tool_names = [];
+    value.declarations[0].tool_pattern = "^file_.* ";
+  }
+  if (drift === "control") {
+    value.declarations[0].tool_names = [];
+    value.declarations[0].tool_pattern = "^file_.*\u0000";
+  }
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(value)));
+  await expect(new APIClient("read").hookDiagnostics("run-one", "project-one")).rejects.toThrow();
+});
+
 it.each(["rejected", "continued"] as const)("accepts completed script hook observation with %s decision", async (decision) => {
   const value = hookDiagnostics();
   value.observations.push({

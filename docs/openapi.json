@@ -52290,6 +52290,10 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "tool_pattern": {
+            "maxLength": 256,
+            "type": "string"
           }
         },
         "required": [
@@ -52305,6 +52309,7 @@
           "failure_policy",
           "timeout_ms",
           "tool_names",
+          "tool_pattern",
           "remove_fields"
         ],
         "type": "object"

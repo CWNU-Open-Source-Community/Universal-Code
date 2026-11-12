@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -32,6 +33,7 @@ const (
 	MaxAnnotationBytes   = 1024
 	MaxHookTimeoutMillis = 2_000
 	MaxHookIdentityRunes = 256
+	MaxToolPatternBytes  = 256
 )
 
 type Event string
@@ -91,6 +93,7 @@ type Declaration struct {
 	FailurePolicy   FailurePolicy `json:"failure_policy"`
 	TimeoutMillis   int           `json:"timeout_ms"`
 	ToolNames       []string      `json:"tool_names,omitempty"`
+	ToolPattern     string        `json:"tool_pattern,omitempty"`
 	RemoveFields    []string      `json:"remove_fields,omitempty"`
 	Message         string        `json:"message,omitempty"`
 	Script          *ScriptSpec   `json:"script,omitempty"`
@@ -146,6 +149,25 @@ func (d Declaration) Validate() error {
 	}
 	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")
+	}
+	if d.Event != PreTool && d.Event != PostTool && d.ToolPattern != "" {
+		return errors.New("non-tool hooks cannot declare tool filters")
+	}
+	if d.ToolPattern != "" && len(d.ToolNames) != 0 {
+		return errors.New("a hook declares either exact tool names or one tool pattern")
+	}
+	if d.ToolPattern != "" {
+		if !validText(d.ToolPattern, MaxToolPatternBytes, false) {
+			return errors.New("hook tool pattern is invalid or oversized")
+		}
+		// The web parser's trim check also strips a leading BOM; reject it
+		// here so the projection and the parser agree on every byte.
+		if strings.ContainsRune(d.ToolPattern, '\uFEFF') || strings.ContainsAny(d.ToolPattern, "\n\r\t") {
+			return errors.New("hook tool pattern contains a byte order mark or control character")
+		}
+		if _, err := regexp.Compile(d.ToolPattern); err != nil {
+			return fmt.Errorf("hook tool pattern does not compile: %w", err)
+		}
 	}
 	if duplicatesOrInvalid(d.ToolNames, false) || duplicatesOrInvalid(d.RemoveFields, true) {
 		return errors.New("hook tool names or removal fields are invalid or repeated")
@@ -280,6 +302,7 @@ type AuditSink interface {
 type Engine struct {
 	mu            sync.RWMutex
 	registrations []Registration
+	toolPatterns  []*regexp.Regexp
 	generation    string
 	sink          AuditSink
 	now           func() time.Time
@@ -345,8 +368,22 @@ func (e *Engine) Replace(registrations []Registration) error {
 	})
 	raw, _ := json.Marshal(values)
 	digest := sha256.Sum256(append([]byte(ProtocolVersion+"\x00"), raw...))
+	// Validate already compiled and rejected every pattern, so this loop is
+	// defensive depth: keep the compiled forms aligned with the sorted
+	// registrations without trusting the earlier pass.
+	toolPatterns := make([]*regexp.Regexp, len(values))
+	for index, value := range values {
+		if value.Declaration.ToolPattern != "" {
+			compiled, err := regexp.Compile(value.Declaration.ToolPattern)
+			if err != nil {
+				return fmt.Errorf("hook tool pattern does not compile: %w", err)
+			}
+			toolPatterns[index] = compiled
+		}
+	}
 	e.mu.Lock()
 	e.registrations = values
+	e.toolPatterns = toolPatterns
 	e.generation = hex.EncodeToString(digest[:])
 	e.mu.Unlock()
 	return nil
@@ -370,13 +407,19 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 	}
 	e.mu.RLock()
 	registrations := slices.Clone(e.registrations)
+	toolPatterns := append([]*regexp.Regexp(nil), e.toolPatterns...)
 	generation := e.generation
 	e.mu.RUnlock()
 	result := Result{ProtocolVersion: ProtocolVersion, Generation: generation,
 		Payload: append(json.RawMessage(nil), input.Payload...), Executed: []string{}}
-	for _, registration := range registrations {
+	for index, registration := range registrations {
 		declaration := registration.Declaration
-		if declaration.Event != input.Event || !matchesTool(declaration.ToolNames, input.ToolName) {
+		var toolPattern *regexp.Regexp
+		if index < len(toolPatterns) {
+			toolPattern = toolPatterns[index]
+		}
+		if declaration.Event != input.Event ||
+			!matchesTool(declaration.ToolNames, toolPattern, input.ToolName) {
 			continue
 		}
 		hookCtx, cancel := context.WithTimeout(ctx,
@@ -517,7 +560,10 @@ func (e *Engine) Generation() string {
 	return e.generation
 }
 
-func matchesTool(values []string, toolName string) bool {
+func matchesTool(values []string, pattern *regexp.Regexp, toolName string) bool {
+	if pattern != nil {
+		return pattern.MatchString(toolName)
+	}
 	return len(values) == 0 || slices.Contains(values, toolName)
 }
 
