@@ -118,6 +118,22 @@ export interface LiveNarrativeProjection {
   status: PublicModelStreamStatus;
 }
 
+// A pending input predates the work it triggered even when the HTTP submission
+// is still waiting. Keep saved rows in place and insert by the input's send time.
+export function mergePendingNarrative(entries: NarrativeEntry[], pending: NarrativeEntry[]): NarrativeEntry[] {
+  if (!pending.length) return entries;
+  const merged = [...entries];
+  for (const entry of pending) {
+    const sentAt = Date.parse(entry.createdAt);
+    const before = merged.findIndex((current) => {
+      const createdAt = Date.parse(current.createdAt);
+      return createdAt > sentAt || createdAt === sentAt && current.kind !== "user";
+    });
+    merged.splice(before < 0 ? merged.length : before, 0, entry);
+  }
+  return merged;
+}
+
 interface LiveTranscriptContext {
   identities: Set<string>;
   runOrdinals: Map<string, number>;
@@ -478,7 +494,9 @@ function projectLiveTranscriptItems(context: LiveTranscriptContext,
   const knownIdentities = context.identities;
   const runOrdinal = context.runOrdinals.get(snapshot.call.run_id) ?? context.nextRunOrdinal;
   const expectedRound = snapshot.call.tool_round + 1;
-  const createdAt = snapshot.updated_at;
+  // Delta arrival updates the existing row; it does not move that row past a
+  // user input sent while the model call was already in progress.
+  const createdAt = snapshot.call.started_at;
   const projected: ThreadTranscriptActivityItem[] = [];
   const candidate = context.activeTasks.get(snapshot.call.run_id);
   // A delayed old stream must not become progress for a newer user input.

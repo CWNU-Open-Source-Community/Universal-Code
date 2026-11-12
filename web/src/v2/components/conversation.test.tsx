@@ -27,7 +27,8 @@ vi.mock("../../hooks/use-public-model-stream", () => ({
   usePublicModelStream: () => ({ error: null, snapshot: null, status: streams.model }),
 }));
 
-vi.mock("../projection/narrative", () => ({
+vi.mock("../projection/narrative", async (original) => ({
+  ...await original<typeof import("../projection/narrative")>(),
   projectThreadNarrative: () => [],
   prepareThreadNarrative: (items: ThreadTranscriptActivityItem[]) => ({ entries: items.map((item) => ({
     id: item.id,

@@ -1,5 +1,5 @@
 import type { PublicModelStreamSnapshot, ThreadTranscriptItemView } from "../../api/types";
-import { prepareThreadNarrative, projectLiveThreadNarrative, projectThreadNarrative, type ThreadTranscriptActivityItem } from "./narrative";
+import { mergePendingNarrative, prepareThreadNarrative, projectLiveThreadNarrative, projectThreadNarrative, type NarrativeEntry, type ThreadTranscriptActivityItem } from "./narrative";
 import { peerMessageFixture } from "../../test/thread-peer-message";
 import { fullPermissionNotReadyMessage } from "../../lib/local-ui-message";
 
@@ -47,6 +47,37 @@ function snapshot(overrides: Partial<PublicModelStreamSnapshot> = {}): PublicMod
     ...overrides,
   };
 }
+
+it("keeps an existing stream before an input sent later as the same stream grows", () => {
+  const transcript = [
+    item({ id: "earlier", canonical_id: "earlier", detail: "Earlier task record", created_at: "2026-11-12T10:25:00Z" }),
+    item({ id: "follow-up", canonical_id: "follow-up", source: "operator", kind: "operator_input",
+      detail: "Next request", status: "committed", created_at: "2026-11-12T10:26:43.129Z", sequence: 2 }),
+  ];
+  const prepared = prepareThreadNarrative(transcript);
+  for (const updatedAt of ["2026-11-12T10:26:42Z", "2026-11-12T10:27:19Z"]) {
+    const current = snapshot({ text: "Work already in progress", updated_at: updatedAt });
+    current.call.started_at = "2026-11-12T10:26:40Z";
+    const entries = projectLiveThreadNarrative(prepared, { runId: "run-1", snapshot: current, status: "live" });
+    expect(entries.map((entry) => entry.kind === "assistant" || entry.kind === "user" ? entry.text : entry.kind))
+      .toEqual(["Earlier task record", "Work already in progress", "Next request"]);
+  }
+});
+
+it("inserts pending inputs before same-time work while retaining saved row order and identities", () => {
+  const createdAt = "2026-11-12T10:26:43.129Z";
+  const saved = projectThreadNarrative([
+    item({ id: "progress", canonical_id: "progress", detail: "New task progress", created_at: createdAt }),
+    item({ id: "read", canonical_id: "read", source: "harness", kind: "tool_call", activity_type: "read",
+      tool_name: "workspace_read", sequence: 2, created_at: createdAt }),
+  ]);
+  const pending: NarrativeEntry = { id: "pending-1", kind: "user", text: "Main input", createdAt, provisional: true };
+  const merged = mergePendingNarrative(saved, [pending, { ...pending, id: "pending-2", text: "Next input" }]);
+  expect(merged.map((entry) => entry.id)).toEqual(["pending-1", "pending-2", ...saved.map((entry) => entry.id)]);
+  expect(merged[2]).toBe(saved[0]);
+  expect(merged[3]).toBe(saved[1]);
+  expect(mergePendingNarrative(saved, [])).toBe(saved);
+});
 
 it("groups saved and live workspace image observations as reads with a localized title", () => {
   const durable = projectThreadNarrative([item({ source: "harness", kind: "tool_call",

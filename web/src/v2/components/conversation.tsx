@@ -8,7 +8,7 @@ import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
 import { usePublicModelStream } from "../../hooks/use-public-model-stream";
 import { useRunEventStream } from "../../hooks/use-run-event-stream";
-import { prepareThreadNarrative, projectLiveThreadNarrative, type NarrativeEntry } from "../projection/narrative";
+import { mergePendingNarrative, prepareThreadNarrative, projectLiveThreadNarrative, type NarrativeEntry } from "../projection/narrative";
 import { useV2ThreadTranscript } from "../use-thread-transcript";
 import { useV2ReplyReading } from "../use-reply-reading";
 import type { V2ReplyReading } from "../use-thread-unread";
@@ -617,7 +617,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     const pending: NarrativeEntry[] = optimistic.filter(({ text, images, attachments }) => !existingUserText.has(JSON.stringify([text, imageIdentities(images), fileAttachmentIdentities(attachments)])))
       .map((entry) => ({ id: entry.id, kind: "user", text: entry.text,
         images: entry.images, attachments: entry.attachments, createdAt: entry.createdAt, provisional: true }));
-    return pending.length ? [...liveNarrative, ...pending] : liveNarrative;
+    return mergePendingNarrative(liveNarrative, pending);
   }, [messageID, durableNarrative, liveNarrative, existingUserText, optimistic]);
   const transcriptSources = useMemo(() => new Map(transcriptItems.map((item) => [item.id, item])), [transcriptItems]);
   const visibleNarrative = useMemo(() => {
