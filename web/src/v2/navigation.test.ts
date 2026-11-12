@@ -131,6 +131,42 @@ it.each([
   expect(view.result.current.canGoBack).toBe(false);
 });
 
+it.each(["run", "session"] as const)("returns a thread %s through its existing records entry without duplicate Back steps", async (kind) => {
+  window.history.replaceState({ v2NavigationIndex: 0 }, "", "#/threads/original");
+  const view = renderHook(() => useV2Navigation());
+  act(() => view.result.current.navigate({ kind: "thread", threadID: "original", panel: "records" }));
+  act(() => view.result.current.navigate({ kind, threadID: "original", resourceID: "resource-one" }));
+  act(() => view.result.current.back());
+  await waitFor(() => expect(window.location.hash).toBe("#/threads/original/records"));
+  expect(window.history.state.v2NavigationIndex).toBe(1);
+  act(() => window.history.back());
+  await waitFor(() => expect(window.location.hash).toBe("#/threads/original"));
+  expect(view.result.current.canGoBack).toBe(false);
+});
+
+it("returns the records panel to its existing conversation entry", async () => {
+  window.history.replaceState({ v2NavigationIndex: 0 }, "", "#/threads/original");
+  const view = renderHook(() => useV2Navigation());
+  act(() => view.result.current.navigate({ kind: "thread", threadID: "original", panel: "records" }));
+  act(() => view.result.current.back());
+  await waitFor(() => expect(window.location.hash).toBe("#/threads/original"));
+  expect(window.history.state.v2NavigationIndex).toBe(0);
+  expect(view.result.current.canGoBack).toBe(false);
+});
+
+it.each([
+  { kind: "thread" as const, threadID: "original", section: "models" as const },
+  { kind: "automations" as const, threadID: "original" },
+])("returns $kind to its existing conversation entry", async (route) => {
+  window.history.replaceState({ v2NavigationIndex: 0 }, "", "#/threads/original");
+  const view = renderHook(() => useV2Navigation());
+  act(() => view.result.current.navigate(route));
+  act(() => view.result.current.back());
+  await waitFor(() => expect(window.location.hash).toBe("#/threads/original"));
+  expect(window.history.state.v2NavigationIndex).toBe(0);
+  expect(view.result.current.canGoBack).toBe(false);
+});
+
 it.each(["run", "session"] as const)("does not back into an unrelated page when returning from %s", (kind) => {
   window.history.replaceState({}, "", "#/automations");
   const { result } = renderHook(() => useV2Navigation());

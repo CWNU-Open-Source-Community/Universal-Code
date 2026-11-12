@@ -81,26 +81,39 @@ export function formatThreadExport(title: string, messages: ExportMessage[], for
   return `${format === "markdown" ? "# " : ""}${heading}\n\n${sections.join("\n\n---\n\n")}\n`;
 }
 
-// Truncate by user-perceived character, not by code point: ZWJ emoji families,
-// skin-tone modifiers and combining marks each count as one grapheme, so the
-// bound can never split them into invalid or unrecognizable fragments. Runtimes
-// without Intl.Segmenter keep the code-point bound as a floor.
-function truncateExportTitleGraphemes(value: string, maxGraphemes: number): string {
+function* exportTitleSegments(value: string): Generator<string> {
   if (typeof Intl === "undefined" || !("Segmenter" in Intl)) {
-    return [...value].slice(0, maxGraphemes).join("");
+    yield* value;
+    return;
   }
+  for (const segment of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)) {
+    yield segment.segment;
+  }
+}
+
+// Limit both user-perceived characters and UTF-8 bytes. A single grapheme can
+// contain many code points, and common filesystems limit each filename to 255
+// bytes. Keep graphemes whole where Intl.Segmenter is available; otherwise
+// truncate at code-point boundaries.
+function truncateExportTitle(value: string, maxGraphemes: number, maxBytes: number): string {
+  const encoder = new TextEncoder();
   let name = "";
   let count = 0;
-  for (const segment of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)) {
-    if (count >= maxGraphemes) break;
-    name += segment.segment;
+  let bytes = 0;
+  for (const segment of exportTitleSegments(value)) {
+    const segmentBytes = encoder.encode(segment).length;
+    if (count >= maxGraphemes || bytes + segmentBytes > maxBytes) break;
+    name += segment;
     count += 1;
+    bytes += segmentBytes;
   }
   return name;
 }
 
 export function threadExportFilename(title: string, format: ThreadExportFormat): string {
+  const prefix = "conversation-";
+  const extension = format === "markdown" ? ".md" : ".txt";
   const clean = title.replace(/[\\/:*?"<>|\u0000-\u001f]/gu, "_").trim().replace(/[. ]+$/u, "");
-  const name = truncateExportTitleGraphemes(clean, 100).replace(/[. ]+$/u, "");
-  return `conversation-${name || "export"}.${format === "markdown" ? "md" : "txt"}`;
+  const name = truncateExportTitle(clean, 100, 255 - prefix.length - extension.length).replace(/[. ]+$/u, "");
+  return `${prefix}${name || "export"}${extension}`;
 }

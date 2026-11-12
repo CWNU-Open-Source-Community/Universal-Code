@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -189,6 +190,62 @@ func TestThreadChangeUndoPersistsPartialResultWithoutReapplying(t *testing.T) {
 	}
 	if err := st.CheckThreadChangeUndoIdle(t.Context(), domain.InitialThreadID(run.ID), run.ID, ""); err != nil {
 		t.Fatalf("terminal partial retained reservation: %v", err)
+	}
+}
+
+type threadUndoAfterCaptureFailer struct {
+	*store.SQLiteStore
+	updated   workspacecheckpoint.Transaction
+	updateHit bool
+}
+
+func (s *threadUndoAfterCaptureFailer) CreateWorkspaceCheckpoint(ctx context.Context,
+	snapshot workspacecheckpoint.Snapshot,
+) (workspacecheckpoint.Checkpoint, bool, error) {
+	if snapshot.Checkpoint.Phase == workspacecheckpoint.PhaseAfter {
+		return workspacecheckpoint.Checkpoint{}, false, errors.New("checkpoint store unavailable")
+	}
+	return s.SQLiteStore.CreateWorkspaceCheckpoint(ctx, snapshot)
+}
+
+func (s *threadUndoAfterCaptureFailer) UpdateWorkspaceCheckpointTransaction(ctx context.Context,
+	value workspacecheckpoint.Transaction,
+) (workspacecheckpoint.Transaction, bool, error) {
+	result, replayed, err := s.SQLiteStore.UpdateWorkspaceCheckpointTransaction(ctx, value)
+	if err == nil {
+		s.updated, s.updateHit = result, true
+	}
+	return result, replayed, err
+}
+
+func TestThreadChangeUndoLandsTerminalRowWhenAfterCapturePersistenceFails(t *testing.T) {
+	root := t.TempDir()
+	st, run := threadReviewFixture(t, root)
+	applyThreadChange(t, st, run, root, "app.txt", "create", "", "after\n")
+	reply := saveThreadChangeReply(t, st, run, "done")
+	wrapped := &threadUndoAfterCaptureFailer{SQLiteStore: st}
+	r, err := application.NewThreadChangeUndoService(wrapped,
+		domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true}).Undo(t.Context(),
+		domain.InitialThreadID(run.ID), application.ThreadChangeUndoRequest{
+			Version: application.ThreadChangeUndoVersion, SourceEventID: reply.EventID, Confirm: true})
+	if err == nil {
+		t.Fatal("after-capture persistence failure did not surface")
+	}
+	if r.State != "partial" || len(r.Conflicts) == 0 || r.Conflicts[len(r.Conflicts)-1].Reason != "restore_failed" {
+		t.Fatalf("interrupted result: %+v", r)
+	}
+	if !wrapped.updateHit || wrapped.updated.Status != workspacecheckpoint.TransactionInterrupted ||
+		wrapped.updated.ErrorCode != "restore_failed" || wrapped.updated.CompletedAt == nil {
+		t.Fatalf("durable claim was not finalized: hit=%t row=%+v", wrapped.updateHit, wrapped.updated)
+	}
+	// The stranded-claim regression: the interrupted row must not fence the
+	// workspace out of further undo or checkpoint journaling until restart.
+	if err := st.CheckThreadChangeUndoIdle(t.Context(), domain.InitialThreadID(run.ID), run.ID, ""); err != nil {
+		t.Fatalf("interrupted row still fences the workspace: %v", err)
+	}
+	replay := undoThreadReply(t, st, run, reply.EventID, true)
+	if replay.State != "partial" || !replay.Replayed {
+		t.Fatalf("replay after interrupted row: %+v", replay)
 	}
 }
 

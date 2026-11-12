@@ -149,7 +149,17 @@ committed assistant reply on stdout, and exits non-zero unless the supervisor
 finished the task (`turn_finish`; approval waits, continuation stops, and
 budget exhaustion report their stop reason). `--json` emits `{run_id, thread_id, status, reply}` instead of the
 bare reply. Unattended runs cannot widen permissions: pre-arrange execution
-grants the same way you would for any Run. Ctrl-C (SIGINT; SIGTERM where the
+grants the same way you would for any Run. `--instructions "<text>"` fixes
+extra operator guidance for the invocation: the text is validated against the
+Thread context pin contract (nonempty UTF-8, no NUL, at most 8192 characters,
+no protected secret content), stored as an operator context pin on the
+invocation's Thread, and delivered as a protected fixed-requirement section on
+every turn — including follow-up turns on the same Thread. It never widens
+authority: pin text stays below system policy and can never grant tools,
+permissions, or policy exceptions. The pin is visible in the Thread's context
+pin state and can be edited or removed there like any operator pin.
+
+Ctrl-C (SIGINT; SIGTERM where the
 platform delivers it) does not kill the process mid-write: it cancels the
 invocation cleanly, the turn machinery records the durable stop through a
 detached context, the Run stays recoverable for a follow-up `thread send`,
@@ -168,7 +178,15 @@ agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 
 `turn_finish` 结束任务（等待审批、继续等待与预算耗尽都会报告其停止原因）
 否则以非零码退出。`--json` 输出
 `{run_id, thread_id, status, reply}` 取代纯回复文本。无人值守运行不能放宽
-权限：执行授权需要与任何 Run 一样预先安排。Ctrl-C（SIGINT；平台支持的
+权限：执行授权需要与任何 Run 一样预先安排。`--instructions "<文本>"` 为本次
+调用固定额外的操作者指令：文本先按 Thread context pin 契约校验（非空 UTF-8、
+无 NUL、最多 8192 字符、不含受保护的密钥内容），以操作者 context pin 的形式
+存入本次调用的 Thread，并在每个 turn 作为受保护的固定要求小节交付——包括同一
+Thread 上的后续 turn。它不放宽任何权限：pin 文本始终低于系统策略，永远不能
+授予工具、权限或策略例外。pin 在 Thread 的 context pin 状态中可见，可以像
+其他操作者 pin 一样在那里编辑或移除。
+
+Ctrl-C（SIGINT；平台支持的
 SIGTERM）不会在写入中途杀死进程：它干净地取消本次调用，turn 机制通过脱离的
 上下文记录持久停止，Run 保持可恢复状态供后续 `thread send` 继续使用，exec
 以非零码退出——取消对应退出码 `7`，`--timeout` 超时对应退出码 `9`。Windows

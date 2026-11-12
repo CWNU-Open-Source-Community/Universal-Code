@@ -4,7 +4,7 @@ import { LocaleProvider } from "../../lib/locale";
 import { Blob as NodeBlob } from "node:buffer";
 import { webcrypto } from "node:crypto";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIRequestError, type APIClient } from "../../api/client";
 import type { QueueBinding, QueuePromotion, QueuePromotionRejection, QueuedMessage } from "../../api/queued-messages";
@@ -314,6 +314,20 @@ it("supports keyboard menu dismissal and folds only the preview without cancelli
   expect(screen.getAllByRole("button", { name: "撤回" })).toHaveLength(2);
   expect(f.cancelSessionSteering).not.toHaveBeenCalled();
   expect(f.postControl).not.toHaveBeenCalled();
+});
+
+it("keeps a newly positioned menu through an older scroll event and closes it when its anchor moves", async () => {
+  const f = fixture(); mount(f.client); const user = userEvent.setup();
+  const trigger = await screen.findByRole("button", { name: "消息 1 的更多操作" });
+  const rect = { top: 100, left: 50, right: 78, bottom: 128, width: 28, height: 28, x: 50, y: 100, toJSON: () => ({}) };
+  const bounds = vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue(rect);
+  await user.click(trigger);
+  fireEvent.scroll(screen.getByRole("list"));
+  expect(screen.getByRole("menuitem", { name: "编辑消息" })).toHaveFocus();
+  bounds.mockReturnValue({ ...rect, top: 90, bottom: 118, y: 90 });
+  fireEvent.scroll(screen.getByRole("list"));
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
 });
 
 it("removes editing from an open menu when the message becomes prepared", async () => {
