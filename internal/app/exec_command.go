@@ -21,6 +21,8 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileattachment"
 	"cyberagent-workbench/internal/idgen"
+	"cyberagent-workbench/internal/imageattachment"
+	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/toolgateway"
@@ -61,6 +63,8 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	continueThread := fs.String("continue", "", "continue an existing Thread by id; the Thread carries its own Run, workspace, profile, and permission selection")
 	var attachPaths repeatedString
 	fs.Var(&attachPaths, "attach", "attach a file to the prompt; repeatable, at most 4, each at most 5 MiB")
+	var imagePaths repeatedString
+	fs.Var(&imagePaths, "image", "attach an image to the prompt; repeatable, at most 4, PNG/JPEG/WebP only")
 	jsonOutput := fs.Bool("json", false, "emit a structured JSON result")
 	instructions := fs.String("instructions", "",
 		"fix extra operator instructions as a Thread context pin for this invocation")
@@ -80,6 +84,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"output-last-message":       true,
 		"continue":                  true,
 		"attach":                    true,
+		"image":                     true,
 		"enable-permission-control": false, "enable-danger-full-access": false,
 		"confirm-full": false,
 	})); err != nil {
@@ -138,6 +143,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 
 	var threadID, runID, workspaceID string
 	var attachmentRefs []domain.FileAttachmentReference
+	var imageRefs []domain.ImageReference
 
 	if continueID != "" {
 		// Continue mode: resolve the Thread's latest Run. Process-local
@@ -162,7 +168,20 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		// evidence (readable text excerpts, or the saved original bytes for
 		// the command runtime's fixed attachments directory) with no new
 		// authority.
+		if len(imagePaths) > 0 {
+			run, runErr := a.store.GetRun(ctx, runID)
+			if runErr != nil {
+				return fmt.Errorf("continue Run lookup: %w", runErr)
+			}
+			if err := a.checkExecVisionCapability(ctx, run.Config.ModelRoute); err != nil {
+				return err
+			}
+		}
 		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
+		if err != nil {
+			return err
+		}
+		imageRefs, err = a.importExecImages(ctx, workspaceID, imagePaths)
 		if err != nil {
 			return err
 		}
@@ -195,7 +214,16 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		// the references to the message and projects the evidence (readable
 		// text excerpts, or the saved original bytes for the command
 		// runtime's fixed attachments directory) with no new authority.
+		if len(imagePaths) > 0 {
+			if err := a.checkExecVisionCapability(ctx, *route); err != nil {
+				return err
+			}
+		}
 		attachmentRefs, err = a.importExecAttachments(ctx, workspaceID, attachPaths)
+		if err != nil {
+			return err
+		}
+		imageRefs, err = a.importExecImages(ctx, workspaceID, imagePaths)
 		if err != nil {
 			return err
 		}
@@ -283,6 +311,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		OperationKey: idgen.New("cli-exec"),
 		RequestedBy:  "cli_exec_operator",
 		Attachments:  attachmentRefs,
+		Images:       imageRefs,
 	})
 	// The last-message file is written before the standard output, so a
 	// failed write fails the command instead of leaving a stale file beside
@@ -483,6 +512,78 @@ func (a *App) importExecAttachments(ctx context.Context,
 		})
 	}
 	return references, nil
+}
+
+// importExecImages reads each requested image and imports it into the Run's
+// workspace before the turn starts. Only the store's published operator
+// upload formats are accepted (PNG, JPEG, WebP); the store decodes and
+// bounds the image (5 MiB, 8192px, 16 Mpx). The references are
+// workspace-scoped observations with no authority: the turn machinery
+// delivers image bytes only to models with an established vision
+// capability, and the evidence projection marks them as untrusted data.
+func (a *App) importExecImages(ctx context.Context,
+	workspaceID string, paths []string,
+) ([]domain.ImageReference, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if len(paths) > domain.MaxThreadMessageImages {
+		return nil, fmt.Errorf("exec supports at most %d images, got %d",
+			domain.MaxThreadMessageImages, len(paths))
+	}
+	references := make([]domain.ImageReference, 0, len(paths))
+	for index, rawPath := range paths {
+		path := rawPath
+		if path == "" {
+			return nil, fmt.Errorf("exec --image requires a file path (empty value at position %d)", index+1)
+		}
+		data, err := readExecInputFile(path, imageattachment.MaxBytes)
+		if err != nil {
+			return nil, fmt.Errorf("exec --image %s: %w", path, err)
+		}
+		mediaType := imageMimeTypeForPath(path)
+		if mediaType == "" {
+			return nil, fmt.Errorf("exec --image %s: unsupported format; use PNG, JPEG, or WebP", path)
+		}
+		image, err := a.store.SaveWorkspaceImage(ctx, workspaceID,
+			idgen.New("cli-exec-image"), mediaType, filepath.Base(path), data)
+		if err != nil {
+			return nil, fmt.Errorf("exec --image %s: %w", path, err)
+		}
+		references = append(references, domain.ImageReference{
+			ID: image.ID, SHA256: image.SHA256,
+		})
+	}
+	return references, nil
+}
+
+// imageMimeTypeForPath maps a file extension to one of the operator image
+// upload formats; unknown extensions return empty and fail with a clear
+// message instead of relying on content sniffing.
+func imageMimeTypeForPath(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".webp":
+		return "image/webp"
+	default:
+		return ""
+	}
+}
+
+// checkExecVisionCapability verifies that the model referenced by route
+// supports image input before images are imported into the workspace. The
+// check prevents orphaned images: without it, a non-vision model would
+// cause the turn to fail after the images were already stored.
+func (a *App) checkExecVisionCapability(ctx context.Context, route string) error {
+	ref := a.router.Resolve(route)
+	vision := a.router.DescribeVision(ref)
+	if vision.State != llm.VisionSupported {
+		return fmt.Errorf("exec --image: selected model image capability is %s; select a confirmed vision model before sending images", vision.State)
+	}
+	return nil
 }
 
 // resolveRunWorkspaceID resolves the workspace a Run belongs to, so continue

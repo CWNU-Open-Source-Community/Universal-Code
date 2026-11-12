@@ -36,6 +36,8 @@ type OneShotStore interface {
 // and budget flags remain explicit operator choices. Attachments are
 // workspace-scoped file references the caller imported and validated; the
 // turn machinery pins them to the message and projects their evidence.
+// Images are workspace-scoped image observations delivered only to models
+// with an established vision capability.
 type OneShotRequest struct {
 	Version      string
 	ThreadID     string
@@ -43,6 +45,7 @@ type OneShotRequest struct {
 	OperationKey string
 	RequestedBy  string
 	Attachments  []domain.FileAttachmentReference
+	Images       []domain.ImageReference
 }
 
 // OneShotResult reports the turn outcome: the run and thread identities, the
@@ -81,6 +84,7 @@ func (s *OneShotService) Run(ctx context.Context, request OneShotRequest) (OneSh
 		Version: request.Version, ThreadID: request.ThreadID, Content: content,
 		OperationKey: request.OperationKey, RequestedBy: request.RequestedBy,
 		Attachments: request.Attachments,
+		Images:      request.Images,
 	})
 	// When the turn fails mid-execution, messages committed before the error
 	// are still in the session. Extract any partial reply so the caller gets
