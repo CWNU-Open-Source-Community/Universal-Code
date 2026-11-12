@@ -3,6 +3,7 @@ package application_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,7 +35,9 @@ func TestWorkspaceViewImageReachesModelAndSurvivesSourceRemoval(t *testing.T) {
 				t.Fatal(err)
 			}
 			provider := &workspaceImageJourneyProvider{vision: vision}
-			provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+			var providerError error
+			provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (response *llm.ChatResponse, failure error) {
+				defer func() { providerError = failure }()
 				if index == 1 {
 					visible := false
 					for _, tool := range request.Tools {
@@ -53,7 +56,10 @@ func TestWorkspaceViewImageReachesModelAndSurvivesSourceRemoval(t *testing.T) {
 				count, note, paired := 0, false, false
 				for _, message := range request.Messages {
 					for _, result := range message.ToolResults {
-						if result.ToolCallID == "inspect-png" {
+						var envelope struct {
+							Tool string `json:"tool"`
+						}
+						if json.Unmarshal([]byte(result.Content), &envelope) == nil && envelope.Tool == "workspace_view_image" {
 							if result.IsError {
 								return nil, fmt.Errorf("image tool failed: %s", result.Content)
 							}
@@ -86,7 +92,7 @@ func TestWorkspaceViewImageReachesModelAndSurvivesSourceRemoval(t *testing.T) {
 						t.Logf("failure: %+v", event)
 					}
 				}
-				t.Fatal(err)
+				t.Fatalf("%v (scripted provider: %v)", err, providerError)
 			}
 			if len(provider.Requests()) != 3 {
 				t.Fatalf("requests=%d", len(provider.Requests()))
