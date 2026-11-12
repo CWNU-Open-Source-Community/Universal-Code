@@ -117,6 +117,68 @@ test("normal entry reads a real project file and retains the task after reload",
   } finally { await record(timings, info); }
 });
 
+test("queued message edits retain the composer and conversation after reload", async ({ page }, info) => {
+  const browserNotice = page.getByRole("button", { name: "关闭浏览器提示", exact: true });
+  // Older workbenches show this optional notice in the conversation. The queue
+  // journey must also work when browser viewing is opened explicitly elsewhere.
+  await page.addLocatorHandler(browserNotice, async () => { await browserNotice.click(); });
+  await connect(page);
+  await importProject(page);
+  await page.getByRole("textbox", { name: "开始新对话" }).fill("JOURNEY_STOP: Hold while I revise queued instructions.");
+  await page.getByRole("button", { name: "发送消息", exact: true }).click();
+  const composer = page.getByRole("textbox", { name: "继续对话", exact: true });
+  await expect(composer).toBeVisible();
+  for (let index = 1; index <= 5; index++) {
+    await composer.fill(`Queued requirement ${index}`);
+    await page.getByRole("button", { name: "发送消息", exact: true }).click();
+    await expect(composer).toHaveValue("");
+  }
+  await expect(page.getByRole("button", { name: /^待处理 5 条/u })).toBeVisible();
+  const stop = page.getByRole("button", { name: "停止当前执行", exact: true });
+  if (await stop.isVisible()) await stop.click();
+  await expect(stop).toBeHidden();
+  if (await browserNotice.isVisible()) await browserNotice.click();
+  for (let sequence = 2; sequence <= 4; sequence++) {
+    await page.getByRole("button", { name: `消息 ${sequence} 的更多操作`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "编辑消息", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: `编辑消息 ${sequence}`, exact: true })).toBeFocused();
+    await page.getByRole("textbox", { name: `编辑消息 ${sequence}`, exact: true }).fill(`Unsent edit ${sequence}`);
+  }
+  await composer.fill("Keep this ordinary draft too");
+  await page.reload();
+  await reconnect(page);
+  await expect(composer).toHaveValue("Keep this ordinary draft too");
+  await composer.focus();
+  for (const { width, height } of [
+    { width: 1280, height: 844 }, { width: 390, height: 844 },
+    { width: 1280, height: 600 }, { width: 480, height: 600 }, { width: 390, height: 500 },
+  ]) {
+    await page.setViewportSize({ width, height });
+    await expect(composer).toHaveValue("Keep this ordinary draft too");
+    await withinViewport(composer, page);
+    const send = page.getByRole("button", { name: "发送消息", exact: true });
+    await withinViewport(send, page);
+    expect((await send.boundingBox())!.y + (await send.boundingBox())!.height).toBeLessThanOrEqual(height);
+    const composerBounds = (await page.locator(".v2-shared-composer").boundingBox())!;
+    expect(composerBounds.y + composerBounds.height).toBeLessThanOrEqual(height);
+    expect((await page.locator(".v2-conversation-scroll").boundingBox())!.height).toBeGreaterThan(height >= 600 ? 80 : 32);
+    for (let sequence = 2; sequence <= 4; sequence++) {
+      const edit = page.getByRole("textbox", { name: `编辑消息 ${sequence}`, exact: true });
+      await expect(edit).toHaveValue(`Unsent edit ${sequence}`);
+      await edit.focus();
+      await expect(edit).toBeInViewport();
+    }
+    await info.attach(`queued-edits-${width}x${height}`, { body: await page.screenshot(), contentType: "image/png" });
+  }
+  await page.getByRole("button", { name: /^待处理 5 条/u }).click();
+  const edit = page.getByRole("textbox", { name: "编辑消息 2", exact: true });
+  await edit.focus();
+  await expect(edit).toBeInViewport();
+  await edit.locator("..").locator("..").getByRole("button", { name: "保存修改", exact: true }).click();
+  await expect(page.getByText("修改已保存。", { exact: true })).toBeVisible();
+  await expect(composer).toHaveValue("Keep this ordinary draft too");
+});
+
 async function openFiles(page: Page) {
   await page.getByRole("button", { name: "工作区文件", exact: true }).click();
   await expect(page.getByRole("button", { name: "关闭文件面板", exact: true })).toBeVisible();
