@@ -19,7 +19,7 @@ func TestThreadPermissionHistoryDoesNotProjectRuntimeAuthority(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := threadExecutionPermissionView(old, caps, nil)
+		got := threadExecutionPermissionView(old, caps)
 		if got.Mode != string(mode) || got.RuntimeGateAvailable || got.ExecutionAuthorized || got.CapabilityGrant {
 			t.Fatalf("historical view gained authority: %+v", got)
 		}
@@ -28,17 +28,17 @@ func TestThreadPermissionHistoryDoesNotProjectRuntimeAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := threadExecutionPermissionView(full, caps, nil); got.RuntimeGateAvailable {
+	if got := threadExecutionPermissionView(full, caps); got.RuntimeGateAvailable {
 		t.Fatal("cold Full projected live")
 	}
 	if _, err := runtime.ActivateThreadFullAccess(full, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := threadExecutionPermissionView(full, caps, nil); !got.RuntimeGateAvailable {
+	if got := threadExecutionPermissionView(full, caps); !got.RuntimeGateAvailable {
 		t.Fatal("live Full projected unavailable")
 	}
 	runtime.RevokeThread(full.ThreadID)
-	if got := threadExecutionPermissionView(full, caps, nil); got.RuntimeGateAvailable {
+	if got := threadExecutionPermissionView(full, caps); got.RuntimeGateAvailable {
 		t.Fatal("revoked Full projected live")
 	}
 }

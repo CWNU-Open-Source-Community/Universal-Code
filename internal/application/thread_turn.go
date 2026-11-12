@@ -532,7 +532,16 @@ func (s *ThreadTurnService) pendingEpochConfiguration(ctx context.Context,
 	if err != nil {
 		return false, apperror.Normalize(err)
 	}
-	return threadPermission.Mode != runPermission.Mode, nil
+	if threadPermission.Mode != runPermission.Mode {
+		return true, nil
+	}
+	// A confirmation may be deferred while a Full Run is preparing or waiting
+	// for approval. A new Thread grant must bind through a quiescent successor
+	// even when both durable snapshots have the same Full policy.
+	return threadPermission.Mode == domain.RunExecutionPermissionFull &&
+		s.runtimeAuthority != nil &&
+		s.runtimeAuthority.AllowsThreadFullAccess(threadPermission, nil) &&
+		!s.runtimeAuthority.AllowsThreadFullAccess(threadPermission, &runPermission), nil
 }
 
 func (s *ThreadTurnService) advancePastFailedTurn(ctx context.Context,

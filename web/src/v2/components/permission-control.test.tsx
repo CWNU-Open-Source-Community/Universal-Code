@@ -46,6 +46,23 @@ function control(executionPermission = permission()): ThreadExecutionPermissionC
 }
 
 describe("Composer permission integration", () => {
+  it.each(["ask", "full"] as const)("keeps the current %s Run browser controls unavailable when only the future Full preference is active", async (mode) => {
+    const future = { ...control(permission({ mode: "full", approval_mode: "full", full_activation: "active" })),
+      current_run_mode: mode, current_run_effect: mode === "ask" ? "deferred" : "applied", current_run_synchronized: mode === "full" };
+    const get = vi.fn().mockResolvedValue({ browser_cdp_permission: { mode: "restricted", runtime_gate_available: false },
+      execution_permission: { mode, revision: 1, full_activation: "inactive", runtime_gate_available: false } });
+    const client = { getThreadExecutionPermission: vi.fn().mockResolvedValue(future), get,
+      hasExecutionPermissionControl: true, hasBrowserCDPPermissionControl: true, hasFullCDPDebug: true } as unknown as APIClient;
+    const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queries}><V2PermissionControl client={client} threadID="thread-1" variant="settings" /></QueryClientProvider>);
+    expect(await screen.findByText("完全访问已激活")).toBeVisible();
+    if (mode === "ask") expect(screen.getByText("当前执行保持不变，选择用于下一次执行")).toBeVisible();
+    await screen.findByText("先重新确认并激活当前任务的完全访问权限。");
+    expect(screen.getByRole("switch", { name: "完整 CDP 控制" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "完全访问权限" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("完全访问未激活")).not.toBeInTheDocument();
+  });
+
   it("reads webpage and search status only when expanded inside permissions, without granting access", async () => {
     const user = userEvent.setup();
     const get = vi.fn().mockResolvedValue({ run: { status: "paused" },

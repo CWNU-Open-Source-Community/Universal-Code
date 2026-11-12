@@ -67,6 +67,61 @@ func TestExecutionPermissionRuntimeAuthorityStartsClosedAndFencesRevocation(t *t
 	}
 }
 
+func TestDeferredFullPreferencePreservesCurrentRunUntilSuccessorBinding(t *testing.T) {
+	thread, run := runtimeAuthorityFixtures(t)
+	authority := NewExecutionPermissionRuntimeAuthority()
+	current, err := authority.ActivateThreadFullAccess(thread, &run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fence, err := authority.IssueRunAuthorizationFence(run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmed, err := thread.Next("thread-full-for-successor", RunExecutionPermissionFull,
+		true, "test_operator", "confirm Full for the next input", thread.CreatedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future, err := authority.ActivateThreadFullPreference(confirmed)
+	if err != nil || future.RunID != "" || future.PermissionSnapshotID != "" ||
+		!authority.AllowsThreadFullAccess(confirmed, nil) || authority.AllowsThreadFullAccess(confirmed, &run) {
+		t.Fatalf("deferred preference activated the current Run: grant=%+v err=%v", future, err)
+	}
+	if !authority.AllowsFullAccessGeneration(run, current.Generation) ||
+		!authority.AllowsRunAuthorizationFence(run.RunID, fence) {
+		t.Fatal("future preference revoked the current Full Run grant or child fence")
+	}
+	successor := run
+	successor.RunID, successor.ID = "full-preference-successor", "full-preference-successor-permission"
+	bound, active, err := authority.BindThreadRun(confirmed.ThreadID, successor)
+	if err != nil || !active || bound.ThreadPermissionSnapshotID != confirmed.ID ||
+		!authority.AllowsThreadFullAccess(confirmed, &successor) {
+		t.Fatalf("successor did not bind the explicit future preference: grant=%+v active=%t err=%v", bound, active, err)
+	}
+	if authority.AllowsFullAccessGeneration(run, current.Generation) ||
+		authority.AllowsRunAuthorizationFence(run.RunID, fence) {
+		t.Fatal("successor binding retained the retired Run grant")
+	}
+	if NewExecutionPermissionRuntimeAuthority().AllowsThreadFullAccess(confirmed, nil) {
+		t.Fatal("a durable future preference reactivated on process restart")
+	}
+	for _, mode := range []RunExecutionPermissionMode{RunExecutionPermissionAsk, RunExecutionPermissionFullAccess} {
+		other, err := confirmed.Next("non-current-full-preference", mode, mode == RunExecutionPermissionFullAccess,
+			"test_operator", "historical or lower permission is not Full activation", confirmed.CreatedAt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := authority.ActivateThreadFullPreference(other); err == nil {
+			t.Fatalf("future activation accepted %s", mode)
+		}
+	}
+	authority.RevokeThread(confirmed.ThreadID)
+	if authority.AllowsThreadFullAccess(confirmed, nil) || authority.AllowsThreadFullAccess(confirmed, &successor) {
+		t.Fatal("Thread revocation retained the future preference or its successor grant")
+	}
+}
+
 func TestRunAuthorizationFenceIsSharedBySiblingCapabilitiesUntilRevoked(t *testing.T) {
 	_, run := runtimeAuthorityFixtures(t)
 	authority := NewExecutionPermissionRuntimeAuthority()
