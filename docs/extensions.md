@@ -151,7 +151,7 @@ cyberagent plugin show <new-installation-id>
 
 - **位置**：`<CYBERAGENT_HOME>/hooks.d/*.json` 声明 + 同目录树内的脚本文件。目录缺失等于未配置；声明与插件 Hook 共享引擎 64 条总上限（合并超限会以可诊断错误整体失败关闭），声明单文件 64 KiB，脚本单文件 1 MiB。任何异常（symlink/junction、超大、非法 JSON、路径逃逸、内容哈希漂移）都失败关闭而不是跳过。
 - **声明**：`script` 动作必须带 `script` 规格：`interpreter`（`powershell`（仅 Windows）/`pwsh`/`sh`（仅 POSIX）/`python`/`node`）、相对 `path`（不得绝对、不得 `..`）、`args`（最多 8 个、限定安全字符集）、`sha256`（脚本内容 SHA-256）。脚本 Hook 超时上限 10 秒（声明式 Hook 仍为 2 秒），不允许 `post_tool`。
-- **执行**：宿主每次执行前经 `os.Root` 重新验证脚本是普通文件并复算哈希，漂移立即失败；子进程以固定的解释器参数向量启动（无 shell），工作目录为 hooks.d，环境仅含 OS 运行必需变量（Windows：`SystemRoot` 等；POSIX：`PATH`/`TMPDIR`），不继承父进程环境的任何其他变量，凭据与 Provider 配置对脚本不可见。stdin 收到有界 JSON（`event`/`run_id`/`workspace_id`/`tool_name`/`payload`）；stdout 必须是单个有界 JSON（`protocol_version` + `denied`/`reason`/`annotations`），16 KiB 上限、拒绝未知字段和尾随 JSON；stderr 只以有界形式进入失败错误文本。已知的残留边界：校验与解释器打开文件之间存在固有 TOCTOU 窗口（写 hooks.d 即操作者级权限）；超时只终止直接子进程，脚本自行遗留的后台子进程会令本次执行失败关闭。
+- **执行**：宿主每次执行前经 `os.Root` 重新验证脚本是普通文件并复算哈希，漂移立即失败；子进程以固定的解释器参数向量启动（无 shell），工作目录为 hooks.d，环境仅含 OS 运行必需变量（Windows：`SystemRoot` 等；POSIX：`PATH`/`TMPDIR`），不继承父进程环境的任何其他变量，凭据与 Provider 配置对脚本不可见。stdin 收到有界 JSON（`event`/`run_id`/`workspace_id`/`tool_name`/`payload`）；stdout 必须是单个有界 JSON（`protocol_version` + `denied`/`reason`/`annotations`），16 KiB 上限、拒绝未知字段和尾随 JSON；stderr 只以有界形式进入失败错误文本。已知的残留边界：校验与解释器打开文件之间存在固有 TOCTOU 窗口（写 hooks.d 即操作者级权限）；超时只终止直接子进程，脚本自行遗留的后台子进程会令本次执行失败关闭；固定 digest 只覆盖声明脚本本身，不覆盖其 import 的模块——模块解析限定在 hooks.d 目录内，helper 是操作者信任文件而非 digest 固定文件，改动 helper 不会触发哈希漂移。
 - **审计**：脚本拒绝与声明式 deny 一样写 `plugin_hook_audits`（`plugin_id=operator`，fingerprint 为脚本哈希；schema v223 扩展了审计表的 action 约束与绑定触发器）；`denied` 输出映射为拒绝结果，但模型侧错误文本仍是固定的官方文案，脚本提供的 `reason` 不进入模型可见错误。插件路径三重强制：manifest 校验拒绝 script 声明，加载时过滤历史 staging 残留，引擎注册表拒绝非 `operator` 来源的 script hook。
 
 设计依据见 [ADR 0197](adr/0197-operator-script-hooks.md)。
@@ -219,7 +219,10 @@ own home directory.
   residual bounds: a TOCTOU window remains between verification and the
   interpreter's own open (writing hooks.d is already operator-level power), and
   the timeout kills the direct child only — background children left by a
-  script fail the execution closed.
+  script fail the execution closed. The pinned digest covers only the declared
+  script file, not the modules it imports: module resolution is confined to the
+  hooks.d directory, but helpers are trusted operator files, not digest-pinned
+  ones — editing a helper does not trigger digest drift.
 - **Audit**: script denials record like declared denies in
   `plugin_hook_audits` (`plugin_id=operator`, fingerprint is the script hash;
   schema v223 widens the audit action constraint and its binding trigger);
