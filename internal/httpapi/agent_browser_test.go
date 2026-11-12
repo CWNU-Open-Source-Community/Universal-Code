@@ -17,6 +17,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/browserruntime"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/webevidence"
 )
 
@@ -359,5 +360,16 @@ func TestAgentBrowserStatusSurfacesDeclaredOrigins(t *testing.T) {
 	decodeDataStatus(t, response, http.StatusOK, &unscoped)
 	if len(unscoped.DeclaredOrigins) != 0 {
 		t.Fatalf("unscoped session must omit declared origins: %+v", unscoped.DeclaredOrigins)
+	}
+}
+
+func TestRunViewCarriesBrowserOrigins(t *testing.T) {
+	scoped := runView(domain.Run{ID: "run-origins", Config: domain.RunConfig{BrowserOrigins: []string{"https://example.org:443"}}})
+	if len(scoped.Config.BrowserOrigins) != 1 || scoped.Config.BrowserOrigins[0] != "https://example.org:443" {
+		t.Fatalf("run view must carry the declared origins: %+v", scoped.Config.BrowserOrigins)
+	}
+	unscoped := runView(domain.Run{ID: "run-plain"})
+	if len(unscoped.Config.BrowserOrigins) != 0 {
+		t.Fatalf("unscoped run view must omit the field: %+v", unscoped.Config.BrowserOrigins)
 	}
 }

@@ -42,7 +42,7 @@ it("views the original ratio, zooms without changing the download, and restores 
   const image = view.getByRole("img", { name: original.name });
   expect(view.getByRole("button", { name: "关闭图片预览" })).toHaveFocus();
   expect(container).toHaveAttribute("inert");
-  expect(Number.parseFloat(image.style.width) / Number.parseFloat(image.style.height)).toBe(3);
+  expect(Number.parseFloat(image.style.width) / Number.parseFloat(image.style.height)).toBeCloseTo(3, 4);
   expect(view.getByRole("button", { name: "适应窗口" })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(view.getByRole("button", { name: "100%" }));
   expect(image).toHaveStyle({ width: "2400px", height: "800px" });

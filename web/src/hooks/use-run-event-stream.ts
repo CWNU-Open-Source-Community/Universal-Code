@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { APIRequestError, type APIClient } from "../api/client";
 import type { RunEventStreamView } from "../api/types";
 import { desktopRuntimeActive } from "../lib/desktop-bridge";
+import { useConnectionStore } from "../state/connection";
 
 export type StreamStatus = "connecting" | "live" | "reconnecting" | "stopped";
 
@@ -10,27 +11,45 @@ const desktopCaughtUpDelayMs = 250;
 const maxImmediateDesktopPages = 4;
 const maxLiveFrames = 500;
 const maxRememberedRuns = 16;
+const emptyFrames: RunEventStreamView[] = [];
 
 interface RememberedDesktopRun {
+  runID: string;
   cursor: string;
   frames: RunEventStreamView[];
 }
 
 const rememberedDesktopRuns = new Map<string, RememberedDesktopRun>();
+const clientCacheIDs = new WeakMap<APIClient, number>();
+let nextClientCacheID = 0;
+
+function desktopRunCacheKey(client: APIClient, dataStoreID: string, runID: string): string {
+  // An unidentified store cannot safely share a cursor across mounts.
+  if (!dataStoreID) return "";
+  let clientID = clientCacheIDs.get(client);
+  if (clientID === undefined) {
+    clientID = ++nextClientCacheID;
+    clientCacheIDs.set(client, clientID);
+  }
+  return JSON.stringify([clientID, dataStoreID, runID]);
+}
 
 export function clearDesktopRunEventMemory(runID = ""): void {
   if (runID) {
-    rememberedDesktopRuns.delete(runID);
+    for (const [key, remembered] of rememberedDesktopRuns) {
+      if (remembered.runID === runID) rememberedDesktopRuns.delete(key);
+    }
     return;
   }
   rememberedDesktopRuns.clear();
 }
 
-function rememberDesktopRun(runID: string, cursor: string, frames: RunEventStreamView[]): void {
-  const remembered = rememberedDesktopRuns.get(runID);
+function rememberDesktopRun(key: string, runID: string, cursor: string, frames: RunEventStreamView[]): void {
+  if (!key) return;
+  const remembered = rememberedDesktopRuns.get(key);
   if (remembered?.cursor === cursor && remembered.frames === frames) return;
-  rememberedDesktopRuns.delete(runID);
-  rememberedDesktopRuns.set(runID, { cursor, frames });
+  rememberedDesktopRuns.delete(key);
+  rememberedDesktopRuns.set(key, { runID, cursor, frames });
   while (rememberedDesktopRuns.size > maxRememberedRuns) {
     const oldest = rememberedDesktopRuns.keys().next().value as string | undefined;
     if (!oldest) {
@@ -78,11 +97,22 @@ function delay(signal: AbortSignal, delayMs = reconnectDelayMs): Promise<void> {
 }
 
 export function useRunEventStream(client: APIClient, runID: string) {
-  const [frames, setFrames] = useState<RunEventStreamView[]>([]);
+  const dataStoreID = useConnectionStore((state) => state.health?.data_store_id ?? "");
+  const [frameState, setFrameState] = useState(() => ({ client, dataStoreID, runID, frames: emptyFrames }));
+  const sameOwner = frameState.client === client && frameState.dataStoreID === dataStoreID && frameState.runID === runID;
+  const frames = sameOwner ? frameState.frames : emptyFrames;
   const [status, setStatus] = useState<StreamStatus>("stopped");
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const setFrames = (update: RunEventStreamView[] | ((current: RunEventStreamView[]) => RunEventStreamView[])) => {
+      setFrameState((previous) => {
+        const sameOwner = previous.client === client && previous.dataStoreID === dataStoreID && previous.runID === runID;
+        const current = sameOwner ? previous.frames : emptyFrames;
+        const next = typeof update === "function" ? update(current) : update;
+        return sameOwner && next === current ? previous : { client, dataStoreID, runID, frames: next };
+      });
+    };
     setError("");
     if (!runID) {
       setFrames((current) => current.length ? [] : current);
@@ -104,7 +134,8 @@ export function useRunEventStream(client: APIClient, runID: string) {
       }
     };
     if (desktopRuntimeActive()) {
-      const remembered = rememberedDesktopRuns.get(runID);
+      const cacheKey = desktopRunCacheKey(client, dataStoreID, runID);
+      const remembered = cacheKey ? rememberedDesktopRuns.get(cacheKey) : undefined;
       let cursor = remembered?.cursor ?? "";
       let currentFrames = remembered?.frames ?? [];
       let cursorResetUsed = false;
@@ -131,7 +162,7 @@ export function useRunEventStream(client: APIClient, runID: string) {
                 setFrames(currentFrames);
               }
             }
-            rememberDesktopRun(runID, cursor, currentFrames);
+            rememberDesktopRun(cacheKey, runID, cursor, currentFrames);
             publishConnection("live");
             if (page.has_more) {
               immediatePages++;
@@ -149,7 +180,7 @@ export function useRunEventStream(client: APIClient, runID: string) {
               cursorResetUsed = true;
               cursor = "";
               currentFrames = [];
-              clearDesktopRunEventMemory(runID);
+              if (cacheKey) rememberedDesktopRuns.delete(cacheKey);
               setFrames([]);
               continue;
             }
@@ -173,6 +204,7 @@ export function useRunEventStream(client: APIClient, runID: string) {
     let currentFrames: RunEventStreamView[] = [];
     setFrames((current) => current.length ? [] : current);
     let cursor = "";
+    let cursorResetUsed = false;
     const run = async () => {
       publishConnection("connecting");
       while (!controller.signal.aborted) {
@@ -202,6 +234,15 @@ export function useRunEventStream(client: APIClient, runID: string) {
           if (controller.signal.aborted) {
             return;
           }
+          if (caught instanceof APIRequestError && caught.status === 400 && cursor !== "" && !cursorResetUsed) {
+            // As in Desktop polling, a rejected cursor may be stale after the
+            // server changes. Replay once, then surface any further failure.
+            cursorResetUsed = true;
+            cursor = "";
+            currentFrames = [];
+            setFrames([]);
+            continue;
+          }
           const message = caught instanceof Error ? caught.message : "Event stream disconnected";
           if (caught instanceof APIRequestError && [400, 401, 403, 404].includes(caught.status)) {
             publishConnection("stopped", message);
@@ -217,7 +258,8 @@ export function useRunEventStream(client: APIClient, runID: string) {
     return () => {
       controller.abort();
     };
-  }, [client, runID]);
+  }, [client, dataStoreID, runID]);
 
-  return { frames, status, error };
+  const visibleStatus: StreamStatus = sameOwner ? status : runID ? "connecting" : "stopped";
+  return { frames, status: visibleStatus, error: sameOwner ? error : "" };
 }

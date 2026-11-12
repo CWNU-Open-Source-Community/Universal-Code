@@ -50,6 +50,7 @@ function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBi
   const setNotice = (text: string, successful = false) => setNoticeState({ text, successful });
   const [busy, setBusy] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState(false);
+  const [focusedEdit, setFocusedEdit] = useState<string | null>(null);
   const [details, setDetails] = useState<{ message: QueuedMessage; trigger: HTMLElement | null } | null>(null);
   const detailsID = useId();
   const listID = useId();
@@ -86,7 +87,7 @@ function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBi
       const state = document.read(scope);
       if (!state.ref || !queueEditVisible(store, edit, state)) document.update(scope, empty(message.content), state.ref);
       reopenQueueEdit(store, edit);
-      refresh(); setNotice("");
+      refresh(); setFocusedEdit(key); setNotice("");
     } catch (error) { setNotice(explanation(error, t)); }
   };
   const finish = async (operation: QueueOperation) => {
@@ -210,6 +211,7 @@ function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBi
       <button className="v2-queue-icon" type="button" aria-label={t("刷新列表", "Refresh list")} title={t("刷新列表", "Refresh list")}
         onClick={() => void query.refetch()} disabled={query.isFetching}><RefreshCw size={13} aria-hidden="true" /></button>
     </header>
+    <div className="v2-queue-content">
     {query.isError && <p role="alert">{t("暂时无法读取完整队列。已有消息仍可在对话记录中查看。", "The full queue is unavailable. Existing messages remain in conversation history.")}{explanation(query.error, t)}</p>}
     {recoveryError && <p role="alert">{recoveryError}</p>}
     {notice && <p role="status">{notice}</p>}
@@ -227,6 +229,7 @@ function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBi
           expectedRevision: message.revision, oldSHA256: message.content_sha256, content: "" })} />)}</ol>
     {/* Recovery controls stay reachable even when the queue preview is collapsed. */}
     {document && store && edits.map((edit) => <QueueEditor key={queueEditKey(edit)} edit={edit} document={document} store={store}
+      focus={focusedEdit === queueEditKey(edit)}
       client={client} current={edit.runID === binding.runID && edit.sessionID === binding.sessionID ? items.find((message) => message.id === edit.message.id) : undefined} refresh={refresh}
       previousRun={edit.runID !== binding.runID || edit.sessionID !== binding.sessionID}
       queueKnown={query.isSuccess} locked={!!recoveryError || !query.isSuccess || operations.some((operation) => operation.messageID === edit.message.id) || busy.includes(edit.message.id)}
@@ -237,14 +240,16 @@ function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBi
       <button type="button" disabled={busy.includes(operation.messageID) || !client.hasSessionSteeringControl}
         onClick={() => void perform(operation)}>{operation.kind === "revise" ? t("重试原保存", "Retry original save") : operation.kind === "promote" ? t("重试原引导", "Retry original guidance") : t("继续撤回", "Continue withdrawal")}</button>
     </div>)}
+    </div>
     {details && <V2QueueMessageDetails client={client} snapshot={details.message} detailsID={detailsID}
       current={query.isSuccess ? items.find((message) => message.id === details.message.id) : undefined} queueKnown={query.isSuccess}
       trigger={details.trigger} fallbackFocus={toggleRef} onClose={() => setDetails(null)} />}
   </section>;
 }
 
-function QueueEditor({ edit, current, client, document, store, locked, queueKnown, previousRun, refresh, submit, startEdit }: {
+function QueueEditor({ edit, current, client, document, store, locked, queueKnown, previousRun, refresh, submit, startEdit, focus }: {
   edit: QueueEdit; current?: QueuedMessage; client: APIClient; document: DraftDocument; store: V2RecoveryStore;
+  focus: boolean;
   locked: boolean; queueKnown: boolean; previousRun: boolean; refresh: () => void; submit: (operation: QueueOperation) => void; startEdit: (message: QueuedMessage) => void;
 }) {
   const { t } = useLocale();
@@ -267,7 +272,7 @@ function QueueEditor({ edit, current, client, document, store, locked, queueKnow
   };
   return <div className="v2-queue-editor">
     {previousRun && <p>{t("上轮编辑稿 · 原执行", "Previous edit · Original run ")}{edit.runID}</p>}
-    <label>{t(`编辑消息 ${edit.message.sequence}`, `Edit message ${edit.message.sequence}`)}<textarea aria-label={t(`编辑消息 ${edit.message.sequence}`, `Edit message ${edit.message.sequence}`)} value={state.snapshot.text} rows={4}
+    <label>{t(`编辑消息 ${edit.message.sequence}`, `Edit message ${edit.message.sequence}`)}<textarea aria-label={t(`编辑消息 ${edit.message.sequence}`, `Edit message ${edit.message.sequence}`)} value={state.snapshot.text} rows={4} autoFocus={focus}
       onChange={(event) => { document.update(scope, { text: event.target.value }, state.ref); refresh(); }} /></label>
     <V2DraftConflict state={state} client={client} workspaceID={edit.workspaceID} onResolve={(token, ref) => { document.resolve(scope, token, ref); refresh(); }} />
     {(!queueKnown || !current || current.prepared || stale) && <p role="status">{!queueKnown ? t("尚未确认最新队列状态。", "The latest queue state is unconfirmed.") : !current ? t("这条消息已离开待处理队列。", "This message left the pending queue.") : current.prepared ? t("这条消息正在处理。", "This message is being processed.") : t("这条消息已在其他窗口更新。", "This message was updated in another window.")}{t("本地编辑稿仍保留，可选中文字复制。", "Your local edit is kept. Select text to copy it.")}</p>}

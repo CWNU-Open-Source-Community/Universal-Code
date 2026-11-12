@@ -8,12 +8,14 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/projectconfig"
+	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/workspace"
 )
@@ -39,6 +41,8 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	timeout := fs.Duration("timeout", 0, "whole-execution deadline; zero means no deadline")
 	stdin := fs.Bool("stdin", false, "read the prompt from stdin instead of the positional argument")
 	jsonOutput := fs.Bool("json", false, "emit a structured JSON result")
+	instructions := fs.String("instructions", "",
+		"fix extra operator instructions as a Thread context pin for this invocation")
 	enablePermissionControl := fs.Bool("enable-permission-control", false,
 		"enable the operator-approval runtime for this process")
 	enableFullAccess := fs.Bool("enable-danger-full-access", false,
@@ -49,6 +53,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"workspace": true, "profile": true, "route": true,
 		"max-turns": true, "max-tokens": true, "max-tool-calls": true,
 		"max-cost-usd": true, "timeout": true, "stdin": false, "json": false,
+		"instructions":              true,
 		"enable-permission-control": false, "enable-danger-full-access": false,
 		"confirm-full": false,
 	})); err != nil {
@@ -64,10 +69,18 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return errors.New(`usage: cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--timeout 30m] [--json]`)
+		return errors.New(`usage: cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--instructions <text>] [--timeout 30m] [--json]`)
 	}
 	if strings.TrimSpace(*workspaceName) == "" {
 		return errors.New("exec requires --workspace <name>")
+	}
+	// Validate the fixed instructions before any Run exists: a late pin
+	// failure would otherwise strand a created Run, and the operator gets the
+	// same text contract (UTF-8, no NUL, 8192-rune cap, no redacted secrets)
+	// the interactive Thread pin surface enforces.
+	fixedInstructions, err := normalizeExecInstructions(*instructions)
+	if err != nil {
+		return err
 	}
 	if *timeout > 0 {
 		var cancel context.CancelFunc
@@ -151,6 +164,21 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	turns := application.NewThreadTurnService(a.store,
 		application.NewRunLifecycleControlService(a.store).WithLifecycleHooks(a.newLifecycleHookEngine()),
 		application.NewRunExecutionHandoffWithRuntime(a.store, a.router, a.checker, dependencies))
+	if fixedInstructions != "" {
+		if err := pinExecInstructions(ctx, turns, domain.InitialThreadID(run.ID),
+			fixedInstructions); err != nil {
+			// A created Run with a failed pin would sit idle until its budget
+			// expires. Cancel it on a bounded detached context so the
+			// operator gets a terminal Run, and report the Run ID if even
+			// the cancellation fails. The pin error stays primary.
+			cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			if _, cancelErr := application.NewRunService(a.store).Cancel(cancelCtx, run.ID); cancelErr != nil {
+				err = fmt.Errorf("%w (run %s could not be cancelled: %v)", err, run.ID, cancelErr)
+			}
+			cancel()
+			return err
+		}
+	}
 	oneShot := application.NewOneShotService(a.store, turns)
 	result, err := oneShot.Run(ctx, application.OneShotRequest{
 		Version:      domain.ThreadMessageProtocolVersion,
@@ -195,4 +223,52 @@ func clipExecGoal(prompt string) string {
 		clipped = clipped[:len(clipped)-1]
 	}
 	return clipped
+}
+
+// normalizeExecInstructions validates the exec --instructions value before any
+// Run is created. An unset flag means no fixed instructions; a whitespace-only
+// value is an operator mistake and fails loudly. Otherwise the text must
+// satisfy the Thread context pin contract and carry no protected secret
+// content, mirroring the interactive pin surface's storage gate.
+func normalizeExecInstructions(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return "", errors.New("exec --instructions requires nonempty text")
+	}
+	if err := domain.ValidateContextPinText(text); err != nil {
+		return "", fmt.Errorf("exec --instructions: %w", err)
+	}
+	if text != redact.String(text) {
+		return "", errors.New("exec --instructions: remove protected secrets before fixing them as context guidance")
+	}
+	return text, nil
+}
+
+// pinExecInstructions fixes the invocation's extra operator instructions as a
+// Thread context pin before the first turn. The ordinary pin delivery — an
+// integrity-checked, operator-confirmed fixed requirement selected as a
+// protected section every turn — carries them for this Run and any successor
+// the Thread creates, with the same authority ceiling as every other pin: the
+// text never grants tools, permissions, or policy exceptions.
+func pinExecInstructions(ctx context.Context, turns *application.ThreadTurnService,
+	threadID, text string) error {
+	state, err := turns.InspectContextPins(ctx, threadID)
+	if err != nil {
+		return fmt.Errorf("exec instructions pin inspect: %w", err)
+	}
+	if _, err := turns.ControlContextPin(ctx, domain.ThreadContextPinControl{
+		Version:          domain.ThreadContextPinsVersion,
+		ThreadID:         threadID,
+		Action:           "add",
+		ExpectedRevision: state.Revision,
+		Text:             text,
+		OperationKey:     idgen.New("cli-exec-pin"),
+		RequestedBy:      "cli_exec_operator",
+	}); err != nil {
+		return fmt.Errorf("exec instructions pin: %w", err)
+	}
+	return nil
 }

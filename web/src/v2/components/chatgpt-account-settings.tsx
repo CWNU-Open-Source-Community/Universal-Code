@@ -152,7 +152,6 @@ export function V2ChatGPTAccountSettings({ client, query, onExit, prepareForDraf
       <ArrowLeft aria-hidden="true" size={16} />{t("返回模型", "Back to models")}</button>
     <header className="v2-model-catalog-heading">
       <h1 id="v2-chatgpt-title">{t("ChatGPT 账户", "ChatGPT account")}</h1>
-      <p>{t("使用 ChatGPT 账户登录，按当前订阅与用量使用模型。登录信息由操作系统凭据库保护。", "Sign in with ChatGPT to use models under your subscription and usage limits. Your operating system's credential store protects sign-in information.")}</p>
     </header>
     <div className="v2-settings-card v2-chatgpt-card">
       <header><div><strong>Using ChatGPT plan</strong><p>{t("使用 ChatGPT 订阅", "Use a ChatGPT subscription")}</p></div>

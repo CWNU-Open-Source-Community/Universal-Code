@@ -183,6 +183,19 @@ export class WorkspacesClient {
       `${encodeURIComponent(metadata.id)}/content`, metadata, signal);
   }
 
+  async inspectWorkspaceImageUpload(workspaceID: string, operationKey: string, signal?: AbortSignal):
+    Promise<{ state: "not_received" | "stored"; image?: WorkspaceImageAttachment }> {
+    if (!boundedIdentity(workspaceID) || !boundedIdentity(operationKey)) throw new Error("图片上传请求标识无效。");
+    const value = (await this.transport.request<unknown>(`/workspaces/${encodeURIComponent(workspaceID)}/image-attachments/request`,
+      {}, signal, operationKey)).data;
+    if (!isRecord(value) || !["not_received", "stored"].includes(String(value.state)) ||
+        (value.state === "stored" && (!validImageAttachment(value.image) || value.image.workspace_id !== workspaceID)) ||
+        (value.state === "not_received" && value.image !== undefined)) {
+      throw new APIRequestError("图片上传状态无法核对，原请求已保留。", "INVALID_RESPONSE", 502);
+    }
+    return value as { state: "not_received" | "stored"; image?: WorkspaceImageAttachment };
+  }
+
   async downloadVerifiedImage(path: string, metadata: { mime_type: string; byte_size: number; sha256: string },
     signal?: AbortSignal): Promise<Blob> {
     if (!acceptedImageTypes.includes(metadata.mime_type) || !isSHA256(metadata.sha256) ||
