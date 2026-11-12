@@ -451,7 +451,11 @@ export function parseHookDiagnostics(value: unknown, runID: string, workspaceID:
       ((runID || workspaceID) && item.workspace_id !== value.workspace_id) ||
       (item.package_fingerprint !== undefined && !isSHA256(item.package_fingerprint)) ||
       (item.action !== undefined && (!hookActions.includes(String(item.action)) || !isSHA256(item.package_fingerprint))) ||
-      (item.action !== undefined && item.decision !== (item.outcome === "failed_closed" || item.action === "deny" && item.outcome === "completed" ? "rejected" : "continued")) ||
+      (item.action !== undefined && (
+        item.action === "script"
+          ? (item.outcome === "failed_closed" ? item.decision !== "rejected" : item.outcome === "failed_continue" ? item.decision !== "continued" : !["rejected", "continued"].includes(String(item.decision)))
+          : item.decision !== (item.outcome === "failed_closed" || item.action === "deny" && item.outcome === "completed" ? "rejected" : "continued")
+      )) ||
       (item.action === undefined && item.decision !== (item.outcome === "failed_closed" ? "rejected" : "unknown"))) {
       throw new APIRequestError("Hook observation projection is invalid", "INVALID_RESPONSE", 502);
     }

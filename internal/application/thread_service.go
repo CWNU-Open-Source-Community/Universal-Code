@@ -217,7 +217,11 @@ func (s *ThreadService) Submit(ctx context.Context,
 	// The user_prompt_submit boundary fires before any persistence: a deny
 	// rejects the submission cleanly and reserves no message intent. The run
 	// and workspace bindings do not exist yet, so their identity stays empty.
-	if !request.skipPromptHook && strings.TrimSpace(request.Content) != "" {
+	submitted, err := s.promptAlreadySubmitted(ctx, request)
+	if err != nil {
+		return SubmitThreadMessageResult{}, apperror.Normalize(err)
+	}
+	if !request.skipPromptHook && !submitted && strings.TrimSpace(request.Content) != "" {
 		if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.UserPromptSubmit,
 			"", "", hooks.BuildUserPromptSubmitPayload(
 				hooks.UserPromptSubmitPayload{ThreadID: request.ThreadID,
