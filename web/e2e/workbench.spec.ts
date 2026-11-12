@@ -253,6 +253,29 @@ test("manual file draft survives file switches, panel close and a browser reload
   } finally { await record(timings, info); }
 });
 
+test("thread records return through one browser Back step per page", async ({ page }, info) => {
+  await connect(page);
+  await importProject(page);
+  await submitRead(page);
+  const conversationURL = page.url();
+  await page.getByRole("button", { name: "执行记录", exact: true }).click();
+  // The first return gives the records tab its explicit route. Reopening the
+  // resource must then reuse that parent instead of duplicating its entry.
+  for (let visit = 0; visit < 2; visit++) {
+    await page.getByRole("button", { name: "执行记录选项", exact: true }).click();
+    await page.getByRole("menuitem", { name: "运行与工具", exact: true }).click();
+    await expect(page).toHaveURL(/\/runs\/[^/]+$/u);
+    await page.getByRole("button", { name: "返回对话", exact: true }).click();
+    await expect(page).toHaveURL(`${conversationURL}/records`);
+  }
+  await page.goBack();
+  await expect(page).toHaveURL(conversationURL);
+  await expect(page.locator(".v2-conversation-scroll").getByText("Read README.md: JOURNEY_FILE_PROOF_2026", { exact: true })).toBeVisible();
+  const screenshot = info.outputPath("one-back-conversation.png");
+  await page.screenshot({ path: screenshot });
+  await info.attach("one-back-conversation", { path: screenshot, contentType: "image/png" });
+});
+
 test("an approved child runs continuously and the main conversation receives its summary", async ({ page }, info) => {
   const timings: Timing[] = [];
   try {
