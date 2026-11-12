@@ -292,17 +292,29 @@ const NarrativeTaskRow = memo(function NarrativeTaskRow({ client, group, threadI
   client: APIClient; group: NarrativeTaskGroup; threadID: string; locatedMessageID?: string;
 } & Omit<NarrativeRowProps, "client" | "entry" | "threadID" | "presentation" | "hidden">) {
   const { t } = useLocale();
-  const [expansion, setExpansion] = useState<{ state: NarrativeTaskGroup["task"]["state"]; finishedAt?: string; open: boolean } | null>(null);
-  const expanded = expansion?.state === group.task.state && expansion.finishedAt === group.task.finishedAt
-    ? expansion.open : undefined;
   const contentID = useId();
   const terminal = group.task.state !== "running";
   const finalReply = group.task.state === "completed"
     ? group.entries.find((entry) => isFinalTaskReply(entry, group.task)) : undefined;
   const hasProcess = group.entries.some((entry) => (entry.kind === "assistant" && entry !== finalReply) || entry.kind === "activity");
-  const targetInProcess = locatedMessageID && group.entries.some((entry) => entry !== finalReply &&
-    entry.kind === "assistant" && (entry.messageIDs ?? [entry.id]).includes(locatedMessageID));
-  const open = Boolean(targetInProcess) || (expanded ?? !(group.task.state === "completed" && finalReply));
+  const target = locatedMessageID ? group.entries.find((entry) => entry.kind === "user" ? entry.id === locatedMessageID
+    : entry.kind === "assistant" && (entry.messageIDs ?? [entry.id]).includes(locatedMessageID)) : undefined;
+  const targetInProcess = target?.kind === "assistant" && target !== finalReply;
+  const [expansion, setExpansion] = useState({ state: group.task.state, finishedAt: group.task.finishedAt,
+    location: undefined as string | undefined, found: false, open: undefined as boolean | undefined });
+  const cycleChanged = expansion.state !== group.task.state || expansion.finishedAt !== group.task.finishedAt;
+  const locationChanged = expansion.location !== locatedMessageID;
+  const found = Boolean(target);
+  let expanded = expansion.open;
+  if (cycleChanged || locationChanged || expansion.found !== found) {
+    // Reveal a newly located message once, including after its history loads.
+    // A later manual toggle wins; an old location cannot pin a future ending open.
+    expanded = targetInProcess && (locationChanged || found && !expansion.found)
+      ? true : cycleChanged ? undefined : expansion.open;
+    setExpansion({ state: group.task.state, finishedAt: group.task.finishedAt,
+      location: locatedMessageID, found, open: expanded });
+  }
+  const open = expanded ?? !(group.task.state === "completed" && finalReply);
   const duration = terminal ? taskDurationLabel(group.task, t) : undefined;
   const firstProcess = group.entries.findIndex((entry) => entry.kind !== "user");
   const inputs = firstProcess < 0 ? group.entries : group.entries.slice(0, firstProcess);
@@ -315,7 +327,7 @@ const NarrativeTaskRow = memo(function NarrativeTaskRow({ client, group, threadI
     {inputs.length > 0 && <ol className="v2-task-inputs">{inputs.map((entry) =>
       <NarrativeRow client={client} entry={entry} key={entry.id} threadID={threadID} {...actions} />)}</ol>}
     {terminal && hasProcess && <div className="v2-task-process-heading">
-      <button aria-expanded={open} aria-controls={contentID} onClick={() => setExpansion({ state: group.task.state, finishedAt: group.task.finishedAt, open: !open })} type="button">
+      <button aria-expanded={open} aria-controls={contentID} onClick={() => setExpansion((current) => ({ ...current, open: !open }))} type="button">
         {duration ?? t("查看过程", "View work")}<ChevronRight aria-hidden="true" size={14} />
       </button>
     </div>}

@@ -103,11 +103,20 @@ describe("user task narrative",()=>{
     await userEvent.setup().click(screen.getByRole("button",{name:"Worked for 30m 29s"}));
     expect(screen.getByText("Read source")).toBeVisible();
   });
-  it("opens collapsed work when locating any of its saved message IDs",()=>{
+  it("reveals a located saved message once and then respects manual collapse",async()=>{
     const view=setup();
     view.rerenderRows(entries(),"progress");
     expect(screen.getByText("Checking the implementation.")).toBeVisible();
     expect(screen.getByRole("button",{name:"Worked for 30m 29s"})).toHaveAttribute("aria-expanded","true");
+    await userEvent.setup().click(screen.getByRole("button",{name:"Worked for 30m 29s"}));
+    expect(screen.getByText("Checking the implementation.")).not.toBeVisible();
+    view.rerenderRows(entries(),"progress");
+    expect(screen.getByRole("button",{name:"Worked for 30m 29s"})).toHaveAttribute("aria-expanded","false");
+    const running={...task,state:"running" as const,finishedAt:undefined,finalMessageID:undefined,changeSourceEventID:undefined};
+    view.rerenderRows(entries(running),"progress");
+    const nextEnding={...task,finishedAt:"2026-11-12T00:40:29Z",finalMessageID:"new-final"};
+    view.rerenderRows(entries(nextEnding),"progress");
+    expect(screen.getByRole("button",{name:"Worked for 40m 29s"})).toHaveAttribute("aria-expanded","false");
   });
   it("keeps different user tasks in the same Run separate",()=>{
     const next={...task,id:"input-2",inputMessageID:"input-2",state:"running" as const,finishedAt:undefined,finalMessageID:undefined,changeSourceEventID:undefined};
