@@ -42,15 +42,16 @@ func (l *attachedTestLease) Release(context.Context) error {
 }
 
 type attachedTestConnection struct {
-	mu       sync.Mutex
-	lease    *attachedTestLease
-	messages chan []byte
-	closed   chan struct{}
-	once     sync.Once
-	methods  []string
-	mouse    []map[string]any
-	url      string
-	session  string
+	mu                 sync.Mutex
+	lease              *attachedTestLease
+	messages           chan []byte
+	closed             chan struct{}
+	once               sync.Once
+	methods            []string
+	mouse              []map[string]any
+	hoverChangesTarget bool
+	url                string
+	session            string
 }
 
 func (c *attachedTestConnection) ReadJSON(out any) error {
@@ -86,6 +87,7 @@ func (c *attachedTestConnection) WriteJSON(value any) error {
 		}
 		c.mouse = append(c.mouse, params)
 	}
+	hoverChanged := c.hoverChangesTarget && len(c.mouse) > 0
 	c.mu.Unlock()
 	var result any = map[string]any{}
 	switch in.Method {
@@ -99,6 +101,12 @@ func (c *attachedTestConnection) WriteJSON(value any) error {
 			return err
 		}
 		result = map[string]any{"data": base64.StdEncoding.EncodeToString(data.Bytes())}
+	case "Page.createIsolatedWorld":
+		result = map[string]any{"executionContextId": 1}
+	case "DOM.resolveNode":
+		result = map[string]any{"object": map[string]any{"objectId": "button"}}
+	case "Runtime.callFunctionOn":
+		result = map[string]any{"result": map[string]any{"value": agentBrowserNode{Connected: true, Visible: true, Hit: !hoverChanged, Signature: "button-signature", X: 40, Y: 30}}}
 	case "DOM.getDocument":
 		result = map[string]any{"root": map[string]any{"backendNodeId": 1}}
 	}
@@ -196,7 +204,7 @@ func TestAttachedBrowserTakeoverCancelsApprovalAndOldReferences(t *testing.T) {
 	r.mu.Unlock()
 	done := make(chan error, 1)
 	go func() {
-		done <- policy.ReviewRequest(context.Background(), AgentBrowserAttachedNetworkRequest{ID: "post", Method: "POST", URL: "https://example.com/submit", Body: []byte("private"), BodyComplete: true}, func() error { dispatched.Add(1); return nil })
+		done <- policy.ReviewRequest(context.Background(), AgentBrowserAttachedNetworkRequest{ID: "post", Method: "POST", URL: "https://example.com/submit", Body: []byte("private"), BodyComplete: true}, func(context.Context) error { dispatched.Add(1); return nil })
 	}()
 	select {
 	case <-started:
@@ -257,7 +265,7 @@ func TestAttachedBrowserNetworkRechecksPermissionAndExactBody(t *testing.T) {
 	}
 	defer r.Close(context.Background())
 	request := AgentBrowserAttachedNetworkRequest{ID: "request", Method: "POST", URL: "https://example.com/submit", Body: []byte("body")}
-	dispatch := func() error { sends.Add(1); return nil }
+	dispatch := func(context.Context) error { sends.Add(1); return nil }
 	if err := policy.ReviewRequest(t.Context(), request, dispatch); err == nil {
 		t.Fatal("incomplete body approved")
 	}
@@ -364,5 +372,108 @@ func TestAttachedBrowserUsesVisibleViewportAndScreenshotPixelScale(t *testing.T)
 	r.onEvent(cdpWireMessage{SessionID: wire.session, Method: "Page.frameResized", Params: json.RawMessage(`{}`)})
 	if r.Status().DocumentEpoch <= before || r.life.Err() != nil {
 		t.Fatal("native resize did not invalidate document references or cancelled agent")
+	}
+}
+
+func TestAttachedBrowserQueuedNetworkSendRetainsDocumentCancellation(t *testing.T) {
+	for _, takeover := range []bool{false, true} {
+		name := "navigation"
+		if takeover {
+			name = "explicit cancellation"
+		}
+		t.Run(name, func(t *testing.T) {
+			req, page, wire, _, policy := attachedFixture(t)
+			r, err := AttachAgentBrowser(t.Context(), req, page)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close(context.Background())
+			queued := make(chan struct{})
+			resume := make(chan struct{})
+			done := make(chan error, 1)
+			var sends atomic.Int32
+			go func() {
+				done <- policy.ReviewRequest(t.Context(), AgentBrowserAttachedNetworkRequest{ID: "queued-post", Method: "POST", URL: "https://example.com/submit", Body: []byte("body"), BodyComplete: true}, func(dispatchCtx context.Context) error {
+					close(queued)
+					<-resume // A native UI queue cannot complete the request yet.
+					if err := dispatchCtx.Err(); err != nil {
+						return err
+					}
+					sends.Add(1)
+					return nil
+				})
+			}()
+			select {
+			case <-queued:
+			case <-time.After(time.Second):
+				t.Fatal("send did not reach native queue")
+			}
+			if takeover {
+				r.Cancel()
+			} else {
+				r.onEvent(cdpWireMessage{SessionID: wire.session, Method: "Page.navigatedWithinDocument", Params: json.RawMessage(`{"frameId":"frame","url":"https://example.com/next"}`)})
+			}
+			close(resume)
+			select {
+			case err := <-done:
+				if err == nil || sends.Load() != 0 {
+					t.Fatalf("old queued request sent after %s: sends=%d err=%v", name, sends.Load(), err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("cancelled native dispatch remained pending")
+			}
+			r.mu.Lock()
+			pending := len(r.networkPending)
+			r.mu.Unlock()
+			if pending != 0 {
+				t.Fatal("network request outlived its actual send")
+			}
+			if !takeover && r.life.Err() != nil {
+				t.Fatal("ordinary navigation cancelled agent authorization")
+			}
+		})
+	}
+}
+
+func TestAttachedBrowserDOMClickPositionsPointerAndRechecksAfterHover(t *testing.T) {
+	for _, hoverChanges := range []bool{false, true} {
+		name := "stable"
+		if hoverChanges {
+			name = "hover moved target"
+		}
+		t.Run(name, func(t *testing.T) {
+			req, page, wire, _, _ := attachedFixture(t)
+			wire.hoverChangesTarget = hoverChanges
+			r, err := AttachAgentBrowser(t.Context(), req, page)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close(context.Background())
+			r.mu.Lock()
+			r.refs["button"] = agentBrowserRef{backend: 1, epoch: r.epoch, snapshot: "fresh", signature: "button-signature"}
+			r.mu.Unlock()
+			_, err = r.Click(t.Context(), "fresh", "button")
+			if (err != nil) != hoverChanges {
+				t.Fatalf("hoverChanges=%t click err=%v", hoverChanges, err)
+			}
+			wire.mu.Lock()
+			events := append([]map[string]any(nil), wire.mouse...)
+			wire.mu.Unlock()
+			want := []string{"mouseMoved", "mousePressed", "mouseReleased"}
+			if hoverChanges {
+				want = want[:1]
+			}
+			if len(events) != len(want) {
+				t.Fatalf("mouse events=%+v want=%+v", events, want)
+			}
+			for i, event := range events {
+				if event["type"] != want[i] || event["x"] != float64(40) || event["y"] != float64(30) {
+					t.Fatalf("mouse sequence=%+v", events)
+				}
+			}
+			if hoverChanges && !errors.Is(err, ErrAgentBrowserTargetChanged) {
+				t.Fatalf("changed hovered target error=%v", err)
+			}
+		})
 	}
 }

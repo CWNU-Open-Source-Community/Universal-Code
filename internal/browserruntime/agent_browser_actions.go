@@ -372,7 +372,8 @@ func (r *AgentBrowserRuntime) input(ctx context.Context, method string, params a
 }
 
 // An uncertain partial key/mouse sequence must not leave held input available
-// to later operations. Invalidate the complete slot and reap its owned tree.
+// to later operations. Invalidate the complete agent slot and release its
+// resources; an attached native page remains owned by the user.
 func (r *AgentBrowserRuntime) unknown(err error) error {
 	r.Cancel()
 	return &AgentBrowserActionError{Err: err, Dispatched: true, OutcomeUnknown: true}
@@ -391,8 +392,15 @@ func (r *AgentBrowserRuntime) Click(ctx context.Context, snapshot, ref string) (
 	r.mu.Lock()
 	r.refs = map[string]agentBrowserRef{}
 	r.mu.Unlock()
-	for _, kind := range []string{"mousePressed", "mouseReleased"} {
-		if kind == "mouseReleased" {
+	kinds := []string{"mousePressed", "mouseReleased"}
+	if r.attached != nil {
+		// WebView2 must first receive the pointer position before a native
+		// press/release can reach the page. Hover can change the target, so
+		// recheck its current signature, hit-test and position before pressing.
+		kinds = []string{"mouseMoved", "mousePressed", "mouseReleased"}
+	}
+	for _, kind := range kinds {
+		if kind == "mouseReleased" || (r.attached != nil && kind == "mousePressed") {
 			if err = r.check(op, stored.epoch); err != nil {
 				return AgentBrowserInteraction{}, r.unknown(err)
 			}
@@ -405,7 +413,11 @@ func (r *AgentBrowserRuntime) Click(ctx context.Context, snapshot, ref string) (
 				return AgentBrowserInteraction{}, r.unknown(ErrAgentBrowserTargetChanged)
 			}
 		}
-		if err = r.input(op, "Input.dispatchMouseEvent", map[string]any{"type": kind, "x": node.X, "y": node.Y, "button": "left", "clickCount": 1}); err != nil {
+		params := map[string]any{"type": kind, "x": node.X, "y": node.Y}
+		if kind != "mouseMoved" {
+			params["button"], params["clickCount"] = "left", 1
+		}
+		if err = r.input(op, "Input.dispatchMouseEvent", params); err != nil {
 			return AgentBrowserInteraction{}, err
 		}
 	}

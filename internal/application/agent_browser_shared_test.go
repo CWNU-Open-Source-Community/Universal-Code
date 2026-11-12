@@ -203,7 +203,7 @@ func TestSharedBrowserCoordinatesUseAuthorizedDurableNativeSession(t *testing.T)
 		t.Fatal(err)
 	}
 	for _, name := range []toolgateway.ToolName{toolgateway.BrowserMoveTool, toolgateway.BrowserClickTool} {
-		payload := fmt.Sprintf(`{"version":"%s.v2","point":{"x":30,"y":40,"document_epoch":%d,"viewport":{"width":800,"height":600}}}`, name, view.DocumentEpoch)
+		payload := fmt.Sprintf(`{"version":%q,"point":{"x":30,"y":40,"document_epoch":%d,"viewport":{"width":800,"height":600}}}`, string(name)+".v2", view.DocumentEpoch)
 		call := agentBrowserFixtureCall(t, service, st, name, payload)
 		waiting, err := runAgentBrowserFixtureCall(t, supervisor, turn, call)
 		if err != nil || waiting || st.calls[call.CallID].Status != domain.SupervisorToolCompleted {

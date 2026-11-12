@@ -37,11 +37,13 @@ type AgentBrowserAttachedNetworkRequest struct {
 }
 
 // Install before permitting agent control. Every request, including workers
-// and subresources, must cross ReviewRequest. If it returns an error, the host
-// must abort that request. The host must deny downloads during agent ownership.
+// and subresources, must cross ReviewRequest. dispatch must synchronously reach
+// the actual native send and recheck its supplied context there. An error aborts
+// any not-yet-dispatched request; a successful send cannot be undone by a later
+// review error. The host must deny downloads during the agent lease.
 // An agent's queued/paused requests must never migrate to operator ownership.
 type AgentBrowserAttachedNetworkPolicy struct {
-	ReviewRequest func(context.Context, AgentBrowserAttachedNetworkRequest, func() error) error
+	ReviewRequest func(context.Context, AgentBrowserAttachedNetworkRequest, func(context.Context) error) error
 	Done          <-chan struct{}
 }
 
@@ -191,7 +193,7 @@ func (r *AgentBrowserRuntime) AttachmentDetached() bool {
 	return r.attached != nil && r.attachmentDetached
 }
 
-func (r *AgentBrowserRuntime) reviewAttachedRequest(ctx context.Context, in AgentBrowserAttachedNetworkRequest, dispatch func() error) error {
+func (r *AgentBrowserRuntime) reviewAttachedRequest(ctx context.Context, in AgentBrowserAttachedNetworkRequest, dispatch func(context.Context) error) error {
 	if dispatch == nil || in.ID == "" || in.Method == "" || in.Method != strings.ToUpper(in.Method) || strings.ContainsAny(in.Method, " \t\r\n\x00") {
 		return ErrBrowserRuntimeBoundary
 	}
@@ -233,8 +235,10 @@ func (r *AgentBrowserRuntime) reviewAttachedRequest(ctx context.Context, in Agen
 			return ErrAgentBrowserStaleReference
 		}
 		consumed = true
-		// The host rechecks this attachment's lease atomically at the native send.
-		return dispatch()
+		// Keep op registered until the host completes the actual native send.
+		// Document invalidation synchronously cancels op, including while its
+		// UI dispatch is queued. No database lookup runs on the UI thread.
+		return dispatch(op)
 	}
 	switch in.Method {
 	case "GET", "HEAD", "OPTIONS":
