@@ -97,6 +97,23 @@ describe("V2 scoped recovery storage", () => {
     expect(window.localStorage.getItem(storageKey("unknown:one"))).toBe(raw);
   });
 
+  it("reports only malformed keys in the requested scope for explicit removal", () => {
+    const { result } = renderHook(() => useV2RecoveryStore()!, { wrapper });
+    window.localStorage.setItem(storageKey("images:a:json"), "broken");
+    window.localStorage.setItem(storageKey("images:b:json"), "broken");
+    act(() => {
+      result.current.entries("images:");
+      result.current.reject("images:a:payload");
+    });
+    expect(result.current.invalidKeys("images:a:")).toEqual(["images:a:json", "images:a:payload"]);
+    act(() => result.current.remove("images:a:json"));
+    expect(result.current.invalidKeys("images:a:")).toEqual(["images:a:payload"]);
+    expect(window.localStorage.getItem(storageKey("images:b:json"))).toBe("broken");
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
+    act(() => result.current.read("images:a:denied", null));
+    expect(result.current.invalidKeys("images:a:")).toEqual(["images:a:payload"]);
+  });
+
   it("permits explicit removal of a malformed record and clears its warning", async () => {
     window.localStorage.setItem(storageKey("draft:a"), "broken");
     const { result } = renderHook(() => ({ store: useV2RecoveryStore()!, warning: useV2PersistenceWarning() }), { wrapper });
@@ -168,6 +185,7 @@ describe("V2 scoped recovery storage", () => {
     act(() => expect(result.current.store.entries("draft:")).toEqual([["draft:valid", "valid"]]));
     await waitFor(() => expect(result.current.warning).toContain("格式异常"));
     expect(window.localStorage.getItem(badKey)).toBe(envelope("preserve"));
+    expect(result.current.store.invalidKeys("draft:")).toEqual([]);
   });
 
   it("preserves an existing record when JSON encoding or explicit removal fails", async () => {

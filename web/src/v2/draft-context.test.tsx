@@ -1,4 +1,6 @@
 import type { ReactElement } from "react";
+import { File as NodeFile } from "node:buffer";
+import { webcrypto } from "node:crypto";
 import type { RenderOptions } from "@testing-library/react";
 import { LocaleProvider } from "../lib/locale";
 import { useRef, useState } from "react";
@@ -27,6 +29,7 @@ function client() {
   return {
     baseURL: "/api/v1",
     uploadWorkspaceImage: vi.fn().mockResolvedValue(selectedImage("c")),
+    inspectWorkspaceImageUpload: vi.fn().mockResolvedValue({ state: "not_received" }),
     // Image pixel transport is not under test here. Failure leaves the actual
     // component's metadata and per-version selection available for inspection.
     downloadWorkspaceImage: vi.fn().mockRejectedValue(new Error("fixture preview unavailable")),
@@ -112,8 +115,8 @@ function chooseVersion(window: ReturnType<typeof openWindow>, text: string) {
   fireEvent.click(window.ui.getByRole("button", { name: "确认选用此版本" }));
 }
 
-beforeEach(() => localStorage.clear());
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+beforeEach(() => { localStorage.clear(); vi.stubGlobal("File", NodeFile); vi.stubGlobal("crypto", webcrypto); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("React draft documents across independent windows", () => {
   it("synchronizes an idle window's text, real file hook and image hook as one complete version", () => {
@@ -178,7 +181,8 @@ describe("React draft documents across independent windows", () => {
     fireEvent.change(first.ui.getByLabelText("选择图片文件"), {
       target: { files: [new File([new Uint8Array([1, 2, 3])], "late.png", { type: "image/png" })] },
     });
-    expect(api.uploadWorkspaceImage).toHaveBeenCalledTimes(1);
+    // Bytes and their recovery identity are prepared before the POST starts.
+    await waitFor(() => expect(api.uploadWorkspaceImage).toHaveBeenCalledTimes(1));
     expect(first.ui.getByTestId("uploading")).toHaveTextContent("true");
     notifyOtherWindows();
     chooseVersion(first, "B 独立正文");

@@ -9,6 +9,7 @@ import (
 	"image/gif"
 	"image/png"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -33,6 +34,41 @@ func TestWorkspaceImageUploadKeepsPublishedFormatsAndRejectsGIF(t *testing.T) {
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("GIF upload changed the public image contract: %d %s", response.Code, response.Body)
 	}
+}
+
+func TestWorkspaceImageOriginalUploadLookupIsReadOnlyAuthenticatedAndWorkspaceBound(t *testing.T) {
+	f := newAPIFixture(t)
+	var pixels bytes.Buffer
+	if err := png.Encode(&pixels, image.NewNRGBA(image.Rect(0, 0, 4, 3))); err != nil {
+		t.Fatal(err)
+	}
+	const key = "http-original-image-upload-operation"
+	saved, err := f.store.SaveWorkspaceImage(t.Context(), f.workspace.ID, key, "image/png", "original.png", pixels.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/workspaces/" + f.workspace.ID + "/image-attachments/request"
+	lookup := func(path, token, key string) *httptest.ResponseRecorder {
+		return performSessionMessageRequest(t, f.api, http.MethodGet, path, token, key, "", nil)
+	}
+	for _, token := range []string{"", testControlToken} {
+		assertAPIError(t, lookup(path, token, key), http.StatusUnauthorized, "POLICY_DENIED")
+	}
+	assertAPIError(t, lookup(path, testAccessToken, ""), http.StatusBadRequest, "INVALID_ARGUMENT")
+	for _, tc := range []struct{ path, key, state string }{
+		{path, key, "stored"}, {path, "unknown-original-image-upload", "not_received"},
+		{"/api/v1/workspaces/other-workspace/image-attachments/request", key, "not_received"},
+	} {
+		var actual WorkspaceImageUploadObservationView
+		response := lookup(tc.path, testAccessToken, tc.key)
+		decodeDataStatus(t, response, http.StatusOK, &actual)
+		if response.Header().Get("Cache-Control") != "no-store" || actual.State != tc.state ||
+			(tc.state == "stored" && (actual.Image == nil || *actual.Image != saved)) ||
+			(tc.state == "not_received" && actual.Image != nil) {
+			t.Fatalf("lookup=%+v", actual)
+		}
+	}
+	assertAPIError(t, lookup(path+"/content", testAccessToken, key), http.StatusBadRequest, "INVALID_ARGUMENT")
 }
 
 func TestWorkspaceImageHTTPImmutableUploadAuthenticatedBytesAndScope(t *testing.T) {

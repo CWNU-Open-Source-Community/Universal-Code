@@ -1194,6 +1194,11 @@ func openAPIOperationSpecs() []openAPIOperationSpec {
 			Description:   "Validates original PNG/JPEG/WebP bytes and binds the upload key to exact bytes and display metadata. At most 5 MiB, 8192 pixels per side and 16 Mi pixels. No filesystem path, URL retrieval or execution authority.",
 			DataType:      reflect.TypeOf(WorkspaceImageView{}), RequestType: reflect.TypeOf(WorkspaceImageUploadRequestView{}),
 			NotFound: true, Parameters: []openAPIParameter{workspaceID, dockerSandboxIdempotencyKey}},
+		{Path: "/api/v1/workspaces/{workspace_id}/image-attachments/request",
+			OperationID: "inspectWorkspaceImageUpload", Summary: "Observe an original image upload without retrying", Tag: "Workspaces",
+			Description: "GET with the original Idempotency-Key only reads the image stored for that workspace and upload key. not_received does not rule out an upload still arriving. No reservation, upload or model call.",
+			DataType:    reflect.TypeOf(WorkspaceImageUploadObservationView{}), NotFound: true,
+			Parameters: []openAPIParameter{workspaceID, dockerSandboxIdempotencyKey}},
 		{Path: "/api/v1/workspaces/{workspace_id}/image-attachments/{image_id}",
 			OperationID: "readWorkspaceImage", Summary: "Read an exact workspace image receipt", Tag: "Workspaces",
 			DataType: reflect.TypeOf(WorkspaceImageView{}), NotFound: true,
@@ -3479,6 +3484,7 @@ func applyOpenAPIFieldMetadata(typeName string, fieldName string, schema map[str
 }
 
 var openAPIFieldEnums = map[string][]string{
+	"WorkspaceImageUploadObservationView.state":                 {"not_received", "stored"},
 	"WorkflowCompletion.mode":                                   {"report", "verified_code"},
 	"MemoryCandidate.protocol_version":                          {contextmgr.MemoryCandidateProtocolVersion},
 	"MemoryCandidate.status":                                    {"pending", "confirmed", "rejected", "stale"},

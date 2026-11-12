@@ -50,6 +50,72 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("first-message creation recovery", () => {
+  it("rechecks a failed global load after the last damaged image record is discarded and retains the unknown creation", async () => {
+    const client = fixture();
+    const view = mount(client);
+    const intent = prepare(view);
+    const damaged = ["image-upload:damaged-one", "image-upload:damaged-two"];
+    act(() => {
+      for (const key of damaged) { view.store().write(key, { damaged: true }); view.store().reject(key); }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
+    await screen.findByRole("alert");
+    expect(client.inspectThreadCreationRequest).not.toHaveBeenCalled();
+    act(() => view.store().remove(damaged[0]));
+    expect(screen.getByRole("alert")).toHaveTextContent("格式异常");
+    expect(view.store().read(damaged[1], null)).toEqual({ damaged: true });
+    expect(view.store().read(`creation:${intent.operationID}`, null)).toEqual(intent);
+    expect(() => view.helper().prepare(request, request.goal, files, request.goal)).toThrow("格式异常");
+    expect(client.inspectThreadCreationRequest).not.toHaveBeenCalled();
+    act(() => view.store().remove(damaged[1]));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    await screen.findByText(/本次查询尚未找到创建记录/u);
+    expect(client.inspectThreadCreationRequest).toHaveBeenCalledTimes(1);
+    expect(client.inspectThreadCreationRequest.mock.calls[0].slice(0, 2)).toEqual([workspaceID, `v2-thread-create-${intent.operationID}`]);
+    expect(view.store().read(`creation:${intent.operationID}`, null)).toEqual(intent);
+    act(() => { view.store().write("draft:one", "keep typing"); view.store().write("draft:two", "more typing"); });
+    expect(client.inspectThreadCreationRequest).toHaveBeenCalledTimes(1);
+    expect(view.store().read(`creation:${intent.operationID}`, null)).toEqual(intent);
+    expect(client.createThread).not.toHaveBeenCalled();
+  });
+
+  it("keeps an invalid creation blocked after the damaged image record is discarded", async () => {
+    const client = fixture();
+    const view = mount(client);
+    const intent = prepare(view);
+    const altered = { ...intent, content: "does not match the original goal" };
+    act(() => {
+      view.store().write(`creation:${intent.operationID}`, altered);
+      view.store().write("image-upload:damaged", false);
+      view.store().reject("image-upload:damaged");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
+    await screen.findByRole("alert");
+    act(() => view.store().remove("image-upload:damaged"));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("原创建请求无法可靠核对"));
+    expect(view.store().read(`creation:${intent.operationID}`, null)).toEqual(altered);
+    expect(() => view.helper().prepare(request, request.goal, files, request.goal)).toThrow("原创建请求无法可靠核对");
+    expect(client.inspectThreadCreationRequest).not.toHaveBeenCalled();
+    expect(client.createThread).not.toHaveBeenCalled();
+  });
+
+  it("does not clear an explicit handoff failure or re-inspect unknown creations on draft writes", async () => {
+    const client = fixture();
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    const view = mount(client);
+    const intent = prepare(view);
+    fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
+    await screen.findByRole("button", { name: "打开原对话" });
+    const remove = vi.spyOn(Storage.prototype, "removeItem").mockImplementationOnce(() => { throw new Error("denied"); });
+    fireEvent.click(screen.getByRole("button", { name: "打开原对话" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("无法移除"));
+    remove.mockRestore();
+    act(() => view.store().write("draft:typing", "an unrelated edit"));
+    expect(screen.getByRole("alert")).toHaveTextContent("无法移除");
+    expect(client.inspectThreadCreationRequest).toHaveBeenCalledTimes(1);
+    expect(view.store().read(`creation:${intent.operationID}`, null)).toEqual(intent);
+  });
+
   it("recovers reference-only MCP input with the same selection and message key after a lost create response", async () => {
     const client = fixture();
     client.createThread.mockRejectedValueOnce(new Error("response lost"));

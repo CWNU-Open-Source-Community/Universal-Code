@@ -3113,6 +3113,14 @@
             1
           ],
           "mode": "write-new"
+        },
+        {
+          "id": "thread-image-upload-recovery-writer",
+          "source": "web/src/v2/components/image-input.tsx",
+          "versions": [
+            1
+          ],
+          "mode": "write-new"
         }
       ],
       "readers": [
@@ -3137,6 +3145,14 @@
           "status": "active"
         },
         {
+          "id": "thread-image-upload-recovery-reader",
+          "source": "web/src/v2/components/image-input.tsx",
+          "versions": [
+            1
+          ],
+          "status": "active"
+        },
+        {
           "id": "pr-followup-local-intent-reader",
           "source": "web/src/v2/components/task-pr-followup.tsx",
           "versions": [
@@ -3146,8 +3162,8 @@
         }
       ],
       "persisted_or_exported": true,
-      "persistence_boundary": "SQLite preserves user history, ordering, Run succession, provenance, notes, and messages. Scoped browser recovery storage retains unsent drafts and exact unknown-request identities; these cannot be reconstructed from server history.",
-      "compatibility_rule": "Add versions without rewriting identity/history; retain every reader needed by supported databases and exports. The observed_browser_controls marker is a semantic progress hash domain, not an executable payload or authority. Retain sealed original tool receipts and the meaning of persisted progress counters when evolving its observation projection.",
+      "persistence_boundary": "SQLite preserves user history, ordering, Run succession, provenance, notes, and messages. Scoped browser recovery storage retains unsent drafts and exact unknown-request identities; these cannot be reconstructed from server history. Image upload attempts persist the original operation key, file name, SHA-256, byte size and MIME type in localStorage through the V2 recovery envelope, scoped to the original Workspace and Thread.",
+      "compatibility_rule": "Add versions without rewriting identity/history; retain every reader needed by supported databases and exports. Local image upload recovery preserves the original operation key and file binding, retains unreadable or unknown-version records until the user explicitly discards that individual record from its original Workspace/Thread draft, and reconciles the exact original receipt without automatically re-uploading. Explicit discard never clears other records or treats inaccessible storage as a corrupt image. The observed_browser_controls marker is a semantic progress hash domain, not an executable payload or authority. Retain sealed original tool receipts and the meaning of persisted progress counters when evolving its observation projection.",
       "retirement_gate": {
         "mode": "migration-or-retention",
         "requirements": [
@@ -3217,6 +3233,7 @@
         "thread_turn_lifecycle_operation.v1",
         "v2_creation_recovery.v1",
         "v2_draft_document.v1",
+        "v2_image_upload.v1",
         "v2_native_clipboard_recovery.v1",
         "v2_recovery.v1"
       ],
@@ -4494,6 +4511,22 @@
         "web/src/api/queued-messages.test.ts"
       ],
       "reason": "Test-only or golden/negative-vector identifier; exact source binding prevents production classification."
+    },
+    {
+      "identifier": "v2_image_upload.v99",
+      "kind": "negative-version-fixture",
+      "sources": [
+        "web/src/v2/components/image-upload-recovery.test.tsx"
+      ],
+      "reason": "Unknown image upload recovery version remains untouched until the user explicitly discards only its original draft record."
+    },
+    {
+      "identifier": "v2_recovery.v99",
+      "kind": "negative-version-fixture",
+      "sources": [
+        "web/src/v2/components/image-upload-recovery.test.tsx"
+      ],
+      "reason": "Unknown local recovery envelope is retained and may be removed only by explicit discard of that single image record."
     },
     {
       "identifier": "web-mode-test.v1",
