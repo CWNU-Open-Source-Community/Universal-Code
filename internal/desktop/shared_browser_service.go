@@ -285,28 +285,21 @@ func (s *SharedBrowserService) Get(ctx context.Context, request SharedBrowserGet
 }
 
 func (s *SharedBrowserService) detach(ctx context.Context, session *sharedBrowserSession) error {
-	if s.agent == nil {
-		return nil
-	}
 	session.mu.Lock()
-	runID := session.state.RunID
+	lease := session.agentLease
 	session.mu.Unlock()
-	if runID == "" {
+	if lease == nil {
 		return nil
 	}
-	view, err := s.agent.GetStatus(ctx, runID)
-	if err != nil {
-		return err
-	}
-	if view.SessionID != "" {
-		if _, err = s.agent.DetachForUser(ctx, runID, view.SessionID); err != nil {
-			return err
+	lease.Cancel()
+	if s.agent != nil {
+		_, err := s.agent.DetachForUser(ctx, lease.runID, lease.authoritySessionID)
+		if err != nil {
+			return errors.Join(err, lease.Release(ctx))
 		}
+		return nil
 	}
-	session.mu.Lock()
-	session.state.ControlOwner = "user"
-	session.mu.Unlock()
-	return nil
+	return lease.Release(ctx)
 }
 
 func sharedBrowserURL(raw string) (string, error) {

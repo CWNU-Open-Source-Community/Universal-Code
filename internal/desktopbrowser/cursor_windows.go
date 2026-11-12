@@ -14,7 +14,7 @@ import (
 
 var (
 	gdi32                = windows.NewLazySystemDLL("gdi32.dll")
-	cursorClass          = windows.StringToUTF16Ptr("UniversalCode.NativeBrowser.AgentCursor.v1")
+	cursorClass          = windows.StringToUTF16Ptr("UniversalCode.NativeBrowser.AgentCursor")
 	cursorClassOnce      sync.Once
 	cursorClassError     error
 	cursorWindowCallback = windows.NewCallback(cursorWindowProc)

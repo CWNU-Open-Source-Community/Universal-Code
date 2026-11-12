@@ -141,9 +141,19 @@ func (h *Host) CreateTab(ctx context.Context, options TabOptions) (Page, error) 
 			return errors.New("native browser tab ID already exists")
 		}
 		class := windows.StringToUTF16Ptr("STATIC")
-		// A native child owns input, clipping, position and z-order. Only this
-		// container is disabled during agent control, never the Wails window.
-		container, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(class)), 0, 0x40000000|0x04000000|0x02000000, 0, 0, 1, 1, h.options.ParentHWND, 0, 0, 0)
+		// A background tab still needs a usable layout before its first surface
+		// is shown. Its actual dock bounds replace this viewport when displayed.
+		var initialBounds nativeRect
+		if ok, _, _ := getClientRect.Call(h.options.ParentHWND, uintptr(unsafe.Pointer(&initialBounds))); ok == 0 {
+			return ErrClosed
+		}
+		if initialBounds.Right < 1 {
+			initialBounds.Right = 1280
+		}
+		if initialBounds.Bottom < 1 {
+			initialBounds.Bottom = 900
+		}
+		container, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(class)), 0, 0x40000000|0x04000000|0x02000000, 0, 0, uintptr(initialBounds.Right), uintptr(initialBounds.Bottom), h.options.ParentHWND, 0, 0, 0)
 		if container == 0 {
 			return fmt.Errorf("create browser child container: %w", err)
 		}
@@ -165,6 +175,9 @@ func (h *Host) CreateTab(ctx context.Context, options TabOptions) (Page, error) 
 					page.controller = (*comObject)(unsafe.Pointer(controller))
 					page.controller.addRef()
 					err = comCall(page.controller, controllerGetCore, uintptr(unsafe.Pointer(&page.core)))
+					if err == nil {
+						err = putControllerBounds(page.controller, initialBounds)
+					}
 					if err == nil {
 						err = page.installEvents()
 					}
@@ -350,6 +363,15 @@ func (p *nativePage) SetSurface(ctx context.Context, bounds Bounds, visible bool
 		return errors.New("invalid native browser bounds")
 	}
 	return p.withUI(ctx, func() error {
+		if !visible && (bounds.Width == 0 || bounds.Height == 0) {
+			// Unmounting or switching a tab hides its native window without
+			// collapsing the document that a background Agent may still use.
+			showWindow.Call(p.container, 0)
+			if p.cursor != 0 {
+				showWindow.Call(p.cursor, 0)
+			}
+			return comCall(p.controller, controllerPutIsVisible, 0)
+		}
 		var parent nativeRect
 		if ok, _, _ := getClientRect.Call(p.host.options.ParentHWND, uintptr(unsafe.Pointer(&parent))); ok == 0 {
 			return ErrClosed

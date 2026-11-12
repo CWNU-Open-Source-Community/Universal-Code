@@ -28,7 +28,7 @@ var (
 	dispatchers              sync.Map
 	registerDispatcher       sync.Once
 	registerDispatcherErr    error
-	dispatcherClass          = windows.StringToUTF16Ptr("UniversalCode.NativeBrowser.Dispatcher.v1")
+	dispatcherClass          = windows.StringToUTF16Ptr("UniversalCode.NativeBrowser.Dispatcher")
 	dispatcherProc           = windows.NewCallback(dispatcherWindowProc)
 )
 
