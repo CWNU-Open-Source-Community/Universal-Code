@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import type { V2FileReference } from "./file-context";
 import type { PageResult, ThreadDetailView, ThreadExecutionView, ThreadTranscriptItemView, WorkspaceView } from "../../api/types";
+import type { ThreadTranscriptActivityItem } from "../projection/narrative";
 import type { ThreadReview } from "../../api/task-delivery";
 import { v2QueryKeys } from "../query-keys";
 import { V2RecoveryProvider } from "../recovery-storage";
@@ -28,7 +29,7 @@ vi.mock("../../hooks/use-public-model-stream", () => ({
 
 vi.mock("../projection/narrative", () => ({
   projectThreadNarrative: () => [],
-  prepareThreadNarrative: (items: ThreadTranscriptItemView[]) => ({ entries: items.map((item) => ({
+  prepareThreadNarrative: (items: ThreadTranscriptActivityItem[]) => ({ entries: items.map((item) => ({
     id: item.id,
     kind: item.source === "operator" ? "user" : "assistant",
     text: item.detail ?? item.title,
@@ -39,6 +40,8 @@ vi.mock("../projection/narrative", () => ({
     promotedFromMessageID: item.promoted_from_message_id,
     runId: item.run_id,
     branchSourceID: item.durable && !item.provisional ? item.id : undefined,
+    ...(item.task ? { task: { id: item.task.id, inputMessageID: item.task.input_message_id, runId: item.run_id,
+      state: item.task.state, finalMessageID: item.task.final_message_id } } : {}),
   })) }),
   projectLiveThreadNarrative: (prepared: { entries: unknown[] }) => prepared.entries,
 }));
@@ -108,6 +111,11 @@ function transcriptItem(id: string, detailText: string, sequence: number): Threa
     verifiable: true,
     version: "thread_transcript.v1",
   };
+}
+
+function completedTranscriptItem(item: ThreadTranscriptItemView): ThreadTranscriptActivityItem {
+  return { ...item, task: { id: `input:${item.id}`, input_message_id: `input:${item.id}`,
+    state: "completed", final_message_id: item.id } };
 }
 
 function page(items: ThreadTranscriptItemView[], nextCursor = ""): PageResult<ThreadTranscriptItemView> {
@@ -1353,7 +1361,7 @@ describe("V2Conversation", () => {
 
   it("copies assistant message and code blocks to the clipboard with visual feedback", async () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
-    const codeItem = transcriptItem("item-with-code", "这是一段分析：\n\n```typescript\nconst sum = (a: number, b: number) => a + b;\n```", 1);
+    const codeItem = completedTranscriptItem(transcriptItem("item-with-code", "这是一段分析：\n\n```typescript\nconst sum = (a: number, b: number) => a + b;\n```", 1));
     const client = baseClient({
       getPage: vi.fn(() => Promise.resolve(page([codeItem]))) as unknown as APIClient["getPage"],
     });
@@ -1376,7 +1384,7 @@ describe("V2Conversation", () => {
     const onBranchCreated = vi.fn();
     const postControl = vi.fn().mockResolvedValue({ version: "thread_branch.v1", thread: branched, source_event_id: "selected-reply" });
     const client = baseClient({ postControl, getPage: vi.fn().mockResolvedValue(page([
-      transcriptItem("selected-reply", "Earlier answer", 1), transcriptItem("later-reply", "Later answer", 2),
+      completedTranscriptItem(transcriptItem("selected-reply", "Earlier answer", 1)), completedTranscriptItem(transcriptItem("later-reply", "Later answer", 2)),
     ])) });
     const user = userEvent.setup();
     renderConversation(client, "thread-a", undefined, { onBranchCreated });
@@ -1393,7 +1401,7 @@ describe("V2Conversation", () => {
     const postControl = vi.fn().mockRejectedValueOnce(new Error("Branch response lost"))
       .mockResolvedValue({ version: "thread_branch.v1", thread: detail("new-branch").thread, source_event_id: "selected-reply" });
     const client = baseClient({ postControl, getPage: vi.fn().mockResolvedValue(page([
-      transcriptItem("selected-reply", "Keep this answer", 1),
+      completedTranscriptItem(transcriptItem("selected-reply", "Keep this answer", 1)),
     ])) });
     const user = userEvent.setup();
     renderConversation(client, "thread-a", undefined, { onBranchCreated });

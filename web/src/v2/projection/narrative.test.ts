@@ -683,3 +683,47 @@ it("attributes to the actual producing model when multiple model attempts share 
   expect(singleModelProjected.find((entry) => entry.kind === "assistant" && entry.id === "reply-single"))
     .toMatchObject({ model: "google / gemini" });
 });
+
+
+describe("durable user-task boundaries", () => {
+  const task = { id: "operator-input-1", input_message_id: "operator-input-1", state: "completed" as const,
+    started_at: "2026-08-29T00:00:00Z", finished_at: "2026-08-29T00:30:29Z",
+    final_message_id: "final-event", change_source_event_id: "final-event" };
+  it("retains one task across internal attempts and separates the exact final reply from adjacent progress", () => {
+    const entries = projectThreadNarrative([
+      item({ id:"input-event", canonical_id:task.id, source_ref:task.id, source:"operator", kind:"operator_input", task, status:"committed" }),
+      item({ id:"progress-1", task, attempt_id:"attempt-1", status:"completed", sequence:2, detail:"First progress" }),
+      item({ id:"progress-2", task, attempt_id:"attempt-2", status:"completed", sequence:3, detail:"Second progress" }),
+      item({ id:"final-event", task, attempt_id:"attempt-4", status:"completed", sequence:4, detail:"Final answer" }),
+    ]);
+    expect(entries).toHaveLength(3);
+    expect(entries[0]).toMatchObject({kind:"user",task:{id:task.id,state:"completed"}});
+    expect(entries[1]).toMatchObject({kind:"assistant",text:"First progress\n\nSecond progress",task:{id:task.id}});
+    expect(entries[2]).toMatchObject({kind:"assistant",id:"final-event",text:"Final answer",task:{finalMessageID:"final-event"}});
+  });
+  it("does not merge different tasks merely because they use the same Run", () => {
+    const second = {...task,id:"operator-input-2",input_message_id:"operator-input-2",final_message_id:"second-final"};
+    const entries=projectThreadNarrative([item({id:"final-event",task,detail:"First answer"}),
+      item({id:"second-final",task:second,sequence:2,detail:"Different input answer"})]);
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry)=>entry.task?.id)).toEqual([task.id,second.id]);
+  });
+  it("does not infer a task from model completion or the word final", () => {
+    expect(projectThreadNarrative([item({status:"completed",detail:"This is the final answer"})])[0].task).toBeUndefined();
+  });
+  it("keeps an internal model completion running until a reliable task ending arrives", () => {
+    const running={...task,state:"running" as const,finished_at:undefined,final_message_id:undefined,change_source_event_id:undefined};
+    expect(projectThreadNarrative([item({task:running,status:"completed"})])[0].task?.state).toBe("running");
+  });
+  it("binds live output only to the same Run's single active task and rejects an old stream", () => {
+    const running={...task,state:"running" as const,started_at:"2026-08-29T00:00:00Z",finished_at:undefined,final_message_id:undefined};
+    const prepared=prepareThreadNarrative([item({id:"input",source:"operator",kind:"operator_input",task:running})]);
+    const current=projectLiveThreadNarrative(prepared,{runId:"run-1",status:"live",snapshot:snapshot()});
+    expect(current.at(-1)?.task?.id).toBe(task.id);
+    const newer={...running,id:"operator-input-2",input_message_id:"operator-input-2",started_at:"2026-08-29T00:01:00Z"};
+    const next=prepareThreadNarrative([item({id:"new-input",source:"operator",kind:"operator_input",task:newer})]);
+    expect(projectLiveThreadNarrative(next,{runId:"run-1",status:"live",snapshot:snapshot()}).at(-1)?.task).toBeUndefined();
+    const ambiguous=prepareThreadNarrative([item({id:"a",task:running}),item({id:"b",task:newer})]);
+    expect(projectLiveThreadNarrative(ambiguous,{runId:"run-1",status:"live",snapshot:snapshot()}).at(-1)?.task).toBeUndefined();
+  });
+});

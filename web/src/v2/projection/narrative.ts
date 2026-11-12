@@ -3,6 +3,7 @@ import type { PublicModelStreamSnapshot, ThreadTranscriptItemView } from "../../
 import type { PublicModelStreamStatus } from "../../hooks/use-public-model-stream";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../../api/image-attachments";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../../api/file-attachments";
+import { narrativeTaskIndex, narrativeTaskFields, narrativeTaskSource, type NarrativeTask, type NarrativeTaskSource } from "./narrative-task";
 import type { ThreadPeerMessage } from "../../api/thread-peer-messages";
 
 export type NarrativeToolKind = "search" | "read" | "edit" | "execute" | "verify" | "plan";
@@ -23,9 +24,10 @@ export type ThreadTranscriptActivityItem = ThreadTranscriptItemView & {
   activity_detail_ref?: string;
   detail_available?: boolean;
   attachments?: WorkspaceFileAttachment[];
+  task?: NarrativeTaskSource;
 };
 
-export type NarrativeEntry =
+export type NarrativeEntry = (
   | {
       id: string;
       kind: "peer";
@@ -97,7 +99,7 @@ export type NarrativeEntry =
       text: string;
       createdAt: string;
       failureOrigin?: { runId: string; sourceRef: string; eventSequence: number };
-    };
+    }) & { task?: NarrativeTask };
 
 const toolActivities = new Set<NarrativeToolKind>([
   "search", "read", "edit", "execute", "verify", "plan",
@@ -121,6 +123,7 @@ interface LiveTranscriptContext {
   nextRunOrdinal: number;
   modelRounds: Set<string>;
   modelTextTimes: Map<string, string>;
+  activeTasks: Map<string, NarrativeTask>;
 }
 
 function compareTranscriptItems(left: ThreadTranscriptItemView, right: ThreadTranscriptItemView): number {
@@ -156,7 +159,7 @@ export function projectLiveThreadNarrative(prepared: ReturnType<typeof prepareTh
   const previous = prepared.entries.at(-1);
   const first = tail[0];
   if (previous?.kind === "activity" && first.kind === "activity" &&
-    previous.activity === first.activity && previous.runId === first.runId) {
+    previous.activity === first.activity && previous.runId === first.runId && previous.task?.id === first.task?.id) {
     // The visible group can grow without mutating the cached durable group or
     // any historical leaf (including its original detail/source references).
     const merged: NarrativeEntry = { ...previous,
@@ -216,6 +219,7 @@ export function projectThreadNarrative(
   t: LocaleText = (chinese) => chinese,
 ): NarrativeEntry[] {
   const result: NarrativeEntry[] = [];
+  const tasks = narrativeTaskIndex(transcript);
   const noticeEvents = new Set<string>();
   // Durable model-call records carry provider/model identities.
   // Index them by specific attempt (${attempt_id}:${model_attempt}) and by attempt_id.
@@ -248,6 +252,7 @@ export function projectThreadNarrative(
   const ordered = [...transcript, ...provisional].sort(compareTranscriptItems);
 
   for (const item of ordered) {
+    const taskFields = narrativeTaskFields(item, tasks);
     if (item.sequence === 0 || isArtifactStoragePlaceholder(item)) continue;
     if (item.source === "harness" && item.kind === "tool_call" && !item.tool_name &&
       item.title.trim() === "工具批次完成") continue;
@@ -295,7 +300,7 @@ export function projectThreadNarrative(
       }
       const previous = result.at(-1);
       if (previous?.kind === "activity" && previous.activity === activity &&
-        item.run_id === previous.runId) {
+        item.run_id === previous.runId && previous.task?.id === taskFields.task?.id) {
         previous.items.push(leaf);
         previous.count = previous.items.length;
         previous.title = leaf.title || previous.title;
@@ -306,7 +311,7 @@ export function projectThreadNarrative(
       } else {
         const entry: ActivityEntry = {
           id: item.id,
-          kind: "activity",
+          kind: "activity", ...taskFields,
           activity,
           title: leaf.title,
           detail: leaf.detail,
@@ -324,7 +329,7 @@ export function projectThreadNarrative(
     }
 
     if (item.source === "peer" && item.kind === "peer_message" && item.peer_message) {
-      result.push({ id: item.id, kind: "peer", message: item.peer_message, text: item.peer_message.content,
+      result.push({ id: item.id, ...taskFields, kind: "peer", message: item.peer_message, text: item.peer_message.content,
         createdAt: item.created_at, provisional: false });
       continue;
     }
@@ -336,7 +341,7 @@ export function projectThreadNarrative(
       // A pure attachment has no user-authored text. Do not substitute the queue
       // event's status title as if the user had typed it.
       const text = images?.length || attachments?.length ? item.detail?.trim() ?? "" : normalizedText(item);
-      if (text || images?.length || attachments?.length) result.push({ id: item.id, kind: "user", text, images, attachments,
+      if (text || images?.length || attachments?.length) result.push({ id: item.id, ...taskFields, kind: "user", text, images, attachments,
         branchSourceID: item.durable && !item.provisional && item.status !== "pending" && item.status !== "cancelled" ? item.id : undefined,
         status: item.status, deliveryMode: item.delivery_mode, promotedToMessageID: item.promoted_to_message_id,
         promotedFromMessageID: item.promoted_from_message_id, createdAt: item.created_at, provisional: item.provisional });
@@ -364,7 +369,10 @@ export function projectThreadNarrative(
         }
       }
       const previous = result.at(-1);
-      if (previous?.kind === "assistant" && !previous.provisional && !item.provisional && previous.runId === item.run_id) {
+      if (previous?.kind === "assistant" && !previous.provisional && !item.provisional && previous.runId === item.run_id &&
+        previous.task?.id === taskFields.task?.id &&
+        Boolean(previous.task?.finalMessageID && (previous.messageIDs ?? [previous.id]).includes(previous.task.finalMessageID)) ===
+          Boolean(taskFields.task?.finalMessageID && item.id === taskFields.task.finalMessageID)) {
         // A Supervisor may emit the same final answer again while closing its
         // synthetic continuation turn. Keep distinct progress updates, but do
         // not show an identical durable answer twice in the conversation.
@@ -379,7 +387,7 @@ export function projectThreadNarrative(
         // but a reply that never had one adopts its later sibling's model.
         previous.model ??= model;
       } else {
-        result.push({ id: item.id, kind: "assistant", text,
+        result.push({ id: item.id, ...taskFields, kind: "assistant", text,
           messageIDs: [item.id],
           textMessageIDs: [item.id],
           runId: item.run_id,
@@ -406,7 +414,7 @@ export function projectThreadNarrative(
         item.stage === "blocked" && ["failed", "cancelled"].includes(item.status ?? "") &&
         item.durable && !item.provisional && item.source_ref
         ? { runId: item.run_id, sourceRef: item.source_ref, eventSequence: item.sequence } : undefined;
-      result.push({ id: item.id, kind: "notice", tone,
+      result.push({ id: item.id, ...taskFields, kind: "notice", tone,
         text, createdAt: item.created_at, ...(failureOrigin ? { failureOrigin } : {}) });
     }
   }
@@ -465,12 +473,17 @@ function toolLifecycleStageRank(stage: ThreadTranscriptItemView["stage"]): numbe
 
 function projectLiveTranscriptItems(context: LiveTranscriptContext,
   snapshot: PublicModelStreamSnapshot,
-  liveStatus: PublicModelStreamStatus, t: LocaleText): ThreadTranscriptItemView[] {
+  liveStatus: PublicModelStreamStatus, t: LocaleText): ThreadTranscriptActivityItem[] {
   const knownIdentities = context.identities;
   const runOrdinal = context.runOrdinals.get(snapshot.call.run_id) ?? context.nextRunOrdinal;
   const expectedRound = snapshot.call.tool_round + 1;
   const createdAt = snapshot.updated_at;
-  const projected: ThreadTranscriptItemView[] = [];
+  const projected: ThreadTranscriptActivityItem[] = [];
+  const candidate = context.activeTasks.get(snapshot.call.run_id);
+  // A delayed old stream must not become progress for a newer user input.
+  const activeTask = candidate?.startedAt && Date.parse(snapshot.call.started_at) >= Date.parse(candidate.startedAt)
+    ? candidate : undefined;
+  const taskFields = activeTask ? { task: narrativeTaskSource(activeTask) } : {};
   const text = snapshot.text.trim();
   const messageItem = snapshot.items.find((item) => item.type === "message");
   const messageIdentity = messageItem?.id ??
@@ -482,7 +495,7 @@ function projectLiveTranscriptItems(context: LiveTranscriptContext,
       snapshot.call.started_at);
   if (text && !commentaryConfirmed) {
     projected.push({
-      version: "thread_transcript.v1",
+      ...taskFields, version: "thread_transcript.v1",
       id: `live-message:${snapshot.call.attempt_id}:${snapshot.call.model_attempt}:${expectedRound}`,
       canonical_id: messageIdentity,
       run_id: snapshot.call.run_id,
@@ -511,7 +524,7 @@ function projectLiveTranscriptItems(context: LiveTranscriptContext,
   snapshot.items.filter((item) => item.type === "tool_call").forEach((item, index) => {
     if (snapshotItemIsDurable(item, knownIdentities)) return;
     projected.push({
-      version: "thread_transcript.v1",
+      ...taskFields, version: "thread_transcript.v1",
       id: `live-tool:${item.id}`,
       canonical_id: item.id,
       run_id: snapshot.call.run_id,
@@ -543,7 +556,7 @@ function projectLiveTranscriptItems(context: LiveTranscriptContext,
   return projected;
 }
 
-function liveTranscriptContext(transcript: ThreadTranscriptItemView[]): LiveTranscriptContext {
+function liveTranscriptContext(transcript: ThreadTranscriptActivityItem[]): LiveTranscriptContext {
   const identities = new Set<string>();
   const runOrdinals = new Map<string, number>();
   const modelRounds = new Set<string>();
@@ -562,7 +575,14 @@ function liveTranscriptContext(transcript: ThreadTranscriptItemView[]): LiveTran
       if (item.created_at > (modelTextTimes.get(key) ?? "")) modelTextTimes.set(key, item.created_at);
     }
   }
-  return { identities, runOrdinals, nextRunOrdinal: maxRunOrdinal + 1, modelRounds, modelTextTimes };
+  const activeTasks = new Map<string, NarrativeTask>();
+  const ambiguousRuns = new Set<string>();
+  for (const task of narrativeTaskIndex(transcript).values()) {
+    if (task.state !== "running" || ambiguousRuns.has(task.runId)) continue;
+    if (activeTasks.has(task.runId)) { activeTasks.delete(task.runId); ambiguousRuns.add(task.runId); }
+    else activeTasks.set(task.runId, task);
+  }
+  return { identities, runOrdinals, nextRunOrdinal: maxRunOrdinal + 1, modelRounds, modelTextTimes, activeTasks };
 }
 
 function snapshotItemIsDurable(item: PublicModelStreamSnapshot["items"][number],
