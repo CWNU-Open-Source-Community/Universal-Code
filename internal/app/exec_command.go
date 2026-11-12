@@ -20,6 +20,7 @@ import (
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileattachment"
+	"cyberagent-workbench/internal/headless"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/imageattachment"
 	"cyberagent-workbench/internal/llm"
@@ -66,6 +67,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	var imagePaths repeatedString
 	fs.Var(&imagePaths, "image", "attach an image to the prompt; repeatable, at most 4, PNG/JPEG/WebP only")
 	jsonOutput := fs.Bool("json", false, "emit a structured JSON result")
+	streamEvents := fs.Bool("stream", false, "stream run events to stdout in real time (JSON lines); reply goes to stderr")
 	instructions := fs.String("instructions", "",
 		"fix extra operator instructions as a Thread context pin for this invocation")
 	outputLastMessage := fs.String("output-last-message", "",
@@ -80,6 +82,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"workspace": true, "profile": true, "route": true,
 		"max-turns": true, "max-tokens": true, "max-tool-calls": true,
 		"max-cost-usd": true, "timeout": true, "stdin": false, "json": false,
+		"stream":                    false,
 		"instructions":              true,
 		"output-last-message":       true,
 		"continue":                  true,
@@ -89,6 +92,9 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		"confirm-full": false,
 	})); err != nil {
 		return err
+	}
+	if *streamEvents && *jsonOutput {
+		return errors.New("--stream and --json cannot be combined")
 	}
 	if *outputLastMessage != strings.TrimSpace(*outputLastMessage) {
 		return errors.New("exec --output-last-message path cannot contain surrounding whitespace")
@@ -304,7 +310,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		}
 	}
 	oneShot := application.NewOneShotService(a.store, turns)
-	result, err := oneShot.Run(ctx, application.OneShotRequest{
+	request := application.OneShotRequest{
 		Version:      domain.ThreadMessageProtocolVersion,
 		ThreadID:     threadID,
 		Content:      prompt,
@@ -312,17 +318,44 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		RequestedBy:  "cli_exec_operator",
 		Attachments:  attachmentRefs,
 		Images:       imageRefs,
-	})
-	// The last-message file is written before the standard output, so a
+	}
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+	var streamDone chan error
+	stop := make(chan struct{})
+	if *streamEvents {
+		request.OnRun = func(actualRunID string) {
+			streamDone = make(chan error, 1)
+			go func() {
+				streamDone <- headless.NewExporter(a.store).Export(streamCtx, a.out, headless.Request{
+					RunID: actualRunID, Follow: true, MaxEvents: headless.MaxEvents, Stop: stop,
+				})
+			}()
+		}
+	}
+	result, err := oneShot.Run(ctx, request)
+	var streamErr error
+	if streamDone != nil {
+		close(stop)
+		streamErr = <-streamDone
+	}
+	// The last-message file is written before the final reply, so a
 	// failed write fails the command instead of leaving a stale file beside
 	// a success exit code. The reply may be empty when the turn paused
 	// before producing one; the file then records that emptiness.
 	if target := *outputLastMessage; target != "" {
-		if err := os.WriteFile(target, []byte(result.Reply), 0o600); err != nil {
-			return fmt.Errorf("write --output-last-message %s: %w", target, err)
+		if writeErr := os.WriteFile(target, []byte(result.Reply), 0o600); writeErr != nil {
+			if err != nil {
+				return fmt.Errorf("%w (write --output-last-message %s: %v)", err, target, writeErr)
+			}
+			return fmt.Errorf("write --output-last-message %s: %w", target, writeErr)
 		}
 	}
-	if *jsonOutput {
+	if *streamEvents {
+		if result.Reply != "" {
+			fmt.Fprintln(a.errOut, result.Reply)
+		}
+	} else if *jsonOutput {
 		// A failed handoff can transition the Run after the result snapshot
 		// was taken; report the current durable status. A lookup failure
 		// keeps the snapshot and never masks the turn error below.
@@ -347,7 +380,13 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		fmt.Fprintln(a.out, result.Reply)
 	}
 	if err != nil {
+		if streamErr != nil {
+			return fmt.Errorf("%w (stream: %v)", err, streamErr)
+		}
 		return err
+	}
+	if streamErr != nil && apperror.CodeOf(streamErr) != apperror.CodeResourceExhausted {
+		return fmt.Errorf("event stream: %w", streamErr)
 	}
 	// The supervisor's turn_finish stop reason is the completion signal for a
 	// one-shot task; waiting_approval, root_wait, and failures exit non-zero

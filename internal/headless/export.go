@@ -43,6 +43,12 @@ type Request struct {
 	MaxEvents     int
 	Follow        bool
 	PollInterval  time.Duration
+	// Stop, when provided, ends Follow mode gracefully: the exporter drains
+	// the remaining durable events, emits the end record with reason
+	// "completed", and returns nil — instead of waiting for context
+	// cancellation. The run may still be running when Stop closes; the
+	// record's Status/Terminal/SuggestedResume fields describe it.
+	Stop <-chan struct{}
 }
 
 func (r Request) Normalize() (Request, error) {
@@ -149,6 +155,7 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 	encoder.SetEscapeHTML(false)
 	lastSequence := request.AfterSequence
 	emitted := 0
+	stopped := false
 	var run domain.Run
 	for {
 		remaining := request.MaxEvents - emitted
@@ -204,9 +211,25 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 			return finish(encoder, request, run, lastSequence, emitted,
 				"snapshot", false, nil)
 		}
+		if stopped {
+			// The driver asked Follow mode to end; the durable tail above is
+			// drained, so the record is complete for this invocation. The
+			// run may still be running — Status/Terminal/SuggestedResume
+			// describe it for a later re-attach.
+			return finish(encoder, request, run, lastSequence, emitted,
+				"completed", false, nil)
+		}
 
 		timer := time.NewTimer(request.PollInterval)
 		select {
+		case <-request.Stop:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			stopped = true
 		case <-ctx.Done():
 			if !timer.Stop() {
 				select {

@@ -22,8 +22,9 @@ file without parsing anything.
 
 1. **A file sink beside the unchanged output contract.** `--output-last-message
    <file>` writes the final committed assistant reply to the file (created or
-   truncated, Unix permission bits 0600 — Windows stays ACL-controlled)
-   before the standard output is produced, in every output mode. The
+   truncated; new files use Unix permission bits 0600 — Windows stays ACL-controlled)
+   before the final reply is printed, in every output mode. Streaming events
+   are emitted during execution; the file is finalized before the reply on stderr. The
    existing output formats behave exactly as before; the file is additive.
 2. **Write failures fail the command before any output.** The file is
    written first, so a failed write (unwritable path, missing directory)

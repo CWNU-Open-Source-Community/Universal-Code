@@ -169,6 +169,34 @@ func TestExporterFollowDrainsTerminalTail(t *testing.T) {
 	}
 }
 
+func TestExporterFollowStopsGracefullyOnStopSignal(t *testing.T) {
+	store := newFakeStore(t, domain.RunRunning, 1)
+	// The run stays running (the one-shot caller does not close it), so the
+	// only end path is the driver's Stop signal.
+	stop := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		close(stop)
+	}()
+	var output bytes.Buffer
+	if err := NewExporter(store).Export(ctx, &output, Request{
+		RunID: store.run.ID, MaxEvents: 10, Follow: true,
+		PollInterval: MinPollInterval, Stop: stop,
+	}); err != nil {
+		t.Fatalf("a graceful stop must return nil: %v", err)
+	}
+	records := decodeRecords(t, output.Bytes())
+	end := records[len(records)-1]
+	if len(records) != 2 || records[0]["sequence"] != float64(1) ||
+		end["reason"] != "completed" || end["has_more"] != false ||
+		end["status"] != string(domain.RunRunning) || end["exit_code"] != float64(0) ||
+		end["last_sequence"] != float64(1) {
+		t.Fatalf("graceful stop record drifted: %#v", records)
+	}
+}
+
 func TestExporterFailsClosedOnSequenceOrWriterDrift(t *testing.T) {
 	store := newFakeStore(t, domain.RunRunning, 1, 3)
 	var output bytes.Buffer

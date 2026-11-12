@@ -48,6 +48,7 @@ type threadEpochTransitionStore interface {
 }
 
 type ExecuteThreadTurnRequest struct {
+	onSubmitted   func(SubmitThreadMessageResult)
 	queued        *SubmitThreadMessageResult
 	automatic     bool
 	plan          *threadPlanCommitBinding
@@ -236,6 +237,9 @@ func (s *ThreadTurnService) execute(ctx context.Context,
 		return ExecuteThreadTurnResult{}, err
 	}
 	result := ExecuteThreadTurnResult{Submission: submission, Replayed: submission.Replayed}
+	if request.onSubmitted != nil {
+		request.onSubmitted(submission)
+	}
 	// Ordinary steering may queue only after the confirmation message itself
 	// has passed its atomic plan/input binding and entered the existing journal.
 	s.turnMu.Lock()

@@ -138,7 +138,7 @@ cyberagent exec --workspace demo "Fix the flaky parser test and run the suite"
 cyberagent exec --workspace demo --json --timeout 30m --stdin < task.md
 ```
 
-`--workspace` is required; `--profile` (default `code`), `--route`,
+`--workspace` is required for fresh Runs; `--profile` (default `code`), `--route`,
 `--max-turns`, `--max-tokens`, `--max-tool-calls`, and `--max-cost-usd` map
 onto the ordinary Run creation contract. `--timeout` carries a durable
 `Budget.TimeoutSeconds` on the Run and also bounds the process wall clock;
@@ -147,7 +147,7 @@ tasks are out of scope for v1. The command creates a
 fresh Run and Thread, executes the agent loop synchronously, prints the last
 committed assistant reply on stdout, and exits non-zero unless the supervisor
 finished the task (`turn_finish`; approval waits, continuation stops, and
-budget exhaustion report their stop reason). `--json` emits `{run_id, thread_id, status, reply}` instead of the
+budget exhaustion report their stop reason). `--json` emits `{run_id, thread_id, status, stop_reason, turn_status, reply, usage}` instead of the
 bare reply. Unattended runs cannot widen permissions: pre-arrange execution
 grants the same way you would for any Run. `--instructions "<text>"` fixes
 extra operator guidance for the invocation: the text is validated against the
@@ -159,6 +159,16 @@ authority: pin text stays below system policy and can never grant tools,
 permissions, or policy exceptions. The pin is visible in the Thread's context
 pin state and can be edited or removed there like any operator pin.
 
+`--output-last-message <file>`
+additionally writes the final assistant reply to a file (created or
+truncated; new files use Unix permission bits 0600, Windows stays ACL-controlled) before
+the final reply is printed, so cron jobs and CI steps get a reliable
+file sink for the reply regardless of the output format; a failed write
+fails the command. A paused turn records its committed reply at the pause
+point; the file is empty only when the turn failed before committing any
+reply. Paths with surrounding whitespace are rejected. In stream mode,
+events are emitted during execution and the file is finalized before the reply on stderr.
+
 Ctrl-C (SIGINT; SIGTERM where the
 platform delivers it) does not kill the process mid-write: it cancels the
 invocation cleanly, the turn machinery records the durable stop through a
@@ -169,24 +179,22 @@ terminate the process before the cancellation is recorded: the Run may then
 not be ready for `thread send`, and exit code 7 is not guaranteed for those
 exits.
 
-`--output-last-message <file>`
-additionally writes the final assistant reply to a file (created or
-truncated; Unix permission bits 0600, Windows stays ACL-controlled) before
-the standard output is produced, so cron jobs and CI steps get a reliable
-file sink for the reply regardless of the output format; a failed write
-fails the command. A paused turn records its committed reply at the pause
-point; the file is empty only when the turn failed before committing any
-reply.
+`--stream` streams run events to stdout as JSON lines in real
+time (headless.v1 protocol); the final reply goes to stderr, so scripts can
+pipe stdout for live monitoring while capturing the reply separately.
+`--stream` and `--json` are mutually exclusive. The stream stops
+automatically after the turn ends (no terminal state needed) —
+waiting_approval, paused, and failed outcomes retain their non-zero exit status.
 
 `cyberagent exec` 对已注册 Workspace 执行一条非交互 prompt 并打印最终助手
 回复——与交互会话完全相同的 Thread turn 机制在本进程内驱动，底层 Run 的全部
-权限、审批与预算规则原样生效。`--workspace` 必填；`--profile`（默认 `code`）、
+权限、审批与预算规则原样生效。创建新 Run 时 `--workspace` 必填；`--profile`（默认 `code`）、
 `--route`、`--max-turns`、`--max-tokens`、`--max-tool-calls`、`--max-cost-usd`
 与 `--timeout` 对应普通 Run 创建契约。命令创建全新的 Run 与 Thread、同步执行
 agent 循环、把最后一条已提交的助手回复打印到 stdout，除非 supervisor 以
 `turn_finish` 结束任务（等待审批、继续等待与预算耗尽都会报告其停止原因）
 否则以非零码退出。`--json` 输出
-`{run_id, thread_id, status, reply}` 取代纯回复文本。无人值守运行不能放宽
+`{run_id, thread_id, status, stop_reason, turn_status, reply, usage}` 取代纯回复文本。无人值守运行不能放宽
 权限：执行授权需要与任何 Run 一样预先安排。`--instructions "<文本>"` 为本次
 调用固定额外的操作者指令：文本先按 Thread context pin 契约校验（非空 UTF-8、
 无 NUL、最多 8192 字符、不含受保护的密钥内容），以操作者 context pin 的形式
@@ -195,19 +203,13 @@ Thread 上的后续 turn。它不放宽任何权限：pin 文本始终低于系�
 授予工具、权限或策略例外。pin 在 Thread 的 context pin 状态中可见，可以像
 其他操作者 pin 一样在那里编辑或移除。
 
-Ctrl-C（SIGINT；平台支持的
-SIGTERM）不会在写入中途杀死进程：它干净地取消本次调用，turn 机制通过脱离的
-上下文记录持久停止，Run 保持可恢复状态供后续 `thread send` 继续使用，exec
-以非零码退出——取消对应退出码 `7`，`--timeout` 超时对应退出码 `9`。Windows
-上的控制台关闭、注销或关机可能在取消被记录之前终止进程：Run 可能尚未恢复
-到可 `thread send` 的状态，这些退出不保证退出码 7。
-
 `--output-last-message <文件>`
-会先把最终助手回复写入文件（创建或截断；Unix 权限位 0600，Windows 由 ACL
-控制）再产出标准输出，cron
+会先把最终助手回复写入文件（创建或截断；新文件的 Unix 权限位为 0600，Windows 由 ACL
+控制）再打印最终回复，cron
 作业与 CI 步骤因此获得与输出格式无关的可靠文件汇；写入失败将使命令失败。
 turn 在暂停点的已提交回复会写入文件；仅当 turn 在提交任何回复前失败时文
-件才为空。
+件才为空。路径首尾包含空白时会明确拒绝。stream 模式下事件在执行期间输出，
+文件会在最终回复打印到 stderr 前写入。
 
 #### Continuing a Thread / 继续既有 Thread
 
@@ -239,6 +241,13 @@ continue 模式下被忽略——Thread 自带配置。进程本地的运行时�
 `--confirm-full`），与 fresh 模式完全一致：这些旗标启用本进程的适配器、
 永不放宽 Run 的持久权限选择、也不会被持久化——后续 turn 需要授权时请重新
 出示。输出与退出码契约与 fresh 模式相同。
+
+Ctrl-C（SIGINT；平台支持的
+SIGTERM）不会在写入中途杀死进程：它干净地取消本次调用，turn 机制通过脱离的
+上下文记录持久停止，Run 保持可恢复状态供后续 `thread send` 继续使用，exec
+以非零码退出——取消对应退出码 `7`，`--timeout` 超时对应退出码 `9`。Windows
+上的控制台关闭、注销或关机可能在取消被记录之前终止进程：Run 可能尚未恢复
+到可 `thread send` 的状态，这些退出不保证退出码 7。
 
 #### Attaching files / 附加文件
 
@@ -290,6 +299,14 @@ workspace 并固定到本次调用的消息上。存储层解码并限制每次�
 在任何模型调用之前以明确错误拒绝。图片字节以不可信数据连同精确来源交付给
 vision 模型；图片永不授予权威。可与 `--attach`、`--stdin`、`--json` 自由
 组合。
+
+`--stream` 将 run 事件实时以 JSON 行流式输出到 stdout（headless.v1 协议）；
+最终回复输出到 stderr，脚本可分别管道监控进度与捕获回复。`--stream` 与
+`--json` 互斥。流在 turn 结束后自动收尾（无需 Run 达到终态）：exporter
+排空持久尾部并发出 reason 为 `completed` 的 `stream.end` 记录，随后命令以
+与非 stream 模式相同的 stop-reason 退出码退出——等待审批/暂停/失败的结局
+仍以非零码退出。每次调用的流上限为 10,000 个事件。
+无人值守运行不能放宽权限：执行授权需要与任何 Run 一样预先安排。
 
 ### 补充消息与排队 / Follow-up messages and queue
 

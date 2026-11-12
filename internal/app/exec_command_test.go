@@ -1204,6 +1204,118 @@ func TestExecImageRejectsNonRegularFiles(t *testing.T) {
 	}
 }
 
+func TestExecStreamCompletesGracefully(t *testing.T) {
+	home := t.TempDir()
+	st, err := store.Open(filepath.Join(home, "exec-stream.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{
+		ID:        "exec-ws",
+		Name:      "exec-ws",
+		RootPath:  t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	encoded, err := json.Marshal(domain.RootAction{
+		Version: domain.RootLifecycleVersion, Kind: domain.RootActionFinish,
+		Message: "Streamed task reply", Summary: "Done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &execTestProvider{response: string(encoded)}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+
+	var out, errOut bytes.Buffer
+	a := &App{home: home, out: &out, errOut: &errOut, store: st, router: router,
+		checker: policy.NewDefaultChecker()}
+
+	// A successful streamed invocation must exit nil (the pre-fix flow
+	// surfaced the driver's own stop as a stream failure) and deliver the
+	// reply on stderr while stdout carries the event stream ending in a
+	// completed record.
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--stream", "Any task"}); err != nil {
+		t.Fatalf("streamed exec failed: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "Streamed task reply") {
+		t.Fatalf("reply missing from stderr: %s", errOut.String())
+	}
+	end := streamEndRecord(t, out.Bytes())
+	if end["reason"] != "completed" || end["has_more"] != false ||
+		end["status"] != string(domain.RunRunning) {
+		t.Fatalf("stream end record drifted: %#v", end)
+	}
+}
+
+func streamEndRecord(t *testing.T, output []byte) map[string]any {
+	t.Helper()
+	var end map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("stream line is not JSON: %v (%q)", err, line)
+		}
+		if record["kind"] == "stream.end" {
+			end = record
+		}
+	}
+	if end == nil {
+		t.Fatalf("stream.end record missing from output: %s", string(output))
+	}
+	return end
+}
+
+func TestExecStreamContinueKeepsInputsAndOutputSink(t *testing.T) {
+	a, provider, st := newExecContinueTestApp(t)
+	var first, streamed, reply bytes.Buffer
+	a.out = &first
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model", "--json", "First task"}); err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		ThreadID string `json:"thread_id"`
+		RunID    string `json:"run_id"`
+	}
+	if err := json.Unmarshal(first.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.NewRunService(st).Cancel(t.Context(), created.RunID); err != nil {
+		t.Fatal(err)
+	}
+	input := filepath.Join(t.TempDir(), "notes.txt")
+	const notes = "Only the decoder test fails on the provided fixture."
+	if err := os.WriteFile(input, []byte(notes), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "reply.txt")
+	provider.response = execFinishResponse("Streamed successor reply")
+	a.out, a.errOut = &streamed, &reply
+	if err := a.execCommand(t.Context(), []string{
+		"--continue", created.ThreadID, "--stream", "--attach", input,
+		"--instructions", "Report the decoder result.", "--output-last-message", output, "Second task"}); err != nil {
+		t.Fatal(err)
+	}
+	end := streamEndRecord(t, streamed.Bytes())
+	if end["run_id"] == created.RunID || end["reason"] != "completed" {
+		t.Fatalf("stream followed the old Run instead of the successor: %#v", end)
+	}
+	written, err := os.ReadFile(output)
+	if err != nil || string(written) != "Streamed successor reply" || !strings.Contains(reply.String(), "Streamed successor reply") {
+		t.Fatalf("reply sinks drifted: file=%q stderr=%q error=%v", written, reply.String(), err)
+	}
+	if !strings.Contains(provider.deliveredText(), notes) || !strings.Contains(provider.deliveredText(), "Report the decoder result.") {
+		t.Fatal("stream mode dropped the attached file or instructions")
+	}
+}
+
 func TestExecImageRejectsSurroundingWhitespace(t *testing.T) {
 	a, _, _ := newExecImageTestApp(t)
 	data, _ := writeTinyPNG(t)
