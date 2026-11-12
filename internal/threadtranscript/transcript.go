@@ -654,7 +654,7 @@ func classifyTool(name string) ActivityType {
 		"code_references", "code_implementation", "code_call_hierarchy", "code_type_hierarchy",
 		"web_search":
 		return TypeSearch
-	case "read_file", "workspace_read", "note_get", "artifact_get",
+	case "read_file", "workspace_read", "workspace_view_image", "note_get", "artifact_get",
 		"github_review_evidence_read", "code_definition", "code_hover", "code_signature_help",
 		"web_fetch", "web_citation":
 		return TypeRead

@@ -265,7 +265,7 @@ func validateArtifactSourceTx(ctx context.Context, tx *sql.Tx, request artifact.
 		return nil
 	case "read_file", "list_workspace",
 		"mcp_tool_call",
-		"workspace_list", "workspace_read", "workspace_glob", "workspace_grep",
+		"workspace_list", "workspace_read", "workspace_view_image", "workspace_glob", "workspace_grep",
 		"workspace_change", "workspace_apply", "workspace_delete",
 		"browser_status", "browser_navigate", "browser_snapshot", "browser_click",
 		"browser_type", "browser_screenshot", "browser_scroll", "browser_key", "browser_upload", "browser_move":

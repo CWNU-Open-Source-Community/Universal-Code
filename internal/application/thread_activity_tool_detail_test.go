@@ -13,6 +13,7 @@ import (
 func TestThreadActivityToolKindCoversPublicNonCommandTools(t *testing.T) {
 	tests := map[toolgateway.ToolName]string{
 		toolgateway.WorkspaceListTool: "file_read", toolgateway.WorkspaceReadTool: "file_read",
+		"workspace_view_image":        "file_read",
 		toolgateway.WorkspaceGlobTool: "file_read", toolgateway.WorkspaceGrepTool: "file_read",
 		toolgateway.WorkspaceChangeTool: "file_edit", toolgateway.WorkspaceApplyTool: "file_edit",
 		toolgateway.WorkspaceDeleteTool: "file_edit", toolgateway.WebSearchTool: "web_search",

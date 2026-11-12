@@ -600,7 +600,7 @@ function classifyLiveTool(name: string): Exclude<NarrativeToolKind, "plan"> {
   case "github_review_evidence_list": case "code_workspace_symbols": case "code_document_symbols":
   case "code_references": case "code_implementation": case "code_call_hierarchy":
   case "code_type_hierarchy": case "web_search": case "source_search": return "search";
-  case "read_file": case "workspace_read": case "note_get": case "artifact_get":
+  case "read_file": case "workspace_read": case "workspace_view_image": case "note_get": case "artifact_get":
   case "github_review_evidence_read": case "code_definition": case "code_hover":
   case "code_signature_help": case "web_fetch": case "web_citation": return "read";
   case "replace_file": case "file_edit": case "apply_patch": case "workspace_restore":
@@ -617,6 +617,7 @@ function safeToolActivityTitle(toolName: string, fallback: string, t: LocaleText
   case "history_read": return t("读取历史原文", "Read original history");
   case "plan_delivery_propose": return t("生成交付计划", "Generate delivery plan");
   case "read_file": case "workspace_read": return t("读取文件", "Read file");
+  case "workspace_view_image": return t("查看图片", "View image");
   case "workspace_search": case "workspace_grep": case "workspace_glob": case "code_search":
   case "find_files": return t("搜索工作区", "Search workspace");
   case "workspace_apply": return t("文件应用请求", "File apply request");

@@ -38604,6 +38604,7 @@
             "enum": [
               "workspace_list",
               "workspace_read",
+              "workspace_view_image",
               "workspace_glob",
               "workspace_grep",
               "workspace_change",
@@ -70185,6 +70186,7 @@
               "command_runtime",
               "workspace_list",
               "workspace_read",
+              "workspace_view_image",
               "workspace_glob",
               "workspace_grep",
               "workspace_change",

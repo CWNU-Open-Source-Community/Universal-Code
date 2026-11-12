@@ -41,6 +41,18 @@ function snapshot(overrides: Partial<PublicModelStreamSnapshot> = {}): PublicMod
   };
 }
 
+it("groups saved and live workspace image observations as reads with a localized title", () => {
+  const durable = projectThreadNarrative([item({ source: "harness", kind: "tool_call",
+    activity_type: "read", tool_name: "workspace_view_image", title: "工具执行已完成" })]);
+  expect(durable[0]).toMatchObject({ kind: "activity", activity: "read", items: [{ title: "查看图片" }] });
+
+  const live = projectThreadNarrative([], { runId: "run-1", status: "live", snapshot: snapshot({
+    text: "", items: [{ id: "image-live", response_id: "image-response", type: "tool_call",
+      status: "receiving_arguments", tool_name: "workspace_view_image", provisional: true, durable: false }],
+  }) });
+  expect(live[0]).toMatchObject({ kind: "activity", activity: "read", items: [{ title: "查看图片", provisional: true }] });
+});
+
 it("branches only from saved, delivered user inputs", () => {
   for (const status of ["committed", "pending", "cancelled"]) {
     const entries = projectThreadNarrative([item({ id: "user-event", source: "operator", kind: "operator_input", status,
