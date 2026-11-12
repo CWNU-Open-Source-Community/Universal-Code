@@ -265,7 +265,7 @@ class RecoveryStorage implements V2RecoveryStore {
 }
 
 type RecoveryStoreEntry = { prefix: string; store: RecoveryStorage; providers: number };
-const recoveryStoreEntries = new Map<string, RecoveryStoreEntry>();
+const recoveryStoreEntries = new Map<string, RecoveryStoreEntry[]>();
 
 // Test isolation; live entries are retained while they contain unresolved edits.
 export function resetV2RecoveryStorageMemory() { recoveryStoreEntries.clear(); }
@@ -282,20 +282,24 @@ export function V2RecoveryProvider({ client, scopeID, children }: {
   const entry = useMemo(() => {
     if (!scope || !origin) return null;
     const prefix = `${VERSION}:${encodeURIComponent(origin)}:${encodeURIComponent(client.baseURL)}:${encodeURIComponent(scope)}:`;
-    return recoveryStoreEntries.get(prefix) ?? { prefix, store: new RecoveryStorage(prefix), providers: 0 };
+    return recoveryStoreEntries.get(prefix)?.find((item) => item.providers === 0)
+      ?? { prefix, store: new RecoveryStorage(prefix), providers: 0 };
   }, [origin, client.baseURL, scope]);
   const store = entry?.store ?? null;
   const context = useMemo(() => ({ store, warning: store ? null : UNSUPPORTED }), [store]);
   useEffect(() => {
     if (!entry) return;
     entry.providers++;
-    recoveryStoreEntries.set(entry.prefix, entry);
+    const retained = recoveryStoreEntries.get(entry.prefix)?.filter((item) => item !== entry) ?? [];
+    if (retained.length) recoveryStoreEntries.set(entry.prefix, retained);
+    else recoveryStoreEntries.delete(entry.prefix);
     const disconnect = entry.store.connect();
     return () => {
       disconnect();
       entry.providers--;
-      if (entry.providers === 0 && entry.store.getConflicts().length === 0 && recoveryStoreEntries.get(entry.prefix) === entry) {
-        recoveryStoreEntries.delete(entry.prefix);
+      if (entry.providers === 0 && entry.store.getConflicts().length > 0) {
+        const retained = recoveryStoreEntries.get(entry.prefix) ?? [];
+        if (!retained.includes(entry)) recoveryStoreEntries.set(entry.prefix, [...retained, entry]);
       }
     };
   }, [entry]);
