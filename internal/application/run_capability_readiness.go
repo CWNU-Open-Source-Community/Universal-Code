@@ -441,9 +441,6 @@ func (p capabilityReadinessProjection) commandRuntimeReadiness() CommandRuntimeR
 	selected := false
 	selectedReady := false
 	for _, adapter := range p.runtime.CommandRuntimeAdapters {
-		if adapter.Kind == commandruntimeadapter.KindHostUnsandboxed && p.ownedWorkspace {
-			continue
-		}
 		ready := true
 		switch adapter.Backend {
 		case CommandRuntimeLocalSandboxBackend:
@@ -454,7 +451,9 @@ func (p capabilityReadinessProjection) commandRuntimeReadiness() CommandRuntimeR
 			ready = p.runtime.SBXBackendReady
 		}
 		result.AdapterReady = result.AdapterReady || ready
-		if !adapter.AllowsPermission(p.permission.Mode) ||
+		if (adapter.Kind == commandruntimeadapter.KindHostUnsandboxed && p.ownedWorkspace) ||
+			(adapter.Kind == commandruntimeadapter.KindSandboxedWorkspace && !p.ownedWorkspace) ||
+			!adapter.AllowsPermission(p.permission.Mode) ||
 			commandRuntimeExecutionProfile(adapter) != p.profile.Profile {
 			continue
 		}

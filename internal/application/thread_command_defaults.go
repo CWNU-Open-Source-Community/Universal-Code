@@ -14,6 +14,10 @@ type threadCommandRuntimeInventory interface {
 	InstalledCommandRuntimeAdapters() []commandruntimeadapter.Identity
 }
 
+type threadCommandBackendReadiness interface {
+	commandProfileReady(context.Context, string, domain.RunExecutionProfile) (bool, error)
+}
+
 type threadCommandDefaults struct {
 	runtime threadCommandRuntimeInventory
 }
@@ -82,12 +86,54 @@ func (s *ThreadTurnService) commandProfileForTurn(ctx context.Context, run domai
 			if adapter.Executable() && commandRuntimeExecutionProfile(adapter) == target &&
 				((adapter.Kind == commandruntimeadapter.KindHostUnsandboxed && !owned) ||
 					(adapter.Kind == commandruntimeadapter.KindSandboxedWorkspace && owned)) {
+				if checker, ok := s.commandDefaults.runtime.(threadCommandBackendReadiness); ok {
+					ready, err := checker.commandProfileReady(ctx, run.ID, target)
+					if err != nil {
+						return profile, false, err
+					}
+					if !ready {
+						break
+					}
+				}
 				return profile, true, nil
 			}
 		}
 	}
 	return profile, false, apperror.New(apperror.CodeFailedPrecondition,
 		fmt.Sprintf("The %s command environment is unavailable in this app. Enable its runtime in desktop settings or select a ready environment in advanced execution settings, then retry.", target))
+}
+
+// Read backend readiness without acquiring a lease, starting a Job, changing
+// approval or substituting another environment. Dispatch still rechecks it.
+func (s *CommandRuntimeService) commandProfileReady(ctx context.Context, runID string, profile domain.RunExecutionProfile) (bool, error) {
+	adapter, installed := s.InstalledCommandRuntimeAdapter()
+	if !installed || commandRuntimeExecutionProfile(adapter) != profile {
+		return false, nil
+	}
+	owned, err := runHasOwnedFileWorkspace(ctx, s.store, runID)
+	if err != nil {
+		return false, err
+	}
+	if adapter.Kind == commandruntimeadapter.KindHostUnsandboxed {
+		return !owned, nil
+	}
+	if !owned {
+		return false, nil
+	}
+	if checker, ok := s.sandbox.(commandRuntimeSandboxReadiness); ok {
+		return checker.Ready(ctx, runID)
+	}
+	return true, nil
+}
+
+func (m *CommandRuntimeMultiplexer) commandProfileReady(ctx context.Context, runID string, profile domain.RunExecutionProfile) (bool, error) {
+	for _, service := range m.adapters {
+		ready, err := service.commandProfileReady(ctx, runID, profile)
+		if err != nil || ready {
+			return ready, err
+		}
+	}
+	return false, nil
 }
 
 func (s *ThreadTurnService) defaultCommandNeedsSuccessor(ctx context.Context, run domain.Run) (bool, error) {
