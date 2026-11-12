@@ -214,6 +214,26 @@ func TestNativeBrowserProbe(t *testing.T) {
 	if page.(*nativePage).cursor == 0 {
 		t.Fatalf("CDP mouse input did not create a native agent cursor: %v", page.(*nativePage).cursorError)
 	}
+	if err = ui.dispatcher.Invoke(ctx, func() error {
+		showWindow.Call(ui.hwnd, 5)
+		p := page.(*nativePage)
+		p.positionCursor()
+		var before, after nativeRect
+		user32.NewProc("GetWindowRect").Call(p.cursor, uintptr(unsafe.Pointer(&before)))
+		moveWindow.Call(ui.hwnd, 280, 180, 1100, 800, 1)
+		user32.NewProc("GetWindowRect").Call(p.cursor, uintptr(unsafe.Pointer(&after)))
+		if after.Left-before.Left != 200 || after.Top-before.Top != 100 {
+			return fmt.Errorf("agent cursor did not follow native parent move: before=%+v after=%+v", before, after)
+		}
+		showWindow.Call(ui.hwnd, 0)
+		if visible, _, _ := user32.NewProc("IsWindowVisible").Call(p.cursor); visible != 0 {
+			return fmt.Errorf("agent cursor stayed visible after its desktop parent was hidden")
+		}
+		showWindow.Call(ui.hwnd, 5)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err = page.Navigate(ctx, server.URL+"/b"); err != nil {
 		t.Fatal(err)
 	}
@@ -337,5 +357,31 @@ func waitProbe(t *testing.T, ctx context.Context, predicate func() bool) {
 			t.Fatal(ctx.Err())
 		case <-time.After(20 * time.Millisecond):
 		}
+	}
+}
+
+func TestNativeParentDestroyClosesPages(t *testing.T) {
+	if os.Getenv("UC_NATIVE_BROWSER_PROBE") != "1" {
+		t.Skip("requires native WebView2 probe")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	ui := startProbeUI(t)
+	host, err := NewHost(ctx, HostOptions{ParentHWND: ui.hwnd, Dispatcher: ui.dispatcher, UserDataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := host.CreateTab(ctx, TabOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ui.dispatcher.Invoke(ctx, func() error { destroyWindow.Call(ui.hwnd); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !page.State().Closed {
+		t.Fatal("destroying the native parent left the browser page alive")
+	}
+	if _, err = host.CreateTab(ctx, TabOptions{}); err == nil {
+		t.Fatal("destroyed native parent accepted a new page")
 	}
 }

@@ -34,6 +34,7 @@ type Host struct {
 	finishOnce sync.Once
 	lease      *ControlLease
 	pending    map[*nativeRequest]struct{}
+	subclassID uintptr
 }
 
 type nativePage struct {
@@ -76,16 +77,19 @@ func NewHost(ctx context.Context, options HostOptions) (*Host, error) {
 		if uint32(thread) != options.Dispatcher.thread || pid != windows.GetCurrentProcessId() {
 			return errors.New("native browser parent is not an owned window on the UI thread")
 		}
+		if err := h.watchParent(); err != nil {
+			return err
+		}
 		return webviewloader.CreateCoreWebView2EnvironmentWithOptions(&environmentCallback{host: h, ready: ready}, webviewloader.WithUserDataFolder(options.UserDataDir))
 	})
 	if err != nil {
-		h.finish()
+		_ = h.Close(context.Background())
 		return nil, err
 	}
 	select {
 	case err = <-ready:
 		if err != nil {
-			h.finish()
+			_ = h.Close(context.Background())
 			return nil, err
 		}
 		return h, nil
@@ -222,31 +226,32 @@ func (h *Host) Tab(id string) (Page, bool) {
 }
 
 func (h *Host) Close(ctx context.Context) error {
-	return h.options.Dispatcher.Invoke(ctx, func() error {
-		h.mu.Lock()
-		if h.closed {
-			h.mu.Unlock()
-			return nil
-		}
-		h.closed = true
-		if h.lease != nil {
-			h.lease.Cancel()
-		}
-		pages := make([]*nativePage, 0, len(h.tabs))
-		for _, p := range h.tabs {
-			pages = append(pages, p)
-		}
+	return h.options.Dispatcher.Invoke(ctx, func() error { h.closeOnUI(); return nil })
+}
+func (h *Host) closeOnUI() {
+	h.mu.Lock()
+	if h.closed {
 		h.mu.Unlock()
-		for _, p := range pages {
-			p.closeOnUI()
-		}
-		if h.env != nil {
-			h.env.release()
-			h.env = nil
-		}
-		h.finish()
-		return nil
-	})
+		return
+	}
+	h.closed = true
+	if h.lease != nil {
+		h.lease.Cancel()
+	}
+	pages := make([]*nativePage, 0, len(h.tabs))
+	for _, p := range h.tabs {
+		pages = append(pages, p)
+	}
+	h.mu.Unlock()
+	for _, p := range pages {
+		p.closeOnUI()
+	}
+	if h.env != nil {
+		h.env.release()
+		h.env = nil
+	}
+	h.finish()
+	h.unwatchParent()
 }
 
 func (h *Host) emit(event Event) {
