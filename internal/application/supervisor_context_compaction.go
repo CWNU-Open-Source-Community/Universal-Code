@@ -90,11 +90,25 @@ func (s *AgentRunner) compactSupervisorHistory(ctx context.Context, turn *domain
 				if err == nil && updated.RunID != "" {
 					turn.Checkpoint = updated
 				}
+				if err == nil && result.Compacted && result.RemovedMessages > 0 {
+					_ = executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.PostCompaction,
+						turn.Run.ID, turn.Mission.WorkspaceID, map[string]any{
+							"run_id":             turn.Run.ID,
+							"removed_messages":   result.RemovedMessages,
+							"preserved_messages": preserveRecent})
+				}
 				return result.Compacted && result.RemovedMessages > 0, err
 			}
 		}
 	}
 	result, err := store.CompactSupervisorContext(ctx, turn.Checkpoint, preserveRecent)
+	if err == nil && result.Compacted && result.RemovedMessages > 0 {
+		_ = executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.PostCompaction,
+			turn.Run.ID, turn.Mission.WorkspaceID, map[string]any{
+				"run_id":             turn.Run.ID,
+				"removed_messages":   result.RemovedMessages,
+				"preserved_messages": preserveRecent})
+	}
 	return result.Compacted && result.RemovedMessages > 0, err
 }
 

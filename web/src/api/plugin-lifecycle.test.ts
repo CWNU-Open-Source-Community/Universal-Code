@@ -201,3 +201,15 @@ it("accepts turn_end declarations and observations", async () => {
  const result = await new APIClient("read").hookDiagnostics("run-one", "project-one");
  expect(result.declarations[0].event).toBe("turn_end");
 });
+
+it("accepts post_compaction declarations and observations", async () => {
+ const value = hookDiagnostics();
+ value.declarations[0].event = "post_compaction";
+ value.declarations[0].action = "record";
+ value.declarations[0].failure_policy = "continue";
+ value.declarations[0].tool_names = [];
+ value.observations[0].event = "post_compaction";
+ vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(value)));
+ const result = await new APIClient("read").hookDiagnostics("run-one", "project-one");
+ expect(result.declarations[0].event).toBe("post_compaction");
+});

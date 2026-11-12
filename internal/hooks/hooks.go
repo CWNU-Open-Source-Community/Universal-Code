@@ -53,6 +53,7 @@ const (
 	ApprovalRequested Event = "approval_requested"
 	TurnEnd           Event = "turn_end"
 	Compaction        Event = "compaction"
+	PostCompaction    Event = "post_compaction"
 	Subagent          Event = "subagent"
 	Checkpoint        Event = "checkpoint"
 )
@@ -60,7 +61,7 @@ const (
 func (e Event) Valid() bool {
 	switch e {
 	case PreTool, PostTool, PostToolFailure, RunStarted, RunCompleted, SessionOpened, SessionClosed,
-		UserPromptSubmit, ApprovalRequested, TurnEnd, Compaction, Subagent, Checkpoint:
+		UserPromptSubmit, ApprovalRequested, TurnEnd, Compaction, PostCompaction, Subagent, Checkpoint:
 		return true
 	default:
 		return false
@@ -184,6 +185,15 @@ func (d Declaration) Validate() error {
 		}
 		if d.FailurePolicy == FailureDeny {
 			return errors.New("turn_end hooks require continue failure policy because the turn is already complete")
+		}
+	}
+	if d.Event == PostCompaction {
+		// Compaction has already completed: hooks observe the outcome.
+		if d.Action != ActionRecord {
+			return errors.New("post_compaction hooks may only record observations")
+		}
+		if d.FailurePolicy == FailureDeny {
+			return errors.New("post_compaction hooks require continue failure policy because compaction is already complete")
 		}
 	}
 	if d.Event != PreTool && d.Event != PostTool && d.Event != PostToolFailure && len(d.ToolNames) != 0 {
@@ -681,7 +691,7 @@ func matchesTool(values []string, pattern *regexp.Regexp, toolName string) bool 
 
 func eventOrder(value Event) int {
 	for index, current := range []Event{PreTool, PostTool, PostToolFailure, RunStarted, RunCompleted,
-		SessionOpened, SessionClosed, UserPromptSubmit, ApprovalRequested, TurnEnd, Compaction, Subagent, Checkpoint} {
+		SessionOpened, SessionClosed, UserPromptSubmit, ApprovalRequested, TurnEnd, Compaction, PostCompaction, Subagent, Checkpoint} {
 		if current == value {
 			return index
 		}

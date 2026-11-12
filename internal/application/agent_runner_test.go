@@ -152,7 +152,8 @@ func verifyAggregateContextCompaction(t *testing.T, windowTokens int) {
 		t.Fatal(err)
 	}
 	_, stepErr := application.NewAgentRunner(st, router,
-		policy.NewDefaultChecker()).Step(ctx, run.ID)
+		policy.NewDefaultChecker()).WithLifecycleHooks(postCompactionHookEngine(t, st)).Step(ctx, run.ID)
+	assertPostCompactionHookAudits(t, st, run.ID, 1)
 	after, err := st.ListSessionMessages(ctx, run.SessionID, true)
 	if err != nil {
 		t.Fatal(err)
