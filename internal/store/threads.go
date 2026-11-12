@@ -496,7 +496,12 @@ func (s *SQLiteStore) ListThreadTranscriptSourceBefore(ctx context.Context, thre
 	}
 	query += ` ORDER BY ordinal DESC, sequence DESC LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	tx, finish, err := s.beginThreadRequestObservation(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer finish()
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +528,25 @@ func (s *SQLiteStore) ListThreadTranscriptSourceBefore(ctx context.Context, thre
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	indexes := map[string]*threadTaskIndex{}
+	for position := range items {
+		index := indexes[items[position].RunID]
+		if index == nil {
+			index, err = loadThreadTaskIndex(ctx, tx, threadID, items[position].RunID)
+			if err != nil {
+				return nil, err
+			}
+			indexes[items[position].RunID] = index
+		}
+		items[position].Task = index.forSource(items[position])
+	}
+	return items, nil
 }
 
 // EnsureThreadSuccessor returns the current live Run when one already exists,

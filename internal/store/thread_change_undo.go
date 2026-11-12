@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/workspacecheckpoint"
 )
 
@@ -72,15 +73,32 @@ func requireThreadChangeUndoIdleTx(ctx context.Context, tx *sql.Tx, threadID, ru
 }
 
 func requireThreadChangeUndoJournalTx(ctx context.Context, tx *sql.Tx, value workspacecheckpoint.Transaction) error {
-	var threadID string
+	var threadID, sourceRunID, sourceType string
 	sourceID := strings.TrimPrefix(value.TriggerReceiptID, workspacecheckpoint.ThreadUndoReceiptPrefix)
-	if err := tx.QueryRowContext(ctx, `SELECT thread.id FROM threads thread
+	if err := tx.QueryRowContext(ctx, `SELECT thread.id,event.run_id,event.type FROM threads thread
 	 JOIN thread_runs binding ON binding.thread_id=thread.id
 	 JOIN run_events event ON event.run_id=binding.run_id
-	 WHERE EXISTS(SELECT 1 FROM thread_runs target JOIN runs target_run ON target_run.id=target.run_id JOIN runs source_run ON source_run.id=event.run_id WHERE target.thread_id=thread.id AND target.run_id=? AND target_run.mission_id=source_run.mission_id) AND event.event_id=? AND event.type='session.message_created'
-	 AND event.source='session_store' AND json_extract(event.payload_json,'$.role')='assistant'
-	 AND json_extract(event.payload_json,'$.source_kind')='model_response'`, value.RunID, sourceID).Scan(&threadID); err != nil {
+	 WHERE EXISTS(SELECT 1 FROM thread_runs target JOIN runs target_run ON target_run.id=target.run_id JOIN runs source_run ON source_run.id=event.run_id WHERE target.thread_id=thread.id AND target.run_id=? AND target_run.mission_id=source_run.mission_id) AND event.event_id=?
+	 AND ((event.type='session.message_created' AND event.source='session_store' AND json_extract(event.payload_json,'$.role')='assistant'
+	 AND json_extract(event.payload_json,'$.source_kind')='model_response')
+	 OR (event.type='run.execution_handoff_completed' AND event.source='run_execution_handoff'))`, value.RunID, sourceID).Scan(&threadID, &sourceRunID, &sourceType); err != nil {
 		return err
+	}
+	if sourceType == events.RunExecutionHandoffCompletedEvent {
+		index, err := loadThreadTaskIndex(ctx, tx, threadID, sourceRunID)
+		if err != nil {
+			return err
+		}
+		bound := false
+		for _, span := range index.tasks {
+			if span.task.ChangeSourceEventID == sourceID {
+				bound = true
+				break
+			}
+		}
+		if !bound {
+			return sql.ErrNoRows
+		}
 	}
 	return requireThreadChangeUndoIdleTx(ctx, tx, threadID, value.RunID, "")
 }

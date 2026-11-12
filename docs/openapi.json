@@ -29190,8 +29190,8 @@
     "/api/v1/threads/{thread_id}/changes": {
       "get": {
         "operationId": "getThreadChanges",
-        "summary": "Read recorded file changes before one Thread reply",
-        "description": "Read-only net change summary for applied FileEdit records since the previous durable assistant reply in the same Run. The source event must be an assistant Session message in this Thread. Repeated edits are combined, unapplied proposals are excluded, and current workspace files are never read. Redacted or discontinuous histories omit counts and diff bodies; bounded diff omission is explicit.",
+        "summary": "Read recorded file changes for one Thread task",
+        "description": "Read-only net change summary for the exact task.change_source_event_id in this Thread. Completed tasks use their proven final assistant Session event; interrupted or failed tasks use their execution handoff ending event. Applied FileEdit records are combined across all attempts of that input. Historical assistant replies without task ownership retain the previous-reply interval. Unapplied proposals are excluded and current workspace files are never read. Redacted or discontinuous histories omit counts and diff bodies; bounded diff omission is explicit.",
         "tags": [
           "Threads"
         ],
@@ -29211,7 +29211,7 @@
           {
             "name": "source_event_id",
             "in": "query",
-            "description": "Durable assistant session.message_created event ID from the Thread transcript",
+            "description": "task.change_source_event_id from the Thread transcript, or a historical assistant Session event without task ownership",
             "required": true,
             "schema": {
               "maxLength": 256,
@@ -74784,6 +74784,9 @@
             "minLength": 1,
             "type": "string"
           },
+          "task": {
+            "$ref": "#/components/schemas/ThreadTranscriptTaskView"
+          },
           "title": {
             "type": "string"
           },
@@ -74824,6 +74827,54 @@
           "provisional",
           "durable",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "ThreadTranscriptTaskView": {
+        "additionalProperties": false,
+        "properties": {
+          "change_source_event_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "final_message_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "input_message_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "completed",
+              "interrupted",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "input_message_id",
+          "state"
         ],
         "type": "object"
       },
