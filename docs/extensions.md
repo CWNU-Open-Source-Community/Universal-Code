@@ -136,12 +136,30 @@ cyberagent plugin show <new-installation-id>
 | `run_completed` | completed/failed/cancelled 或 Supervisor finalize 写入前 |
 | `session_opened` | 新 Session 与 Run 原子创建前 |
 | `session_closed` | HTTP/Desktop Session archive 写入前 |
+| `user_prompt_submit` | 操作者 prompt 进入提交面（Thread turn 端点——含经其路由的定时任务、PR 跟进与 Plan 修正，CLI `thread send`，Session 聊天，Session 消息提交）之后、任何持久化或排队之前；deny 干净拒绝提交。经 peer 投递直接入队的消息在其原始提交面触发 |
 | `approval_requested` | Supervisor turn settle 进审批门时触发（durable 审批门场景下 run 落为 waiting_approval；`AgentRunner.Execute` 重入 waiting run 亦触发）；仅记录型 hook，审批决定权永远在操作者 |
 | `compaction` | `MaybeCompact` 确认真正需要压缩后、摘要写入前 |
 | `subagent` | 经操作者授权的 Specialist schedule 获取执行租约前 |
 | `checkpoint` | 连续性或手工 Workspace Checkpoint 写入前 |
 
 同一事件按 event、Plugin ID、Hook ID 稳定排序。每条声明有最大 2 秒超时，输入 256 KiB、输出 16 KiB、注释 16 条的上限；`failure_policy=deny` 失败关闭，`continue` 只记录失败并继续。每个结果写 metadata-only audit，不保存 Hook 输入、注释正文或工具 payload。
+
+工具事件的过滤器二选一：`tool_names`（精确列表）或 `tool_pattern`（一条 Go 正则，非锚定匹配工具名，长度上限 256 字节；Go regexp 为线性时间引擎，不存在灾难性回溯）。两条路径的 deny/annotate/narrow 语义完全一致，声明改变 pattern 会推进注册表 generation。
+
+声明可带 `async: true` 成为后台观测：只有 record 与 script 动作可以异步，且必须使用 `continue` 失败策略——deny/annotate/narrow 必须同步，fail-closed 策略在后台无从执行（声明会被拒绝，绝不静默降级为 fail-open）。后台 hook 在引擎 8 并发上限内独立运行，边界永不等待；脚本收到的 stdin payload 与同步路径相同，但其结果——包括自行输出的 denied——整体丢弃，审计只记录运行结果（completed/failed_continue，恒为非拒绝）。过载时在 64 槽位的并发缓冲池内以 `failed_continue` 审计行跳过本次触发（写在独立上下文上）；若审计池亦达到饱和（如极端并发叠加审计写入阻塞），为保障调用方延迟与避免无界并发，超出上限的审计将被丢弃并记录于引擎 `DroppedAudits` 计数器中，不再保证病态过载下每次触发均有记录。超时照常击杀子进程。进程退出时未完成的后台 hook 会丢失（记录在案，不做持久化）。
+
+`user_prompt_submit` 的 payload 由 Go 编码：Thread 面携带 `thread_id`，Session 面携带 `session_id` 与 `run_id`，加上 `content`（超长 prompt 在 UTF-8 边界截断并带 `truncated` 标记；非法 UTF-8 字节一次性剔除），不支持工具过滤。deny 在消息意图预留与排队发生之前拒绝提交；annotate 只进入结果与审计，不注入模型上下文。已知盲区：image-only 提交（`content` 为空）不触发边界，MCP-only 提交以合成文案触发、真实 MCP 参数不在 payload 中；同一 operation key 的每次重试都会再次触发（attempt-scoped）。
+
+## Operator 脚本 Hook
+
+脚本 Hook（`action: "script"`）是对操作者开放的有界例外：一个哈希固定的外部程序在事件边界运行，只能通过一个有界 JSON 输出 **deny 或 annotate**。它不能修改工具参数、授予权限、访问网络凭据或递归触发 Hook；仓库内容、项目指令、Skill、Plugin 和工具输出都不能安装或放宽脚本 Hook——脚本 Hook 只来自操作者自己的主目录。
+
+- **位置**：`<CYBERAGENT_HOME>/hooks.d/*.json` 声明 + 同目录树内的脚本文件。目录缺失等于未配置；声明与插件 Hook 共享引擎 64 条总上限（合并超限会以可诊断错误整体失败关闭），声明单文件 64 KiB，脚本单文件 1 MiB。任何异常（symlink/junction、超大、非法 JSON、路径逃逸、内容哈希漂移）都失败关闭而不是跳过。
+- **声明**：`script` 动作必须带 `script` 规格：`interpreter`（`powershell`（仅 Windows）/`pwsh`/`sh`（仅 POSIX）/`python`/`node`）、相对 `path`（不得绝对、不得 `..`）、`args`（最多 8 个、限定安全字符集）、`sha256`（脚本内容 SHA-256）。脚本 Hook 超时上限 10 秒（声明式 Hook 仍为 2 秒），不允许 `post_tool`。
+- **执行**：宿主每次执行前经 `os.Root` 重新验证脚本是普通文件并复算哈希，漂移立即失败；子进程以固定的解释器参数向量启动（无 shell），工作目录为 hooks.d，环境仅含 OS 运行必需变量（Windows：`SystemRoot` 等；POSIX：`PATH`/`TMPDIR`），不继承父进程环境的任何其他变量，凭据与 Provider 配置对脚本不可见。stdin 收到有界 JSON（`event`/`run_id`/`workspace_id`/`tool_name`/`payload`）；stdout 必须是单个有界 JSON（`protocol_version` + `denied`/`reason`/`annotations`），16 KiB 上限、拒绝未知字段和尾随 JSON；stderr 只以有界形式进入失败错误文本。已知的残留边界：校验与解释器打开文件之间存在固有 TOCTOU 窗口（写 hooks.d 即操作者级权限）；超时只终止直接子进程，脚本自行遗留的后台子进程会令本次执行失败关闭；固定 digest 只覆盖声明脚本本身，不覆盖其 import 的模块——模块解析限定在 hooks.d 目录内，helper 是操作者信任文件而非 digest 固定文件，改动 helper 不会触发哈希漂移。
+- **审计**：脚本拒绝与声明式 deny 一样写 `plugin_hook_audits`（`plugin_id=operator`，fingerprint 为脚本哈希；schema v223 扩展了审计表的 action 约束与绑定触发器）；`denied` 输出映射为拒绝结果，但模型侧错误文本仍是固定的官方文案，脚本提供的 `reason` 不进入模型可见错误。插件路径三重强制：manifest 校验拒绝 script 声明，加载时过滤历史 staging 残留，引擎注册表拒绝非 `operator` 来源的 script hook。
+
+设计依据见 [ADR 0197](adr/0197-operator-script-hooks.md)。
 
 ## Desktop 与 HTTP
 
@@ -165,6 +183,62 @@ Schemas v120-v121 introduced the low-trust extension runtime; Universal Code add
 
 The MCP state flow is `staged -> approve_discovery -> capabilities_pending -> enable_capabilities -> enabled`. Disable and revoke are immediate; capability or restart ambiguity quarantines the server. A connection, discovery, or tool-call failure during invocation marks it unavailable and removes it from model-visible capabilities until an explicit refresh succeeds. Plugin installation is independently `staged -> approved -> enabled`, with capability-by-capability enablement, publisher trust/revocation, atomic upgrade/rollback, and a separate MCP review for contributed server descriptors. HTTPS import requires an exact archive SHA-256 and rejects every redirect. Git import accepts only a credential-free HTTPS repository, a full commit SHA, and a safe repository-relative ZIP path; it fetches into a temporary bare repository with system/global Git config, URL rewrites, credential helpers, hooks, redirects, and non-HTTPS protocols disabled, performs no checkout or submodule load, and reads only the exact ordinary blob. A revoked publisher cannot be bypassed with untrusted confirmation, and the database permits at most one enabled version of each Plugin ID. Enabling a Plugin's `skills` capability never auto-selects, injects, or authorizes those inert resources for a Run; the existing explicit Skill installation, selection, and mode-compatibility path remains authoritative.
 
-Actual hook boundaries are Tool pre/post, initial Run start, terminal Run finalization, Session creation/archive, the durable approval gate (`approval_requested` — observation only; fires on every Supervisor-turn settlement into the gate — with the run falling to `waiting_approval` where applicable — and on `AgentRunner.Execute` re-entries into a durably waiting run; no dedup, no firing on other surfaces' re-entries), real compaction immediately before summary persistence, operator-authorized Specialist scheduling, and continuity/manual Workspace Checkpoint persistence. Ordering, time, input/output, annotation, reentry, and failure-policy limits are enforced by Go and every execution writes a metadata-only audit.
+Actual hook boundaries are Tool pre/post, initial Run start, terminal Run finalization, Session creation/archive, the durable approval gate (`approval_requested`, record-only, on Supervisor settlement and Execute re-entry), operator prompt submission at its four surfaces (the Thread turn endpoint, CLI `thread send`, Session chat, and Session message submission) before any persistence or queueing, real compaction immediately before summary persistence, operator-authorized Specialist scheduling, and continuity/manual Workspace Checkpoint persistence. Tool events filter by either the exact `tool_names` list or a single `tool_pattern` Go regular expression (unanchored against the tool name, at most 256 bytes; Go regexp is a linear-time engine without catastrophic backtracking). Ordering, time, input/output, annotation, reentry, and failure-policy limits are enforced by Go and every execution writes a metadata-only audit.
+
+A declaration with `async: true` becomes a background tap: only record and script actions may run asynchronously, and both require the `continue` failure policy — deny, annotate, and narrow must stay synchronous because a background hook can never block the boundary, and a fail-closed policy has nothing to close (declaring one is rejected, never silently degraded to fail-open). Background hooks run inside an engine-wide ceiling of eight concurrent executions; the boundary never waits, background scripts receive the same stdin payload as synchronous ones, but their entire result — including a script's own `denied` output — is discarded, and the audit ledger only records the run outcome (`completed`/`failed_continue`, always non-rejecting). An engine at its ceiling skips the fire with a `failed_continue` audit row dispatched through a bounded 64-slot audit pool on a detached context; under extreme overload where the audit pool is also saturated (e.g. flood fires paired with a stalled audit sink), excess audit writes are dropped and observable via the engine's `DroppedAudits` counter rather than guaranteeing persistence under pathological overload. Timeouts still kill the child. Unfinished background hooks are lost at process exit; this is documented, not persisted.
+
+The `user_prompt_submit` payload is Go-encoded: Thread surfaces carry `thread_id`, Session surfaces carry `session_id` and `run_id`, plus `content` (oversized prompts clip on a UTF-8 boundary with a `truncated` flag; invalid UTF-8 bytes are dropped once); tool filters are not allowed. A deny rejects the submission before the message intent or steering queue entry exists; annotations stay in the result and audit and are never injected into model context. Known blind spots: image-only submissions (empty content) skip the boundary, MCP-only submissions fire with synthesized text while the real MCP arguments stay outside the payload, and every attempt of the same operation key re-fires the boundary (attempt-scoped).
+
+## Operator script hooks
+
+Script hooks (`action: "script"`) are the one bounded exception opened to the
+operator: a hash-pinned external program runs at the declared event boundary and
+can only **deny or annotate** through a single bounded JSON output. It cannot
+modify tool arguments, grant authority, reach network credentials, or recurse,
+and repository content, project instructions, skills, plugins, and tool output
+can never install or widen script hooks — they come only from the operator's
+own home directory.
+
+- **Location**: `<CYBERAGENT_HOME>/hooks.d/*.json` declarations plus script files
+  inside the same tree. A missing directory means none are configured;
+  declarations share the engine's 64-entry ceiling with enabled plugin hooks
+  (an over-cap merge fails closed with a diagnosable error), each declaration
+  is at most 64 KiB and each script file at most 1 MiB. Every anomaly —
+  symlink/junction, oversized or malformed declarations, path escapes,
+  content-digest drift — fails closed instead of being skipped.
+- **Declarations**: a `script` action requires a `script` spec: `interpreter`
+  (`powershell` (Windows only) / `pwsh` / `sh` (POSIX only) / `python` /
+  `node`), a relative `path` (never absolute, never `..`), up to 8 arguments in
+  a fixed safe charset, and the script content `sha256`. Script hooks allow a
+  10-second timeout ceiling (declarative hooks remain at 2 seconds) and are
+  rejected on `post_tool`.
+- **Execution**: before every run the host re-verifies through `os.Root` that
+  the script is still a regular file and re-hashes it; drift fails closed. The
+  child process starts from a fixed interpreter argument vector (no shell), with
+  the hooks directory as cwd and an explicit minimal environment of
+  OS-operational variables only (Windows: `SystemRoot` and friends; POSIX:
+  `PATH`/`TMPDIR`); no other parent-environment value is inherited, and
+  credentials and provider configuration stay invisible to scripts. Stdin
+  receives bounded JSON (`event`/`run_id`/`workspace_id`/`tool_name`/
+  `payload`); stdout must be one bounded JSON value (`protocol_version` plus
+  `denied`/`reason`/`annotations`) within 16 KiB, rejecting unknown fields and
+  trailing JSON; stderr reaches only the bounded failure error text. Known
+  residual bounds: a TOCTOU window remains between verification and the
+  interpreter's own open (writing hooks.d is already operator-level power), and
+  the timeout kills the direct child only — background children left by a
+  script fail the execution closed. The pinned digest covers only the declared
+  script file, not the modules it imports: module resolution is confined to the
+  hooks.d directory, but helpers are trusted operator files, not digest-pinned
+  ones — editing a helper does not trigger digest drift.
+- **Audit**: script denials record like declared denies in
+  `plugin_hook_audits` (`plugin_id=operator`, fingerprint is the script hash;
+  schema v223 widens the audit action constraint and its binding trigger);
+  the model-facing denial text stays the fixed official wording, and the
+  script-supplied `reason` never reaches model-visible errors. The plugin path
+  is enforced three times: manifest validation rejects script declarations,
+  loading filters any pre-existing staged manifest, and the engine registry
+  rejects script hooks from any source other than `operator`.
+
+See [ADR 0197](adr/0197-operator-script-hooks.md) for the design rationale.
 
 The Desktop **MCP & Plugins** settings view and authenticated HTTP projection show scoped source, health, review state, capabilities, fingerprints, and metadata-only receipts. A control bearer can immediately disable one exact server or plugin generation. Credential values, MCP arguments/results, plugin archives, and publisher public keys are never returned by these surfaces.

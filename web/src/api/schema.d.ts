@@ -10207,6 +10207,7 @@ export interface components {
         HookDeclarationView: {
             action: string;
             active: boolean;
+            async: boolean;
             event: string;
             failure_policy: string;
             hook_id: string;
@@ -10219,6 +10220,7 @@ export interface components {
             /** Format: int32 */
             timeout_ms: number;
             tool_names: string[];
+            tool_pattern: string;
         };
         HookDiagnosticsView: {
             declarations: components["schemas"]["HookDeclarationView"][];

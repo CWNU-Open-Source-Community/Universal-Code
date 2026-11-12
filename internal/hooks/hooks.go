@@ -1,5 +1,8 @@
 // Package hooks implements the declarative, Go-owned lifecycle hook runtime.
 // Plugin packages can contribute rules, never executable handlers or scripts.
+// Operator-owned script hooks are the one bounded exception: they are installed
+// by the operator outside any plugin or repository surface, are hash-pinned and
+// re-verified on every execution, and can only deny or annotate.
 package hooks
 
 import (
@@ -11,24 +14,29 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
 )
 
 const (
-	ProtocolVersion      = "restricted-hooks.v1"
-	MaxDeclarations      = 64
-	MaxPayloadBytes      = 256 * 1024
-	MaxOutputBytes       = 16 * 1024
-	MaxAnnotations       = 16
-	MaxAnnotationBytes   = 1024
-	MaxHookTimeoutMillis = 2_000
-	MaxHookIdentityRunes = 256
+	ProtocolVersion         = "restricted-hooks.v1"
+	MaxDeclarations         = 64
+	MaxPayloadBytes         = 256 * 1024
+	MaxOutputBytes          = 16 * 1024
+	MaxAnnotations          = 16
+	MaxAnnotationBytes      = 1024
+	MaxHookTimeoutMillis    = 2_000
+	MaxHookIdentityRunes    = 256
+	MaxToolPatternBytes     = 256
+	MaxAsyncConcurrent      = 8
+	MaxAsyncAuditConcurrent = MaxDeclarations
 )
 
 type Event string
@@ -40,6 +48,7 @@ const (
 	RunCompleted      Event = "run_completed"
 	SessionOpened     Event = "session_opened"
 	SessionClosed     Event = "session_closed"
+	UserPromptSubmit  Event = "user_prompt_submit"
 	ApprovalRequested Event = "approval_requested"
 	Compaction        Event = "compaction"
 	Subagent          Event = "subagent"
@@ -49,7 +58,7 @@ const (
 func (e Event) Valid() bool {
 	switch e {
 	case PreTool, PostTool, RunStarted, RunCompleted, SessionOpened, SessionClosed,
-		ApprovalRequested, Compaction, Subagent, Checkpoint:
+		UserPromptSubmit, ApprovalRequested, Compaction, Subagent, Checkpoint:
 		return true
 	default:
 		return false
@@ -63,10 +72,12 @@ const (
 	ActionAnnotate Action = "annotate"
 	ActionNarrow   Action = "narrow"
 	ActionRecord   Action = "record"
+	ActionScript   Action = "script"
 )
 
 func (a Action) Valid() bool {
-	return a == ActionDeny || a == ActionAnnotate || a == ActionNarrow || a == ActionRecord
+	return a == ActionDeny || a == ActionAnnotate || a == ActionNarrow ||
+		a == ActionRecord || a == ActionScript
 }
 
 type FailurePolicy string
@@ -86,14 +97,21 @@ type Declaration struct {
 	FailurePolicy   FailurePolicy `json:"failure_policy"`
 	TimeoutMillis   int           `json:"timeout_ms"`
 	ToolNames       []string      `json:"tool_names,omitempty"`
+	ToolPattern     string        `json:"tool_pattern,omitempty"`
 	RemoveFields    []string      `json:"remove_fields,omitempty"`
 	Message         string        `json:"message,omitempty"`
+	Async           bool          `json:"async,omitempty"`
+	Script          *ScriptSpec   `json:"script,omitempty"`
 }
 
 func (d Declaration) Validate() error {
+	maxTimeout := MaxHookTimeoutMillis
+	if d.Action == ActionScript {
+		maxTimeout = MaxScriptTimeoutMillis
+	}
 	if d.ProtocolVersion != ProtocolVersion || !validIdentity(d.ID) || !d.Event.Valid() ||
 		!d.Action.Valid() || !d.FailurePolicy.Valid() || d.TimeoutMillis < 1 ||
-		d.TimeoutMillis > MaxHookTimeoutMillis || len(d.ToolNames) > 64 ||
+		d.TimeoutMillis > maxTimeout || len(d.ToolNames) > 64 ||
 		len(d.RemoveFields) > 32 || !validText(d.Message, MaxAnnotationBytes, true) {
 		return errors.New("hook declaration identity, event, action, or bounds are invalid")
 	}
@@ -111,6 +129,32 @@ func (d Declaration) Validate() error {
 	if d.Action == ActionDeny && d.Event == PostTool {
 		return errors.New("post_tool hooks cannot retroactively deny a completed call")
 	}
+	if d.Async {
+		// Asynchronous hooks are observation taps: the boundary returns
+		// before they finish, so they can never deny, annotate the live
+		// result, narrow tool arguments, or honor a fail-closed policy —
+		// declaring one would silently turn fail-closed into fail-open.
+		if d.Action != ActionRecord && d.Action != ActionScript {
+			return errors.New("only record and script hooks may run asynchronously")
+		}
+		if d.FailurePolicy != FailureContinue {
+			return errors.New("asynchronous hooks require the continue failure policy")
+		}
+	}
+	if d.Action == ActionScript {
+		if d.Script == nil {
+			return errors.New("script hooks require a script specification")
+		}
+		if d.Event == PostTool {
+			return errors.New("post_tool hooks cannot run scripts because execution is already complete")
+		}
+		if err := d.Script.Validate(); err != nil {
+			return err
+		}
+	}
+	if d.Action != ActionScript && d.Script != nil {
+		return errors.New("only script hooks may declare a script specification")
+	}
 	if d.Event == PostTool && d.FailurePolicy == FailureDeny {
 		return errors.New("post_tool hooks require continue failure policy because execution is already complete")
 	}
@@ -126,6 +170,25 @@ func (d Declaration) Validate() error {
 	}
 	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")
+	}
+	if d.Event != PreTool && d.Event != PostTool && d.ToolPattern != "" {
+		return errors.New("non-tool hooks cannot declare tool filters")
+	}
+	if d.ToolPattern != "" && len(d.ToolNames) != 0 {
+		return errors.New("a hook declares either exact tool names or one tool pattern")
+	}
+	if d.ToolPattern != "" {
+		if !validText(d.ToolPattern, MaxToolPatternBytes, false) {
+			return errors.New("hook tool pattern is invalid or oversized")
+		}
+		// The web parser's trim check also strips a leading BOM; reject it
+		// here so the projection and the parser agree on every byte.
+		if strings.ContainsRune(d.ToolPattern, '\uFEFF') || strings.ContainsAny(d.ToolPattern, "\n\r\t") {
+			return errors.New("hook tool pattern contains a byte order mark or control character")
+		}
+		if _, err := regexp.Compile(d.ToolPattern); err != nil {
+			return fmt.Errorf("hook tool pattern does not compile: %w", err)
+		}
 	}
 	if duplicatesOrInvalid(d.ToolNames, false) || duplicatesOrInvalid(d.RemoveFields, true) {
 		return errors.New("hook tool names or removal fields are invalid or repeated")
@@ -144,6 +207,20 @@ func (r Registration) Validate() error {
 		return errors.New("hook registration plugin binding is invalid")
 	}
 	return r.Declaration.Validate()
+}
+
+// ValidateDeclarative validates a declaration that must not execute scripts.
+// Plugin packages contribute declarative rules only: script hooks are
+// operator-owned, and plugin manifests cannot bind the operator's script
+// executor or pre-compute a digest for one.
+func ValidateDeclarative(d Declaration) error {
+	if d.Action == ActionScript {
+		return errors.New("plugin hooks cannot execute scripts")
+	}
+	if d.Script != nil {
+		return errors.New("plugin hooks cannot declare a script specification")
+	}
+	return d.Validate()
 }
 
 type Input struct {
@@ -244,17 +321,41 @@ type AuditSink interface {
 }
 
 type Engine struct {
-	mu            sync.RWMutex
-	registrations []Registration
-	generation    string
-	sink          AuditSink
-	now           func() time.Time
-	loader        func(context.Context) ([]Registration, error)
+	mu              sync.RWMutex
+	registrations   []Registration
+	toolPatterns    []*regexp.Regexp
+	generation      string
+	sink            AuditSink
+	now             func() time.Time
+	loader          func(context.Context) ([]Registration, error)
+	scriptRunner    ScriptExecutor
+	asyncSlots      chan struct{}
+	asyncAuditSlots chan struct{}
+	droppedAudits   atomic.Uint64
 }
 
 func NewEngine(sink AuditSink) *Engine {
 	return &Engine{sink: sink, now: func() time.Time { return time.Now().UTC() },
-		generation: emptyGeneration()}
+		generation: emptyGeneration(), asyncSlots: make(chan struct{}, MaxAsyncConcurrent),
+		asyncAuditSlots: make(chan struct{}, MaxAsyncAuditConcurrent)}
+}
+
+// DroppedAudits reports the number of asynchronous hook audits dropped due to
+// audit pool saturation under extreme load.
+func (e *Engine) DroppedAudits() uint64 {
+	if e == nil {
+		return 0
+	}
+	return e.droppedAudits.Load()
+}
+
+// WithScriptExecutor wires the host-owned script execution adapter. Without it,
+// script declarations fail closed at every boundary.
+func (e *Engine) WithScriptExecutor(runner ScriptExecutor) *Engine {
+	if e != nil {
+		e.scriptRunner = runner
+	}
+	return e
 }
 
 // WithLoader refreshes the enabled declarative registry at each hook boundary.
@@ -280,6 +381,9 @@ func (e *Engine) Replace(registrations []Registration) error {
 		if err := value.Validate(); err != nil {
 			return err
 		}
+		if value.Declaration.Action == ActionScript && value.PluginID != OperatorPluginID {
+			return errors.New("script hooks are reserved for the operator source")
+		}
 		key := value.PluginID + "\x00" + value.Declaration.ID
 		if _, found := seen[key]; found {
 			return errors.New("hook registry repeats a plugin hook identity")
@@ -298,8 +402,22 @@ func (e *Engine) Replace(registrations []Registration) error {
 	})
 	raw, _ := json.Marshal(values)
 	digest := sha256.Sum256(append([]byte(ProtocolVersion+"\x00"), raw...))
+	// Validate already compiled and rejected every pattern, so this loop is
+	// defensive depth: keep the compiled forms aligned with the sorted
+	// registrations without trusting the earlier pass.
+	toolPatterns := make([]*regexp.Regexp, len(values))
+	for index, value := range values {
+		if value.Declaration.ToolPattern != "" {
+			compiled, err := regexp.Compile(value.Declaration.ToolPattern)
+			if err != nil {
+				return fmt.Errorf("hook tool pattern does not compile: %w", err)
+			}
+			toolPatterns[index] = compiled
+		}
+	}
 	e.mu.Lock()
 	e.registrations = values
+	e.toolPatterns = toolPatterns
 	e.generation = hex.EncodeToString(digest[:])
 	e.mu.Unlock()
 	return nil
@@ -323,13 +441,23 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 	}
 	e.mu.RLock()
 	registrations := slices.Clone(e.registrations)
+	toolPatterns := append([]*regexp.Regexp(nil), e.toolPatterns...)
 	generation := e.generation
 	e.mu.RUnlock()
 	result := Result{ProtocolVersion: ProtocolVersion, Generation: generation,
 		Payload: append(json.RawMessage(nil), input.Payload...), Executed: []string{}}
-	for _, registration := range registrations {
+	for index, registration := range registrations {
 		declaration := registration.Declaration
-		if declaration.Event != input.Event || !matchesTool(declaration.ToolNames, input.ToolName) {
+		var toolPattern *regexp.Regexp
+		if index < len(toolPatterns) {
+			toolPattern = toolPatterns[index]
+		}
+		if declaration.Event != input.Event ||
+			!matchesTool(declaration.ToolNames, toolPattern, input.ToolName) {
+			continue
+		}
+		if declaration.Async {
+			e.launchAsync(input, registration)
 			continue
 		}
 		hookCtx, cancel := context.WithTimeout(ctx,
@@ -337,16 +465,22 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 		err := e.apply(hookCtx, registration, input, &result)
 		cancel()
 		if err != nil {
-			if declaration.FailurePolicy == FailureDeny {
+			if errors.Is(err, ErrScriptIntegrity) || declaration.FailurePolicy == FailureDeny {
 				result.Denied = true
-				result.Reason = "hook " + declaration.ID + " failed closed"
-				_ = e.record(context.WithoutCancel(ctx), registration, input, "failed_closed")
+				if errors.Is(err, ErrScriptIntegrity) {
+					result.Reason = "hook " + declaration.ID + " integrity verification failed"
+				} else {
+					result.Reason = "hook " + declaration.ID + " failed closed"
+				}
+				_ = e.record(context.WithoutCancel(ctx), registration, input, "failed_closed", true)
 				return result, nil
 			}
-			_ = e.record(context.WithoutCancel(ctx), registration, input, "failed_continue")
+			_ = e.record(context.WithoutCancel(ctx), registration, input, "failed_continue", false)
 			continue
 		}
-		if err := e.record(context.WithoutCancel(ctx), registration, input, "completed"); err != nil {
+		rejected := declaration.Action == ActionDeny ||
+			declaration.Action == ActionScript && result.Denied
+		if err := e.record(context.WithoutCancel(ctx), registration, input, "completed", rejected); err != nil {
 			if declaration.FailurePolicy == FailureDeny {
 				result.Denied = true
 				result.Reason = "hook " + declaration.ID + " audit failed closed"
@@ -362,7 +496,13 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 		if len(result.Annotations) > MaxAnnotations {
 			return Result{}, errors.New("hook annotation output exceeds its limit")
 		}
-		encoded, _ := json.Marshal(result)
+		// The input payload is bounded independently by Input.Validate and is
+		// echoed back unchanged (narrowing only ever shrinks it); the output
+		// limit governs hook-produced content only, so a legitimately large
+		// tool payload does not fail every matching hook.
+		hookProduced := result
+		hookProduced.Payload = nil
+		encoded, _ := json.Marshal(hookProduced)
 		if len(encoded) > MaxOutputBytes {
 			return Result{}, errors.New("hook output exceeds its limit")
 		}
@@ -401,6 +541,28 @@ func (e *Engine) apply(ctx context.Context, registration Registration, input Inp
 			return errors.New("narrow hook attempted to expand its payload")
 		}
 		result.Payload = narrowed
+	case ActionScript:
+		if e.scriptRunner == nil {
+			return errors.New("script hook executor is unavailable")
+		}
+		invocation := ScriptInvocation{HookID: declaration.ID, Event: declaration.Event,
+			RunID: input.RunID, WorkspaceID: input.WorkspaceID, ToolName: input.ToolName,
+			Payload:      append(json.RawMessage(nil), result.Payload...),
+			RelativePath: declaration.Script.Path, Interpreter: declaration.Script.Interpreter,
+			Args:   slices.Clone(declaration.Script.Args),
+			SHA256: declaration.Script.SHA256, TimeoutMillis: declaration.TimeoutMillis}
+		output, err := e.scriptRunner.ExecuteScript(ctx, invocation)
+		if err != nil {
+			return err
+		}
+		if output.Denied {
+			result.Denied = true
+			result.Reason = output.Reason
+		}
+		for _, annotation := range output.Annotations {
+			result.Annotations = append(result.Annotations, Annotation{PluginID: registration.PluginID,
+				HookID: declaration.ID, Message: annotation.Message})
+		}
 	case ActionRecord:
 		// The audit record emitted by Execute is the only side effect.
 	default:
@@ -409,8 +571,64 @@ func (e *Engine) apply(ctx context.Context, registration Registration, input Inp
 	return nil
 }
 
+// launchAsync runs one observation-only hook outside the boundary. The
+// boundary never waits for it: the result is discarded, only the audit ledger
+// records the outcome, and an engine at its concurrency ceiling skips the run
+// with a failed_continue audit row instead of blocking the caller. The audit
+// row for a skipped or timed-out fire is written on its own detached context
+// so a saturated engine or an expired hook deadline can never suppress it.
+func (e *Engine) launchAsync(input Input, registration Registration) {
+	// Copy the payload before the goroutine starts: the caller may reuse its
+	// buffer after Execute returns.
+	payload := append(json.RawMessage(nil), input.Payload...)
+	detached := context.WithoutCancel(context.Background())
+	select {
+	case e.asyncSlots <- struct{}{}:
+	default:
+		if e.asyncAuditSlots != nil {
+			select {
+			case e.asyncAuditSlots <- struct{}{}:
+				go func() {
+					defer func() { <-e.asyncAuditSlots }()
+					defer func() { _ = recover() }()
+					_ = e.record(detached, registration, input, "failed_continue", false)
+				}()
+			default:
+				e.droppedAudits.Add(1)
+			}
+		} else {
+			e.droppedAudits.Add(1)
+		}
+		return
+	}
+	go func() {
+		defer func() { <-e.asyncSlots }()
+		// A panic in a background hook would otherwise take the whole host
+		// down; synchronous hooks propagate to the caller instead.
+		defer func() { _ = recover() }()
+		asyncCtx, cancel := context.WithTimeout(detached,
+			time.Duration(registration.Declaration.TimeoutMillis)*time.Millisecond)
+		defer cancel()
+		// The registration is a shallow copy whose slices and script pointer
+		// are immutable after Replace; a concurrent registry swap never
+		// mutates what this goroutine sees. The throwaway result carries the
+		// bounded payload so background scripts observe the same input as
+		// synchronous ones, and discards any denial an asynchronous script
+		// prints: background hooks cannot block.
+		throwaway := Result{Payload: append(json.RawMessage(nil), payload...)}
+		err := e.apply(asyncCtx, registration, Input{Event: input.Event,
+			RunID: input.RunID, WorkspaceID: input.WorkspaceID,
+			ToolName: input.ToolName, Payload: payload}, &throwaway)
+		outcome := "completed"
+		if err != nil {
+			outcome = "failed_continue"
+		}
+		_ = e.record(context.WithoutCancel(detached), registration, input, outcome, false)
+	}()
+}
+
 func (e *Engine) record(ctx context.Context, registration Registration, input Input,
-	outcome string,
+	outcome string, rejected bool,
 ) error {
 	if e.sink == nil {
 		return nil
@@ -419,7 +637,7 @@ func (e *Engine) record(ctx context.Context, registration Registration, input In
 	defer cancel()
 	return e.sink.RecordHookAudit(recordCtx, AuditRecord{PluginID: registration.PluginID,
 		PluginFingerprint: registration.PluginFingerprint, Action: registration.Declaration.Action,
-		Rejected: boolPointer(outcome == "failed_closed" || registration.Declaration.Action == ActionDeny && outcome == "completed"),
+		Rejected: boolPointer(rejected),
 		HookID:   registration.Declaration.ID, Event: input.Event, RunID: input.RunID,
 		WorkspaceID: input.WorkspaceID, ToolName: input.ToolName, Outcome: outcome,
 		CreatedAt: e.now()})
@@ -436,14 +654,16 @@ func (e *Engine) Generation() string {
 	return e.generation
 }
 
-func matchesTool(values []string, toolName string) bool {
+func matchesTool(values []string, pattern *regexp.Regexp, toolName string) bool {
+	if pattern != nil {
+		return pattern.MatchString(toolName)
+	}
 	return len(values) == 0 || slices.Contains(values, toolName)
 }
 
 func eventOrder(value Event) int {
 	for index, current := range []Event{PreTool, PostTool, RunStarted, RunCompleted,
-		SessionOpened, SessionClosed, ApprovalRequested, Compaction, Subagent,
-		Checkpoint} {
+		SessionOpened, SessionClosed, UserPromptSubmit, ApprovalRequested, Compaction, Subagent, Checkpoint} {
 		if current == value {
 			return index
 		}
