@@ -176,3 +176,16 @@ it("grants publisher trust only with the exact reviewed binding", async () => {
     expected_publisher_generation: 3, confirm: false as true,
   })).rejects.toThrow("exact publisher trust binding and confirmation are required");
 });
+
+it("accepts post_tool_failure matcher declarations and observations", async () => {
+ const value = hookDiagnostics();
+ value.declarations[0].event = "post_tool_failure";
+ value.declarations[0].action = "record";
+ value.declarations[0].failure_policy = "continue";
+ value.declarations[0].tool_names = [];
+ value.declarations[0].tool_pattern = "^file_.*";
+ value.observations[0].event = "post_tool_failure";
+ vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(value)));
+ const result = await new APIClient("read").hookDiagnostics("run-one", "project-one");
+ expect(result.declarations[0].event).toBe("post_tool_failure");
+});

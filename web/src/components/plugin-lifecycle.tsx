@@ -159,7 +159,7 @@ export function HookDiagnostics({ client, runID, workspaceID }: { client: APICli
 
 function HookRecords({ value }: { value: HookDiagnosticsView }) {
   const { t } = useLocale();
-  const events: Record<string, string> = { pre_tool: t("工具执行前", "Before tool"), post_tool: t("工具执行后", "After tool"), run_started: t("执行开始", "Run started"),
+  const events: Record<string, string> = { pre_tool: t("工具执行前", "Before tool"), post_tool: t("工具执行后", "After tool"), post_tool_failure: t("工具失败后", "After tool failure"), run_started: t("执行开始", "Run started"),
     run_completed: t("执行完成", "Run completed"), session_opened: t("会话打开", "Session opened"), session_closed: t("会话关闭", "Session closed"),
     approval_requested: t("等待审批", "Approval requested"), user_prompt_submit: t("用户输入提交", "User prompt submit"), compaction: t("上下文整理", "Compaction"), subagent: t("子任务边界", "Subagent boundary"), checkpoint: t("检查点", "Checkpoint") };
   const actions: Record<string, string> = { deny: t("拒绝操作", "Reject operation"), annotate: t("附加说明", "Annotate"), narrow: t("移除所列参数", "Remove listed fields"), record: t("记录触发", "Record observation"), script: t("运行操作者脚本", "Run operator script") };

@@ -44,6 +44,7 @@ type Event string
 const (
 	PreTool           Event = "pre_tool"
 	PostTool          Event = "post_tool"
+	PostToolFailure   Event = "post_tool_failure"
 	RunStarted        Event = "run_started"
 	RunCompleted      Event = "run_completed"
 	SessionOpened     Event = "session_opened"
@@ -57,7 +58,7 @@ const (
 
 func (e Event) Valid() bool {
 	switch e {
-	case PreTool, PostTool, RunStarted, RunCompleted, SessionOpened, SessionClosed,
+	case PreTool, PostTool, PostToolFailure, RunStarted, RunCompleted, SessionOpened, SessionClosed,
 		UserPromptSubmit, ApprovalRequested, Compaction, Subagent, Checkpoint:
 		return true
 	default:
@@ -126,7 +127,7 @@ func (d Declaration) Validate() error {
 	if d.Action == ActionNarrow && (d.Event != PreTool || len(d.RemoveFields) == 0) {
 		return errors.New("narrow hooks require pre_tool and at least one field")
 	}
-	if d.Action == ActionDeny && d.Event == PostTool {
+	if d.Action == ActionDeny && (d.Event == PostTool || d.Event == PostToolFailure) {
 		return errors.New("post_tool hooks cannot retroactively deny a completed call")
 	}
 	if d.Async {
@@ -145,7 +146,7 @@ func (d Declaration) Validate() error {
 		if d.Script == nil {
 			return errors.New("script hooks require a script specification")
 		}
-		if d.Event == PostTool {
+		if d.Event == PostTool || d.Event == PostToolFailure {
 			return errors.New("post_tool hooks cannot run scripts because execution is already complete")
 		}
 		if err := d.Script.Validate(); err != nil {
@@ -155,7 +156,7 @@ func (d Declaration) Validate() error {
 	if d.Action != ActionScript && d.Script != nil {
 		return errors.New("only script hooks may declare a script specification")
 	}
-	if d.Event == PostTool && d.FailurePolicy == FailureDeny {
+	if (d.Event == PostTool || d.Event == PostToolFailure) && d.FailurePolicy == FailureDeny {
 		return errors.New("post_tool hooks require continue failure policy because execution is already complete")
 	}
 	if d.Event == RunCompleted && d.FailurePolicy == FailureDeny {
@@ -174,10 +175,10 @@ func (d Declaration) Validate() error {
 			return errors.New("approval_requested hooks may only record observations")
 		}
 	}
-	if d.Event != PreTool && d.Event != PostTool && len(d.ToolNames) != 0 {
+	if d.Event != PreTool && d.Event != PostTool && d.Event != PostToolFailure && len(d.ToolNames) != 0 {
 		return errors.New("non-tool hooks cannot declare tool filters")
 	}
-	if d.Event != PreTool && d.Event != PostTool && d.ToolPattern != "" {
+	if d.Event != PreTool && d.Event != PostTool && d.Event != PostToolFailure && d.ToolPattern != "" {
 		return errors.New("non-tool hooks cannot declare tool filters")
 	}
 	if d.ToolPattern != "" && len(d.ToolNames) != 0 {
@@ -247,7 +248,7 @@ func (i Input) Validate() error {
 	if len(i.Payload) > 0 && (!utf8.Valid(i.Payload) || !json.Valid(i.Payload)) {
 		return errors.New("hook input payload must be bounded UTF-8 JSON")
 	}
-	if (i.Event == PreTool || i.Event == PostTool) && i.ToolName == "" {
+	if (i.Event == PreTool || i.Event == PostTool || i.Event == PostToolFailure) && i.ToolName == "" {
 		return errors.New("tool hook input requires a tool name")
 	}
 	return nil
@@ -668,7 +669,7 @@ func matchesTool(values []string, pattern *regexp.Regexp, toolName string) bool 
 }
 
 func eventOrder(value Event) int {
-	for index, current := range []Event{PreTool, PostTool, RunStarted, RunCompleted,
+	for index, current := range []Event{PreTool, PostTool, PostToolFailure, RunStarted, RunCompleted,
 		SessionOpened, SessionClosed, UserPromptSubmit, ApprovalRequested, Compaction, Subagent, Checkpoint} {
 		if current == value {
 			return index

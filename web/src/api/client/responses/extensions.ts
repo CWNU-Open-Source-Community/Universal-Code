@@ -380,7 +380,7 @@ export const pluginStates = ["staged", "approved", "enabled", "disabled", "rolle
 
 export const pluginCapabilities = ["skills", "mcp", "ui", "hooks"];
 
-export const hookEvents = ["pre_tool", "post_tool", "run_started", "run_completed", "session_opened", "session_closed", "user_prompt_submit", "approval_requested", "compaction", "subagent", "checkpoint"];
+export const hookEvents = ["pre_tool", "post_tool", "post_tool_failure", "run_started", "run_completed", "session_opened", "session_closed", "user_prompt_submit", "approval_requested", "compaction", "subagent", "checkpoint"];
 
 export const hookActions = ["deny", "annotate", "narrow", "record", "script"];
 
@@ -438,7 +438,7 @@ export function parseHookDiagnostics(value: unknown, runID: string, workspaceID:
       typeof item.tool_pattern !== "string" || item.tool_pattern.length > 256 ||
       item.tool_pattern.trim() !== item.tool_pattern ||
       /[\u0000--]/.test(item.tool_pattern) ||
-      (item.tool_pattern !== "" && (item.tool_names.length > 0 || (item.event !== "pre_tool" && item.event !== "post_tool"))) ||
+      (item.tool_pattern !== "" && (item.tool_names.length > 0 || (item.event !== "pre_tool" && item.event !== "post_tool" && item.event !== "post_tool_failure"))) ||
       typeof item.async !== "boolean" ||
       (item.async && !["record", "script"].includes(String(item.action)))) {
       throw new APIRequestError("Hook declaration projection is invalid", "INVALID_RESPONSE", 502);

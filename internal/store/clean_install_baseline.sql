@@ -4204,7 +4204,7 @@ CREATE TABLE "plugin_hook_audits" (
 		plugin_fingerprint TEXT NOT NULL DEFAULT '' CHECK(plugin_fingerprint = '' OR (length(plugin_fingerprint) = 64 AND plugin_fingerprint NOT GLOB '*[^0-9a-f]*')),
 		declared_action TEXT NOT NULL DEFAULT '' CHECK(declared_action IN ('', 'deny', 'annotate', 'narrow', 'record', 'script')),
 		rejected INTEGER CHECK(rejected IS NULL OR rejected IN (0, 1)),
-		CHECK(event IN ('pre_tool', 'post_tool', 'run_started', 'run_completed',
+		CHECK(event IN ('pre_tool', 'post_tool', 'post_tool_failure', 'run_started', 'run_completed',
 			'session_opened', 'session_closed', 'user_prompt_submit', 'approval_requested', 'compaction',
 			'subagent', 'checkpoint')),
 		CHECK(outcome IN ('completed', 'failed_closed', 'failed_continue')),

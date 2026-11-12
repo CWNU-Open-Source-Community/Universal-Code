@@ -512,7 +512,8 @@ func migrationPlan() []migration {
 		migration{Version: 222, Name: "Exact paused browser network request approvals", Statements: browserNetworkRequestStatements},
 		migration{Version: 223, Name: "Operator script hook audit bindings", Statements: operatorScriptHookStatements},
 		migration{Version: 224, Name: "User prompt submit hook audit events", Statements: userPromptSubmitHookStatements},
-		migration{Version: 225, Name: "Approval requested lifecycle hook audits", Statements: approvalRequestedHookStatements})
+		migration{Version: 225, Name: "Approval requested lifecycle hook audits", Statements: approvalRequestedHookStatements},
+		migration{Version: 226, Name: "Failed tool lifecycle hook audits", Statements: postToolFailureHookStatements})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {
