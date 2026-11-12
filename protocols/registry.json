@@ -749,6 +749,7 @@
       "owner": "Application readiness maintainers",
       "source_of_truth": [
         "internal/application",
+        "internal/application/supervisor_tool_exposure.go",
         "internal/store"
       ],
       "writers": [
@@ -760,6 +761,14 @@
             2
           ],
           "mode": "write-new"
+        },
+        {
+          "id": "root-tool-exposure-writer",
+          "source": "internal/application/supervisor_tool_exposure.go",
+          "versions": [
+            1
+          ],
+          "mode": "write-current"
         }
       ],
       "readers": [
@@ -771,11 +780,19 @@
             2
           ],
           "status": "active"
+        },
+        {
+          "id": "root-tool-exposure-model-request-consumer",
+          "source": "internal/llm",
+          "versions": [
+            1
+          ],
+          "status": "active"
         }
       ],
       "persisted_or_exported": true,
-      "persistence_boundary": "Readiness documents are non-authorizing status projections and may be persisted or exported.",
-      "compatibility_rule": "Rebuild from current selections, leases, startup gates, backend evidence, and Go policy; capability_grant stays false.",
+      "persistence_boundary": "Readiness documents are non-authorizing status projections and may be persisted or exported. root_tool_exposure.v1 is exported in the current model request's system message; it is regenerated from actual function schemas and live Run context, not stored as a durable capability grant. Provider adapters deliver the text to the model without a Go envelope decoder.",
+      "compatibility_rule": "Rebuild from current selections, leases, startup gates, backend evidence, and Go policy; capability_grant stays false. Root tool exposure must name the current request's actual tools and effective file root, preserve explicit unavailability reasons, and never reactivate authority from historical model statements or a scheduling response's temporarily empty tool list.",
       "retirement_gate": {
         "mode": "rebuild-from-source",
         "requirements": [
@@ -784,9 +801,10 @@
           "Retirement evidence proves a complete rebuild from the named source"
         ]
       },
-      "rebuild_source": "Current persisted Run selections, leases, startup gates, backend evidence, and Go-owned policy.",
+      "rebuild_source": "Current persisted Run selections, leases, startup gates, backend evidence, and Go-owned policy; root tool exposure additionally uses the actual request schemas and ResolveRunFileWorkspace's current effective root.",
       "active_identifiers": [
         "model_availability.v2",
+        "root_tool_exposure.v1",
         "run_capability_readiness.v1",
         "runtime_capabilities.v1",
         "search_diagnostics.v1",
@@ -3472,11 +3490,21 @@
       "class": "internal-durable",
       "owner": "Workspace and repository maintainers",
       "source_of_truth": [
+        "internal/application/agent_code_image.go",
+        "internal/application/supervisor_workspace_images.go",
         "internal/repository",
         "internal/store",
         "internal/workspace"
       ],
       "writers": [
+        {
+          "id": "workspace-image-tool-evidence-writer",
+          "source": "internal/application/agent_code_image.go",
+          "versions": [
+            1
+          ],
+          "mode": "write-current"
+        },
         {
           "id": "workspace-repository-ledgers-writer",
           "source": "internal/application",
@@ -3488,6 +3516,14 @@
       ],
       "readers": [
         {
+          "id": "workspace-image-tool-evidence-reader",
+          "source": "internal/application/supervisor_workspace_images.go",
+          "versions": [
+            1
+          ],
+          "status": "active"
+        },
+        {
           "id": "workspace-repository-ledgers-reader",
           "source": "internal/store",
           "versions": [
@@ -3497,8 +3533,8 @@
         }
       ],
       "persisted_or_exported": true,
-      "persistence_boundary": "Workspace identity, repository bindings, checkpoints, remotes, worktrees, and ownership survive where declared.",
-      "compatibility_rule": "Preserve root/commit identity, source binding, generation, and conflict refusal; retain durable readers.",
+      "persistence_boundary": "Workspace identity, repository bindings, checkpoints, remotes, worktrees, and ownership survive where declared. Workspace image pixels, metadata and operation digests persist in SQLite; workspace_image_result.v1 persists inside the completed Supervisor tool result. workspace_view_image.v1 is the fingerprint domain used to derive the saved image's Run/call/operation/payload key, not a tool request envelope.",
+      "compatibility_rule": "Preserve root/commit identity, source binding, generation, and conflict refusal; retain durable readers. Preserve workspace_view_image.v1 key inputs so replay retrieves the original immutable image. Read workspace_image_result.v1 only with its exact completed call, effective file workspace/root binding and saved image metadata; validate pixel hash, size and dimensions before supplying model images. Historical receipts grant no new file access or vision capability.",
       "retirement_gate": {
         "mode": "migration-or-retention",
         "requirements": [
@@ -3516,10 +3552,12 @@
         "workspace_fork_request.v1",
         "workspace_image_operation.v1",
         "workspace_image_request.v1",
+        "workspace_image_result.v1",
         "workspace_mutation_boundary.v1",
         "workspace_mutation_boundary_request.v1",
         "workspace_restore_operation.v1",
-        "workspace_restore_request.v1"
+        "workspace_restore_request.v1",
+        "workspace_view_image.v1"
       ],
       "retired_identifiers": []
     }

@@ -14,7 +14,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [authority-approval-ledgers](#authority-approval-ledgers) | `internal-durable` | Execution authority and approval maintainers | 58 | true |
 | [browser-cdp-process-session](#browser-cdp-process-session) | `ephemeral` | Browser runtime maintainers | 26 | false |
 | [browser-ui-evidence-ledgers](#browser-ui-evidence-ledgers) | `internal-durable` | Browser and UI evidence maintainers | 44 | true |
-| [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 5 | true |
+| [capability-readiness-projection](#capability-readiness-projection) | `projection` | Application readiness maintainers | 6 | true |
 | [chatgpt-account-sessions](#chatgpt-account-sessions) | `internal-durable` | ChatGPT authentication and credential maintainers | 1 | true |
 | [cli-headless-contract](#cli-headless-contract) | `external-durable` | CLI and headless surface maintainers | 2 | true |
 | [control-plane-ledgers](#control-plane-ledgers) | `internal-durable` | Core Go control-plane maintainers | 117 | true |
@@ -49,7 +49,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 44 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
-| [workspace-repository-ledgers](#workspace-repository-ledgers) | `internal-durable` | Workspace and repository maintainers | 12 | true |
+| [workspace-repository-ledgers](#workspace-repository-ledgers) | `internal-durable` | Workspace and repository maintainers | 14 | true |
 
 ## Families
 
@@ -490,19 +490,22 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 
 - Class: `projection`
 - Owner: Application readiness maintainers
-- Source of truth: `internal/application`, `internal/store`
-- Persistence/export boundary: Readiness documents are non-authorizing status projections and may be persisted or exported.
-- Compatibility rule: Rebuild from current selections, leases, startup gates, backend evidence, and Go policy; capability_grant stays false.
+- Source of truth: `internal/application`, `internal/application/supervisor_tool_exposure.go`, `internal/store`
+- Persistence/export boundary: Readiness documents are non-authorizing status projections and may be persisted or exported. root_tool_exposure.v1 is exported in the current model request's system message; it is regenerated from actual function schemas and live Run context, not stored as a durable capability grant. Provider adapters deliver the text to the model without a Go envelope decoder.
+- Compatibility rule: Rebuild from current selections, leases, startup gates, backend evidence, and Go policy; capability_grant stays false. Root tool exposure must name the current request's actual tools and effective file root, preserve explicit unavailability reasons, and never reactivate authority from historical model statements or a scheduling response's temporarily empty tool list.
 - Retirement gate (`rebuild-from-source`): Rebuild source remains retained and independently verifiable; Replacement preserves ordering, cursor, invalidation, and redaction behavior; Retirement evidence proves a complete rebuild from the named source
-- Rebuild source: Current persisted Run selections, leases, startup gates, backend evidence, and Go-owned policy.
+- Rebuild source: Current persisted Run selections, leases, startup gates, backend evidence, and Go-owned policy; root tool exposure additionally uses the actual request schemas and ResolveRunFileWorkspace's current effective root.
 - Writers:
   - `capability-readiness-projection-writer` (`v1, v2`, write-new) at `internal/application`
+  - `root-tool-exposure-writer` (`v1`, write-current) at `internal/application/supervisor_tool_exposure.go`
 - Readers:
   - `capability-readiness-projection-reader` (`v1, v2`, active) at `internal/httpapi`
+  - `root-tool-exposure-model-request-consumer` (`v1`, active) at `internal/llm`
 
-<details><summary>5 active identifiers</summary>
+<details><summary>6 active identifiers</summary>
 
 - `model_availability.v2`
+- `root_tool_exposure.v1`
 - `run_capability_readiness.v1`
 - `runtime_capabilities.v1`
 - `search_diagnostics.v1`
@@ -2057,16 +2060,18 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 
 - Class: `internal-durable`
 - Owner: Workspace and repository maintainers
-- Source of truth: `internal/repository`, `internal/store`, `internal/workspace`
-- Persistence/export boundary: Workspace identity, repository bindings, checkpoints, remotes, worktrees, and ownership survive where declared.
-- Compatibility rule: Preserve root/commit identity, source binding, generation, and conflict refusal; retain durable readers.
+- Source of truth: `internal/application/agent_code_image.go`, `internal/application/supervisor_workspace_images.go`, `internal/repository`, `internal/store`, `internal/workspace`
+- Persistence/export boundary: Workspace identity, repository bindings, checkpoints, remotes, worktrees, and ownership survive where declared. Workspace image pixels, metadata and operation digests persist in SQLite; workspace_image_result.v1 persists inside the completed Supervisor tool result. workspace_view_image.v1 is the fingerprint domain used to derive the saved image's Run/call/operation/payload key, not a tool request envelope.
+- Compatibility rule: Preserve root/commit identity, source binding, generation, and conflict refusal; retain durable readers. Preserve workspace_view_image.v1 key inputs so replay retrieves the original immutable image. Read workspace_image_result.v1 only with its exact completed call, effective file workspace/root binding and saved image metadata; validate pixel hash, size and dimensions before supplying model images. Historical receipts grant no new file access or vision capability.
 - Retirement gate (`migration-or-retention`): ADR-backed retirement decision and rollback path; Old-version fixtures remain until every supported source is migrated or retained; Reader history is append-only; retirement requires migration or retention evidence
 - Writers:
+  - `workspace-image-tool-evidence-writer` (`v1`, write-current) at `internal/application/agent_code_image.go`
   - `workspace-repository-ledgers-writer` (`v1`, write-current) at `internal/application`
 - Readers:
+  - `workspace-image-tool-evidence-reader` (`v1`, active) at `internal/application/supervisor_workspace_images.go`
   - `workspace-repository-ledgers-reader` (`v1`, active) at `internal/store`
 
-<details><summary>12 active identifiers</summary>
+<details><summary>14 active identifiers</summary>
 
 - `repository_commit_detail.v1`
 - `repository_history.v1`
@@ -2076,10 +2081,12 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `workspace_fork_request.v1`
 - `workspace_image_operation.v1`
 - `workspace_image_request.v1`
+- `workspace_image_result.v1`
 - `workspace_mutation_boundary.v1`
 - `workspace_mutation_boundary_request.v1`
 - `workspace_restore_operation.v1`
 - `workspace_restore_request.v1`
+- `workspace_view_image.v1`
 
 </details>
 
