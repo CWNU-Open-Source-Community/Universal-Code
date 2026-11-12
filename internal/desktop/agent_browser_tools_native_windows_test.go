@@ -85,15 +85,88 @@ func nativeBrowserToolResult(req llm.ChatRequest, name string, out any) error {
 			return json.Unmarshal([]byte(envelope.Stdout), out)
 		}
 	}
+	// Automatic segments carry earlier results in the model-visible evidence
+	// envelope instead of repeating the previous native function-call exchange.
+	for _, prefix := range []string{"Older native tool batches are represented by exact historical receipts;", "Completed tool segments of this exact accepted user input."} {
+		for i := len(req.Messages) - 1; i >= 0; i-- {
+			content := req.Messages[i].Content
+			start := strings.Index(content, "\n{")
+			if start < 0 {
+				continue
+			}
+			var evidence struct {
+				Content string `json:"content"`
+			}
+			if json.Unmarshal([]byte(content[start+1:]), &evidence) != nil || !strings.HasPrefix(evidence.Content, prefix) {
+				continue
+			}
+			for _, line := range strings.Split(evidence.Content, "\n") {
+				type receipt struct {
+					Tool   string          `json:"tool"`
+					Status string          `json:"status"`
+					Result json.RawMessage `json:"result"`
+				}
+				var entry struct {
+					receipt
+					Calls []receipt `json:"calls"`
+				}
+				if json.Unmarshal([]byte(line), &entry) != nil {
+					continue
+				}
+				for _, call := range append(entry.Calls, entry.receipt) {
+					if call.Tool == name && call.Status == "completed" && len(call.Result) > 0 {
+						return json.Unmarshal(call.Result, out)
+					}
+				}
+			}
+		}
+	}
 	return fmt.Errorf("missing real %s result", name)
+}
+
+// The provider uses the public command-string contract and host facts actually
+// supplied to the model. It must not receive a hidden executable path or fill
+// the low-level process launch contract on the model's behalf.
+func nativeBrowserModelCommandEnvironment(req llm.ChatRequest) error {
+	for _, message := range req.Messages {
+		if message.Role != "system" {
+			continue
+		}
+		start := strings.Index(message.Content, "\n{")
+		if start < 0 {
+			continue
+		}
+		var exposure struct {
+			Version     string `json:"version"`
+			Environment struct {
+				OS          string `json:"os"`
+				Shell       string `json:"preferred_shell_profile"`
+				Executables []struct {
+					Name string `json:"name"`
+					Path string `json:"executable"`
+				} `json:"process_executables"`
+			} `json:"command_environment"`
+		}
+		if json.Unmarshal([]byte(message.Content[start+1:]), &exposure) != nil || exposure.Version != "root_tool_exposure.v1" {
+			continue
+		}
+		if exposure.Environment.OS != "windows" || exposure.Environment.Shell != "powershell" {
+			return errors.New("actual model request omitted the default Windows shell")
+		}
+		for _, executable := range exposure.Environment.Executables {
+			if executable.Name == "node" && filepath.IsAbs(executable.Path) {
+				return nil
+			}
+		}
+	}
+	return errors.New("actual model request omitted the available Node runtime")
 }
 
 func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 	if os.Getenv("UC_NATIVE_BROWSER_PROBE") != "1" {
 		t.Skip("set UC_NATIVE_BROWSER_PROBE=1 for hidden native tool integration")
 	}
-	node, err := exec.LookPath("node")
-	if err != nil {
+	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("Node.js is required for the real command-owned local preview")
 	}
 	for _, vision := range []llm.VisionSupport{llm.VisionSupported, llm.VisionUnsupported} {
@@ -212,8 +285,25 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 			})
 			provider := &nativeBrowserToolProvider{vision: vision}
 			var artifactPath string
+			var serviceJobID string
+			workflowStep, boundaries, compactions, screenshotRequestIndex := 0, 0, 0, -1
 			provider.respond = func(callCtx context.Context, req llm.ChatRequest, index int) (*llm.ChatResponse, error) {
 				response := &llm.ChatResponse{Provider: provider.Name(), Model: "model", Usage: llm.Usage{InputTokens: 2, OutputTokens: 2, TotalTokens: 4}}
+				if req.Metadata["purpose"] == "context_compaction" {
+					compactions++
+					response.Text = "The accepted task is to preview workspace HTML. A local server is running, its page was opened, and its button was clicked. Continue the remaining screenshot and page verification without restarting completed work."
+					return response, nil
+				}
+				if len(req.Tools) == 0 {
+					for _, message := range req.Messages {
+						if strings.Contains(message.Content, "This is a scheduling boundary") {
+							boundaries++
+							response.Text = `{"version":"root_lifecycle.v1","action":"continue","message":"Capture and verify the page after the click"}`
+							return response, nil
+						}
+					}
+					return nil, errors.New("tools disappeared without an explicit scheduling boundary")
+				}
 				add := func(name string, args any) {
 					raw, err := json.Marshal(args)
 					if err != nil {
@@ -221,7 +311,9 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 					}
 					response.ToolCalls = append(response.ToolCalls, llm.ToolCall{ID: fmt.Sprintf("native-tool-%d-%d", index, len(response.ToolCalls)), Name: name, Arguments: raw})
 				}
-				switch index {
+				step := workflowStep
+				workflowStep++
+				switch step {
 				case 0:
 					for _, name := range []string{"workspace_read", "command_runtime", "browser_navigate", "browser_snapshot", "browser_click", "browser_screenshot"} {
 						found := false
@@ -232,8 +324,11 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 							return nil, fmt.Errorf("real request omitted %s", name)
 						}
 					}
+					if err := nativeBrowserModelCommandEnvironment(req); err != nil {
+						return nil, err
+					}
 					add("workspace_read", map[string]any{"version": "agent-code-tools.v1", "path": "index.html", "start_line": 1, "end_line": 10})
-					add("command_runtime", map[string]any{"version": "command-runtime.v2", "action": "start", "commands": []any{map[string]any{"version": "command-runtime.v2", "workspace_mode": "shared_service", "profile": "process", "executable": node, "arguments": []string{"server.cjs"}, "working_directory": ".", "environment": []any{}, "stdin_policy": "closed", "close_initial_stdin": true, "timeout_milliseconds": 40000, "output": map[string]any{"inline_bytes": 4096, "artifact_bytes": 4096}, "network": "host", "credentials": "none", "purpose": "Serve the temporary workspace HTML on loopback for preview"}}})
+					add("command_runtime", map[string]any{"command": "node server.cjs", "run_in_background": true, "timeout": 40000})
 				case 1:
 					var read map[string]any
 					if err := nativeBrowserToolResult(req, "workspace_read", &read); err != nil {
@@ -253,16 +348,21 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 					if len(started.Jobs) != 1 || started.Jobs[0].ID == "" {
 						return nil, fmt.Errorf("command tool did not return its job: %+v", started)
 					}
-					// Wait on the very same owned Job to make startup deterministic;
-					// browser_navigate still independently verifies listener ownership.
+					serviceJobID = started.Jobs[0].ID
+					add("command_runtime", map[string]any{"version": "command-runtime.v2", "action": "wait", "job_id": serviceJobID, "cursor": 0, "max_bytes": 4096, "wait_milliseconds": 5000})
+				case 2:
+					var observed struct {
+						Pages []runner.CommandRuntimeOutputPage `json:"pages"`
+					}
+					if err := nativeBrowserToolResult(req, "command_runtime", &observed); err != nil {
+						return nil, err
+					}
+					// Use only output returned through the model's real wait tool;
+					// browser_navigate verifies the same Job owns the listener.
 					var url string
-					for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline) && url == ""; {
-						job, output, err := manager.Wait(callCtx, started.Jobs[0].ID, 100*time.Millisecond, 0, 4096)
-						if err != nil {
-							return nil, err
-						}
-						if job.State.Terminal() {
-							return nil, fmt.Errorf("preview server terminated: %+v", job)
+					for _, output := range observed.Pages {
+						if output.JobID != serviceJobID || output.State.Terminal() {
+							return nil, fmt.Errorf("preview server output has wrong job or terminal state: %+v", output)
 						}
 						for _, frame := range output.Frames {
 							if strings.HasPrefix(strings.TrimSpace(frame.Text), "http://127.0.0.1:") {
@@ -273,9 +373,9 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 					if url == "" {
 						return nil, errors.New("real command produced no listening URL")
 					}
-					add("browser_navigate", map[string]any{"version": "browser_navigate.v2", "url": url, "service_job_id": started.Jobs[0].ID})
+					add("browser_navigate", map[string]any{"version": "browser_navigate.v2", "url": url, "service_job_id": serviceJobID})
 					add("browser_snapshot", map[string]any{"version": "browser_snapshot.v2"})
-				case 2:
+				case 3:
 					var snap browserruntime.AgentBrowserSnapshot
 					if err := nativeBrowserToolResult(req, "browser_snapshot", &snap); err != nil {
 						return nil, err
@@ -284,7 +384,7 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 						return nil, fmt.Errorf("native snapshot did not see served file: %+v", snap)
 					}
 					add("browser_click", map[string]any{"version": "browser_click.v2", "snapshot_id": snap.SnapshotID, "target": map[string]any{"name": "Verify preview", "role": "button"}})
-				case 3:
+				case 4:
 					if err := page.SetSurface(callCtx, desktopbrowser.Bounds{}, false); err != nil {
 						return nil, err
 					}
@@ -297,7 +397,8 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 					}
 					add("browser_screenshot", map[string]any{"version": "browser_screenshot.v2"})
 					add("browser_snapshot", map[string]any{"version": "browser_snapshot.v2"})
-				case 4:
+				case 5:
+					screenshotRequestIndex = index
 					var snap browserruntime.AgentBrowserSnapshot
 					if err := nativeBrowserToolResult(req, "browser_snapshot", &snap); err != nil {
 						return nil, err
@@ -334,22 +435,33 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 					}
 					response.Text = `{"version":"root_lifecycle.v1","action":"wait","message":"Local preview and native interaction verified","reason":"test completed"}`
 				default:
-					return nil, fmt.Errorf("unexpected additional model call %d", index)
+					return nil, fmt.Errorf("unexpected additional model workflow step %d", step)
 				}
 				return response, nil
 			}
 			router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
 			router.RegisterProvider(provider)
+			if vision == llm.VisionSupported {
+				// Declare the vision fixture's capacity: this test verifies actual
+				// screenshot delivery alongside the complete tool catalogue and a
+				// prior segment. Context-pressure recovery has separate tests.
+				window := llm.DefaultContextWindow()
+				window.WindowTokens, window.Source = 64*1024, "native_vision_fixture"
+				if err := router.SetContextWindow(llm.ModelRef{Provider: provider.Name(), Model: "model"}, window); err != nil {
+					t.Fatal(err)
+				}
+			}
 			execution := application.NewRunExecutionHandoffWithRuntime(st, router, policy.NewDefaultChecker(), application.RunRuntimeDependencies{ExecutionCapabilities: caps, CommandRuntime: commands, AgentBrowser: browser})
 			turns := application.NewThreadTurnServiceWithExecutionCapabilities(st, application.NewRunLifecycleControlService(st), execution, caps).WithDefaultCommandRuntime(commands)
 			result, err := turns.Execute(ctx, application.ExecuteThreadTurnRequest{Version: domain.ThreadMessageProtocolVersion, ThreadID: thread.ID, Content: "Preview the workspace HTML and verify its button using the shared browser", OperationKey: "native-preview-first-user-input", RequestedBy: "operator"})
 			if err != nil {
+				t.Logf("model responses before failure: %d", len(provider.requests))
+				checkpoint, _, _ := st.GetSupervisorCheckpoint(context.Background(), run.ID)
+				t.Logf("supervisor failure: %s", checkpoint.LastError)
 				rounds, _ := st.ListRunSupervisorToolRoundsPage(context.Background(), run.ID, 0, 8)
 				for _, round := range rounds {
 					for _, call := range round.Calls {
-						if call.Status != domain.SupervisorToolCompleted {
-							t.Logf("durable tool %s: status=%s error=%s result=%s", call.ToolName, call.Status, call.ErrorCode, call.ResultJSON)
-						}
+						t.Logf("durable tool %s: status=%s error=%s", call.ToolName, call.Status, call.ErrorCode)
 					}
 				}
 				t.Fatalf("actual Agent tool execution: %v; scripted provider: %v", err, provider.lastError)
@@ -360,8 +472,8 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 					toolCalls += step.ToolCalls
 				}
 			}
-			if !result.ToolCalled || toolCalls != 7 || len(provider.requests) != 5 {
-				t.Fatalf("unexpected actual tool flow: %+v requests=%d", result, len(provider.requests))
+			if !result.ToolCalled || toolCalls != 8 || len(provider.requests) != 7+compactions || boundaries != 1 {
+				t.Fatalf("unexpected actual tool flow: %+v requests=%d boundaries=%d compactions=%d", result, len(provider.requests), boundaries, compactions)
 			}
 			profile, err := st.GetRunExecutionProfile(ctx, run.ID)
 			if err != nil || profile.Profile != domain.RunExecutionProfileLocal {
@@ -391,7 +503,7 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 			}
 			// Decode the exact native image delivered to the vision model.
 			if vision == llm.VisionSupported {
-				for _, message := range provider.requests[4].Messages {
+				for _, message := range provider.requests[screenshotRequestIndex].Messages {
 					for _, image := range message.Images {
 						decoded, err := png.Decode(bytes.NewReader(image.Data))
 						if err != nil {
