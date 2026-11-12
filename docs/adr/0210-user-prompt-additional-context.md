@@ -35,7 +35,8 @@ script-authored text as instruction-authorized operator input.
 1. **A bounded `additional_context` field in the script output
    contract.** A script hook declaring the user_prompt_submit event may
    include `additional_context` in its bounded JSON output: a UTF-8
-   string truncated at 8 KiB per hook (truncation, not rejection — and
+   string whose final stored form is truncated at 8 KiB per hook
+   (truncation, not rejection — and
    the field counts toward the executor's existing 16 KiB whole-output
    cap, which still fails the script when the total overflows; JSON
    escaping can inflate an 8 KiB decoded string well past 8 KiB raw).
@@ -47,17 +48,17 @@ script-authored text as instruction-authorized operator input.
    any truncation, so a secret crossing an excerpt boundary cannot
    escape). The output stays a single JSON value with the existing
    unknown-field rejection — no protocol change beyond one field plus
-   its redaction step. (The redaction placement deliberately differs
-   from ADR 0209, which locates it in the stop-boundary envelope: here
-   the executor is strictly earlier. Redaction is not idempotent after
-   truncation — a marker cut at `TOKEN=[REDACTED:` re-expands on the
-   next redaction pass — so the final 8 KiB limit is enforced after the
-   final redaction, not before it: truncate the raw text, redact,
-   re-truncate if the expansion pushed it past 8 KiB, re-redact once
-   more for any marker that re-truncation cut, and seal the digest over
-   the exact post-redaction bytes handed to session storage. The digest
-   then binds the stored bytes, and storage's own re-redaction is a
-   no-op because the sealed text contains only complete markers.)
+   its redaction step. The redaction placement differs from ADR 0209's
+   stop-boundary envelope: here the executor is strictly earlier.
+   Redact the complete decoded context accepted under the whole-output
+   cap before taking any excerpt. Then truncate the redacted result to
+   a prefix of at most 8 KiB, ending only at a complete UTF-8 code point
+   and outside every redaction marker. If the byte limit would split a
+   marker, omit that whole marker and the following text. Complete all
+   required redaction before this final truncation; a later stage must
+   not re-expand the sealed text. Seal the digest over the exact final
+   bytes handed to session storage, which contain only complete markers
+   and remain at most 8 KiB even when redaction expands the input.
 2. **Commit atomically with the operator message as
    `SourceHookContext` provenance.** The text is stored as a session
    message of a new closed-enum source kind carrying
@@ -135,7 +136,10 @@ script-authored text as instruction-authorized operator input.
 ## Verification (planned)
 
 - Script contract: `additional_context` validation (UTF-8, 8 KiB,
-  redaction before emission), unknown-field rejection intact.
+  full bounded-input redaction before truncation), unknown-field rejection
+  intact. A secret crossing an excerpt boundary is fully redacted;
+  expanding markers remain complete and the final stored bytes stay
+  within 8 KiB, with the digest computed from those exact bytes.
 - Submission: a context-bearing hook commits exactly one
   `SourceHookContext` message in the submission transaction; replay by
   operation key returns the committed state without duplication.
