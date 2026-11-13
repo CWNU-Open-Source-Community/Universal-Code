@@ -10,8 +10,8 @@ import type { ThreadDetailView } from "../../api/types";
 import { standardCodeDeliveryFixture } from "../../test/standard-code-delivery";
 import { capabilityReadinessFixture, patchCapabilityReadiness } from "../../test/capability-readiness";
 import { sandboxEnvironmentFixture } from "../../test/sandbox-environment";
+import { DockerSandboxPanel } from "../../components/docker-sandbox-panel";
 import { V2TaskReview } from "./task-review";
-import { V2ExecutionSettings } from "./execution-settings";
 
 vi.mock("../../components/workspace-checkpoint-panel", () => ({ WorkspaceCheckpointPanel: () => <div>Checkpoint timeline</div> }));
 vi.mock("../../components/code-handoff-panel", () => ({ CodeHandoffPanel: ({ runID }: { runID: string }) => <div>Ordinary Code handoff {runID}</div> }));
@@ -261,7 +261,7 @@ it("offers coding configuration and the exact plan within the current task while
   expect(screen.getByRole("button", { name: /检查并配置 Local/ })).toBeDisabled();
 });
 
-it("shares a nonauthorizing backend draft between actual task settings and review entrances", async () => {
+it("shares a nonauthorizing backend draft between Docker sandbox and task review entrances", async () => {
   const user = userEvent.setup(); const detail = reportDetail();
   const run = { ...detail.active_run, status: "created", standard_code_preset_configured: false };
   const current = { run, mission: { workspace_id: "workspace-1" }, mode: { phase: "plan", surface: "code" },
@@ -272,23 +272,25 @@ it("shares a nonauthorizing backend draft between actual task settings and revie
   const configureStandardCode = vi.fn(); const postControl = vi.fn();
   const client = { ...reportClient(vi.fn()), configureStandardCode, postControl,
     get: vi.fn((path: string) => Promise.resolve(path.startsWith("/threads/") ? detail : current)),
+    getDockerEnvironment: vi.fn().mockResolvedValue({ feature_enabled: true, image_configured: true,
+      restart_required: false, readiness: { ready: true, daemon_reachable: true, image_profile_safe: true } }),
     getSandboxEnvironment: vi.fn().mockResolvedValue(sandboxEnvironmentFixture({ default_backend: "sbx", sbx_enabled: true })),
     runCapabilityReadiness: vi.fn((runID: string) => Promise.resolve(patchCapabilityReadiness(capabilityReadinessFixture(runID),
       "presets", "standard_code", { selectable: true, runtime_available: true, blocked_by: [], remediation: [], restart_required: false }))),
   } as unknown as APIClient;
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const settings = () => <QueryClientProvider client={queries}><V2ExecutionSettings client={client}
-    threadID="thread-1" workspaces={[]} /></QueryClientProvider>;
-  const view = render(settings());
-  const settingsPicker = await screen.findByRole("group", { name: "编码环境后端" });
-  await user.click(within(settingsPicker).getByRole("button", { name: /^Docker Engine/u }));
+  const sandbox = () => <QueryClientProvider client={queries}><DockerSandboxPanel client={client}
+    runID={run.id} threadID="thread-1" /></QueryClientProvider>;
+  const view = render(sandbox());
+  const sandboxPicker = await screen.findByRole("group", { name: "编码环境后端" });
+  await user.click(within(sandboxPicker).getByRole("button", { name: /^Local/u }));
   view.unmount();
   const review = renderReview(client, queries, detail);
   await openHistory(user, "检查与交付");
   const picker = await screen.findByRole("group", { name: "编码环境后端" });
-  expect(within(picker).getByRole("button", { name: /^Docker Engine/u })).toHaveAttribute("aria-pressed", "true");
+  expect(within(picker).getByRole("button", { name: /^Local/u })).toHaveAttribute("aria-pressed", "true");
   await user.click(within(picker).getByRole("button", { name: /^Docker Sandboxes/u }));
-  review.unmount(); render(settings());
+  review.unmount(); render(sandbox());
   const reopenedPicker = await screen.findByRole("group", { name: "编码环境后端" });
   expect(within(reopenedPicker).getByRole("button", { name: /^Docker Sandboxes/u })).toHaveAttribute("aria-pressed", "true");
   expect(configureStandardCode).not.toHaveBeenCalled(); expect(postControl).not.toHaveBeenCalled();

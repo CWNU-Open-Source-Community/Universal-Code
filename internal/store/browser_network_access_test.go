@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"cyberagent-workbench/internal/application"
@@ -40,27 +41,38 @@ func TestBrowserNetworkSuccessorUsesLatestCommittedPreference(t *testing.T) {
 }
 
 func TestSchemaV230PreservesLegacyBrowserChoiceAndDefaultsNewRunsOff(t *testing.T) {
+	const migrationVersion = 230
 	path := filepath.Join(t.TempDir(), "legacy-browser.db")
-	st := openHistoricalTestDatabase(t, path, 229)
+	st := openHistoricalTestDatabase(t, path, migrationVersion-1)
 	_, run := createStructuredToolTestRun(t, t.Context(), st, "legacy scoped browser")
 	legacy := run.Config
 	legacy.BrowserNetworkAccess, legacy.BrowserNetworkRevision = "", 0
 	legacy.BrowserOrigins = []string{"https://example.org:443"}
-	raw, _ := json.Marshal(legacy)
+	raw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := st.db.Exec(`UPDATE runs SET config_json=? WHERE id=?`, string(raw), run.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.applyMigration(t.Context(), migrationPlan()[229]); err != nil {
+	if err := st.applyMigration(t.Context(), migrationPlan()[migrationVersion-1]); err != nil {
 		t.Fatal(err)
 	}
-	var preserved string
-	if err := st.db.QueryRow(`SELECT config_json FROM runs WHERE id=?`, run.ID).Scan(&preserved); err != nil || preserved != string(raw) {
-		t.Fatalf("migration edited historical config: %s %v", preserved, err)
+	if version, err := st.SchemaVersion(t.Context()); err != nil || version != migrationVersion {
+		t.Fatalf("migration version=%d want=%d err=%v", version, migrationVersion, err)
 	}
-	selection, err := st.GetBrowserNetworkAccess(t.Context(), run.ID, "")
-	if err != nil || selection.BrowserNetworkAccess != domain.BrowserNetworkRestricted {
-		t.Fatalf("legacy selection=%+v %v", selection, err)
+	assertLegacyChoice := func() {
+		t.Helper()
+		var preserved string
+		if err := st.db.QueryRow(`SELECT config_json FROM runs WHERE id=?`, run.ID).Scan(&preserved); err != nil || preserved != string(raw) {
+			t.Fatalf("migration edited historical config: %s %v", preserved, err)
+		}
+		selection, err := st.GetBrowserNetworkAccess(t.Context(), run.ID, "")
+		if err != nil || selection.BrowserNetworkAccess != domain.BrowserNetworkRestricted || !reflect.DeepEqual(selection.BrowserOrigins, legacy.BrowserOrigins) {
+			t.Fatalf("legacy selection=%+v %v", selection, err)
+		}
 	}
+	assertLegacyChoice()
 	_, fresh, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{Goal: "new default", Profile: "review"})
 	if err != nil || fresh.Config.BrowserNetworkAccess != domain.BrowserNetworkOff {
 		t.Fatalf("new default=%+v %v", fresh.Config, err)
@@ -73,8 +85,13 @@ func TestSchemaV230PreservesLegacyBrowserChoiceAndDefaultsNewRunsOff(t *testing.
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if version, err := st.SchemaVersion(t.Context()); err != nil || version != 230 {
-		t.Fatalf("version=%d %v", version, err)
+	if version, err := st.SchemaVersion(t.Context()); err != nil || version != LatestSchemaVersion {
+		t.Fatalf("reopened version=%d want=%d err=%v", version, LatestSchemaVersion, err)
+	}
+	assertLegacyChoice()
+	storedFresh, err := st.GetRun(t.Context(), fresh.ID)
+	if err != nil || storedFresh.Config.BrowserNetworkAccess != domain.BrowserNetworkOff {
+		t.Fatalf("new default changed after upgrade: %+v %v", storedFresh.Config, err)
 	}
 }
 
