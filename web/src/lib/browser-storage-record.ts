@@ -43,6 +43,7 @@ export function updateBrowserStorageRecord(
   name: string,
   update: (current: string | null) => string | undefined,
   finish: (result: BrowserStorageRecordResult) => void,
+  key = recordKey,
 ): void {
   void openRecordDatabase(name).then((db) => {
     let transaction: IDBTransaction | undefined;
@@ -53,7 +54,7 @@ export function updateBrowserStorageRecord(
       transaction.oncomplete = () => finish({ ok: true, value, written });
       transaction.onabort = () => finish({ ok: false });
       const store = transaction.objectStore(recordStore);
-      const request = store.get(recordKey);
+      const request = store.get(key);
       request.onsuccess = () => {
         try {
           if (request.result !== undefined && typeof request.result !== "string") {
@@ -62,7 +63,7 @@ export function updateBrowserStorageRecord(
           value = request.result ?? null;
           const next = update(value);
           if (next === undefined) return;
-          store.put(next, recordKey);
+          store.put(next, key);
           value = next;
           written = true;
         } catch {

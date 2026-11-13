@@ -290,7 +290,20 @@ function workspaceChangeChannel() {
   return changeChannel;
 }
 
+type QueuedWorkspaceTransaction = {
+  action?: WorkspaceTransaction;
+  unavailable?: () => WorkspaceMutation | undefined;
+};
+let workspaceTransactions: QueuedWorkspaceTransaction[] = [];
+
 function transactWorkspaceTabs(action?: WorkspaceTransaction, unavailable?: () => WorkspaceMutation | undefined) {
+  workspaceTransactions.push({ action, unavailable });
+  if (workspaceTransactions.length === 1) startWorkspaceTransaction(workspaceTransactions);
+}
+
+function startWorkspaceTransaction(queue: QueuedWorkspaceTransaction[]) {
+  const pending = queue[0];
+  if (!pending) return;
   let mutation: WorkspaceMutation | undefined;
   let snapshotChanged = false;
   updateBrowserStorageRecord(workspaceTabsStorageKey, (stored) => {
@@ -301,19 +314,24 @@ function transactWorkspaceTabs(action?: WorkspaceTransaction, unavailable?: () =
     const previousReadable = storageReadable;
     const threads = readPersistedSnapshot(raw);
     snapshotChanged = previousRaw !== cachedRaw || previousReadable !== storageReadable;
-    mutation = action?.(threads, storageReadable);
+    mutation = pending.action?.(threads, storageReadable);
     return mutation?.record ?? (stored === null && storageReadable
       ? raw ?? JSON.stringify({ version: 1, threads: {} } satisfies PersistedWorkspaceStore)
       : undefined);
   }, (result) => {
-    if (result.ok && result.written) {
-      readPersistedSnapshot(result.value);
-      workspaceChangeChannel()?.postMessage(null);
-    }
-    if (!result.ok && !mutation) mutation = unavailable?.();
-    mutation?.finish(result.ok);
-    if (snapshotChanged || mutation || (result.ok && result.written)) {
-      window.dispatchEvent(new Event(changedEvent));
+    try {
+      if (result.ok && result.written) readPersistedSnapshot(result.value);
+      if (!result.ok && !mutation) mutation = pending.unavailable?.();
+      mutation?.finish(result.ok);
+      if (snapshotChanged || mutation || (result.ok && result.written)) {
+        window.dispatchEvent(new Event(changedEvent));
+      }
+      if (result.ok && result.written) workspaceChangeChannel()?.postMessage(null);
+    } finally {
+      // The database orders commits. Wait for this window's completion callback
+      // too, so the next update sees any changes that could not be saved.
+      queue.shift();
+      startWorkspaceTransaction(queue);
     }
   });
 }
@@ -421,6 +439,7 @@ function subscribeWorkspaceTabs(notify: () => void) {
 }
 
 export function resetWorkspaceTabsMemoryCache() {
+  workspaceTransactions = [];
   memoryFallback.clear();
   failedBaselines.clear();
   conflictSnapshots.clear();
@@ -495,13 +514,16 @@ function tryAddTab(
 }
 
 export function toggleWorkspaceFiles(threadID: string, currentRunID?: string) {
+  const closing = isWorkspaceKindOpen(getThreadWorkspaceState(threadID), "file");
   writeThreadWorkspaceState(threadID, (state) => {
-    const active = state.tabs.find((tab) => tab.id === state.activeTabID);
-    if (state.open && active?.kind === "file") {
-      return { ...state, open: false };
-    }
-    return activateOrCreateFileTab(state, currentRunID);
+    const open = isWorkspaceKindOpen(state, "file");
+    if (closing) return open ? { ...state, open: false } : state;
+    return open ? state : activateOrCreateFileTab(state, currentRunID);
   });
+}
+
+function isWorkspaceKindOpen(state: ThreadWorkspaceState, kind: WorkspaceTab["kind"]) {
+  return state.open && state.tabs.some((tab) => tab.id === state.activeTabID && tab.kind === kind);
 }
 
 export function focusWorkspaceFiles(threadID: string, currentRunID?: string) {
@@ -669,10 +691,11 @@ function ensureSingletonTab(
 }
 
 export function toggleWorkspaceSingletonTab(threadID: string, kind: "terminal" | "preview" | "review" | "records") {
+  const closing = isWorkspaceKindOpen(getThreadWorkspaceState(threadID), kind);
   writeThreadWorkspaceState(threadID, (state) => {
-    if (state.open && state.activeTabID === kind) {
-      return { ...state, open: false };
-    }
+    const open = isWorkspaceKindOpen(state, kind);
+    if (closing) return open ? { ...state, open: false } : state;
+    if (open) return state;
     const ensured = ensureSingletonTab(state, kind);
     return {
       ...state,
@@ -743,9 +766,9 @@ export function collapseWorkspacePanel(threadID: string) {
 }
 
 export function toggleWorkspaceFullView(threadID: string) {
-  writeThreadWorkspaceState(threadID, (state) => (state.tabs.length > 0
-    ? { ...state, open: true, fullView: !state.fullView }
-    : state));
+  const fullView = !getThreadWorkspaceState(threadID).fullView;
+  writeThreadWorkspaceState(threadID, (state) => state.tabs.length > 0 && (!state.open || state.fullView !== fullView)
+    ? { ...state, open: true, fullView } : state);
 }
 
 export function setWorkspaceFullView(threadID: string, fullView: boolean) {

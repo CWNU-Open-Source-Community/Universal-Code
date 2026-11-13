@@ -20,6 +20,11 @@ export function validWorkspaceEntryName(value: unknown): value is string {
     !value.includes(":") && !/\p{Cc}/u.test(value);
 }
 
+export function validWorkspaceDirectoryPath(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 4096 &&
+    !/\p{Cc}/u.test(value);
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

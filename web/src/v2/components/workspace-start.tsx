@@ -77,10 +77,9 @@ export function ProjectDialog({ client, workspace, onClose, onSaved, returnFocus
   const nameBytes = new TextEncoder().encode(name.trim()).length;
   const error = saving.error instanceof APIRequestError ? saving.error.code : "";
   const addPath = () => {
-    const value = pathInput.trim();
-    if (!value) return;
-    setDirectory(value); setEditingPath(false);
-    if (!name.trim()) setName(value.replace(/[\\/]+$/, "").split(/[\\/]/).at(-1) ?? "");
+    if (!pathInput.trim()) return;
+    setDirectory(pathInput); setEditingPath(false);
+    if (!name.trim()) setName(pathInput.replace(/[\\/]+$/, "").split(/[\\/]/).at(-1) ?? "");
     input.current?.focus();
   };
   const displayedDirectory = workspace ? details.data?.directory_path : directory;

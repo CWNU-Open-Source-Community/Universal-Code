@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { APIClient } from "../../api/client";
 import { APIRequestError } from "../../api/client";
 import { LocaleProvider } from "../../lib/locale";
+import { projectActionAttemptsDatabase } from "../project-action-attempt";
 import { ProjectActions } from "./project-actions";
 import { V2RecoveryProvider } from "../recovery-storage";
 
@@ -198,4 +199,41 @@ it("replays a recovered legacy request with its original empty target after anot
   fireEvent.click(await screen.findByRole("button", { name: "确认上次运行" }));
   await waitFor(() => expect(client.runProjectAction).toHaveBeenCalledWith("run-1", "test", "", "project-action-original"));
   expect(screen.getByRole("textbox", { name: /测试目录/ })).toHaveValue("web");
+});
+
+it.each([
+  { outcome: "success", sameKey: false },
+  { outcome: "rejection", sameKey: false },
+  { outcome: "rejection", sameKey: true },
+] as const)("keeps a newer submission after an old $outcome arrives (same key: $sameKey)", async ({ outcome, sameKey }) => {
+  const { client, queries } = setup();
+  const scope = "late-project-action-" + outcome + "-" + sameKey;
+  const legacyKey = `v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent(client.baseURL)}:${scope}:${encodeURIComponent("run:run-1:project-action") }`;
+  const key = projectActionAttemptsDatabase + ":" + legacyKey;
+  let reply!: () => void;
+  client.runProjectAction.mockImplementationOnce(() => new Promise((resolve, reject) => {
+    reply = () => {
+      if (outcome === "success") resolve(result());
+      else reject(new APIRequestError("Earlier request rejected", "POLICY_DENIED", 403));
+    };
+  }));
+  try {
+    render(<LocaleProvider><QueryClientProvider client={queries}>
+      <V2RecoveryProvider client={client} scopeID={scope}>
+        <ProjectActions client={client as unknown as APIClient} runID="run-1" threadID="thread-1" />
+      </V2RecoveryProvider>
+    </QueryClientProvider></LocaleProvider>);
+    fireEvent.click(await readyTests());
+    await waitFor(() => expect(client.runProjectAction).toHaveBeenCalledTimes(1));
+    const previous = JSON.parse(localStorage.getItem(key)!);
+    const newer = { ...previous, submissionID: "newer-submission",
+      ...(sameKey ? {} : { target: "web", key: "project-action-newer" }) };
+    localStorage.setItem(key, JSON.stringify(newer));
+    await act(async () => reply());
+    await screen.findByRole("button", { name: "确认上次运行" });
+    expect(JSON.parse(localStorage.getItem(key)!)).toEqual(newer);
+    expect(client.runProjectAction).toHaveBeenCalledTimes(1);
+  } finally {
+    localStorage.removeItem(key);
+  }
 });

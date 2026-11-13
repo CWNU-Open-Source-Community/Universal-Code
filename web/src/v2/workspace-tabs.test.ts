@@ -248,14 +248,46 @@ describe("workspace-tabs store", () => {
     openWorkspaceFile("mine", { path: "local.ts" });
     expect(getThreadWorkspaceState("mine").tabs).toHaveLength(1);
 
-    openWorkspaceFile("mine", { path: "remote.ts" });
-    setWorkspaceWidth("other", 700);
+    const saved = JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!);
+    const mine = Object.keys(saved.threads).find((key) => JSON.parse(key).at(-1) === "mine")!;
+    const other = Object.keys(saved.threads).find((key) => JSON.parse(key).at(-1) === "other")!;
+    saved.threads[mine].tabs.push({ id: "file:2", kind: "file", path: "remote.ts" });
+    saved.threads[mine].nextFileSeq = 3;
+    saved.threads[other].width = 700;
+    localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
     start();
     resetWorkspaceTabsMemoryCache();
     expect(getThreadWorkspaceState("mine").tabs).toMatchObject([
       { path: "existing.ts" }, { path: "remote.ts" }, { path: "local.ts" },
     ]);
     expect(getThreadWorkspaceState("other").width).toBe(700);
+  });
+
+  it("merges the next queued edit with the fallback from an aborted write", () => {
+    const threadID = "late-abort";
+    openWorkspaceFile(threadID, { path: "existing.ts" });
+    let abort!: () => void;
+    vi.mocked(updateBrowserStorageRecord).mockImplementationOnce((name, update, finish) => {
+      expect(update(localStorage.getItem(name))).toContain("first.ts");
+      abort = () => finish({ ok: false });
+    });
+    openWorkspaceFile(threadID, { path: "first.ts" });
+    openWorkspaceFile(threadID, { path: "second.ts" });
+    expect(getThreadWorkspaceState(threadID).tabs).toMatchObject([{ path: "existing.ts" }]);
+    abort();
+    resetWorkspaceTabsMemoryCache();
+    expect(getThreadWorkspaceState(threadID).tabs).toMatchObject([
+      { path: "existing.ts" }, { path: "first.ts" }, { path: "second.ts" },
+    ]);
+  });
+
+  it("keeps the panel open when both queued clicks observed it closed", () => {
+    const start = delayNextTransaction();
+    toggleWorkspaceFiles("queued-open");
+    toggleWorkspaceFiles("queued-open");
+    start();
+    expect(getThreadWorkspaceState("queued-open")).toMatchObject({ open: true, activeTabID: "file:1" });
+    expect(getThreadWorkspaceState("queued-open").tabs).toHaveLength(1);
   });
 
   it("keeps edits in memory when a transaction is unavailable", () => {

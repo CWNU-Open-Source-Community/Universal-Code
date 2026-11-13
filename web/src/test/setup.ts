@@ -7,12 +7,13 @@ import { resetWorkspaceTabsMemoryCache, workspaceTabsStorageKey } from "../v2/wo
 // exercises real commits and cross-window notifications.
 vi.mock("../lib/browser-storage-record", () => ({
   updateBrowserStorageRecord: vi.fn((name: string, update: (value: string | null) => string | undefined,
-    finish: (result: BrowserStorageRecordResult) => void) => {
+    finish: (result: BrowserStorageRecordResult) => void, key?: string) => {
+    const storageKey = key === undefined ? name : name + ":" + key;
     let result: BrowserStorageRecordResult;
     try {
-      const current = localStorage.getItem(name);
+      const current = localStorage.getItem(storageKey);
       const next = update(current);
-      if (next !== undefined) localStorage.setItem(name, next);
+      if (next !== undefined) localStorage.setItem(storageKey, next);
       result = { ok: true, value: next ?? current, written: next !== undefined };
     } catch {
       result = { ok: false };
