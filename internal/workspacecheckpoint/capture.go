@@ -25,7 +25,12 @@ import (
 	"cyberagent-workbench/internal/workspaceidentity"
 )
 
-const maxGitCaptureOutputBytes = 32 * 1024 * 1024
+const (
+	maxGitCaptureOutputBytes = 32 * 1024 * 1024
+	incompleteManifestReason = "workspace manifest exceeds the entry limit"
+	caseCollisionReason      = "case-colliding Workspace paths cannot be restored safely"
+	indexPathCasingReason    = "Workspace path casing differs from the Git index"
+)
 
 type gitIndexEntry struct {
 	OID   string
@@ -86,11 +91,15 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 	}
 	if !inventory.git {
 		level = RecoveryUnavailable
-		reasons["workspace is not an exact Git worktree"] = struct{}{}
+		reason := "workspace is not an exact Git worktree"
+		if err := rootfs.CheckExternalDirectory(root); err != nil {
+			reason = err.Error()
+		}
+		reasons[reason] = struct{}{}
 	}
 	if inventory.truncated {
 		level = RecoveryUnavailable
-		reasons["workspace manifest exceeds the entry limit"] = struct{}{}
+		reasons[incompleteManifestReason] = struct{}{}
 	}
 	if inventory.unmerged {
 		if level == RecoveryComplete {
@@ -139,7 +148,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 		}
 		if previous, exists := casePaths[caseKey]; exists && previous != path {
 			level = RecoveryUnavailable
-			reasons["case-colliding Workspace paths cannot be restored safely"] = struct{}{}
+			reasons[caseCollisionReason] = struct{}{}
 		}
 		casePaths[caseKey] = path
 		if runtime.GOOS == "windows" {
@@ -149,7 +158,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 			}
 			if exists && actualPath != path {
 				level = RecoveryUnavailable
-				reasons["Workspace path casing differs from the Git index"] = struct{}{}
+				reasons[indexPathCasingReason] = struct{}{}
 			}
 		}
 		entry, content, incomplete, entryErr := captureEntry(ctx, rootHandle, path, inventory)
@@ -302,18 +311,10 @@ func inspectCaptureInventory(ctx context.Context, root string, rootHandle *rootf
 		untracked: map[string]struct{}{}, ignored: map[string]struct{}{},
 		staged: map[string]struct{}{}}
 	gitPath, err := exec.LookPath("git")
-	if err != nil {
-		paths, truncated, walkErr := walkNonGitFiles(ctx, rootHandle)
-		if walkErr != nil {
-			return result, walkErr
-		}
-		for _, path := range paths {
-			result.untracked[path] = struct{}{}
-		}
-		result.truncated = truncated
-		return result, nil
+	var top []byte
+	if err == nil {
+		top, err = captureGitOutput(ctx, gitPath, root, "rev-parse", "--show-toplevel")
 	}
-	top, err := captureGitOutput(ctx, gitPath, root, "rev-parse", "--show-toplevel")
 	if err != nil || !sameCapturePath(strings.TrimRight(string(top), "\r\n"), root) {
 		paths, truncated, walkErr := walkNonGitFiles(ctx, rootHandle)
 		if walkErr != nil {
@@ -334,15 +335,10 @@ func inspectCaptureInventory(ctx context.Context, root string, rootHandle *rootf
 	if branch, branchErr := captureGitOutput(ctx, gitPath, root, "branch", "--show-current"); branchErr == nil {
 		result.branch = strings.TrimSpace(string(branch))
 	}
-	indexPath, err := captureGitOutput(ctx, gitPath, root, "rev-parse", "--git-path", "index")
+	result.indexPath, err = gitIndexPath(ctx, gitPath, root)
 	if err != nil {
-		return result, fmt.Errorf("locate Git index: %w", err)
+		return result, err
 	}
-	result.indexPath = strings.TrimSpace(string(indexPath))
-	if !filepath.IsAbs(result.indexPath) {
-		result.indexPath = filepath.Join(root, result.indexPath)
-	}
-	result.indexPath = filepath.Clean(result.indexPath)
 
 	tracked, err := captureGitOutput(ctx, gitPath, root, "ls-files", "-s", "-z")
 	if err != nil {
@@ -395,8 +391,11 @@ func inspectCaptureInventory(ctx context.Context, root string, rootHandle *rootf
 			}
 		}
 	}
-	ignored, _ := captureGitOutput(ctx, gitPath, root,
+	ignored, err := captureGitOutput(ctx, gitPath, root,
 		"ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
+	if err != nil {
+		return result, err
+	}
 	for _, raw := range splitNUL(ignored) {
 		path, pathErr := normalizeCapturePath(strings.TrimSuffix(raw, "/"))
 		if pathErr == nil && path != "" {
@@ -415,6 +414,18 @@ func inspectCaptureInventory(ctx context.Context, root string, rootHandle *rootf
 		}
 	}
 	return result, nil
+}
+
+func gitIndexPath(ctx context.Context, gitPath, root string) (string, error) {
+	path, err := captureGitOutput(ctx, gitPath, root, "rev-parse", "--path-format=absolute", "--git-path", "index")
+	if err != nil {
+		return "", fmt.Errorf("locate Git index: %w", err)
+	}
+	indexPath := strings.TrimRight(string(path), "\r\n")
+	if !filepath.IsAbs(indexPath) {
+		return "", errors.New("Git index path is not absolute")
+	}
+	return rootfs.ExactAbsolutePath(indexPath)
 }
 
 // readCaptureIndex hashes the Git index as a stream and captures only its

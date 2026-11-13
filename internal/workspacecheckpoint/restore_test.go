@@ -191,9 +191,63 @@ func TestRestoreRejectsUnrecoverableTargetContent(t *testing.T) {
 	}
 }
 
+func TestRestoreStopsBeforeWritingWhenRecoveryPreflightIsIncomplete(t *testing.T) {
+	root := newCheckpointRepository(t)
+	file := filepath.Join(root, "notes.txt")
+	mustCheckpointWrite(t, file, []byte("original\n"))
+	runCheckpointGit(t, root, "add", "notes.txt")
+	now := time.Now().UTC()
+	target := captureRestoreFixture(t, root, "recovery-target", "receipt-target", now)
+	mustCheckpointWrite(t, file, []byte("current\n"))
+	runCheckpointGit(t, root, "add", "notes.txt")
+	current := captureRestoreFixture(t, root, "recovery-current", "receipt-current", now.Add(time.Minute))
+	if target.Checkpoint.IndexSHA256 == current.Checkpoint.IndexSHA256 {
+		t.Fatal("expected different index states")
+	}
+
+	for _, scenario := range []struct {
+		name   string
+		change func(*Snapshot, *Snapshot)
+		reason string
+	}{
+		{"truncated manifest", func(_ *Snapshot, observed *Snapshot) {
+			observed.Checkpoint.RecoveryLevel = RecoveryUnavailable
+			observed.Checkpoint.IncompleteReasons = []string{incompleteManifestReason}
+		}, incompleteManifestReason},
+		{"target index missing", func(target, _ *Snapshot) {
+			target.Checkpoint.RecoveryLevel = RecoveryPartial
+			index := target.Checkpoint.IndexBlobSHA256
+			target.Checkpoint.IndexBlobSHA256 = ""
+			target.Blobs = slices.DeleteFunc(slices.Clone(target.Blobs), func(blob Blob) bool {
+				if blob.SHA256 != index {
+					return false
+				}
+				target.Checkpoint.StoredBytes -= int64(len(blob.Content))
+				return true
+			})
+		}, "target Git index blob is unavailable"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			want, live := target, current
+			scenario.change(&want, &live)
+			result, err := ApplyRestore(t.Context(), root, current, want, live)
+			var conflict *ConflictError
+			if !errors.As(err, &conflict) || !slices.ContainsFunc(conflict.Conflicts, func(c Conflict) bool {
+				return c.Kind == ConflictUnrecoverable && c.Reason == scenario.reason
+			}) || len(result.AppliedPaths) != 0 || len(result.DeletedPaths) != 0 || result.IndexRestored {
+				t.Fatalf("restore should reject before writing: %+v, %v", result, err)
+			}
+			if content, err := os.ReadFile(file); err != nil || string(content) != "current\n" {
+				t.Fatalf("restore changed the live file: %q, %v", content, err)
+			}
+		})
+	}
+}
+
 func TestRestoreUsesGitIndexLockAndRestoresAMissingIndex(t *testing.T) {
 	root := newCheckpointRepository(t)
-	mustCheckpointWrite(t, filepath.Join(root, "draft.txt"), []byte("draft\n"))
+	draft := filepath.Join(root, "draft.txt")
+	mustCheckpointWrite(t, draft, []byte("draft\n"))
 	targetRequest := validCaptureRequest(root, time.Now().UTC())
 	targetRequest.ID = "checkpoint-index-missing"
 	target, err := Capture(t.Context(), targetRequest)
@@ -203,6 +257,7 @@ func TestRestoreUsesGitIndexLockAndRestoresAMissingIndex(t *testing.T) {
 	if target.Checkpoint.IndexBlobSHA256 != "" {
 		t.Fatalf("target index unexpectedly exists: %+v", target.Checkpoint)
 	}
+	mustCheckpointWrite(t, draft, []byte("edited draft\n"))
 	runCheckpointGit(t, root, "add", "draft.txt")
 	expectedRequest := validCaptureRequest(root, time.Now().UTC().Add(time.Second))
 	expectedRequest.ID = "checkpoint-index-present"
@@ -226,6 +281,12 @@ func TestRestoreUsesGitIndexLockAndRestoresAMissingIndex(t *testing.T) {
 	if _, err := os.Stat(indexPath); err != nil {
 		t.Fatalf("locked restore changed the Git index: %v", err)
 	}
+	if content, err := os.ReadFile(draft); err != nil || string(content) != "edited draft\n" {
+		t.Fatalf("locked restore changed the worktree: %q, %v", content, err)
+	}
+	if content, err := os.ReadFile(lockPath); err != nil || string(content) != "external lock" {
+		t.Fatalf("restore changed another operation's lock: %q, %v", content, err)
+	}
 	if err := os.Remove(lockPath); err != nil {
 		t.Fatal(err)
 	}
@@ -242,6 +303,36 @@ func TestRestoreUsesGitIndexLockAndRestoresAMissingIndex(t *testing.T) {
 	if err != nil || observed.Checkpoint.IndexSHA256 != target.Checkpoint.IndexSHA256 ||
 		observed.Checkpoint.ManifestSHA256 != target.Checkpoint.ManifestSHA256 {
 		t.Fatalf("restored missing index=%+v err=%v", observed.Checkpoint, err)
+	}
+}
+
+func TestRestoreDistinguishesMissingAndEmptyGitIndexes(t *testing.T) {
+	root := newCheckpointRepository(t)
+	now := time.Now().UTC()
+	missing := captureRestoreFixture(t, root, "missing-index", "receipt-missing", now)
+	// Git refuses to inventory a zero-byte index. Use a sealed snapshot with
+	// the empty blob to verify how restore handles that stored representation.
+	empty := missing
+	empty.Checkpoint.ID = "empty-index"
+	empty.Checkpoint.IndexBlobSHA256 = missing.Checkpoint.IndexSHA256
+	empty.Blobs = []Blob{{SHA256: empty.Checkpoint.IndexBlobSHA256, Content: []byte{}, CreatedAt: now}}
+	index := filepath.Join(root, ".git", "index")
+	if err := os.WriteFile(index, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ApplyRestore(t.Context(), root, empty, missing, empty)
+	if err != nil || !result.IndexRestored {
+		t.Fatalf("restore missing index: %+v, %v", result, err)
+	}
+	if _, err := os.Stat(index); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("index still present: %v", err)
+	}
+	result, err = ApplyRestore(t.Context(), root, missing, empty, missing)
+	if err != nil || !result.IndexRestored {
+		t.Fatalf("restore empty index: %+v, %v", result, err)
+	}
+	if content, err := os.ReadFile(index); err != nil || len(content) != 0 {
+		t.Fatalf("restored empty index = %q, %v", content, err)
 	}
 }
 

@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -152,7 +154,7 @@ func previewRestore(expected, target, observed Snapshot, sameWorkspace bool) (Pr
 		ObservedCheckpointID:        observed.Checkpoint.ID,
 		RecoveryLevel: weakestRecovery(expected.Checkpoint.RecoveryLevel,
 			target.Checkpoint.RecoveryLevel, observed.Checkpoint.RecoveryLevel),
-		IndexChanged: expected.Checkpoint.IndexSHA256 != target.Checkpoint.IndexSHA256,
+		IndexChanged: !expected.Checkpoint.SameGitIndex(target.Checkpoint),
 		Changes:      []Change{}, Conflicts: []Conflict{}}
 
 	if (!sameWorkspace && (expected.Checkpoint.RunID != target.Checkpoint.RunID ||
@@ -182,13 +184,24 @@ func previewRestore(expected, target, observed Snapshot, sameWorkspace bool) (Pr
 		appendConflict(&preview, Conflict{Kind: ConflictBranchDrift,
 			Reason: "Git branch identity changed"})
 	}
-	if observed.Checkpoint.IndexSHA256 != expected.Checkpoint.IndexSHA256 &&
-		observed.Checkpoint.IndexSHA256 != target.Checkpoint.IndexSHA256 {
+	if !observed.Checkpoint.SameGitIndex(expected.Checkpoint) &&
+		!observed.Checkpoint.SameGitIndex(target.Checkpoint) {
 		appendConflict(&preview, Conflict{Kind: ConflictIndexDrift,
 			ExpectedSHA256: expected.Checkpoint.IndexSHA256,
 			CurrentSHA256:  observed.Checkpoint.IndexSHA256,
 			TargetSHA256:   target.Checkpoint.IndexSHA256,
 			Reason:         "Git index differs from both expected and target checkpoints"})
+	}
+	for _, reason := range []string{incompleteManifestReason, caseCollisionReason, indexPathCasingReason} {
+		if slices.Contains(expected.Checkpoint.IncompleteReasons, reason) ||
+			slices.Contains(target.Checkpoint.IncompleteReasons, reason) ||
+			slices.Contains(observed.Checkpoint.IncompleteReasons, reason) {
+			appendConflict(&preview, Conflict{Kind: ConflictUnrecoverable, Reason: reason})
+		}
+	}
+	if preview.IndexChanged && target.Checkpoint.IndexBlobSHA256 == "" && target.Checkpoint.gitIndexPresent() {
+		appendConflict(&preview, Conflict{Kind: ConflictUnrecoverable,
+			Reason: "target Git index blob is unavailable"})
 	}
 
 	expectedEntries := entryMap(expected.Entries)
@@ -225,7 +238,8 @@ func previewRestore(expected, target, observed Snapshot, sameWorkspace bool) (Pr
 	if len(preview.Changes) > MaxPreviewChanges {
 		preview.Changes = preview.Changes[:MaxPreviewChanges]
 		preview.Truncated = true
-		preview.RecoveryLevel = RecoveryUnavailable
+		appendConflict(&preview, Conflict{Kind: ConflictUnrecoverable,
+			Reason: "workspace restore exceeds the preview change limit"})
 	}
 	if len(preview.Conflicts) != 0 {
 		preview.RecoveryLevel = RecoveryUnavailable
@@ -281,6 +295,16 @@ func applyRestore(ctx context.Context, workspaceRoot string, expected, target,
 	}
 	defer root.Close()
 
+	var restoreIndex func() error
+	if preview.IndexChanged {
+		var releaseIndex func()
+		restoreIndex, releaseIndex, err = prepareGitIndexRestore(ctx, rootPath, expected, target)
+		if err != nil {
+			return result, err
+		}
+		defer releaseIndex()
+	}
+
 	expectedEntries := entryMap(expected.Entries)
 	targetEntries := entryMap(target.Entries)
 	blobs := blobMap(target.Blobs)
@@ -335,8 +359,11 @@ func applyRestore(ctx context.Context, workspaceRoot string, expected, target,
 		}
 		result.AppliedPaths = append(result.AppliedPaths, currentPath)
 	}
-	if expected.Checkpoint.IndexSHA256 != target.Checkpoint.IndexSHA256 {
-		if err := restoreGitIndex(ctx, rootPath, root, expected, target); err != nil {
+	if restoreIndex != nil {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		if err := restoreIndex(); err != nil {
 			return result, err
 		}
 		result.IndexRestored = true
@@ -684,123 +711,139 @@ func writeAndSync(file *os.File, content []byte) error {
 	return file.Sync()
 }
 
-func restoreGitIndex(ctx context.Context, root string, rootHandle *rootfs.ExactRoot,
-	expected, target Snapshot,
-) error {
-	emptyIndexSHA := sha256.Sum256(nil)
-	emptyIndexDigest := hex.EncodeToString(emptyIndexSHA[:])
-	targetPresent := target.Checkpoint.IndexBlobSHA256 != "" ||
-		target.Checkpoint.IndexSHA256 != emptyIndexDigest
+func prepareGitIndexRestore(ctx context.Context, root string, expected, target Snapshot,
+) (commit func() error, release func(), err error) {
+	targetPresent := target.Checkpoint.gitIndexPresent()
 	targetContent := []byte(nil)
 	if target.Checkpoint.IndexBlobSHA256 != "" {
 		targetBlob, ok := blobMap(target.Blobs)[target.Checkpoint.IndexBlobSHA256]
 		if !ok {
-			return errors.New("target Git index blob is missing")
+			return nil, nil, errors.New("target Git index blob is missing")
 		}
 		targetContent = targetBlob.Content
 	} else if targetPresent {
-		return &ConflictError{Conflicts: []Conflict{{Kind: ConflictUnrecoverable,
+		return nil, nil, &ConflictError{Conflicts: []Conflict{{Kind: ConflictUnrecoverable,
 			Reason: "target Git index blob is unavailable"}}}
 	}
-	inventory, err := inspectCaptureInventory(ctx, root, rootHandle)
-	if err != nil || !inventory.git || inventory.indexPath == "" {
-		return errors.Join(errors.New("git index path is unavailable"), err)
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		return nil, nil, err
 	}
-	expectedPresent := expected.Checkpoint.IndexBlobSHA256 != "" ||
-		expected.Checkpoint.IndexSHA256 != emptyIndexDigest
-	return compareAndSwapGitIndex(inventory.indexPath, expected.Checkpoint.IndexSHA256,
-		expectedPresent, target.Checkpoint.IndexSHA256, targetPresent, targetContent)
+	top, err := captureGitOutput(ctx, gitPath, root, "rev-parse", "--show-toplevel")
+	if err != nil || !sameCapturePath(strings.TrimRight(string(top), "\r\n"), root) {
+		return nil, nil, errors.Join(errors.New("Git worktree identity changed before index restore"), err)
+	}
+	indexPath, err := gitIndexPath(ctx, gitPath, root)
+	if err != nil {
+		return nil, nil, err
+	}
+	return stageGitIndexRestore(indexPath, expected.Checkpoint.IndexSHA256,
+		expected.Checkpoint.gitIndexPresent(), target.Checkpoint.IndexSHA256, targetPresent, targetContent)
 }
 
-func compareAndSwapGitIndex(target, expectedDigest string, expectedPresent bool,
+// Hold Git's index lock across the worktree writes. Any existing lock, index
+// drift, or staging failure must stop restore before it changes files.
+func stageGitIndexRestore(target, expectedDigest string, expectedPresent bool,
 	targetDigest string, targetPresent bool, content []byte,
-) error {
+) (commit func() error, release func(), err error) {
 	clean := filepath.Clean(target)
 	parent := filepath.Dir(clean)
-	parentInfo, err := os.Lstat(parent)
-	if err != nil || !parentInfo.IsDir() || parentInfo.Mode()&os.ModeSymlink != 0 {
-		return errors.Join(errors.New("git index parent is redirected or unavailable"), err)
-	}
-	resolved, err := filepath.EvalSymlinks(parent)
-	if err != nil || !sameCapturePath(parent, resolved) {
-		return errors.Join(errors.New("git index parent is redirected"), err)
-	}
-	directory, err := rootfs.OpenExactRoot(parent)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	openedInfo, err := directory.Stat(".")
-	if err != nil || !os.SameFile(parentInfo, openedInfo) {
-		return errors.Join(errors.New("git index parent changed during restore"), err)
-	}
 	name := filepath.Base(clean)
 	if name == "." || name == string(filepath.Separator) ||
 		!sameCapturePath(filepath.Join(parent, name), clean) {
-		return errors.New("git index path is invalid")
+		return nil, nil, errors.New("git index path is invalid")
+	}
+	parentInfo, err := os.Lstat(parent)
+	if err != nil || !parentInfo.IsDir() || parentInfo.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, errors.Join(errors.New("git index parent is redirected or unavailable"), err)
+	}
+	resolved, err := rootfs.EvalExactSymlinks(parent)
+	if err != nil || !sameCapturePath(parent, resolved) {
+		return nil, nil, errors.Join(errors.New("git index parent is redirected"), err)
+	}
+	directory, err := rootfs.OpenExactRoot(parent)
+	if err != nil {
+		return nil, nil, err
+	}
+	var lock *os.File
+	lockName := name + ".lock"
+	lockOwned := false
+	cleanup := func() {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		if lockOwned {
+			_ = directory.Remove(lockName)
+		}
+		_ = directory.Close()
+	}
+	defer func() {
+		if err != nil {
+			cleanup()
+		}
+	}()
+	openedInfo, err := directory.Stat(".")
+	if err != nil || !os.SameFile(parentInfo, openedInfo) {
+		return nil, nil, errors.Join(errors.New("git index parent changed during restore"), err)
 	}
 	if err := inspectExactRootPath(directory, name, false); err != nil &&
 		!errors.Is(err, os.ErrNotExist) {
-		return err
+		return nil, nil, err
 	}
 	mode := os.FileMode(0o600)
 	if info, statErr := directory.Lstat(name); statErr == nil {
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("git index is not a regular file")
+			return nil, nil, errors.New("git index is not a regular file")
 		}
 		mode = info.Mode().Perm()
 	} else if !errors.Is(statErr, os.ErrNotExist) {
-		return statErr
+		return nil, nil, statErr
 	}
-	lockName := name + ".lock"
-	lock, err := directory.CreateExclusive(lockName, 0o600)
+	lock, err = directory.CreateExclusive(lockName, 0o600)
 	if errors.Is(err, os.ErrExist) {
-		return &ConflictError{Conflicts: []Conflict{{Kind: ConflictIndexDrift,
+		return nil, nil, &ConflictError{Conflicts: []Conflict{{Kind: ConflictIndexDrift,
 			ExpectedSHA256: expectedDigest, TargetSHA256: targetDigest,
 			Reason: "Git index is locked by another operation"}}}
 	}
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	lockOwned := true
-	defer func() {
-		_ = lock.Close()
-		if lockOwned {
-			_ = directory.Remove(lockName)
-		}
-	}()
+	lockOwned = true
 	current, currentPresent, err := readGitIndexUnderLock(directory, name)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	currentSHA := sha256.Sum256(current)
 	currentDigest := hex.EncodeToString(currentSHA[:])
 	if currentDigest == targetDigest && currentPresent == targetPresent {
-		return nil
+		return func() error { return nil }, cleanup, nil
 	}
 	if currentDigest != expectedDigest || currentPresent != expectedPresent {
-		return &ConflictError{Conflicts: []Conflict{{Kind: ConflictIndexDrift,
+		return nil, nil, &ConflictError{Conflicts: []Conflict{{Kind: ConflictIndexDrift,
 			ExpectedSHA256: expectedDigest, CurrentSHA256: currentDigest,
 			TargetSHA256: targetDigest,
 			Reason:       "Git index changed after restore preview"}}}
 	}
 	if !targetPresent {
-		return directory.Remove(name)
+		return func() error { return directory.Remove(name) }, cleanup, nil
 	}
 	if err := writeAndSync(lock, content); err != nil {
-		return err
+		return nil, nil, err
 	}
 	if err := lock.Chmod(mode); err != nil {
-		return err
+		return nil, nil, err
 	}
 	if err := lock.Close(); err != nil {
-		return err
+		return nil, nil, err
 	}
-	if err := directory.Rename(lockName, name); err != nil {
-		return err
-	}
-	lockOwned = false
-	return nil
+	lock = nil
+	return func() error {
+		if err := directory.Rename(lockName, name); err != nil {
+			return err
+		}
+		lockOwned = false
+		return nil
+	}, cleanup, nil
 }
 
 func readGitIndexUnderLock(root *rootfs.ExactRoot, name string) ([]byte, bool, error) {
