@@ -223,6 +223,22 @@ func testSupervisorInlineWebFetchApproval(t *testing.T, mode domain.RunExecution
 		t.Fatal(err)
 	}
 	setWebTestPermission(t, st, run.ID, mode)
+	// The executor-level fixture keeps Web authority independent of native
+	// grants. A Full Supervisor turn also needs its current process activation.
+	capabilities := domain.ExecutionPermissionRuntimeCapabilities{
+		OperatorApprovalEnabled: true, DangerFullAccessEnabled: true,
+		RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority(),
+	}
+	defer capabilities.RuntimeAuthority.RevokeRun(run.ID)
+	if mode == domain.RunExecutionPermissionFull {
+		permission, err := st.GetRunExecutionPermission(ctx, run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := capabilities.RuntimeAuthority.ActivateRunFullAccess(permission); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := runService.Start(ctx, run.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -238,6 +254,7 @@ func testSupervisorInlineWebFetchApproval(t *testing.T, mode domain.RunExecution
 	backend := &applicationWebFetchBackend{}
 	webService := webevidence.NewService(st, nil, backend)
 	supervisor := application.NewAgentRunner(st, router, checker).
+		WithExecutionPermissionCapabilities(capabilities).
 		WithWebEvidence(webService).
 		WithWebFetchAuthorizationScheduler(true)
 	waiting, err := supervisor.Step(ctx, run.ID)
@@ -273,6 +290,7 @@ func testSupervisorInlineWebFetchApproval(t *testing.T, mode domain.RunExecution
 		t.Fatalf("approval decision=%#v err=%v", decision, err)
 	}
 	handoff := application.NewRunExecutionHandoffService(st, router, checker).
+		WithExecutionPermissionCapabilities(capabilities).
 		WithWebEvidence(webService).
 		WithWebFetchAuthorizationScheduler(true)
 	resumed, replayed, err := handoff.ResumeWebFetchAuthorization(ctx, run.ID,
