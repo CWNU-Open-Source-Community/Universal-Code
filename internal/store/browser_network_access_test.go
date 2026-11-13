@@ -53,6 +53,9 @@ func TestSchemaV230PreservesLegacyBrowserChoiceAndDefaultsNewRunsOff(t *testing.
 	if err := st.applyMigration(t.Context(), migrationPlan()[229]); err != nil {
 		t.Fatal(err)
 	}
+	if version, err := st.SchemaVersion(t.Context()); err != nil || version != 230 {
+		t.Fatalf("browser preference migration version=%d want=230 err=%v", version, err)
+	}
 	var preserved string
 	if err := st.db.QueryRow(`SELECT config_json FROM runs WHERE id=?`, run.ID).Scan(&preserved); err != nil || preserved != string(raw) {
 		t.Fatalf("migration edited historical config: %s %v", preserved, err)
@@ -73,8 +76,12 @@ func TestSchemaV230PreservesLegacyBrowserChoiceAndDefaultsNewRunsOff(t *testing.
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if version, err := st.SchemaVersion(t.Context()); err != nil || version != 230 {
-		t.Fatalf("version=%d %v", version, err)
+	if version, err := st.SchemaVersion(t.Context()); err != nil || version != LatestSchemaVersion {
+		t.Fatalf("reopened schema version=%d want=%d err=%v", version, LatestSchemaVersion, err)
+	}
+	if selection, err := st.GetBrowserNetworkAccess(t.Context(), run.ID, ""); err != nil ||
+		selection.BrowserNetworkAccess != domain.BrowserNetworkRestricted {
+		t.Fatalf("reopened legacy selection=%+v %v", selection, err)
 	}
 }
 

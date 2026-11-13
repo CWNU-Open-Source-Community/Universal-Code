@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,7 +63,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	rootHandle, err := os.OpenRoot(root)
+	rootHandle, err := rootfs.OpenExactRoot(root)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("open Workspace root: %w", err)
 	}
@@ -72,7 +73,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("capture Workspace identity: %w", err)
 	}
 	rootPathDigest := sha256.Sum256([]byte(canonicalPathIdentity(root)))
-	inventory, err := inspectCaptureInventory(ctx, root)
+	inventory, err := inspectCaptureInventory(ctx, root, rootHandle)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -220,7 +221,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 	return snapshot, nil
 }
 
-func actualCapturePathCase(root *os.Root, normalized string) (string, bool, error) {
+func actualCapturePathCase(root *rootfs.ExactRoot, normalized string) (string, bool, error) {
 	parts := strings.Split(normalized, "/")
 	current := "."
 	actual := make([]string, 0, len(parts))
@@ -232,7 +233,7 @@ func actualCapturePathCase(root *os.Root, normalized string) (string, bool, erro
 		if err != nil {
 			return "", false, fmt.Errorf("inspect Workspace path casing: %w", err)
 		}
-		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		if !info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 			return "", false, nil
 		}
 		directory, err := root.Open(current)
@@ -296,13 +297,13 @@ func canonicalPathIdentity(value string) string {
 	return value
 }
 
-func inspectCaptureInventory(ctx context.Context, root string) (captureInventory, error) {
+func inspectCaptureInventory(ctx context.Context, root string, rootHandle *rootfs.ExactRoot) (captureInventory, error) {
 	result := captureInventory{baseCommit: "non-git", tracked: map[string]gitIndexEntry{},
 		untracked: map[string]struct{}{}, ignored: map[string]struct{}{},
 		staged: map[string]struct{}{}}
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
-		paths, truncated, walkErr := walkNonGitFiles(ctx, root)
+		paths, truncated, walkErr := walkNonGitFiles(ctx, rootHandle)
 		if walkErr != nil {
 			return result, walkErr
 		}
@@ -314,7 +315,7 @@ func inspectCaptureInventory(ctx context.Context, root string) (captureInventory
 	}
 	top, err := captureGitOutput(ctx, gitPath, root, "rev-parse", "--show-toplevel")
 	if err != nil || !sameCapturePath(strings.TrimRight(string(top), "\r\n"), root) {
-		paths, truncated, walkErr := walkNonGitFiles(ctx, root)
+		paths, truncated, walkErr := walkNonGitFiles(ctx, rootHandle)
 		if walkErr != nil {
 			return result, walkErr
 		}
@@ -480,7 +481,7 @@ func capturePaths(inventory captureInventory) []string {
 	return paths
 }
 
-func captureEntry(ctx context.Context, root *os.Root, path string,
+func captureEntry(ctx context.Context, root *rootfs.ExactRoot, path string,
 	inventory captureInventory,
 ) (Entry, []byte, string, error) {
 	index, tracked := inventory.tracked[path]
@@ -537,7 +538,7 @@ func captureEntry(ctx context.Context, root *os.Root, path string,
 		entry.Reason = "special filesystem entry is unsupported"
 		return entry, nil, "special Workspace content is not captured", nil
 	}
-	digest, content, err := hashCaptureFile(ctx, root, path, info.Size() <= MaxStoredFileBytes)
+	digest, content, err := hashCaptureFile(ctx, root, path, info, info.Size() <= MaxStoredFileBytes)
 	if err != nil {
 		entry.StoragePolicy = StorageUnreadable
 		entry.Recoverable = false
@@ -572,7 +573,7 @@ func captureEntry(ctx context.Context, root *os.Root, path string,
 	return entry, content, "", nil
 }
 
-func capturePathInfo(root *os.Root, relative string) (os.FileInfo, bool, error) {
+func capturePathInfo(root *rootfs.ExactRoot, relative string) (os.FileInfo, bool, error) {
 	parts := strings.Split(relative, "/")
 	current := "."
 	var info os.FileInfo
@@ -595,14 +596,25 @@ func capturePathInfo(root *os.Root, relative string) (os.FileInfo, bool, error) 
 	return info, false, nil
 }
 
-func hashCaptureFile(ctx context.Context, root *os.Root, path string, keep bool) (string, []byte, error) {
+func hashCaptureFile(ctx context.Context, root *rootfs.ExactRoot, path string, before os.FileInfo,
+	keep bool,
+) (string, []byte, error) {
 	// Keep the actual read beneath the same held root even if a parent is
 	// replaced by a link after capturePathInfo inspected it.
-	file, err := root.Open(filepath.FromSlash(path))
+	local := filepath.FromSlash(path)
+	file, err := root.OpenReadOnly(local)
 	if err != nil {
 		return "", nil, err
 	}
 	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil {
+		return "", nil, err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) ||
+		before.Size() != opened.Size() || !before.ModTime().Equal(opened.ModTime()) {
+		return "", nil, errors.New("Workspace file changed while opening")
+	}
 	hash := sha256.New()
 	var buffer bytes.Buffer
 	writer := io.Writer(hash)
@@ -610,12 +622,16 @@ func hashCaptureFile(ctx context.Context, root *os.Root, path string, keep bool)
 		writer = io.MultiWriter(hash, &buffer)
 	}
 	chunk := make([]byte, 64*1024)
+	// A growing file must not turn a bounded blob capture into an unbounded read.
+	reader := io.LimitReader(file, before.Size())
+	var size int64
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", nil, err
 		}
-		count, readErr := file.Read(chunk)
+		count, readErr := reader.Read(chunk)
 		if count > 0 {
+			size += int64(count)
 			if _, err := writer.Write(chunk[:count]); err != nil {
 				return "", nil, err
 			}
@@ -626,6 +642,14 @@ func hashCaptureFile(ctx context.Context, root *os.Root, path string, keep bool)
 		if readErr != nil {
 			return "", nil, readErr
 		}
+	}
+	after, err := root.Lstat(local)
+	if err != nil {
+		return "", nil, err
+	}
+	if size != before.Size() || !os.SameFile(opened, after) ||
+		before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return "", nil, errors.New("Workspace file changed while reading")
 	}
 	if !keep {
 		return hex.EncodeToString(hash.Sum(nil)), nil, nil
@@ -656,36 +680,34 @@ func captureBlobBytes(values map[string]Blob) int64 {
 	return total
 }
 
-func walkNonGitFiles(ctx context.Context, root string) ([]string, bool, error) {
+func walkNonGitFiles(ctx context.Context, root *rootfs.ExactRoot) ([]string, bool, error) {
 	values := make([]string, 0, 256)
 	truncated := false
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+	err := fs.WalkDir(root.FS(), ".", func(relative string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if sameCapturePath(path, root) {
+		if relative == "." {
 			return nil
 		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
 		if relative == ".git" || strings.HasPrefix(relative, ".git/") {
 			if entry.IsDir() {
-				return filepath.SkipDir
+				return fs.SkipDir
 			}
 			return nil
 		}
 		if entry.IsDir() {
+			if entry.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		if len(values) >= MaxEntries {
 			truncated = true
-			return filepath.SkipAll
+			return fs.SkipAll
 		}
 		normalized, err := normalizeCapturePath(relative)
 		if err != nil {
@@ -790,8 +812,12 @@ func sameCapturePath(left, right string) bool {
 }
 
 func sensitiveCapturePath(path string) bool {
-	lower := strings.ToLower(filepath.ToSlash(path))
-	base := strings.ToLower(filepath.Base(lower))
+	parts := strings.Split(strings.ToLower(path), "/")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	lower := "/" + strings.Join(parts, "/")
+	base := parts[len(parts)-1]
 	if base == ".env" || strings.HasPrefix(base, ".env.") || base == "credentials" ||
 		base == "credentials.json" || base == "id_rsa" || base == "id_ed25519" ||
 		strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".p12") ||

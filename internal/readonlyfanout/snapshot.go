@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -92,7 +94,6 @@ func BuildPlan(ctx context.Context, request BuildPlanRequest) (domain.ReadOnlyFa
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	request.ScopePath = strings.TrimSpace(request.ScopePath)
 	if request.ScopePath == "" {
 		request.ScopePath = "."
 	}
@@ -167,7 +168,7 @@ func BuildPlan(ctx context.Context, request BuildPlanRequest) (domain.ReadOnlyFa
 }
 
 // LoadVerifiedSnapshot rebuilds the manifest and then opens every admitted
-// file through os.Root. No model input is returned unless the complete
+// file through the workspace root. No model input is returned unless the complete
 // workspace snapshot still matches the immutable plan.
 func LoadVerifiedSnapshot(ctx context.Context, workspaceRoot string,
 	plan domain.ReadOnlyFanoutPlan,
@@ -196,7 +197,7 @@ func LoadVerifiedSnapshot(ctx context.Context, workspaceRoot string,
 	if err != nil {
 		return VerifiedSnapshot{}, err
 	}
-	rootHandle, err := os.OpenRoot(root)
+	rootHandle, err := rootfs.OpenExactRoot(root)
 	if err != nil {
 		return VerifiedSnapshot{}, err
 	}
@@ -245,39 +246,21 @@ func samePlannedSnapshot(expected, current domain.ReadOnlyFanoutPlan) bool {
 		slices.Equal(expected.Shards, current.Shards)
 }
 
-func readVerifiedFile(root *os.Root, manifest domain.ReadOnlyFanoutFile) (SourceFile, error) {
+func readVerifiedFile(root *rootfs.ExactRoot, manifest domain.ReadOnlyFanoutFile) (SourceFile, error) {
 	rootRelative := filepath.FromSlash(manifest.RelativePath)
 	before, err := root.Lstat(rootRelative)
 	if err != nil {
 		return SourceFile{}, err
 	}
-	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
-		return SourceFile{}, errors.New("manifest path is no longer a regular file")
+	if !before.Mode().IsRegular() || before.Size() != manifest.SizeBytes {
+		return SourceFile{}, errors.New("manifest path is no longer a regular file of the planned size")
 	}
-	handle, err := root.Open(rootRelative)
+	content, err := readSnapshotFile(root, rootRelative, before)
 	if err != nil {
 		return SourceFile{}, err
 	}
-	defer handle.Close()
-	opened, err := handle.Stat()
-	if err != nil {
-		return SourceFile{}, err
-	}
-	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
-		return SourceFile{}, errors.New("manifest path changed while opening")
-	}
-	content, err := io.ReadAll(io.LimitReader(handle,
-		int64(domain.MaxReadOnlyFanoutFileBytes)+1))
-	if err != nil {
-		return SourceFile{}, err
-	}
-	after, err := root.Lstat(rootRelative)
-	if err != nil {
-		return SourceFile{}, err
-	}
-	if !os.SameFile(opened, after) || int64(len(content)) != manifest.SizeBytes ||
-		!utf8.Valid(content) || containsNUL(content) {
-		return SourceFile{}, errors.New("manifest file changed while reading")
+	if !utf8.Valid(content) || containsNUL(content) {
+		return SourceFile{}, errors.New("manifest file is not valid UTF-8 text")
 	}
 	digest := sha256.Sum256(content)
 	digestText := hex.EncodeToString(digest[:])
@@ -295,11 +278,42 @@ func readVerifiedFile(root *os.Root, manifest domain.ReadOnlyFanoutFile) (Source
 	}, nil
 }
 
+func readSnapshotFile(root *rootfs.ExactRoot, rootRelative string, before os.FileInfo) ([]byte, error) {
+	handle, err := root.OpenReadOnly(rootRelative)
+	if err != nil {
+		return nil, err
+	}
+	defer handle.Close()
+	opened, err := handle.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
+		return nil, errors.New("manifest path changed while opening")
+	}
+	content, err := io.ReadAll(io.LimitReader(handle,
+		int64(domain.MaxReadOnlyFanoutFileBytes)+1))
+	if err != nil {
+		return nil, err
+	}
+	after, err := root.Lstat(rootRelative)
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(opened, after) || int64(len(content)) != before.Size() ||
+		before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return nil, errors.New("manifest file changed while reading")
+	}
+	return content, nil
+}
+
 func resolveSnapshotScope(workspaceRoot, scopePath string) (string, string, error) {
 	if workspaceRoot == "" {
 		return "", "", errors.New("read-only fan-out workspace root is required")
 	}
-	if filepath.IsAbs(scopePath) || strings.Contains(scopePath, "\\") {
+	if !utf8.ValidString(scopePath) || len(scopePath) > domain.MaxReadOnlyFanoutPathBytes ||
+		strings.Contains(scopePath, "\\") || strings.ContainsRune(scopePath, 0) ||
+		!filepath.IsLocal(filepath.FromSlash(scopePath)) {
 		return "", "", errors.New("read-only fan-out scope must be a slash-separated workspace-relative path")
 	}
 	cleanScope := path.Clean(scopePath)
@@ -328,7 +342,7 @@ func resolveSnapshotScope(workspaceRoot, scopePath string) (string, string, erro
 	if !sameCanonicalPath(scopeCandidate, scope) {
 		return "", "", errors.New("read-only fan-out scope cannot traverse a symlink")
 	}
-	relative, err := filepath.Rel(root, scope)
+	relative, err := filepath.Rel(rootfs.OrdinaryPath(root), rootfs.OrdinaryPath(scope))
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
 		return "", "", errors.New("read-only fan-out scope escapes the workspace")
 	}
@@ -339,27 +353,35 @@ func resolveSnapshotScope(workspaceRoot, scopePath string) (string, string, erro
 	if !scopeInfo.IsDir() {
 		return "", "", errors.New("read-only fan-out scope is not a directory")
 	}
-	return root, scope, nil
+	return root, filepath.ToSlash(relative), nil
 }
 
-func collectSnapshotCandidates(ctx context.Context, root, scope string,
+func collectSnapshotCandidates(ctx context.Context, root, scopeRelative string,
 ) ([]snapshotCandidate, int, error) {
-	rootHandle, err := os.OpenRoot(root)
+	rootHandle, err := rootfs.OpenExactRoot(root)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rootHandle.Close()
+	scopeInfo, err := rootHandle.Lstat(filepath.FromSlash(scopeRelative))
+	if err != nil {
+		return nil, 0, err
+	}
+	if !scopeInfo.IsDir() {
+		return nil, 0, errors.New("read-only fan-out scope is no longer a directory")
+	}
 	candidates := make([]snapshotCandidate, 0, 64)
 	excluded := 0
 	entries := 0
-	err = filepath.WalkDir(scope, func(current string, entry os.DirEntry, walkErr error) error {
+	var totalBytes int64
+	err = fs.WalkDir(rootHandle.FS(), scopeRelative, func(relative string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if current == scope {
+		if relative == scopeRelative {
 			return nil
 		}
 		entries++
@@ -367,33 +389,39 @@ func collectSnapshotCandidates(ctx context.Context, root, scope string,
 			return fmt.Errorf("read-only fan-out scope exceeds %d filesystem entries",
 				domain.MaxReadOnlyFanoutWalkEntries)
 		}
-		name := strings.ToLower(entry.Name())
-		if entry.IsDir() {
-			if _, skip := skippedDirectories[name]; skip {
-				excluded++
-				return filepath.SkipDir
+		// Treat a padded sensitive name as sensitive without changing its identity.
+		name := strings.ToLower(strings.TrimSpace(entry.Name()))
+		if !utf8.ValidString(relative) || len(relative) > domain.MaxReadOnlyFanoutPathBytes ||
+			strings.Contains(relative, "\\") || !filepath.IsLocal(filepath.FromSlash(relative)) ||
+			entry.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			excluded++
+			if entry.IsDir() {
+				return fs.SkipDir
 			}
 			return nil
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
+		if entry.IsDir() {
+			if _, skip := skippedDirectories[name]; skip {
+				excluded++
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if sensitiveFile(name) || !supportedSourceFile(name) || len(candidates) >= domain.MaxReadOnlyFanoutFiles {
 			excluded++
 			return nil
 		}
-		relative, err := filepath.Rel(root, current)
-		if err != nil {
-			return err
-		}
-		rootRelative := filepath.Clean(relative)
+		rootRelative := filepath.FromSlash(relative)
 		info, err := rootHandle.Lstat(rootRelative)
 		if err != nil {
 			return err
 		}
-		if !info.Mode().IsRegular() || sensitiveFile(name) || !supportedSourceFile(name) ||
-			info.Size() > domain.MaxReadOnlyFanoutFileBytes {
+		if !info.Mode().IsRegular() || info.Size() > domain.MaxReadOnlyFanoutFileBytes ||
+			totalBytes+info.Size() > domain.MaxReadOnlyFanoutTotalBytes {
 			excluded++
 			return nil
 		}
-		content, err := rootHandle.ReadFile(rootRelative)
+		content, err := readSnapshotFile(rootHandle, rootRelative, info)
 		if err != nil {
 			return err
 		}
@@ -401,13 +429,8 @@ func collectSnapshotCandidates(ctx context.Context, root, scope string,
 			excluded++
 			return nil
 		}
-		relative = filepath.ToSlash(relative)
-		if len(candidates) >= domain.MaxReadOnlyFanoutFiles ||
-			snapshotBytes(candidates)+int64(len(content)) > domain.MaxReadOnlyFanoutTotalBytes {
-			excluded++
-			return nil
-		}
 		digest := sha256.Sum256(content)
+		totalBytes += info.Size()
 		candidates = append(candidates, snapshotCandidate{
 			relativePath: relative, sizeBytes: int64(len(content)),
 			digest: hex.EncodeToString(digest[:]),
@@ -424,10 +447,10 @@ func collectSnapshotCandidates(ctx context.Context, root, scope string,
 }
 
 func sameCanonicalPath(left, right string) bool {
-	left = filepath.Clean(left)
-	right = filepath.Clean(right)
-	if strings.EqualFold(left, right) {
-		return true
+	left = filepath.Clean(rootfs.OrdinaryPath(left))
+	right = filepath.Clean(rootfs.OrdinaryPath(right))
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
 	}
 	return left == right
 }
@@ -475,14 +498,6 @@ func sensitiveFile(name string) bool {
 	}
 	_, sensitive := sensitiveExtensions[strings.ToLower(filepath.Ext(name))]
 	return sensitive
-}
-
-func snapshotBytes(candidates []snapshotCandidate) int64 {
-	var total int64
-	for _, candidate := range candidates {
-		total += candidate.sizeBytes
-	}
-	return total
 }
 
 func containsNUL(content []byte) bool {

@@ -598,7 +598,7 @@ func validIdentity(value string) bool {
 }
 
 func validPath(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
+	if value == "" || !utf8.ValidString(value) ||
 		len([]rune(value)) > MaxPathRunes || strings.ContainsRune(value, 0) ||
 		strings.HasPrefix(value, "/") || strings.ContainsAny(value, `\:`) ||
 		path.Clean(value) != value || value == "." || value == ".." ||

@@ -4,8 +4,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
+
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestRestorePreviewsAndReplaysTextBinaryRenameDeleteUntrackedAndDirtyIndex(t *testing.T) {
@@ -76,6 +79,63 @@ func TestRestorePreviewsAndReplaysTextBinaryRenameDeleteUntrackedAndDirtyIndex(t
 	}
 	if len(replay.AppliedPaths) != 0 || len(replay.DeletedPaths) != 0 {
 		t.Fatalf("completed restore replay wrote files: %+v", replay)
+	}
+}
+
+func TestRestoreRecreatesAndDeletesExactWhitespacePaths(t *testing.T) {
+	root := newCheckpointRepository(t)
+	const scope = " src "
+	const relative = scope + "/nested /notes.txt "
+	const neighboring = " src/nested/notes.txt"
+	const content = "exact original\n"
+	native := func(name string) string {
+		t.Helper()
+		full, err := rootfs.ExactAbsolutePath(filepath.Join(root, filepath.FromSlash(name)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return full
+	}
+	dir := native(scope)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	})
+	mustCheckpointWrite(t, native(neighboring), []byte("neighbor\n"))
+	mustCheckpointWrite(t, native(relative), []byte(content))
+	mustCheckpointWrite(t, native(scope+"/.env "), []byte("fixture value\n"))
+	now := time.Now().UTC()
+	before := captureRestoreFixture(t, root, "exact-before", "exact-receipt-before", now)
+	entries := checkpointEntriesByPath(before.Entries)
+	if entry := entries[relative]; entry.StoragePolicy != StorageStored || !entry.Recoverable {
+		t.Fatalf("exact file was not captured: %+v", entry)
+	}
+	if entry := entries[scope+"/.env "]; entry.StoragePolicy != StorageExcludedSensitive {
+		t.Fatalf("padded sensitive file was captured: %+v", entry)
+	}
+	if err := os.RemoveAll(native(scope + "/nested ")); err != nil {
+		t.Fatal(err)
+	}
+	after := captureRestoreFixture(t, root, "exact-after", "exact-receipt-after", now.Add(time.Minute))
+
+	undo, err := ApplyRestore(t.Context(), root, after, before, after)
+	if err != nil || !slices.Equal(undo.AppliedPaths, []string{relative}) {
+		t.Fatalf("undo did not recreate the exact path: %+v, %v", undo, err)
+	}
+	if data, err := os.ReadFile(native(relative)); err != nil || string(data) != content {
+		t.Fatalf("restored file = %q, %v", data, err)
+	}
+	restored := captureRestoreFixture(t, root, "exact-restored", "exact-receipt-restored", now.Add(2*time.Minute))
+	redo, err := ApplyRestore(t.Context(), root, before, after, restored)
+	if err != nil || !slices.Equal(redo.DeletedPaths, []string{relative}) {
+		t.Fatalf("redo did not delete the exact path: %+v, %v", redo, err)
+	}
+	if _, err := os.Stat(native(relative)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("exact path still present after redo: %v", err)
+	}
+	if data, err := os.ReadFile(native(neighboring)); err != nil || string(data) != "neighbor\n" {
+		t.Fatalf("neighbor changed = %q, %v", data, err)
 	}
 }
 

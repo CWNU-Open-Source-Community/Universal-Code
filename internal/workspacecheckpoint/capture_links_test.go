@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestCaptureExcludesTrackedFilesThroughLinkedParents(t *testing.T) {
@@ -55,12 +57,13 @@ func TestCaptureRootedReadRejectsParentReplacementAfterInspection(t *testing.T) 
 	rootPath := t.TempDir()
 	const path = "docs/memo.txt"
 	mustCheckpointWrite(t, filepath.Join(rootPath, filepath.FromSlash(path)), []byte("original"))
-	root, err := os.OpenRoot(rootPath)
+	root, err := rootfs.OpenExactRoot(rootPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	if _, linked, err := capturePathInfo(root, path); err != nil || linked {
+	before, linked, err := capturePathInfo(root, path)
+	if err != nil || linked {
 		t.Fatalf("ordinary file inspection failed: linked=%v err=%v", linked, err)
 	}
 	outside := t.TempDir()
@@ -70,7 +73,7 @@ func TestCaptureRootedReadRejectsParentReplacementAfterInspection(t *testing.T) 
 		t.Fatal(err)
 	}
 	makeCheckpointDirectoryLink(t, docs, outside)
-	if digest, content, err := hashCaptureFile(t.Context(), root, path, true); err == nil || digest != "" || content != nil {
+	if digest, content, err := hashCaptureFile(t.Context(), root, path, before, true); err == nil || digest != "" || content != nil {
 		t.Fatalf("read escaped after inspection: digest=%q content=%q err=%v", digest, content, err)
 	}
 }

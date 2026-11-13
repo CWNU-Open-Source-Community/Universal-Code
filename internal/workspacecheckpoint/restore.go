@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
 
@@ -274,7 +275,7 @@ func applyRestore(ctx context.Context, workspaceRoot string, expected, target,
 			Reason: "workspace root identity changed before restore"}
 		return result, &ConflictError{Conflicts: []Conflict{conflict}}
 	}
-	root, err := os.OpenRoot(rootPath)
+	root, err := rootfs.OpenExactRoot(rootPath)
 	if err != nil {
 		return result, err
 	}
@@ -293,7 +294,7 @@ func applyRestore(ctx context.Context, workspaceRoot string, expected, target,
 		if sameWorktreeEntry(from, fromOK, to, toOK) {
 			continue
 		}
-		live, liveOK, inspectErr := inspectLiveEntry(root, currentPath)
+		live, liveOK, inspectErr := inspectLiveEntry(ctx, root, currentPath)
 		if inspectErr != nil {
 			return result, inspectErr
 		}
@@ -335,7 +336,7 @@ func applyRestore(ctx context.Context, workspaceRoot string, expected, target,
 		result.AppliedPaths = append(result.AppliedPaths, currentPath)
 	}
 	if expected.Checkpoint.IndexSHA256 != target.Checkpoint.IndexSHA256 {
-		if err := restoreGitIndex(ctx, rootPath, expected, target); err != nil {
+		if err := restoreGitIndex(ctx, rootPath, root, expected, target); err != nil {
 			return result, err
 		}
 		result.IndexRestored = true
@@ -525,8 +526,8 @@ func appendConflict(preview *Preview, conflict Conflict) {
 	preview.Conflicts = append(preview.Conflicts, conflict)
 }
 
-func inspectLiveEntry(root *os.Root, relative string) (Entry, bool, error) {
-	if err := inspectExactRootPath(root, relative, true); err != nil {
+func inspectLiveEntry(ctx context.Context, root *rootfs.ExactRoot, relative string) (Entry, bool, error) {
+	if err := inspectExactRootPath(root, relative, false); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Entry{}, false, nil
 		}
@@ -541,54 +542,48 @@ func inspectLiveEntry(root *os.Root, relative string) (Entry, bool, error) {
 	}
 	entry := Entry{Path: relative, Mode: uint32(info.Mode().Perm()), Size: info.Size(),
 		State: StatePresent}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return Entry{}, false, &ConflictError{Conflicts: []Conflict{{
-			Kind: ConflictRedirectedPath, Path: relative,
-			Reason: "workspace path is a symlink or junction"}}}
-	}
 	if !info.Mode().IsRegular() {
 		return Entry{}, false, &ConflictError{Conflicts: []Conflict{{
 			Kind: ConflictRedirectedPath, Path: relative,
 			Reason: "workspace path is not a regular file"}}}
 	}
-	file, err := root.Open(filepath.FromSlash(relative))
+	if info.Size() > MaxStoredFileBytes {
+		return Entry{}, false, &ConflictError{Conflicts: []Conflict{{
+			Kind: ConflictExternalChange, Path: relative,
+			Reason: "live Workspace file exceeds the checkpoint limit"}}}
+	}
+	digest, _, err := hashCaptureFile(ctx, root, relative, info, false)
 	if err != nil {
 		return Entry{}, false, err
 	}
-	hash := sha256.New()
-	_, copyErr := io.Copy(hash, io.LimitReader(file, MaxStoredFileBytes+1))
-	closeErr := file.Close()
-	if copyErr != nil || closeErr != nil {
-		return Entry{}, false, errors.Join(copyErr, closeErr)
-	}
 	entry.Kind = EntryFile
-	entry.WorktreeSHA256 = hex.EncodeToString(hash.Sum(nil))
+	entry.WorktreeSHA256 = digest
 	return entry, true, nil
 }
 
-func inspectExactRootPath(root *os.Root, relative string, missingFinal bool) error {
+func inspectExactRootPath(root *rootfs.ExactRoot, relative string, createParents bool) error {
 	components := strings.Split(filepath.ToSlash(relative), "/")
-	current := root
-	opened := make([]*os.Root, 0, len(components))
-	defer func() {
-		for _, child := range opened {
-			_ = child.Close()
-		}
-	}()
+	current := "."
 	for index, component := range components {
-		directory, err := current.Open(".")
+		directory, err := root.OpenReadOnly(current)
 		if err != nil {
 			return err
+		}
+		dirInfo, err := directory.Stat()
+		if err != nil || !dirInfo.IsDir() {
+			_ = directory.Close()
+			return errors.Join(errors.New("workspace path parent is no longer a directory"), err)
 		}
 		entries, err := directory.ReadDir(-1)
 		closeErr := directory.Close()
 		if err != nil || closeErr != nil {
 			return errors.Join(err, closeErr)
 		}
-		exact, alias := false, false
+		var exact os.DirEntry
+		alias := false
 		for _, entry := range entries {
 			if entry.Name() == component {
-				exact = true
+				exact = entry
 				break
 			}
 			if strings.EqualFold(entry.Name(), component) {
@@ -596,51 +591,38 @@ func inspectExactRootPath(root *os.Root, relative string, missingFinal bool) err
 			}
 		}
 		last := index == len(components)-1
-		if !exact {
+		current = filepath.Join(current, component)
+		if exact == nil {
 			if alias {
 				return &ConflictError{Conflicts: []Conflict{{Kind: ConflictRedirectedPath,
 					Path: relative, Reason: "workspace path casing changed"}}}
 			}
-			if missingFinal && last {
-				return os.ErrNotExist
+			if createParents && !last {
+				if err := root.Mkdir(current, 0o755); err != nil {
+					return err
+				}
+				continue
 			}
 			return os.ErrNotExist
 		}
-		info, err := current.Lstat(component)
+		info, err := root.Lstat(current)
 		if err != nil {
 			return err
 		}
-		if info.Mode()&os.ModeSymlink != 0 {
+		if (exact.Type()|info.Mode())&(os.ModeSymlink|os.ModeIrregular) != 0 {
 			return &ConflictError{Conflicts: []Conflict{{Kind: ConflictRedirectedPath,
 				Path: relative, Reason: "workspace path contains a symlink or junction"}}}
 		}
-		if last {
-			return nil
-		}
-		if !info.IsDir() {
+		if !last && !info.IsDir() {
 			return &ConflictError{Conflicts: []Conflict{{Kind: ConflictRedirectedPath,
 				Path: relative, Reason: "workspace path parent is not a directory"}}}
 		}
-		child, err := current.OpenRoot(component)
-		if err != nil {
-			return err
-		}
-		opened = append(opened, child)
-		current = child
 	}
 	return nil
 }
 
-func atomicRootWrite(root *os.Root, relative string, content []byte, mode os.FileMode) error {
+func atomicRootWrite(root *rootfs.ExactRoot, relative string, content []byte, mode os.FileMode) error {
 	parent := path.Dir(relative)
-	if parent != "." {
-		if err := root.MkdirAll(filepath.FromSlash(parent), 0o755); err != nil {
-			return err
-		}
-		if err := inspectExactRootPath(root, parent, false); err != nil {
-			return err
-		}
-	}
 	if err := inspectExactRootPath(root, relative, true); err != nil &&
 		!errors.Is(err, os.ErrNotExist) {
 		return err
@@ -651,8 +633,8 @@ func atomicRootWrite(root *os.Root, relative string, content []byte, mode os.Fil
 			return err
 		}
 		temporary := path.Join(parent, ".cyberagent-checkpoint-"+hex.EncodeToString(random))
-		file, err := root.OpenFile(filepath.FromSlash(temporary),
-			os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		local := filepath.FromSlash(temporary)
+		file, err := root.CreateExclusive(local, 0o600)
 		if errors.Is(err, os.ErrExist) {
 			continue
 		}
@@ -660,17 +642,16 @@ func atomicRootWrite(root *os.Root, relative string, content []byte, mode os.Fil
 			return err
 		}
 		writeErr := writeAndSync(file, content)
+		if writeErr == nil {
+			writeErr = file.Chmod(mode.Perm())
+		}
 		closeErr := file.Close()
 		if writeErr != nil || closeErr != nil {
-			_ = root.Remove(filepath.FromSlash(temporary))
+			_ = root.Remove(local)
 			return errors.Join(writeErr, closeErr)
 		}
-		if err := root.Chmod(filepath.FromSlash(temporary), mode.Perm()); err != nil {
-			_ = root.Remove(filepath.FromSlash(temporary))
-			return err
-		}
-		if err := root.Rename(filepath.FromSlash(temporary), filepath.FromSlash(relative)); err != nil {
-			_ = root.Remove(filepath.FromSlash(temporary))
+		if err := root.Rename(local, filepath.FromSlash(relative)); err != nil {
+			_ = root.Remove(local)
 			return err
 		}
 		return nil
@@ -678,7 +659,7 @@ func atomicRootWrite(root *os.Root, relative string, content []byte, mode os.Fil
 	return errors.New("workspace checkpoint temporary file allocation failed")
 }
 
-func removeRootFile(root *os.Root, relative string) error {
+func removeRootFile(root *rootfs.ExactRoot, relative string) error {
 	if err := inspectExactRootPath(root, relative, false); err != nil {
 		return err
 	}
@@ -686,7 +667,7 @@ func removeRootFile(root *os.Root, relative string) error {
 	if err != nil {
 		return err
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+	if !info.Mode().IsRegular() {
 		return &ConflictError{Conflicts: []Conflict{{Kind: ConflictRedirectedPath,
 			Path: relative, Reason: "restore deletes regular files only"}}}
 	}
@@ -703,7 +684,9 @@ func writeAndSync(file *os.File, content []byte) error {
 	return file.Sync()
 }
 
-func restoreGitIndex(ctx context.Context, root string, expected, target Snapshot) error {
+func restoreGitIndex(ctx context.Context, root string, rootHandle *rootfs.ExactRoot,
+	expected, target Snapshot,
+) error {
 	emptyIndexSHA := sha256.Sum256(nil)
 	emptyIndexDigest := hex.EncodeToString(emptyIndexSHA[:])
 	targetPresent := target.Checkpoint.IndexBlobSHA256 != "" ||
@@ -719,7 +702,7 @@ func restoreGitIndex(ctx context.Context, root string, expected, target Snapshot
 		return &ConflictError{Conflicts: []Conflict{{Kind: ConflictUnrecoverable,
 			Reason: "target Git index blob is unavailable"}}}
 	}
-	inventory, err := inspectCaptureInventory(ctx, root)
+	inventory, err := inspectCaptureInventory(ctx, root, rootHandle)
 	if err != nil || !inventory.git || inventory.indexPath == "" {
 		return errors.Join(errors.New("git index path is unavailable"), err)
 	}
@@ -742,7 +725,7 @@ func compareAndSwapGitIndex(target, expectedDigest string, expectedPresent bool,
 	if err != nil || !sameCapturePath(parent, resolved) {
 		return errors.Join(errors.New("git index parent is redirected"), err)
 	}
-	directory, err := os.OpenRoot(parent)
+	directory, err := rootfs.OpenExactRoot(parent)
 	if err != nil {
 		return err
 	}
@@ -756,7 +739,7 @@ func compareAndSwapGitIndex(target, expectedDigest string, expectedPresent bool,
 		!sameCapturePath(filepath.Join(parent, name), clean) {
 		return errors.New("git index path is invalid")
 	}
-	if err := inspectExactRootPath(directory, name, true); err != nil &&
+	if err := inspectExactRootPath(directory, name, false); err != nil &&
 		!errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -770,7 +753,7 @@ func compareAndSwapGitIndex(target, expectedDigest string, expectedPresent bool,
 		return statErr
 	}
 	lockName := name + ".lock"
-	lock, err := directory.OpenFile(lockName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	lock, err := directory.CreateExclusive(lockName, 0o600)
 	if errors.Is(err, os.ErrExist) {
 		return &ConflictError{Conflicts: []Conflict{{Kind: ConflictIndexDrift,
 			ExpectedSHA256: expectedDigest, TargetSHA256: targetDigest,
@@ -807,10 +790,10 @@ func compareAndSwapGitIndex(target, expectedDigest string, expectedPresent bool,
 	if err := writeAndSync(lock, content); err != nil {
 		return err
 	}
-	if err := lock.Close(); err != nil {
+	if err := lock.Chmod(mode); err != nil {
 		return err
 	}
-	if err := directory.Chmod(lockName, mode.Perm()); err != nil {
+	if err := lock.Close(); err != nil {
 		return err
 	}
 	if err := directory.Rename(lockName, name); err != nil {
@@ -820,8 +803,8 @@ func compareAndSwapGitIndex(target, expectedDigest string, expectedPresent bool,
 	return nil
 }
 
-func readGitIndexUnderLock(root *os.Root, name string) ([]byte, bool, error) {
-	file, err := root.Open(name)
+func readGitIndexUnderLock(root *rootfs.ExactRoot, name string) ([]byte, bool, error) {
+	file, err := root.OpenReadOnly(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, false, nil
 	}

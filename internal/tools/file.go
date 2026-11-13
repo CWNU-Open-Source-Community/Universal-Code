@@ -334,12 +334,6 @@ func validateWorkspaceFilePath(path string) error {
 	return nil
 }
 
-type workspaceDirFS struct{ root *rootfs.ExactRoot }
-
-func (fs workspaceDirFS) Open(path string) (iofs.File, error) {
-	return fs.root.Open(filepath.FromSlash(path))
-}
-
 func (fs WorkspaceFS) list(ctx context.Context, requested string, maxDepth int) (string, bool, error) {
 	base, err := fs.resolveExistingDir(requested)
 	if err != nil {
@@ -364,7 +358,7 @@ func (fs WorkspaceFS) list(ctx context.Context, requested string, maxDepth int) 
 		return "", false, err
 	}
 	defer root.Close()
-	err = iofs.WalkDir(workspaceDirFS{root}, ".", func(path string, entry os.DirEntry, walkErr error) error {
+	err = iofs.WalkDir(root.FS(), ".", func(path string, entry os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

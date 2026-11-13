@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestCapturePersistsEmptyFileContentWithoutTreatingItAsMissing(t *testing.T) {
@@ -46,12 +48,16 @@ func TestCapturePersistsEmptyFileContentWithoutTreatingItAsMissing(t *testing.T)
 			if data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name))); err != nil || len(data) != 0 {
 				t.Fatalf("capture changed source: %q %v", data, err)
 			}
-			rootHandle, err := os.OpenRoot(root)
+			rootHandle, err := rootfs.OpenExactRoot(root)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer rootHandle.Close()
-			_, omitted, err := hashCaptureFile(t.Context(), rootHandle, name, false)
+			info, err := rootHandle.Lstat(filepath.FromSlash(name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, omitted, err := hashCaptureFile(t.Context(), rootHandle, name, info, false)
 			if err != nil || omitted != nil {
 				t.Fatalf("hash-only capture retained content: %v %v", omitted, err)
 			}

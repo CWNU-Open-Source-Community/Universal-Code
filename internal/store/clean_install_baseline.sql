@@ -2513,8 +2513,7 @@ CREATE TABLE finding_evidence (
 			AND source_fingerprint NOT GLOB '*[^0-9a-f]*'),
 		CHECK(length(source_digest) = 64 AND source_digest = lower(source_digest)
 			AND source_digest NOT GLOB '*[^0-9a-f]*'),
-		CHECK(relative_path = trim(relative_path)
-			AND length(relative_path) BETWEEN 1 AND 2048
+		CHECK(length(relative_path) BETWEEN 1 AND 2048
 			AND instr(relative_path, char(0)) = 0 AND instr(relative_path, char(92)) = 0
 			AND substr(relative_path, 1, 1) <> '/' AND relative_path NOT IN ('.', '..')
 			AND relative_path NOT LIKE '../%'
@@ -2771,8 +2770,7 @@ CREATE TABLE findings (
 			AND length(CAST(title AS BLOB)) <= 1024 AND instr(title, char(0)) = 0),
 		CHECK(detail = trim(detail) AND length(detail) BETWEEN 1 AND 2048
 			AND length(CAST(detail AS BLOB)) <= 8192 AND instr(detail, char(0)) = 0),
-		CHECK(relative_path = trim(relative_path)
-			AND length(relative_path) BETWEEN 1 AND 2048
+		CHECK(length(relative_path) BETWEEN 1 AND 2048
 			AND instr(relative_path, char(0)) = 0 AND instr(relative_path, char(92)) = 0
 			AND substr(relative_path, 1, 1) <> '/' AND relative_path NOT IN ('.', '..')
 			AND relative_path NOT LIKE '../%'
@@ -4603,7 +4601,7 @@ CREATE TABLE readonly_fanout_files (
 		CHECK(size_bytes BETWEEN 0 AND 131072),
 		CHECK(length(content_sha256) = 64 AND content_sha256 = lower(content_sha256)
 			AND content_sha256 NOT GLOB '*[^0-9a-f]*'),
-		CHECK(relative_path = trim(relative_path) AND length(relative_path) BETWEEN 1 AND 2048
+		CHECK(length(relative_path) BETWEEN 1 AND 2048
 			AND instr(relative_path, char(0)) = 0 AND instr(relative_path, char(92)) = 0
 			AND substr(relative_path, 1, 1) <> '/' AND relative_path NOT IN ('.', '..')
 			AND relative_path NOT LIKE '../%'
@@ -4635,7 +4633,7 @@ CREATE TABLE readonly_fanout_findings (
 		CHECK(category = trim(category) AND length(category) BETWEEN 1 AND 64),
 		CHECK(title = trim(title) AND length(title) BETWEEN 1 AND 256),
 		CHECK(detail = trim(detail) AND length(detail) BETWEEN 1 AND 2048),
-		CHECK(relative_path = trim(relative_path) AND length(relative_path) BETWEEN 1 AND 2048
+		CHECK(length(relative_path) BETWEEN 1 AND 2048
 			AND instr(relative_path, char(0)) = 0 AND instr(relative_path, char(92)) = 0
 			AND substr(relative_path, 1, 1) <> '/' AND relative_path NOT IN ('.', '..')
 			AND relative_path NOT LIKE '../%'
@@ -4768,7 +4766,7 @@ CREATE TABLE readonly_fanout_plans (
 		CHECK(total_bytes BETWEEN 0 AND 786432),
 		CHECK(excluded_count BETWEEN 0 AND 20000),
 		CHECK(shard_count BETWEEN 1 AND 6 AND shard_count = effective_parallelism),
-		CHECK(scope_path = trim(scope_path) AND length(scope_path) BETWEEN 1 AND 2048
+		CHECK(length(scope_path) BETWEEN 1 AND 2048
 			AND instr(scope_path, char(0)) = 0 AND instr(scope_path, char(92)) = 0
 			AND substr(scope_path, 1, 1) <> '/' AND scope_path <> '..'
 			AND scope_path NOT LIKE '../%' AND instr('/' || scope_path || '/', '/../') = 0),
@@ -13300,7 +13298,7 @@ CREATE TABLE workspace_checkpoint_entries (
 		CHECK(tracked IN (0, 1) AND staged IN (0, 1) AND binary IN (0, 1)
 			AND recoverable IN (0, 1)),
 		CHECK(line_endings IN ('', 'lf', 'crlf', 'mixed', 'none')),
-		CHECK(length(path) BETWEEN 1 AND 4096 AND path = trim(path)
+		CHECK(length(path) BETWEEN 1 AND 4096
 			AND instr(path, char(0)) = 0),
 		CHECK(length(index_oid) <= 128 AND instr(index_oid, char(0)) = 0),
 		CHECK(length(index_mode) <= 16 AND instr(index_mode, char(0)) = 0),

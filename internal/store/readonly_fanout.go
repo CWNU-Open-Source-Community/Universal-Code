@@ -259,7 +259,6 @@ func normalizeReadOnlyFanoutPlan(plan domain.ReadOnlyFanoutPlan,
 	plan.ID = strings.TrimSpace(plan.ID)
 	plan.RunID = strings.TrimSpace(plan.RunID)
 	plan.WorkspaceID = strings.TrimSpace(plan.WorkspaceID)
-	plan.ScopePath = strings.TrimSpace(plan.ScopePath)
 	plan.Goal = strings.TrimSpace(redact.String(plan.Goal))
 	plan.ProtocolVersion = strings.TrimSpace(plan.ProtocolVersion)
 	plan.RequestedTier = domain.ReadOnlyFanoutTier(strings.TrimSpace(
@@ -272,7 +271,6 @@ func normalizeReadOnlyFanoutPlan(plan domain.ReadOnlyFanoutPlan,
 	plan.UpdatedAt = plan.UpdatedAt.UTC()
 	for index := range plan.Files {
 		plan.Files[index].PlanID = strings.TrimSpace(plan.Files[index].PlanID)
-		plan.Files[index].RelativePath = strings.TrimSpace(plan.Files[index].RelativePath)
 		plan.Files[index].ContentSHA256 = strings.TrimSpace(
 			plan.Files[index].ContentSHA256)
 	}
