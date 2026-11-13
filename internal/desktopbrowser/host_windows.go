@@ -162,9 +162,9 @@ func (h *Host) CreateTab(ctx context.Context, options TabOptions) (Page, error) 
 		}
 		page.container = container
 		h.tabs[page.id] = page
-		completed := newHandler("{6C4819F3-C9B7-4260-8127-C9F5BDE7F68C}", func(hr, controller uintptr) uintptr {
+		completed := newHandler("{6C4819F3-C9B7-4260-8127-C9F5BDE7F68C}", func(hr uintptr, controller unsafe.Pointer) uintptr {
 			err := hresult("create browser controller", hr)
-			if err == nil && controller == 0 {
+			if err == nil && controller == nil {
 				err = errors.New("WebView2 returned no controller")
 			}
 			if err == nil {
@@ -172,10 +172,10 @@ func (h *Host) CreateTab(ctx context.Context, options TabOptions) (Page, error) 
 				closed := page.closed
 				page.mu.RUnlock()
 				if closed {
-					_ = comCall((*comObject)(unsafe.Pointer(controller)), controllerClose)
+					_ = comCall((*comObject)(controller), controllerClose)
 					err = ErrClosed
 				} else {
-					page.controller = (*comObject)(unsafe.Pointer(controller))
+					page.controller = (*comObject)(controller)
 					page.controller.addRef()
 					err = comCall(page.controller, controllerGetCore, uintptr(unsafe.Pointer(&page.core)))
 					if err == nil {
@@ -516,9 +516,9 @@ func (p *nativePage) installEvents() error {
 	events := []struct {
 		slot int
 		iid  string
-		fn   func(uintptr, uintptr) uintptr
+		fn   func(uintptr, unsafe.Pointer) uintptr
 	}{
-		{coreNavigationStarting, "{9ADBE429-F36D-432B-9DDC-F8881FBD76E3}", func(_, args uintptr) uintptr {
+		{coreNavigationStarting, "{9ADBE429-F36D-432B-9DDC-F8881FBD76E3}", func(_ uintptr, args unsafe.Pointer) uintptr {
 			p.mu.Lock()
 			p.state.Loading = true
 			p.state.Error = ""
@@ -526,9 +526,9 @@ func (p *nativePage) installEvents() error {
 			p.refreshState()
 			return 0
 		}},
-		{coreNavigationCompleted, "{D33A35BF-1C49-4F98-93AB-006E0533FE1C}", func(_, args uintptr) uintptr {
+		{coreNavigationCompleted, "{D33A35BF-1C49-4F98-93AB-006E0533FE1C}", func(_ uintptr, args unsafe.Pointer) uintptr {
 			var succeeded int32
-			if args == 0 || comCall((*comObject)(unsafe.Pointer(args)), 3, uintptr(unsafe.Pointer(&succeeded))) != nil {
+			if args == nil || comCall((*comObject)(args), 3, uintptr(unsafe.Pointer(&succeeded))) != nil {
 				succeeded = 0
 			}
 			p.mu.Lock()
@@ -543,19 +543,22 @@ func (p *nativePage) installEvents() error {
 			}
 			return 0
 		}},
-		{coreSourceChanged, "{3C067F9F-5388-4772-8B48-79F7EF1AB37C}", func(_, args uintptr) uintptr { p.refreshState(); return 0 }},
-		{coreHistoryChanged, "{C8E8AC3B-3D5F-4CA6-9A4C-6D0DB19DAF98}", func(_, args uintptr) uintptr { p.refreshState(); return 0 }},
-		{coreTitleChanged, "{F5F2B923-953E-4042-9F95-F3A118E1AFD4}", func(_, args uintptr) uintptr { p.refreshState(); return 0 }},
-		{coreFullscreenChanged, "{E45D98B1-AFEF-45BE-8BAF-6C7728867F73}", func(_, args uintptr) uintptr {
+		{coreSourceChanged, "{3C067F9F-5388-4772-8B48-79F7EF1AB37C}", func(_ uintptr, args unsafe.Pointer) uintptr { p.refreshState(); return 0 }},
+		{coreHistoryChanged, "{C8E8AC3B-3D5F-4CA6-9A4C-6D0DB19DAF98}", func(_ uintptr, args unsafe.Pointer) uintptr { p.refreshState(); return 0 }},
+		{coreTitleChanged, "{F5F2B923-953E-4042-9F95-F3A118E1AFD4}", func(_ uintptr, args unsafe.Pointer) uintptr { p.refreshState(); return 0 }},
+		{coreFullscreenChanged, "{E45D98B1-AFEF-45BE-8BAF-6C7728867F73}", func(_ uintptr, args unsafe.Pointer) uintptr {
 			p.host.emit(Event{Kind: "fullscreen", State: p.State(), Fullscreen: getBool(p.core, coreIsFullscreen)})
 			return 0
 		}},
-		{coreNewWindowRequested, "{D4C185FE-C81C-4989-97AF-2D3FA7AB5651}", func(_, args uintptr) uintptr {
-			p.openPopup((*comObject)(unsafe.Pointer(args)))
+		{coreNewWindowRequested, "{D4C185FE-C81C-4989-97AF-2D3FA7AB5651}", func(_ uintptr, args unsafe.Pointer) uintptr {
+			p.openPopup((*comObject)(args))
 			return 0
 		}},
-		{coreWindowClose, "{5C19E9E0-092F-486B-AFFA-CA8231913039}", func(_, args uintptr) uintptr { _ = p.host.options.Dispatcher.Post(func() { p.closeOnUI() }); return 0 }},
-		{coreProcessFailed, "{79E0AEA4-990B-42D9-AA1D-0FCC2E5BC7F1}", func(_, args uintptr) uintptr {
+		{coreWindowClose, "{5C19E9E0-092F-486B-AFFA-CA8231913039}", func(_ uintptr, args unsafe.Pointer) uintptr {
+			_ = p.host.options.Dispatcher.Post(func() { p.closeOnUI() })
+			return 0
+		}},
+		{coreProcessFailed, "{79E0AEA4-990B-42D9-AA1D-0FCC2E5BC7F1}", func(_ uintptr, args unsafe.Pointer) uintptr {
 			p.mu.Lock()
 			p.state.Error = "browser process failed"
 			p.mu.Unlock()

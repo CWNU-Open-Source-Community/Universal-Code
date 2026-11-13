@@ -92,7 +92,7 @@ type comHandler struct {
 	vtable *[4]uintptr
 	refs   atomic.Int32
 	iid    windows.GUID
-	invoke func(uintptr, uintptr) uintptr
+	invoke func(uintptr, unsafe.Pointer) uintptr
 }
 
 var handlerRoots sync.Map
@@ -102,7 +102,9 @@ var handlerVTable = [4]uintptr{
 }
 var iidIUnknown = windows.GUID{Data4: [8]byte{0xc0, 0, 0, 0, 0, 0, 0, 0x46}}
 
-func newHandler(iid string, invoke func(uintptr, uintptr) uintptr) *comHandler {
+// The first Invoke argument is either a sender address or an HRESULT; the
+// second is always a native pointer. Keep it pointer-typed across the callback.
+func newHandler(iid string, invoke func(uintptr, unsafe.Pointer) uintptr) *comHandler {
 	guid, err := windows.GUIDFromString(iid)
 	if err != nil {
 		panic(err)
@@ -114,24 +116,24 @@ func newHandler(iid string, invoke func(uintptr, uintptr) uintptr) *comHandler {
 }
 func (h *comHandler) pointer() uintptr { return uintptr(unsafe.Pointer(h)) }
 func (h *comHandler) release()         { handlerRelease(h.pointer()) }
-func handlerQuery(this, iid, out uintptr) uintptr {
+func handlerQuery(this uintptr, iid *windows.GUID, out **comHandler) uintptr {
 	value, ok := handlerRoots.Load(this)
 	if !ok {
 		return uintptr(0x80004002)
 	}
 	h := value.(*comHandler)
-	if out == 0 {
+	if out == nil {
 		return uintptr(0x80004003)
 	}
-	*(*uintptr)(unsafe.Pointer(out)) = 0
-	if iid == 0 {
+	*out = nil
+	if iid == nil {
 		return uintptr(0x80004002)
 	}
-	guid := *(*windows.GUID)(unsafe.Pointer(iid))
+	guid := *iid
 	if guid != h.iid && guid != iidIUnknown {
 		return uintptr(0x80004002)
 	}
-	*(*uintptr)(unsafe.Pointer(out)) = this
+	*out = h
 	handlerAddRef(this)
 	return 0
 }
@@ -154,7 +156,7 @@ func handlerRelease(this uintptr) uintptr {
 	}
 	return uintptr(n)
 }
-func handlerInvoke(this, a, b uintptr) uintptr {
+func handlerInvoke(this, a uintptr, b unsafe.Pointer) uintptr {
 	value, ok := handlerRoots.Load(this)
 	if !ok {
 		return uintptr(0x8000ffff)

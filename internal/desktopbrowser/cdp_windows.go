@@ -63,8 +63,8 @@ func (p *nativePage) OpenCDP(ctx context.Context, options CDPOptions) (JSONConne
 				return err
 			}
 			method := name
-			handler := newHandler("{E2FDA4BE-5456-406C-A261-3D452138362C}", func(_, args uintptr) uintptr {
-				params, err := getString((*comObject)(unsafe.Pointer(args)), 3)
+			handler := newHandler("{E2FDA4BE-5456-406C-A261-3D452138362C}", func(_ uintptr, args unsafe.Pointer) uintptr {
+				params, err := getString((*comObject)(args), 3)
 				if err != nil {
 					c.fail(err)
 					return 0
@@ -198,7 +198,7 @@ func (c *pageConnection) WriteJSON(value any) error {
 			}
 			method, _ := windows.UTF16PtrFromString(request.Method)
 			params, _ := windows.UTF16PtrFromString(string(request.Params))
-			completed := newHandler("{5C4889F0-5EF6-4C5A-952C-D8F1B92D0574}", func(hr, result uintptr) uintptr {
+			completed := newHandler("{5C4889F0-5EF6-4C5A-952C-D8F1B92D0574}", func(hr uintptr, result unsafe.Pointer) uintptr {
 				if capture != nil {
 					current, err := capture.finishOnUI()
 					if !current {
@@ -214,8 +214,8 @@ func (c *pageConnection) WriteJSON(value any) error {
 					response["error"] = map[string]any{"code": -32000, "message": err.Error()}
 				} else {
 					text := "{}"
-					if result != 0 {
-						text = windows.UTF16PtrToString((*uint16)(unsafe.Pointer(result)))
+					if result != nil {
+						text = windows.UTF16PtrToString((*uint16)(result))
 					}
 					if !json.Valid([]byte(text)) {
 						response["error"] = map[string]any{"code": -32000, "message": "WebView2 returned invalid CDP JSON"}

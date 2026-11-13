@@ -180,7 +180,7 @@ func (p *nativePage) installNetwork() error {
 	if err = comCall(v22, 123, uintptr(unsafe.Pointer(all)), 0, 7); err != nil {
 		return err
 	}
-	handler := newHandler("{AB00B74C-15F1-4646-80E8-E76341D25D71}", func(_, args uintptr) uintptr { p.interceptRequest((*comObject)(unsafe.Pointer(args))); return 0 })
+	handler := newHandler("{AB00B74C-15F1-4646-80E8-E76341D25D71}", func(_ uintptr, args unsafe.Pointer) uintptr { p.interceptRequest((*comObject)(args)); return 0 })
 	var token int64
 	if err = comCall(p.core, 55, handler.pointer(), uintptr(unsafe.Pointer(&token))); err != nil {
 		handler.release()
@@ -192,12 +192,12 @@ func (p *nativePage) installNetwork() error {
 		return nil
 	}
 	defer v4.release()
-	download := newHandler("{EFEDC989-C396-41CA-83F7-07F845A55724}", func(_, args uintptr) uintptr {
+	download := newHandler("{EFEDC989-C396-41CA-83F7-07F845A55724}", func(_ uintptr, args unsafe.Pointer) uintptr {
 		p.host.mu.Lock()
 		leased := p.host.lease != nil
 		p.host.mu.Unlock()
 		if leased {
-			a := (*comObject)(unsafe.Pointer(args))
+			a := (*comObject)(args)
 			_ = comCall(a, 5, 1)
 			_ = comCall(a, 9, 1)
 		}
