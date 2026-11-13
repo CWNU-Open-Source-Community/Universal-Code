@@ -587,7 +587,10 @@ jobs:
           uname -m >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
           git rev-parse HEAD >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' '/Applications/Google Chrome.app/Contents/Info.plist' >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
-          go test -v -count=1 -timeout=25m ./internal/browserruntime -run '^(TestDarwinChromeNativeBindingAndLifecycle|TestDarwinPIDEnumerationErrorsPropagate|TestAgentBrowserReal.*|TestAgentBrowserDarwinRevocationBeforeResume|TestAgentBrowserCleanupRequiresItsActualProcessScope)$'
+          # Approval subtests each launch and verify a fresh signed Chrome.
+          # Give these scenarios their own test budget on slower Intel runners.
+          go test -v -count=1 -timeout=15m ./internal/browserruntime -run '^TestAgentBrowserReal(Scoped|Internet)WriteExactApproval$'
+          go test -v -count=1 -timeout=25m ./internal/browserruntime -run '^(TestDarwinChromeNativeBindingAndLifecycle|TestDarwinPIDEnumerationErrorsPropagate|TestAgentBrowserReal.*|TestAgentBrowserDarwinRevocationBeforeResume|TestAgentBrowserCleanupRequiresItsActualProcessScope)$' -skip '^TestAgentBrowserReal(Scoped|Internet)WriteExactApproval$'
           go test -v -count=1 -timeout=5m ./internal/httpapi -run '^TestAgentBrowserHTTPProductApprovalAndScreenshot$'
           go test -v -count=1 -timeout=15m ./internal/store -run '^TestBrowserNetworkRequestRealApprovalControl$'
           go test -v -count=1 -timeout=3m ./internal/app ./internal/desktop -run '^(TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests|TestAPIServeWiresOrdinaryAgentBrowserIntoModelRequests|TestCLIExecutionEntrypointsWireOrdinaryAgentBrowser|TestCLIWakeConsumeWiresOrdinaryAgentBrowser|TestCLIApprovalExecutionHandoffWiresOrdinaryAgentBrowser|TestCLIExecutionRuntimeClosesAgentBrowserWithoutGrantingPersistedFullAccess)$'
