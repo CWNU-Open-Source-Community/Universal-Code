@@ -19,6 +19,7 @@ import (
 	"cyberagent-workbench/internal/hooks"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/repository"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/session"
@@ -2368,8 +2369,8 @@ func defaultWorkspaceForkRoot(sourceRoot, operationDigest string) (string, error
 		return "", apperror.New(apperror.CodeInvalidArgument,
 			"workspace fork operation identity is invalid")
 	}
-	source, err := filepath.Abs(strings.TrimSpace(sourceRoot))
-	if err != nil || strings.TrimSpace(sourceRoot) == "" {
+	source, err := rootfs.ExactAbsolutePath(sourceRoot)
+	if err != nil || sourceRoot == "" {
 		return "", apperror.New(apperror.CodeFailedPrecondition,
 			"source Workspace root is unavailable")
 	}

@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/approval"
@@ -278,7 +281,8 @@ func (m *Manager) Send(ctx context.Context, sessionID string, input string) (Sen
 func (m *Manager) SendWithOptions(ctx context.Context, sessionID string, input string,
 	options SendOptions,
 ) (SendResult, error) {
-	input = strings.TrimSpace(input)
+	rawInput := strings.TrimLeftFunc(input, unicode.IsSpace)
+	input = strings.TrimSpace(rawInput)
 	operationKeyProvided := options.OperationKey != ""
 	options.OperationKey = strings.TrimSpace(options.OperationKey)
 	if operationKeyProvided && options.OperationKey == "" {
@@ -297,6 +301,10 @@ func (m *Manager) SendWithOptions(ctx context.Context, sessionID string, input s
 	}
 
 	if strings.HasPrefix(input, "/") {
+		command, _ := splitSlashCommand(rawInput)
+		if command == "read" || command == "ls" {
+			input = rawInput
+		}
 		if options.OperationKey != "" {
 			return SendResult{}, apperror.New(apperror.CodeInvalidArgument,
 				"Session operation keys apply only to queued model input, not slash commands")
@@ -372,10 +380,17 @@ func (m *Manager) List(ctx context.Context) ([]Session, error) {
 	return m.store.ListSessions(ctx)
 }
 
+func splitSlashCommand(input string) (command, argument string) {
+	end := strings.IndexFunc(input, unicode.IsSpace)
+	if end < 0 {
+		return strings.TrimPrefix(input, "/"), ""
+	}
+	_, size := utf8.DecodeRuneInString(input[end:])
+	return strings.TrimPrefix(input[:end], "/"), input[end+size:]
+}
+
 func (m *Manager) handleSlash(ctx context.Context, sess Session, userMsg Message, input string) (SendResult, error) {
-	fields := strings.Fields(input)
-	command := strings.TrimPrefix(fields[0], "/")
-	args := fields[1:]
+	command, argument := splitSlashCommand(input)
 
 	var text string
 	var compacted bool
@@ -386,7 +401,7 @@ func (m *Manager) handleSlash(ctx context.Context, sess Session, userMsg Message
 	replySourceRef := "/" + command
 	switch command {
 	case "help":
-		text = "Commands: /help, /compact, /model, /model <route>, /workspace, /ls [path], /read <path>, /write <path> <content>, /run <command>. /write and /run require explicit approval unless an active scoped Session grant applies."
+		text = "Commands: /help, /compact, /model, /model <route>, /workspace, /ls [path], /read <path>, /write <path> <content>, /run <command>. Workspace commands accept double-quoted paths. /write and /run require explicit approval unless an active scoped Session grant applies."
 	case "compact":
 		result, err := m.compactActiveMessages(ctx, sess)
 		if err != nil {
@@ -396,6 +411,7 @@ func (m *Manager) handleSlash(ctx context.Context, sess Session, userMsg Message
 		summaryID = result.Summary.ID
 		text = fmt.Sprintf("Context compacted: summary=%d removed=%d preserved=%d", result.Summary.ID, result.RemovedMessages, len(result.Preserved))
 	case "model":
+		args := strings.Fields(argument)
 		if len(args) > 0 {
 			sess.Route = args[0]
 			sess.UpdatedAt = time.Now().UTC()
@@ -414,24 +430,31 @@ func (m *Manager) handleSlash(ctx context.Context, sess Session, userMsg Message
 		} else {
 			text = "Workspace: " + sess.WorkspaceID
 		}
-	case "ls":
-		var success bool
-		text, replySourceRef, success = m.handleWorkspaceList(ctx, sess, strings.Join(args, " "))
-		if success {
-			replySourceKind = SourceWorkspaceList
-		} else {
-			replySourceRef = "/ls"
+	case "ls", "read":
+		path := argument
+		if strings.HasPrefix(path, "\"") {
+			unquoted, err := strconv.Unquote(path)
+			if err != nil {
+				text = "Invalid quoted workspace path."
+				break
+			}
+			path = unquoted
 		}
-	case "read":
 		var success bool
-		text, replySourceRef, success = m.handleWorkspaceRead(ctx, sess, strings.Join(args, " "))
-		if success {
-			replySourceKind = SourceWorkspaceFile
+		sourceKind := SourceWorkspaceFile
+		if command == "ls" {
+			text, replySourceRef, success = m.handleWorkspaceList(ctx, sess, path)
+			sourceKind = SourceWorkspaceList
 		} else {
-			replySourceRef = "/read"
+			text, replySourceRef, success = m.handleWorkspaceRead(ctx, sess, path)
+		}
+		if success {
+			replySourceKind = sourceKind
+		} else {
+			replySourceRef = "/" + command
 		}
 	case "write":
-		path, content, ok := parseWriteCommand(input)
+		path, content, ok := parseWriteCommand(argument)
 		if !ok {
 			text = "Usage: /write <workspace-relative-path> <replacement-content>. This creates a file edit proposal and does not write immediately."
 			break
@@ -444,6 +467,7 @@ func (m *Manager) handleSlash(ctx context.Context, sess Session, userMsg Message
 			replySourceRef = edit.Path
 		}
 	case "run":
+		args := strings.Fields(argument)
 		if len(args) == 0 {
 			text = "Usage: /run <command>. v0.1 creates a tool proposal and does not execute directly from session chat."
 			break
@@ -495,7 +519,6 @@ func (m *Manager) handleWorkspaceList(ctx context.Context, sess Session, path st
 	if !ok {
 		return "No workspace is attached to this session.", "", false
 	}
-	path = strings.TrimSpace(path)
 	if path == "" {
 		path = "."
 	}
@@ -530,7 +553,6 @@ func (m *Manager) handleWorkspaceRead(ctx context.Context, sess Session, path st
 	if !ok {
 		return "No workspace is attached to this session.", "", false
 	}
-	path = strings.TrimSpace(path)
 	if path == "" {
 		return "Usage: /read <workspace-relative-path>", "", false
 	}
@@ -590,13 +612,22 @@ func (m *Manager) handleWorkspaceWrite(ctx context.Context, sess Session, path s
 	return edit, response
 }
 
-func parseWriteCommand(input string) (string, string, bool) {
-	rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input), "/write"))
-	parts := strings.SplitN(rest, " ", 2)
-	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
+func parseWriteCommand(argument string) (string, string, bool) {
+	argument = strings.TrimSpace(argument)
+	if strings.HasPrefix(argument, "\"") {
+		literal, err := strconv.QuotedPrefix(argument)
+		if err != nil {
+			return "", "", false
+		}
+		path, err := strconv.Unquote(literal)
+		content, separated := strings.CutPrefix(argument[len(literal):], " ")
+		return path, content, err == nil && path != "" && separated
+	}
+	path, content, separated := strings.Cut(argument, " ")
+	if !separated || path == "" {
 		return "", "", false
 	}
-	return strings.TrimSpace(parts[0]), parts[1], true
+	return path, content, true
 }
 
 func (m *Manager) workspaceInfo(ctx context.Context, sess Session) (WorkspaceInfo, bool, error) {

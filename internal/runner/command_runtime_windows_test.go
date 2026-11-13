@@ -19,9 +19,30 @@ import (
 	"unicode/utf16"
 
 	"cyberagent-workbench/internal/hostproxy"
+	"cyberagent-workbench/internal/rootfs"
 
 	"golang.org/x/sys/windows"
 )
+
+func TestCommandRuntimeDirectoryRejectsWindowsPathAliasing(t *testing.T) {
+	plain := filepath.Join(t.TempDir(), "project")
+	exact, err := rootfs.ExactAbsolutePath(plain + " ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{plain, exact} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _ = os.Remove(exact) })
+	if _, _, _, err := resolveCommandRuntimeDirectory(plain, "."); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := resolveCommandRuntimeDirectory(plain+" ", "."); !errors.Is(err, ErrCommandRuntimeBoundary) {
+		t.Fatalf("unsafe working directory should be rejected before dispatch: %v", err)
+	}
+}
 
 func TestCommandRuntimeWindowsExplicitPowerShellPinsHostSelection(t *testing.T) {
 	for _, name := range []string{"pwsh.exe", "powershell.exe"} {

@@ -186,7 +186,7 @@ func (fs WorkspaceFS) resolveForWrite(requested string, allowMissingParents bool
 	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
 		return "", errors.New("workspace root must be a real directory")
 	}
-	resolvedRoot, err := filepath.EvalSymlinks(root)
+	resolvedRoot, err := rootfs.EvalExactSymlinks(root)
 	if err != nil || !sameWorkspacePath(root, resolvedRoot) {
 		return "", errors.New("workspace root cannot be redirected")
 	}
@@ -293,11 +293,7 @@ func (fs WorkspaceFS) resolveExisting(requested string) (string, error) {
 	if err := validateWorkspaceFilePath(requested); err != nil {
 		return "", err
 	}
-	root, err := rootfs.ExactAbsolutePath(fs.Root)
-	if err != nil {
-		return "", err
-	}
-	root, err = filepath.EvalSymlinks(root)
+	root, err := rootfs.EvalExactSymlinks(fs.Root)
 	if err != nil {
 		return "", err
 	}
@@ -351,11 +347,7 @@ func (fs WorkspaceFS) list(ctx context.Context, requested string, maxDepth int) 
 	}
 	policyBase := requested
 	if len(fs.PathPolicy.ExcludePaths) != 0 {
-		root, err := rootfs.ExactAbsolutePath(fs.Root)
-		if err != nil {
-			return "", false, err
-		}
-		root, err = filepath.EvalSymlinks(root)
+		root, err := rootfs.EvalExactSymlinks(fs.Root)
 		if err != nil {
 			return "", false, err
 		}

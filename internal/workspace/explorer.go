@@ -116,12 +116,7 @@ func resolveExplorerTarget(root string, relative string) (string, os.FileInfo, e
 		return "", nil, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root is unavailable")
 	}
-	resolvedRoot, err := rootfs.ExactAbsolutePath(root)
-	if err != nil {
-		return "", nil, apperror.New(apperror.CodeFailedPrecondition,
-			"workspace root could not be resolved")
-	}
-	resolvedRoot, err = filepath.EvalSymlinks(resolvedRoot)
+	resolvedRoot, err := rootfs.EvalExactSymlinks(root)
 	if err != nil {
 		return "", nil, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root could not be resolved")

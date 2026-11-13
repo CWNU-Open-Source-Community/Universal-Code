@@ -587,12 +587,11 @@ func readAgentCodeFile(target string, expected os.FileInfo) ([]byte, error) {
 }
 
 func openAgentWorkspace(root string, policies ...AgentCodePathPolicy) (agentWorkspace, error) {
-	root = strings.TrimSpace(root)
 	if root == "" || !utf8.ValidString(root) {
 		return agentWorkspace{}, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root is unavailable")
 	}
-	absolute, err := filepath.Abs(root)
+	absolute, err := rootfs.ExactAbsolutePath(root)
 	if err != nil {
 		return agentWorkspace{}, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root could not be resolved")
@@ -602,7 +601,7 @@ func openAgentWorkspace(root string, policies ...AgentCodePathPolicy) (agentWork
 		return agentWorkspace{}, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root must be a real directory")
 	}
-	resolved, err := filepath.EvalSymlinks(absolute)
+	resolved, err := rootfs.EvalExactSymlinks(absolute)
 	if err != nil || !sameExplorerPath(absolute, resolved) {
 		return agentWorkspace{}, apperror.New(apperror.CodePolicyDenied,
 			"workspace root cannot be redirected")
@@ -822,7 +821,7 @@ func loadAgentIgnoreRules(root string) []agentIgnoreRule {
 	}
 	rules := make([]agentIgnoreRule, 0, 32)
 	for _, raw := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
-		value := strings.TrimSpace(raw)
+		value := trimGitIgnorePadding(raw)
 		if value == "" || strings.HasPrefix(value, "#") {
 			continue
 		}
@@ -838,10 +837,26 @@ func loadAgentIgnoreRules(root string) []agentIgnoreRule {
 		if value == "" || strings.ContainsRune(value, 0) {
 			continue
 		}
-		rule.pattern = filepath.ToSlash(value)
+		// Git patterns use forward slashes and backslash escapes on every OS.
+		rule.pattern = value
 		rules = append(rules, rule)
 	}
 	return rules
+}
+
+func trimGitIgnorePadding(line string) string {
+	end := len(line)
+	for end > 0 && line[end-1] == ' ' {
+		start := end - 1
+		for start > 0 && line[start-1] == '\\' {
+			start--
+		}
+		if (end-1-start)%2 != 0 {
+			break
+		}
+		end--
+	}
+	return line[:end]
 }
 
 func agentIgnoreMatches(rule agentIgnoreRule, relative string, directory bool) bool {

@@ -7,6 +7,7 @@ import (
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/workspace"
 )
@@ -72,5 +73,67 @@ func TestSessionEvidenceAttachmentIsImmutableAndBoundToUntrustedMessage(t *testi
 		message.ID != result.Message.ID || message.Provenance.InstructionAuthorized {
 		t.Fatalf("immutable evidence lookup failed: attachment=%#v message=%#v found=%t err=%v",
 			stored, message, found, err)
+	}
+}
+
+func TestSchemaV231PreservesExistingEvidenceAndAllowsExactPaths(t *testing.T) {
+	ctx := t.Context()
+	workspaceDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "v230.db")
+	state := openHistoricalTestDatabase(t, dbPath, 230)
+	record := WorkspaceRecord{ID: "workspace-evidence-v231", Name: "evidence", RootPath: workspaceDir}
+	if err := state.SaveWorkspace(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	runs := application.NewRunService(state)
+	_, created, err := runs.Create(ctx, application.CreateRunRequest{
+		Goal: "attach evidence", Profile: "code", WorkspaceID: record.ID, Budget: domain.Budget{MaxTurns: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := runs.Start(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attach := func(path, key string) application.AttachEvidenceResult {
+		t.Helper()
+		native, err := rootfs.ExactAbsolutePath(filepath.Join(workspaceDir, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		const content = "ordinary evidence\n"
+		if err := os.WriteFile(native, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Remove(native) })
+		result, err := application.NewEvidenceAttachmentService(state).Attach(ctx,
+			application.AttachEvidenceRequest{
+				Version: session.EvidenceAttachmentProtocolVersion, RunID: run.ID,
+				SourceKind: session.SourceWorkspaceFile, SourceRef: path, ContentSHA256: session.ContentSHA256(content),
+				OperationKey: key, AttachedBy: "operator",
+			})
+		if err != nil {
+			t.Fatalf("attach %q: %v", path, err)
+		}
+		return result
+	}
+	old := attach("notes.txt", "schema-v231-existing-evidence")
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+	state, err = Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	stored, message, found, err := state.GetEvidenceAttachment(ctx, old.Attachment.OperationKeyDigest)
+	if err != nil || !found || stored.ID != old.Attachment.ID || stored.EventSequence != old.Attachment.EventSequence ||
+		stored.SourceRef != old.Attachment.SourceRef || message.ID != old.Message.ID {
+		t.Fatalf("migration changed existing evidence: %#v, %#v, %v", stored, message, err)
+	}
+	current := attach(" ", "schema-v231-whitespace-evidence")
+	if current.Attachment.SourceRef != " " || current.Message.Provenance.SourceRef != " " {
+		t.Fatalf("migration did not preserve an exact file name: %#v", current)
 	}
 }

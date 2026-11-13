@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"cyberagent-workbench/internal/rootfs"
 )
 
 // ValidateBranchName exposes the same closed branch-name contract used by
@@ -263,7 +265,7 @@ func CleanupInterruptedWorktree(ctx context.Context, sourceRoot, destinationRoot
 	if err != nil {
 		return err
 	}
-	requested, err := filepath.Abs(strings.TrimSpace(destinationRoot))
+	requested, err := rootfs.ExactAbsolutePath(destinationRoot)
 	if err != nil || strings.ContainsRune(destinationRoot, 0) {
 		return errors.New("git worktree recovery destination is invalid")
 	}
@@ -302,8 +304,7 @@ func CleanupInterruptedWorktree(ctx context.Context, sourceRoot, destinationRoot
 }
 
 func canonicalExistingRepositoryRoot(root string) (string, error) {
-	root = strings.TrimSpace(root)
-	abs, err := filepath.Abs(root)
+	abs, err := rootfs.ExactAbsolutePath(root)
 	if err != nil || root == "" || strings.ContainsRune(root, 0) {
 		return "", errors.New("repository root is invalid")
 	}
@@ -311,12 +312,15 @@ func canonicalExistingRepositoryRoot(root string) (string, error) {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return "", errors.New("repository root is not a real directory")
 	}
-	resolved, err := filepath.EvalSymlinks(abs)
+	resolved, err := rootfs.EvalExactSymlinks(abs)
 	if err != nil {
 		return "", fmt.Errorf("resolve repository root: %w", err)
 	}
 	if !sameFilesystemPath(abs, resolved) {
 		return "", errors.New("repository root identity changed through a link or reparse point")
+	}
+	if err := rootfs.CheckExternalDirectory(resolved); err != nil {
+		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(resolved, ".git")); err != nil {
 		return "", errors.New("repository root does not contain Git metadata")
@@ -325,18 +329,20 @@ func canonicalExistingRepositoryRoot(root string) (string, error) {
 }
 
 func canonicalAbsentWorktreeRoot(root string) (string, error) {
-	root = strings.TrimSpace(root)
 	if root == "" || strings.ContainsRune(root, 0) {
 		return "", errors.New("git worktree destination is invalid")
 	}
-	abs, err := filepath.Abs(root)
+	abs, err := rootfs.ExactAbsolutePath(root)
 	if err != nil {
+		return "", err
+	}
+	if err := rootfs.CheckExternalDirectory(abs); err != nil {
 		return "", err
 	}
 	if _, err := os.Lstat(abs); err == nil || !errors.Is(err, os.ErrNotExist) {
 		return "", errors.New("git worktree destination already exists or is inaccessible")
 	}
-	parent, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	parent, err := rootfs.EvalExactSymlinks(filepath.Dir(abs))
 	if err != nil {
 		return "", fmt.Errorf("resolve Git worktree parent: %w", err)
 	}
@@ -344,16 +350,19 @@ func canonicalAbsentWorktreeRoot(root string) (string, error) {
 	if err != nil || !info.IsDir() {
 		return "", errors.New("git worktree parent is not a directory")
 	}
-	return filepath.Join(parent, filepath.Base(abs)), nil
+	destination := filepath.Join(parent, filepath.Base(abs))
+	return destination, rootfs.CheckExternalDirectory(destination)
 }
 
 func canonicalWorktreeRoot(root string) (string, error) {
-	root = strings.TrimSpace(root)
 	if root == "" || strings.ContainsRune(root, 0) {
 		return "", errors.New("git worktree destination is invalid")
 	}
-	abs, err := filepath.Abs(root)
+	abs, err := rootfs.ExactAbsolutePath(root)
 	if err != nil {
+		return "", err
+	}
+	if err := rootfs.CheckExternalDirectory(abs); err != nil {
 		return "", err
 	}
 	info, err := os.Lstat(abs)
@@ -361,19 +370,19 @@ func canonicalWorktreeRoot(root string) (string, error) {
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return "", errors.New("git worktree destination is not a real directory")
 		}
-		resolved, resolveErr := filepath.EvalSymlinks(abs)
+		resolved, resolveErr := rootfs.EvalExactSymlinks(abs)
 		if resolveErr != nil {
 			return "", fmt.Errorf("resolve Git worktree destination: %w", resolveErr)
 		}
 		if !sameFilesystemPath(abs, resolved) {
 			return "", errors.New("git worktree destination identity changed")
 		}
-		return filepath.Clean(resolved), nil
+		return filepath.Clean(resolved), rootfs.CheckExternalDirectory(resolved)
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("inspect Git worktree destination: %w", err)
 	}
-	parent, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	parent, err := rootfs.EvalExactSymlinks(filepath.Dir(abs))
 	if err != nil {
 		return "", fmt.Errorf("resolve Git worktree parent: %w", err)
 	}
@@ -381,11 +390,12 @@ func canonicalWorktreeRoot(root string) (string, error) {
 	if err != nil || !info.IsDir() {
 		return "", errors.New("git worktree parent is not a directory")
 	}
-	return filepath.Join(filepath.Clean(parent), filepath.Base(abs)), nil
+	destination := filepath.Join(filepath.Clean(parent), filepath.Base(abs))
+	return destination, rootfs.CheckExternalDirectory(destination)
 }
 
 func sameFilesystemPath(left, right string) bool {
-	relative, err := filepath.Rel(filepath.Clean(left), filepath.Clean(right))
+	relative, err := filepath.Rel(rootfs.OrdinaryPath(left), rootfs.OrdinaryPath(right))
 	return err == nil && relative == "."
 }
 

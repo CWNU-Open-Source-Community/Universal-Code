@@ -17,6 +17,7 @@ import (
 
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 type BuildPlanRequest struct {
@@ -91,7 +92,6 @@ func BuildPlan(ctx context.Context, request BuildPlanRequest) (domain.ReadOnlyFa
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	request.WorkspaceRoot = strings.TrimSpace(request.WorkspaceRoot)
 	request.ScopePath = strings.TrimSpace(request.ScopePath)
 	if request.ScopePath == "" {
 		request.ScopePath = "."
@@ -306,11 +306,7 @@ func resolveSnapshotScope(workspaceRoot, scopePath string) (string, string, erro
 	if cleanScope != scopePath || cleanScope == ".." || strings.HasPrefix(cleanScope, "../") {
 		return "", "", errors.New("read-only fan-out scope escapes the workspace")
 	}
-	root, err := filepath.Abs(workspaceRoot)
-	if err != nil {
-		return "", "", err
-	}
-	root, err = filepath.EvalSymlinks(root)
+	root, err := rootfs.EvalExactSymlinks(workspaceRoot)
 	if err != nil {
 		return "", "", err
 	}
@@ -321,11 +317,11 @@ func resolveSnapshotScope(workspaceRoot, scopePath string) (string, string, erro
 	if !rootInfo.IsDir() {
 		return "", "", errors.New("read-only fan-out workspace root is not a directory")
 	}
-	scopeCandidate, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(cleanScope)))
+	scopeCandidate, err := rootfs.ExactAbsolutePath(filepath.Join(root, filepath.FromSlash(cleanScope)))
 	if err != nil {
 		return "", "", err
 	}
-	scope, err := filepath.EvalSymlinks(scopeCandidate)
+	scope, err := rootfs.EvalExactSymlinks(scopeCandidate)
 	if err != nil {
 		return "", "", err
 	}

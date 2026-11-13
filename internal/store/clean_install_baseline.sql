@@ -11104,7 +11104,7 @@ CREATE TABLE session_continuity_nodes (
 			OR (kind IN ('fork', 'resume') AND parent_id IS NULL AND source_node_id IS NOT NULL))
 	);
 -- traverse-board-clean-install-object-boundary --
-CREATE TABLE session_evidence_attachments (
+CREATE TABLE "session_evidence_attachments" (
 		id TEXT PRIMARY KEY,
 		protocol_version TEXT NOT NULL,
 		operation_key_digest TEXT NOT NULL UNIQUE,
@@ -11129,7 +11129,7 @@ CREATE TABLE session_evidence_attachments (
 		CHECK(length(request_fingerprint) = 64 AND request_fingerprint = lower(request_fingerprint)
 			AND request_fingerprint NOT GLOB '*[^0-9a-f]*'),
 		CHECK(source_kind = 'workspace_file'),
-		CHECK(source_ref = trim(source_ref) AND length(source_ref) BETWEEN 1 AND 512
+		CHECK(length(source_ref) BETWEEN 1 AND 512
 			AND instr(source_ref, char(0)) = 0 AND instr(source_ref, char(9)) = 0
 			AND instr(source_ref, char(10)) = 0 AND instr(source_ref, char(13)) = 0
 			AND source_ref <> '.' AND substr(source_ref, 1, 1) <> '/'
@@ -24867,7 +24867,8 @@ CREATE TRIGGER trg_session_message_provenance_insert
 			AND length(NEW.content_sha256) = 64
 			AND NEW.content_sha256 = lower(NEW.content_sha256)
 			AND NEW.content_sha256 NOT GLOB '*[^0-9a-f]*'
-			AND NEW.source_ref = trim(NEW.source_ref)
+			AND (NEW.source_kind IN ('workspace_file', 'workspace_listing', 'workspace_diff')
+				OR NEW.source_ref = trim(NEW.source_ref))
 			AND length(NEW.source_ref) <= 512 AND instr(NEW.source_ref, char(0)) = 0
 			AND instr(NEW.source_ref, char(9)) = 0 AND instr(NEW.source_ref, char(10)) = 0
 			AND instr(NEW.source_ref, char(13)) = 0

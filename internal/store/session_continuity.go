@@ -166,8 +166,7 @@ func (s *SQLiteStore) CreateWorkspaceMissionRunWithContinuity(ctx context.Contex
 	mode domain.RunModeSnapshot, linkedSession session.Session, createSession bool,
 	initialEvents []events.Event, node contextmgr.ContinuityNode,
 ) error {
-	workspace.ID, workspace.Name, workspace.RootPath = strings.TrimSpace(workspace.ID),
-		strings.TrimSpace(workspace.Name), strings.TrimSpace(workspace.RootPath)
+	workspace.ID, workspace.Name = strings.TrimSpace(workspace.ID), strings.TrimSpace(workspace.Name)
 	if workspace.ID == "" || workspace.Name == "" || workspace.RootPath == "" ||
 		strings.ContainsRune(workspace.ID+workspace.Name+workspace.RootPath, 0) {
 		return errors.New("fork Workspace registration is invalid")

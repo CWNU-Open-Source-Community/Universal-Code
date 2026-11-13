@@ -1,6 +1,7 @@
 package rootfs
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,6 +57,15 @@ func needsVerbatim(path string) bool {
 	return false
 }
 
+// CheckExternalDirectory refuses names that programs such as Git for Windows
+// can silently normalize, even when given a verbatim path.
+func CheckExternalDirectory(path string) error {
+	if needsVerbatim(OrdinaryPath(path)) {
+		return errors.New("external commands cannot safely use Windows directory names ending in a space or dot")
+	}
+	return nil
+}
+
 func (r *ExactRoot) Open(name string) (*os.File, error) {
 	if !needsVerbatim(name) {
 		return r.Root.Open(name)
@@ -109,12 +119,21 @@ func (r *ExactRoot) Remove(name string) error {
 	if !needsVerbatim(name) {
 		return r.Root.Remove(name)
 	}
-	file, err := r.openExact(name, windows.DELETE, windows.FILE_OPEN,
-		windows.FILE_NON_DIRECTORY_FILE|windows.FILE_DELETE_ON_CLOSE, 0)
+	file, err := r.openExact(name, windows.DELETE, windows.FILE_OPEN, 0, 0)
 	if err != nil {
 		return err
 	}
-	return file.Close()
+	// Unlink the name when our handle closes, even if a reader still has the
+	// file open. Delete-on-close can leave a pending deletion visible to Stat.
+	flags := uint32(windows.FILE_DISPOSITION_DELETE | windows.FILE_DISPOSITION_POSIX_SEMANTICS |
+		windows.FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK | windows.FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE)
+	err = windows.NtSetInformationFile(windows.Handle(file.Fd()), &windows.IO_STATUS_BLOCK{},
+		(*byte)(unsafe.Pointer(&flags)), uint32(unsafe.Sizeof(flags)), windows.FileDispositionInformationEx)
+	closeErr := file.Close()
+	if err != nil {
+		return &os.PathError{Op: "removeat", Path: name, Err: win32Error(err)}
+	}
+	return closeErr
 }
 
 func (r *ExactRoot) Link(oldname, newname string) error {
@@ -177,8 +196,10 @@ func (r *ExactRoot) openExact(name string, access, disposition, options uint32, 
 func (r *ExactRoot) setExactName(oldname, newname string, replace bool) error {
 	newname = filepath.FromSlash(newname)
 	op, access, class := "link", uint32(windows.FILE_WRITE_ATTRIBUTES), uint32(11) // FileLinkInformation
+	options := uint32(windows.FILE_NON_DIRECTORY_FILE)
 	if replace {
 		op, access, class = "rename", windows.DELETE, windows.FileRenameInformation
+		options = 0
 	}
 	fail := func(err error) error { return &os.LinkError{Op: op, Old: oldname, New: newname, Err: err} }
 	if newname == "." || !exactRelativeName(newname) {
@@ -196,7 +217,7 @@ func (r *ExactRoot) setExactName(oldname, newname string, replace bool) error {
 		return fail(err)
 	}
 	defer destination.Close()
-	source, err := r.openExact(oldname, access, windows.FILE_OPEN, windows.FILE_NON_DIRECTORY_FILE, 0)
+	source, err := r.openExact(oldname, access, windows.FILE_OPEN, options, 0)
 	if err != nil {
 		return fail(err)
 	}

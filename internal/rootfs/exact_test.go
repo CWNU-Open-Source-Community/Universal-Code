@@ -61,12 +61,48 @@ func TestExactRootPreservesDistinctFileNames(t *testing.T) {
 		t.Fatalf("link must not replace the destination: %v", err)
 	}
 	read(linked, "replacement")
+	reader, err := root.Open(exact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
 	if err := root.Remove(exact); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := root.Lstat(exact); !os.IsNotExist(err) {
-		t.Fatalf("removed exact file still resolves: %v", err)
+		t.Fatalf("removed name still resolves while a reader holds it: %v", err)
+	}
+	if data, err := io.ReadAll(reader); err != nil || string(data) != "replacement" {
+		t.Fatalf("existing reader lost access after unlink: %q, %v", data, err)
 	}
 	read(plain, "plain")
 	read(linked, "replacement")
+}
+
+func TestExactRootRenamesAndRemovesEmptyDirectories(t *testing.T) {
+	dir := t.TempDir()
+	root, err := OpenExactRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	for _, name := range []string{"folder ", "moved "} {
+		native, err := ExactAbsolutePath(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Remove(native) })
+	}
+	if err := root.Mkdir("folder ", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Rename("folder ", "moved "); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Remove("moved "); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := root.Lstat("moved "); !os.IsNotExist(err) {
+		t.Fatalf("removed directory still resolves: %v", err)
+	}
 }

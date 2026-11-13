@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
 
@@ -265,7 +266,7 @@ func actualCapturePathCase(root *os.Root, normalized string) (string, bool, erro
 }
 
 func canonicalRoot(value string) (string, error) {
-	abs, err := filepath.Abs(strings.TrimSpace(value))
+	abs, err := rootfs.ExactAbsolutePath(value)
 	if err != nil {
 		return "", err
 	}
@@ -273,7 +274,7 @@ func canonicalRoot(value string) (string, error) {
 	if err != nil || !requestedInfo.IsDir() || requestedInfo.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 		return "", errors.New("workspace checkpoint root identity is not a real directory")
 	}
-	resolved, err := filepath.EvalSymlinks(abs)
+	resolved, err := rootfs.EvalExactSymlinks(abs)
 	if err != nil || !sameCapturePath(abs, resolved) {
 		return "", errors.New("workspace checkpoint root identity is redirected")
 	}
@@ -312,7 +313,7 @@ func inspectCaptureInventory(ctx context.Context, root string) (captureInventory
 		return result, nil
 	}
 	top, err := captureGitOutput(ctx, gitPath, root, "rev-parse", "--show-toplevel")
-	if err != nil || !sameCapturePath(strings.TrimSpace(string(top)), root) {
+	if err != nil || !sameCapturePath(strings.TrimRight(string(top), "\r\n"), root) {
 		paths, truncated, walkErr := walkNonGitFiles(ctx, root)
 		if walkErr != nil {
 			return result, walkErr
@@ -698,6 +699,9 @@ func walkNonGitFiles(ctx context.Context, root string) ([]string, bool, error) {
 }
 
 func captureGitOutput(ctx context.Context, gitPath, root string, args ...string) ([]byte, error) {
+	if err := rootfs.CheckExternalDirectory(root); err != nil {
+		return nil, err
+	}
 	base := []string{"-C", root, "--no-optional-locks", "-c", "core.autocrlf=false",
 		"-c", "core.hooksPath=", "-c", "diff.external=", "-c", "core.fsmonitor=false"}
 	command := checkpointCommandContext(ctx, gitPath, append(base, args...)...)
@@ -777,8 +781,8 @@ func normalizeCapturePath(value string) (string, error) {
 }
 
 func sameCapturePath(left, right string) bool {
-	left = filepath.Clean(left)
-	right = filepath.Clean(right)
+	left = filepath.Clean(rootfs.OrdinaryPath(left))
+	right = filepath.Clean(rootfs.OrdinaryPath(right))
 	if runtime.GOOS == "windows" {
 		return strings.EqualFold(left, right)
 	}

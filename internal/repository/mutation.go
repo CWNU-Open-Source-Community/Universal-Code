@@ -17,6 +17,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/gitmutation"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runmutation"
 )
 
@@ -462,9 +463,15 @@ func hasConflicts(e *MutationExecutor, ctx context.Context, root string) bool {
 }
 
 func normalizeRepositoryRoot(root string) (string, error) {
-	root = filepath.Clean(root)
 	if strings.TrimSpace(root) == "" || strings.ContainsRune(root, 0) {
 		return "", errors.New("repository root is invalid")
+	}
+	root, err := rootfs.ExactAbsolutePath(root)
+	if err != nil {
+		return "", err
+	}
+	if err := rootfs.CheckExternalDirectory(root); err != nil {
+		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
 		return "", errors.New("repository root does not contain Git metadata")

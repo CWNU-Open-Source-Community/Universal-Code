@@ -346,9 +346,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.busy {
 			if m.focus == focusInput && msg.String() == "enter" {
-				value := strings.TrimSpace(m.input.Value())
+				value := m.input.Value()
 				m.input.SetValue("")
-				if value == "" {
+				if strings.TrimSpace(value) == "" {
 					return m, nil
 				}
 				if strings.HasPrefix(value, "/") {
@@ -433,9 +433,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m.selectedToolAction("approving", m.approveToolCmd)
 			}
-			value := strings.TrimSpace(m.input.Value())
+			value := m.input.Value()
 			m.input.SetValue("")
-			if value == "" {
+			if strings.TrimSpace(value) == "" {
 				return m, nil
 			}
 			if value == "/quit" || value == "/exit" {
@@ -505,6 +505,7 @@ func (m *Model) Submit(ctx context.Context, input string) error {
 }
 
 func (m *Model) submitAction(ctx context.Context, sess session.Session, input string) (actionResult, error) {
+	rawInput := input
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return m.refreshAction(ctx, sess, m.status, "")
@@ -526,7 +527,7 @@ func (m *Model) submitAction(ctx context.Context, sess session.Session, input st
 	case input == "/tools":
 		return m.refreshAction(ctx, sess, "tool list refreshed", "")
 	default:
-		result, err := m.sessionManager.Send(ctx, sess.ID, input)
+		result, err := m.sessionManager.Send(ctx, sess.ID, rawInput)
 		if err != nil {
 			return actionResult{}, err
 		}

@@ -183,7 +183,6 @@ func (m *Manager) PrepareProposal(ctx context.Context, proposal Proposal) (Edit,
 		return Edit{}, errors.New("file edit store is required")
 	}
 	proposal.WorkspaceID = strings.TrimSpace(proposal.WorkspaceID)
-	proposal.WorkspaceRoot = strings.TrimSpace(proposal.WorkspaceRoot)
 	if proposal.WorkspaceID == "" {
 		return Edit{}, apperror.New(apperror.CodeInvalidArgument, "workspace id is required")
 	}
@@ -1050,11 +1049,7 @@ func openWorkspaceRootForFile(workspaceRoot string, path string, createParents .
 	if err != nil {
 		return nil, "", "", err
 	}
-	canonicalRoot, err := rootfs.ExactAbsolutePath(workspaceRoot)
-	if err != nil {
-		return nil, "", "", err
-	}
-	canonicalRoot, err = filepath.EvalSymlinks(canonicalRoot)
+	canonicalRoot, err := rootfs.EvalExactSymlinks(workspaceRoot)
 	if err != nil {
 		return nil, "", "", err
 	}

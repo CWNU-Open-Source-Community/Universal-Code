@@ -69,6 +69,16 @@ func TestManagerPreservesWhitespaceInFileOperations(t *testing.T) {
 	if _, err := os.Stat(native(spaced)); !os.IsNotExist(err) {
 		t.Fatalf("moved source still exists: %v", err)
 	}
+	handle, err := rootfs.OpenExactRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	reader, err := handle.Open(moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
 	apply(Proposal{Operation: OperationDelete, Path: moved, ExpectedOriginalHash: HashText("updated")})
 	if _, err := os.Stat(native(moved)); !os.IsNotExist(err) {
 		t.Fatalf("deleted path still exists: %v", err)

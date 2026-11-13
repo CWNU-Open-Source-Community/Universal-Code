@@ -3243,6 +3243,7 @@
         "v2_draft_document.v1",
         "v2_image_upload.v1",
         "v2_native_clipboard_recovery.v1",
+        "v2_project_action_recovery.v1",
         "v2_recovery.v1"
       ],
       "retired_identifiers": [

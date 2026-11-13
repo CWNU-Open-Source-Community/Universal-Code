@@ -45,7 +45,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [standard-code-delivery-ledger](#standard-code-delivery-ledger) | `external-durable` | Standard Code delivery and public projection maintainers | 8 | true |
 | [supervisor-input-delivery-projection](#supervisor-input-delivery-projection) | `projection` | Supervisor input and context maintainers | 1 | true |
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
-| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 63 | true |
+| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 64 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 44 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
@@ -1869,7 +1869,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `thread-image-upload-recovery-reader` (`v1`, active) at `web/src/v2/components/image-input.tsx`
   - `pr-followup-local-intent-reader` (`v1`, active) at `web/src/v2/components/task-pr-followup.tsx`
 
-<details><summary>63 active identifiers</summary>
+<details><summary>64 active identifiers</summary>
 
 - `context_memory.v1`
 - `context_memory_candidate.v1`
@@ -1933,6 +1933,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `v2_draft_document.v1`
 - `v2_image_upload.v1`
 - `v2_native_clipboard_recovery.v1`
+- `v2_project_action_recovery.v1`
 - `v2_recovery.v1`
 
 </details>

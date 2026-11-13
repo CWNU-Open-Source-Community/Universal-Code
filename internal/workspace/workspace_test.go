@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/store"
 )
@@ -162,6 +163,45 @@ func TestWorkspaceImportRegistersExistingDirectoryWithoutWritingIntoIt(t *testin
 	}
 	if len(entries) != 0 {
 		t.Fatalf("workspace import wrote into selected directory: %#v", entries)
+	}
+}
+
+func TestWorkspaceImportPreservesExactDirectoryIdentity(t *testing.T) {
+	home := t.TempDir()
+	state, err := store.Open(filepath.Join(home, "workspace.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	manager := NewManager(home, state)
+	var identities []string
+	for _, name := range []string{"project", "project ", "project\u00a0"} {
+		selected := filepath.Join(home, name)
+		native, err := rootfs.ExactAbsolutePath(selected)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(native, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(native) })
+		if err := os.WriteFile(filepath.Join(native, "marker.txt"), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		registered, err := manager.Import(t.Context(), selected)
+		if err != nil {
+			t.Fatalf("Import(%q): %v", selected, err)
+		}
+		for _, id := range identities {
+			if registered.ID == id {
+				t.Fatalf("Import(%q) reused the neighboring project's ID", selected)
+			}
+		}
+		identities = append(identities, registered.ID)
+		got, err := Explore(registered.RootPath, registered.ID, "marker.txt")
+		if err != nil || got.Content != name {
+			t.Fatalf("Import(%q) reads %q, %v", selected, got.Content, err)
+		}
 	}
 }
 

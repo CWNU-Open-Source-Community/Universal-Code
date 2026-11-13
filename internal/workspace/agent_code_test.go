@@ -10,6 +10,27 @@ import (
 	"cyberagent-workbench/internal/apperror"
 )
 
+func TestAgentIgnorePreservesSignificantWhitespace(t *testing.T) {
+	root := t.TempDir()
+	mustAgentCodeWrite(t, filepath.Join(root, ".gitignore"),
+		"notes\\ \r\n  draft.txt\nreport.txt   \n")
+	rules := loadAgentIgnoreRules(root)
+	for _, test := range []struct {
+		index   int
+		match   string
+		noMatch string
+	}{
+		{0, "notes ", "notes"},
+		{1, "  draft.txt", "draft.txt"},
+		{2, "report.txt", "report.txt "},
+	} {
+		if test.index >= len(rules) || !agentIgnoreMatches(rules[test.index], test.match, false) ||
+			agentIgnoreMatches(rules[test.index], test.noMatch, false) {
+			t.Fatalf("ignore rule %d did not preserve the spelling of %q", test.index, test.match)
+		}
+	}
+}
+
 func TestAgentCodeReadListGlobAndGrepAreBoundedAndStable(t *testing.T) {
 	root := t.TempDir()
 	mustAgentCodeMkdir(t, filepath.Join(root, "src", "nested"))
