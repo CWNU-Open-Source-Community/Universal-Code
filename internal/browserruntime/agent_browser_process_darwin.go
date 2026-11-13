@@ -62,19 +62,26 @@ func (p *darwinAgentBrowserProcess) observe() (rootExited bool, live int, rss ui
 	}
 	rootExited, err = darwinChromeExited(p.pid)
 	if err != nil {
-		return
+		return false, 0, 0, fmt.Errorf("observe Chrome root exit: %w", err)
 	}
 	members, e := darwinChromeGroup(p.pid)
 	if e != nil {
-		err = e
-		return
+		return rootExited, 0, 0, fmt.Errorf("observe Chrome process group: %w", e)
 	}
 	handlers, e := darwinChromeCrashpad(p.profile)
 	if e != nil {
-		err = e
-		return
+		return rootExited, 0, 0, fmt.Errorf("observe Chrome crash handlers: %w", e)
 	}
-	candidates := append(members, handlers...)
+	for _, handler := range handlers {
+		if _, exists := p.known[handler.PID]; exists {
+			continue
+		}
+		if !p.sameLaunch(handler) {
+			return rootExited, 0, 0, errors.New("native crash handler crossed its user or launch identity")
+		}
+		p.known[handler.PID] = handler
+	}
+	candidates := members
 	// Recursively enumerate while parent identity is still present. A previously
 	// observed PID is never re-admitted after its birth time changes.
 	parents := make([]darwinChromeProcessSample, 0, len(p.known))
@@ -113,7 +120,7 @@ func (p *darwinAgentBrowserProcess) observe() (rootExited bool, live int, rss ui
 			err = e
 			return
 		}
-		if sample.UID != p.root.UID || sample.StartSeconds < p.root.StartSeconds || sample.StartSeconds == p.root.StartSeconds && sample.StartMicroseconds < p.root.StartMicroseconds {
+		if !p.sameLaunch(sample) {
 			err = errors.New("native browser observation crossed its user or launch identity")
 			return
 		}
@@ -141,6 +148,11 @@ func (p *darwinAgentBrowserProcess) observe() (rootExited bool, live int, rss ui
 		rss += sample.RSS
 	}
 	return
+}
+
+func (p *darwinAgentBrowserProcess) sameLaunch(sample darwinChromeProcessSample) bool {
+	return sample.UID == p.root.UID && (sample.StartSeconds > p.root.StartSeconds ||
+		sample.StartSeconds == p.root.StartSeconds && sample.StartMicroseconds >= p.root.StartMicroseconds)
 }
 
 func (p *darwinAgentBrowserProcess) monitor() {

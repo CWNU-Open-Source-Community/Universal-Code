@@ -590,7 +590,7 @@ jobs:
           # Approval subtests each launch and verify a fresh signed Chrome.
           # Give these scenarios their own test budget on slower Intel runners.
           go test -v -count=1 -timeout=15m ./internal/browserruntime -run '^TestAgentBrowserReal(Scoped|Internet)WriteExactApproval$'
-          go test -v -count=1 -timeout=25m ./internal/browserruntime -run '^(TestDarwinChromeNativeBindingAndLifecycle|TestDarwinPIDEnumerationErrorsPropagate|TestAgentBrowserReal.*|TestAgentBrowserDarwinRevocationBeforeResume|TestAgentBrowserCleanupRequiresItsActualProcessScope)$' -skip '^TestAgentBrowserReal(Scoped|Internet)WriteExactApproval$'
+          go test -v -count=1 -timeout=25m ./internal/browserruntime -run '^(TestDarwinChromeNativeBindingAndLifecycle|TestDarwinProcessObservationDistinguishesExitFromErrors|TestAgentBrowserReal.*|TestAgentBrowserDarwinRevocationBeforeResume|TestAgentBrowserCleanupRequiresItsActualProcessScope)$' -skip '^TestAgentBrowserReal(Scoped|Internet)WriteExactApproval$'
           go test -v -count=1 -timeout=5m ./internal/httpapi -run '^TestAgentBrowserHTTPProductApprovalAndScreenshot$'
           go test -v -count=1 -timeout=15m ./internal/store -run '^TestBrowserNetworkRequestRealApprovalControl$'
           go test -v -count=1 -timeout=3m ./internal/app ./internal/desktop -run '^(TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests|TestAPIServeWiresOrdinaryAgentBrowserIntoModelRequests|TestCLIExecutionEntrypointsWireOrdinaryAgentBrowser|TestCLIWakeConsumeWiresOrdinaryAgentBrowser|TestCLIApprovalExecutionHandoffWiresOrdinaryAgentBrowser|TestCLIExecutionRuntimeClosesAgentBrowserWithoutGrantingPersistedFullAccess)$'

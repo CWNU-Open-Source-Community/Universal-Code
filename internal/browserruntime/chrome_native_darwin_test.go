@@ -271,7 +271,11 @@ func darwinChromeTestSession(t *testing.T, executable, hash, mode string) map[st
 	if len(handlers) == 0 {
 		t.Fatal("running Chrome has no observable handler bound to its private Crashpad database; lifecycle scope is unproven")
 	}
-	t.Logf("root=%d PGID members=%v scoped Crashpad=%v", pid, group, handlers)
+	handlerPIDs := make([]int, 0, len(handlers))
+	for _, handler := range handlers {
+		handlerPIDs = append(handlerPIDs, handler.PID)
+	}
+	t.Logf("root=%d PGID members=%v scoped Crashpad=%v", pid, group, handlerPIDs)
 	startedStop := time.Now()
 	if mode == "browser_close" {
 		// Browser.close may close the socket before replying. Exit is checked below.
@@ -280,7 +284,8 @@ func darwinChromeTestSession(t *testing.T, executable, hash, mode string) map[st
 		t.Fatal(err)
 	}
 	_ = connection.Close()
-	var lastGroup, lastHandlers []int
+	var lastGroup []int
+	var lastHandlers []darwinChromeProcessSample
 	deadline := time.Now().Add(20 * time.Second)
 	for {
 		exited, exitErr := darwinChromeExited(pid)
@@ -323,6 +328,6 @@ func darwinChromeTestSession(t *testing.T, executable, hash, mode string) map[st
 	}
 	elapsed := time.Since(startedStop)
 	t.Logf("root exit=%d; observed process group/own Crashpad empty after %s; no Job/tree guarantee claimed", code, elapsed)
-	return map[string]any{"mode": mode, "pid": pid, "members_before_close": group, "crashpad_before_close": handlers, "exit_code": code,
+	return map[string]any{"mode": mode, "pid": pid, "members_before_close": group, "crashpad_before_close": handlerPIDs, "exit_code": code,
 		"root_reaped": true, "process_group_empty": true, "scoped_crashpad_empty": true, "cleanup_milliseconds": elapsed.Milliseconds(), "navigation_interaction_screenshots": true}
 }
