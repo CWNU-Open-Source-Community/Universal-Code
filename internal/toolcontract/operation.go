@@ -36,7 +36,7 @@ const (
 
 type Target struct {
 	Kind    string // file | directory | endpoint | process
-	Locator string // normalized host target reference; never a secret-bearing URL
+	Locator string // exact host target reference; never a secret-bearing URL
 }
 
 // Operation is a prepared host description, NOT an authority token. The host
@@ -74,8 +74,14 @@ func (o Operation) Validate() error {
 	}
 	seen := make(map[Target]bool, len(o.Targets))
 	for _, target := range o.Targets {
-		if !normalized(target.Locator, 4096) || seen[target] ||
-			!slices.Contains([]string{"file", "directory", "endpoint", "process"}, target.Kind) {
+		var valid bool
+		switch target.Kind {
+		case "file":
+			valid = target.Locator != "" && text(target.Locator, 4096)
+		case "directory", "endpoint", "process":
+			valid = normalized(target.Locator, 4096)
+		}
+		if !valid || seen[target] {
 			return errors.New("operation target is invalid or duplicated")
 		}
 		seen[target] = true

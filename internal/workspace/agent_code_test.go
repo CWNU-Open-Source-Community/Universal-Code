@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestAgentIgnorePreservesSignificantWhitespace(t *testing.T) {
@@ -96,6 +97,35 @@ func TestAgentCodeReadListGlobAndGrepAreBoundedAndStable(t *testing.T) {
 		grep2.Matches[0].Path+string(rune(grep2.Matches[0].Line)) ==
 			grep1.Matches[0].Path+string(rune(grep1.Matches[0].Line)) {
 		t.Fatalf("second grep page=%#v err=%v", grep2, err)
+	}
+}
+
+func TestAgentCodeSearchPreservesLiteralPathWhitespace(t *testing.T) {
+	root := t.TempDir()
+	const spaced = " notes.txt "
+	exact, err := rootfs.ExactAbsolutePath(filepath.Join(root, spaced))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Remove(exact); err != nil && !os.IsNotExist(err) {
+			t.Error(err)
+		}
+	})
+	mustAgentCodeWrite(t, filepath.Join(root, " notes.txt"), "needle neighbor\n")
+	mustAgentCodeWrite(t, exact, "needle exact\n")
+	list, err := AgentCodeListDirectory(root, "ws", ".", "", 10, false)
+	if err != nil || len(list.Items) != 2 || list.Items[1].Path != spaced {
+		t.Fatalf("directory listing lost the exact path: %#v, %v", list.Items, err)
+	}
+	glob, err := AgentCodeGlobFiles(root, "ws", spaced, "", 10, false)
+	if err != nil || len(glob.Paths) != 1 || glob.Paths[0] != spaced || glob.Pattern != spaced {
+		t.Errorf("literal glob did not select the exact file: %#v, %v", glob, err)
+	}
+	grep, err := AgentCodeGrepFiles(root, "ws", "needle", spaced, "", 10, true, false)
+	if err != nil || len(grep.Matches) != 1 || grep.Matches[0].Path != spaced ||
+		grep.Matches[0].Snippet != "needle exact" {
+		t.Errorf("literal grep did not read the exact file: %#v, %v", grep, err)
 	}
 }
 

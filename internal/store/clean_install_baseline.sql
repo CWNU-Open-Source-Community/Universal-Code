@@ -2285,7 +2285,7 @@ CREATE TABLE file_edit_apply_operations (
 				AND destination_original_hash = '' AND destination_proposed_hash = ''
 				AND destination_observed_hash = '')),
 		CHECK(event_sequence > 0),
-		CHECK(path = trim(path) AND length(path) BETWEEN 1 AND 512 AND instr(path, char(0)) = 0),
+		CHECK(length(path) BETWEEN 1 AND 512 AND instr(path, char(0)) = 0),
 		CHECK(applied_by = trim(applied_by) AND length(applied_by) BETWEEN 1 AND 256
 			AND instr(applied_by, char(0)) = 0)
 	) WITHOUT ROWID;

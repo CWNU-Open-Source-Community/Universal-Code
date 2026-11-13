@@ -902,8 +902,8 @@ func normalizeAgentPath(value string, allowRoot bool) (string, error) {
 }
 
 func normalizeAgentPattern(value string) (string, error) {
-	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
-		utf8.RuneCountInString(value) > MaxAgentCodeGlobPatternRunes || strings.ContainsRune(value, 0) ||
+	if value == "" || !utf8.ValidString(value) ||
+		utf8.RuneCountInString(value) > MaxAgentCodeGlobPatternRunes || strings.ContainsFunc(value, unicode.IsControl) ||
 		strings.ContainsAny(value, `\:`) || strings.HasPrefix(value, "/") ||
 		value == ".." || strings.HasPrefix(value, "../") {
 		return "", apperror.New(apperror.CodeInvalidArgument,
