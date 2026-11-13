@@ -254,8 +254,9 @@ it("preserves the Plugin file and exact upload on failure, then requires separat
 
 it("stages and reviews LSP explicitly before an actual readonly test, keeping failed query input", async () => {
   const user = userEvent.setup();
+  const exactPath = " src/main.ts ";
   let configurations = [] as ReturnType<typeof lspConfiguration>[];
-  let probes = 0;
+  const probePaths: string[] = [];
   const calls: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const path = url.split("?")[0];
@@ -263,8 +264,12 @@ it("stages and reviews LSP explicitly before an actual readonly test, keeping fa
     calls.push(path);
     if (path.endsWith("/configurations")) { configurations = [lspConfiguration()]; return respond(configurations[0]); }
     if (path.endsWith("/review")) { configurations = [lspConfiguration(true)]; return respond(configurations[0]); }
-    if (++probes === 1) throw new Error("server unavailable");
-    return respond(lspTest());
+    probePaths.push(JSON.parse(String(init?.body)).path);
+    if (probePaths.length === 1) throw new Error("server unavailable");
+    const tested = lspTest();
+    tested.result.document_path = exactPath;
+    tested.result.items[0].path = exactPath;
+    return respond(tested);
   }));
   mount(<ExtensionSettings client={new APIClient("read", "/api/v1", "control")} selectedRunID="" selectedWorkspaceID="project-one" />);
   await user.click(await screen.findByText("配置本地 LSP"));
@@ -283,16 +288,17 @@ it("stages and reviews LSP explicitly before an actual readonly test, keeping fa
   await user.click(screen.getByRole("checkbox", { name: /我已核对当前 LSP 描述符/ }));
   await user.click(review);
   const input = await screen.findByRole("textbox", { name: "工作区内相对文件路径" });
-  await user.type(input, "src/main.ts");
+  await user.type(input, exactPath);
   expect(calls).toHaveLength(2);
   const probe = screen.getByRole("button", { name: "执行一次 LSP 只读测试" });
   await user.click(probe);
   await screen.findByText("server unavailable");
-  expect(input).toHaveValue("src/main.ts");
+  expect(input).toHaveValue(exactPath);
   await user.click(probe);
   const result = await screen.findByRole("region", { name: "LSP 实际查询结果" });
   expect(within(result).getByText(/实际只读查询已返回/)).toBeInTheDocument();
-  expect(within(result).getByText("main · src/main.ts:1:1")).toBeInTheDocument();
+  expect(within(result).getByText('main · " src/main.ts ":1:1')).toBeInTheDocument();
+  expect(probePaths).toEqual([exactPath, exactPath]);
 });
 
 it("disables onboarding when the backend capability object is absent even with a control token", async () => {

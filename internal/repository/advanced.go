@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -16,9 +17,12 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/gitadvanced"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/toolcontract"
 )
@@ -593,7 +597,7 @@ func (e *AdvancedExecutor) captureWorktreeDigest(ctx context.Context, root,
 		if path == "" {
 			continue
 		}
-		if !safeGitRelativePath(path) || count >= MaxChangeItems {
+		if count >= MaxChangeItems {
 			return "", errors.New("untracked worktree state exceeds safe capture bounds")
 		}
 		data, readErr := readBoundedWorktreeFile(root, path,
@@ -744,19 +748,44 @@ func digestGitSequenceState(gitDir string) (string, error) {
 }
 
 func readBoundedWorktreeFile(root, relative string, remaining int) ([]byte, error) {
-	if remaining < 0 || !safeGitRelativePath(relative) {
+	if remaining < 0 || !validWorktreeCapturePath(relative) {
 		return nil, errors.New("worktree content exceeds safe capture bounds")
 	}
-	path := filepath.Join(root, filepath.FromSlash(relative))
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
-		info.Size() > int64(remaining) {
+	openedRoot, err := rootfs.OpenExactRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer openedRoot.Close()
+	name := filepath.FromSlash(relative)
+	for parent := filepath.Dir(name); parent != "."; parent = filepath.Dir(parent) {
+		info, err := openedRoot.Lstat(parent)
+		if err != nil || !info.IsDir() || isReparsePoint(info) {
+			return nil, errors.New("untracked worktree entry traverses a link or reparse point")
+		}
+	}
+	info, err := openedRoot.Lstat(name)
+	if err != nil || !info.Mode().IsRegular() || isReparsePoint(info) || info.Size() > int64(remaining) {
 		return nil, errors.New("untracked worktree entry is not a bounded regular file")
 	}
-	if err := validateAdvancedPathParent(root, filepath.Dir(path)); err != nil {
-		return nil, errors.New("untracked worktree entry traverses a link or reparse point")
+	file, err := openedRoot.OpenReadOnly(name)
+	if err != nil {
+		return nil, err
 	}
-	return os.ReadFile(path)
+	defer file.Close()
+	before, err := file.Stat()
+	if err != nil || !before.Mode().IsRegular() || !os.SameFile(info, before) {
+		return nil, errors.New("untracked worktree entry changed while opening it")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, int64(remaining)+1))
+	if err != nil {
+		return nil, err
+	}
+	after, err := file.Stat()
+	if err != nil || len(data) > remaining || int64(len(data)) != before.Size() ||
+		before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return nil, errors.New("untracked worktree entry changed or exceeded its capture bound")
+	}
+	return data, nil
 }
 
 func validateAdvancedPathParent(root, parent string) error {
@@ -800,6 +829,22 @@ func safeGitRelativePath(value string) bool {
 	for _, component := range strings.Split(value, "/") {
 		if component == "" || component != strings.TrimSpace(component) ||
 			strings.EqualFold(component, ".git") {
+			return false
+		}
+	}
+	return true
+}
+
+// Git reports literal untracked names. This read never passes the path back
+// to Git, so it can preserve whitespace and open the exact file itself.
+func validWorktreeCapturePath(value string) bool {
+	if value == "" || value == "." || !utf8.ValidString(value) || strings.ContainsFunc(value, unicode.IsControl) ||
+		strings.ContainsAny(value, "\\:") || !filepath.IsLocal(filepath.FromSlash(value)) ||
+		value != filepath.ToSlash(filepath.Clean(value)) {
+		return false
+	}
+	for _, component := range strings.Split(value, "/") {
+		if strings.EqualFold(strings.TrimRight(component, " ."), ".git") {
 			return false
 		}
 	}

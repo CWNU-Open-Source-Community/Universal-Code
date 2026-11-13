@@ -15,6 +15,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/repository"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspace"
 )
 
@@ -52,12 +53,14 @@ func captureWorkspaceBinding(ctx context.Context, root, workspaceID string) (wor
 	if err != nil {
 		return workspaceBinding{}, err
 	}
-	canonical, err := filepath.Abs(root)
+	canonical, err := rootfs.ExactAbsolutePath(root)
 	if err != nil {
 		return workspaceBinding{}, apperror.New(apperror.CodeFailedPrecondition,
 			"LSP workspace root could not be resolved")
 	}
-	canonical = filepath.Clean(canonical)
+	if err := rootfs.CheckExternalDirectory(canonical); err != nil {
+		return workspaceBinding{}, apperror.New(apperror.CodeFailedPrecondition, err.Error())
+	}
 	binding := workspaceBinding{WorkspaceID: workspaceID, Root: canonical,
 		RootFingerprint: rootFingerprint}
 	if metadata, err := os.Lstat(filepath.Join(canonical, ".git")); err == nil && metadata.Mode().IsRegular() {
@@ -252,12 +255,14 @@ func captureDocumentBinding(root, requested string, version int) (documentBindin
 }
 
 func fileURI(target string) (string, error) {
-	absolute, err := filepath.Abs(target)
+	absolute, err := rootfs.ExactAbsolutePath(target)
 	if err != nil {
 		return "", apperror.New(apperror.CodeFailedPrecondition,
 			"LSP document path could not be resolved")
 	}
-	value := filepath.ToSlash(filepath.Clean(absolute))
+	// A file URI carries the path spelling, independent of the prefix our
+	// Windows filesystem calls use to open it.
+	value := filepath.ToSlash(rootfs.OrdinaryPath(absolute))
 	if runtime.GOOS == "windows" && !strings.HasPrefix(value, "/") {
 		value = "/" + value
 	}
@@ -295,12 +300,12 @@ func workspaceRelativeURI(root, rawURI string) (string, string, error) {
 		return "", "", apperror.New(apperror.CodePolicyDenied,
 			"language server returned a relative file URI")
 	}
-	canonicalRoot, err := filepath.Abs(root)
+	canonicalRoot, err := rootfs.ExactAbsolutePath(root)
 	if err != nil {
 		return "", "", apperror.New(apperror.CodeFailedPrecondition,
 			"LSP workspace root could not be resolved")
 	}
-	relative, err := filepath.Rel(filepath.Clean(canonicalRoot), target)
+	relative, err := filepath.Rel(rootfs.OrdinaryPath(canonicalRoot), target)
 	if err != nil || relative == "." || relative == ".." ||
 		strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
 		return "", "", apperror.New(apperror.CodePolicyDenied,
@@ -311,7 +316,7 @@ func workspaceRelativeURI(root, rawURI string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	if !samePlatformPath(resolved, target) {
+	if !samePlatformPath(rootfs.OrdinaryPath(resolved), target) {
 		return "", "", apperror.New(apperror.CodePolicyDenied,
 			"language server returned a redirected or case-confused URI")
 	}
