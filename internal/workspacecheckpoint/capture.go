@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,10 +21,16 @@ import (
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
 
-const maxGitCaptureOutputBytes = 32 * 1024 * 1024
+const (
+	maxGitCaptureOutputBytes = 32 * 1024 * 1024
+	incompleteManifestReason = "workspace manifest exceeds the entry limit"
+	caseCollisionReason      = "case-colliding Workspace paths cannot be restored safely"
+	indexPathCasingReason    = "Workspace path casing differs from the Git index"
+)
 
 type gitIndexEntry struct {
 	OID   string
@@ -61,7 +68,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	rootHandle, err := os.OpenRoot(root)
+	rootHandle, err := rootfs.OpenExactRoot(root)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("open Workspace root: %w", err)
 	}
@@ -71,7 +78,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("capture Workspace identity: %w", err)
 	}
 	rootPathDigest := sha256.Sum256([]byte(canonicalPathIdentity(root)))
-	inventory, err := inspectCaptureInventory(ctx, root)
+	inventory, err := inspectCaptureInventory(ctx, root, rootHandle)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -84,11 +91,15 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 	}
 	if !inventory.git {
 		level = RecoveryUnavailable
-		reasons["workspace is not an exact Git worktree"] = struct{}{}
+		reason := "workspace is not an exact Git worktree"
+		if err := rootfs.CheckExternalDirectory(root); err != nil {
+			reason = err.Error()
+		}
+		reasons[reason] = struct{}{}
 	}
 	if inventory.truncated {
 		level = RecoveryUnavailable
-		reasons["workspace manifest exceeds the entry limit"] = struct{}{}
+		reasons[incompleteManifestReason] = struct{}{}
 	}
 	if inventory.unmerged {
 		if level == RecoveryComplete {
@@ -137,7 +148,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 		}
 		if previous, exists := casePaths[caseKey]; exists && previous != path {
 			level = RecoveryUnavailable
-			reasons["case-colliding Workspace paths cannot be restored safely"] = struct{}{}
+			reasons[caseCollisionReason] = struct{}{}
 		}
 		casePaths[caseKey] = path
 		if runtime.GOOS == "windows" {
@@ -147,7 +158,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 			}
 			if exists && actualPath != path {
 				level = RecoveryUnavailable
-				reasons["Workspace path casing differs from the Git index"] = struct{}{}
+				reasons[indexPathCasingReason] = struct{}{}
 			}
 		}
 		entry, content, incomplete, entryErr := captureEntry(ctx, rootHandle, path, inventory)
@@ -219,7 +230,7 @@ func Capture(ctx context.Context, request CaptureRequest) (Snapshot, error) {
 	return snapshot, nil
 }
 
-func actualCapturePathCase(root *os.Root, normalized string) (string, bool, error) {
+func actualCapturePathCase(root *rootfs.ExactRoot, normalized string) (string, bool, error) {
 	parts := strings.Split(normalized, "/")
 	current := "."
 	actual := make([]string, 0, len(parts))
@@ -231,7 +242,7 @@ func actualCapturePathCase(root *os.Root, normalized string) (string, bool, erro
 		if err != nil {
 			return "", false, fmt.Errorf("inspect Workspace path casing: %w", err)
 		}
-		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		if !info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 			return "", false, nil
 		}
 		directory, err := root.Open(current)
@@ -265,7 +276,7 @@ func actualCapturePathCase(root *os.Root, normalized string) (string, bool, erro
 }
 
 func canonicalRoot(value string) (string, error) {
-	abs, err := filepath.Abs(strings.TrimSpace(value))
+	abs, err := rootfs.ExactAbsolutePath(value)
 	if err != nil {
 		return "", err
 	}
@@ -273,7 +284,7 @@ func canonicalRoot(value string) (string, error) {
 	if err != nil || !requestedInfo.IsDir() || requestedInfo.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 		return "", errors.New("workspace checkpoint root identity is not a real directory")
 	}
-	resolved, err := filepath.EvalSymlinks(abs)
+	resolved, err := rootfs.EvalExactSymlinks(abs)
 	if err != nil || !sameCapturePath(abs, resolved) {
 		return "", errors.New("workspace checkpoint root identity is redirected")
 	}
@@ -295,25 +306,17 @@ func canonicalPathIdentity(value string) string {
 	return value
 }
 
-func inspectCaptureInventory(ctx context.Context, root string) (captureInventory, error) {
+func inspectCaptureInventory(ctx context.Context, root string, rootHandle *rootfs.ExactRoot) (captureInventory, error) {
 	result := captureInventory{baseCommit: "non-git", tracked: map[string]gitIndexEntry{},
 		untracked: map[string]struct{}{}, ignored: map[string]struct{}{},
 		staged: map[string]struct{}{}}
 	gitPath, err := exec.LookPath("git")
-	if err != nil {
-		paths, truncated, walkErr := walkNonGitFiles(ctx, root)
-		if walkErr != nil {
-			return result, walkErr
-		}
-		for _, path := range paths {
-			result.untracked[path] = struct{}{}
-		}
-		result.truncated = truncated
-		return result, nil
+	var top []byte
+	if err == nil {
+		top, err = captureGitOutput(ctx, gitPath, root, "rev-parse", "--show-toplevel")
 	}
-	top, err := captureGitOutput(ctx, gitPath, root, "rev-parse", "--show-toplevel")
-	if err != nil || !sameCapturePath(strings.TrimSpace(string(top)), root) {
-		paths, truncated, walkErr := walkNonGitFiles(ctx, root)
+	if err != nil || !sameCapturePath(strings.TrimRight(string(top), "\r\n"), root) {
+		paths, truncated, walkErr := walkNonGitFiles(ctx, rootHandle)
 		if walkErr != nil {
 			return result, walkErr
 		}
@@ -332,15 +335,10 @@ func inspectCaptureInventory(ctx context.Context, root string) (captureInventory
 	if branch, branchErr := captureGitOutput(ctx, gitPath, root, "branch", "--show-current"); branchErr == nil {
 		result.branch = strings.TrimSpace(string(branch))
 	}
-	indexPath, err := captureGitOutput(ctx, gitPath, root, "rev-parse", "--git-path", "index")
+	result.indexPath, err = gitIndexPath(ctx, gitPath, root)
 	if err != nil {
-		return result, fmt.Errorf("locate Git index: %w", err)
+		return result, err
 	}
-	result.indexPath = strings.TrimSpace(string(indexPath))
-	if !filepath.IsAbs(result.indexPath) {
-		result.indexPath = filepath.Join(root, result.indexPath)
-	}
-	result.indexPath = filepath.Clean(result.indexPath)
 
 	tracked, err := captureGitOutput(ctx, gitPath, root, "ls-files", "-s", "-z")
 	if err != nil {
@@ -393,8 +391,11 @@ func inspectCaptureInventory(ctx context.Context, root string) (captureInventory
 			}
 		}
 	}
-	ignored, _ := captureGitOutput(ctx, gitPath, root,
+	ignored, err := captureGitOutput(ctx, gitPath, root,
 		"ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
+	if err != nil {
+		return result, err
+	}
 	for _, raw := range splitNUL(ignored) {
 		path, pathErr := normalizeCapturePath(strings.TrimSuffix(raw, "/"))
 		if pathErr == nil && path != "" {
@@ -413,6 +414,18 @@ func inspectCaptureInventory(ctx context.Context, root string) (captureInventory
 		}
 	}
 	return result, nil
+}
+
+func gitIndexPath(ctx context.Context, gitPath, root string) (string, error) {
+	path, err := captureGitOutput(ctx, gitPath, root, "rev-parse", "--path-format=absolute", "--git-path", "index")
+	if err != nil {
+		return "", fmt.Errorf("locate Git index: %w", err)
+	}
+	indexPath := strings.TrimRight(string(path), "\r\n")
+	if !filepath.IsAbs(indexPath) {
+		return "", errors.New("Git index path is not absolute")
+	}
+	return rootfs.ExactAbsolutePath(indexPath)
 }
 
 // readCaptureIndex hashes the Git index as a stream and captures only its
@@ -479,7 +492,7 @@ func capturePaths(inventory captureInventory) []string {
 	return paths
 }
 
-func captureEntry(ctx context.Context, root *os.Root, path string,
+func captureEntry(ctx context.Context, root *rootfs.ExactRoot, path string,
 	inventory captureInventory,
 ) (Entry, []byte, string, error) {
 	index, tracked := inventory.tracked[path]
@@ -536,7 +549,7 @@ func captureEntry(ctx context.Context, root *os.Root, path string,
 		entry.Reason = "special filesystem entry is unsupported"
 		return entry, nil, "special Workspace content is not captured", nil
 	}
-	digest, content, err := hashCaptureFile(ctx, root, path, info.Size() <= MaxStoredFileBytes)
+	digest, content, err := hashCaptureFile(ctx, root, path, info, info.Size() <= MaxStoredFileBytes)
 	if err != nil {
 		entry.StoragePolicy = StorageUnreadable
 		entry.Recoverable = false
@@ -571,7 +584,7 @@ func captureEntry(ctx context.Context, root *os.Root, path string,
 	return entry, content, "", nil
 }
 
-func capturePathInfo(root *os.Root, relative string) (os.FileInfo, bool, error) {
+func capturePathInfo(root *rootfs.ExactRoot, relative string) (os.FileInfo, bool, error) {
 	parts := strings.Split(relative, "/")
 	current := "."
 	var info os.FileInfo
@@ -594,14 +607,25 @@ func capturePathInfo(root *os.Root, relative string) (os.FileInfo, bool, error) 
 	return info, false, nil
 }
 
-func hashCaptureFile(ctx context.Context, root *os.Root, path string, keep bool) (string, []byte, error) {
+func hashCaptureFile(ctx context.Context, root *rootfs.ExactRoot, path string, before os.FileInfo,
+	keep bool,
+) (string, []byte, error) {
 	// Keep the actual read beneath the same held root even if a parent is
 	// replaced by a link after capturePathInfo inspected it.
-	file, err := root.Open(filepath.FromSlash(path))
+	local := filepath.FromSlash(path)
+	file, err := root.OpenReadOnly(local)
 	if err != nil {
 		return "", nil, err
 	}
 	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil {
+		return "", nil, err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) ||
+		before.Size() != opened.Size() || !before.ModTime().Equal(opened.ModTime()) {
+		return "", nil, errors.New("Workspace file changed while opening")
+	}
 	hash := sha256.New()
 	var buffer bytes.Buffer
 	writer := io.Writer(hash)
@@ -609,12 +633,16 @@ func hashCaptureFile(ctx context.Context, root *os.Root, path string, keep bool)
 		writer = io.MultiWriter(hash, &buffer)
 	}
 	chunk := make([]byte, 64*1024)
+	// A growing file must not turn a bounded blob capture into an unbounded read.
+	reader := io.LimitReader(file, before.Size())
+	var size int64
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", nil, err
 		}
-		count, readErr := file.Read(chunk)
+		count, readErr := reader.Read(chunk)
 		if count > 0 {
+			size += int64(count)
 			if _, err := writer.Write(chunk[:count]); err != nil {
 				return "", nil, err
 			}
@@ -625,6 +653,14 @@ func hashCaptureFile(ctx context.Context, root *os.Root, path string, keep bool)
 		if readErr != nil {
 			return "", nil, readErr
 		}
+	}
+	after, err := root.Lstat(local)
+	if err != nil {
+		return "", nil, err
+	}
+	if size != before.Size() || !os.SameFile(opened, after) ||
+		before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return "", nil, errors.New("Workspace file changed while reading")
 	}
 	if !keep {
 		return hex.EncodeToString(hash.Sum(nil)), nil, nil
@@ -655,36 +691,34 @@ func captureBlobBytes(values map[string]Blob) int64 {
 	return total
 }
 
-func walkNonGitFiles(ctx context.Context, root string) ([]string, bool, error) {
+func walkNonGitFiles(ctx context.Context, root *rootfs.ExactRoot) ([]string, bool, error) {
 	values := make([]string, 0, 256)
 	truncated := false
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+	err := fs.WalkDir(root.FS(), ".", func(relative string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if sameCapturePath(path, root) {
+		if relative == "." {
 			return nil
 		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
 		if relative == ".git" || strings.HasPrefix(relative, ".git/") {
 			if entry.IsDir() {
-				return filepath.SkipDir
+				return fs.SkipDir
 			}
 			return nil
 		}
 		if entry.IsDir() {
+			if entry.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		if len(values) >= MaxEntries {
 			truncated = true
-			return filepath.SkipAll
+			return fs.SkipAll
 		}
 		normalized, err := normalizeCapturePath(relative)
 		if err != nil {
@@ -698,6 +732,9 @@ func walkNonGitFiles(ctx context.Context, root string) ([]string, bool, error) {
 }
 
 func captureGitOutput(ctx context.Context, gitPath, root string, args ...string) ([]byte, error) {
+	if err := rootfs.CheckExternalDirectory(root); err != nil {
+		return nil, err
+	}
 	base := []string{"-C", root, "--no-optional-locks", "-c", "core.autocrlf=false",
 		"-c", "core.hooksPath=", "-c", "diff.external=", "-c", "core.fsmonitor=false"}
 	command := checkpointCommandContext(ctx, gitPath, append(base, args...)...)
@@ -777,8 +814,8 @@ func normalizeCapturePath(value string) (string, error) {
 }
 
 func sameCapturePath(left, right string) bool {
-	left = filepath.Clean(left)
-	right = filepath.Clean(right)
+	left = filepath.Clean(rootfs.OrdinaryPath(left))
+	right = filepath.Clean(rootfs.OrdinaryPath(right))
 	if runtime.GOOS == "windows" {
 		return strings.EqualFold(left, right)
 	}
@@ -786,8 +823,12 @@ func sameCapturePath(left, right string) bool {
 }
 
 func sensitiveCapturePath(path string) bool {
-	lower := strings.ToLower(filepath.ToSlash(path))
-	base := strings.ToLower(filepath.Base(lower))
+	parts := strings.Split(strings.ToLower(path), "/")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	lower := "/" + strings.Join(parts, "/")
+	base := parts[len(parts)-1]
 	if base == ".env" || strings.HasPrefix(base, ".env.") || base == "credentials" ||
 		base == "credentials.json" || base == "id_rsa" || base == "id_ed25519" ||
 		strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".p12") ||

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { APIClient } from "../api/client";
 import type { CodeIntelConfigurationView } from "../api/types";
+import { formatWorkspacePathLabel } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { ExtensionSteps } from "./extension-onboarding";
 
@@ -70,7 +71,7 @@ export function LSPConfigurationCard({ client, enabled, configuration }: {
   const review = useMutation({ mutationFn: () => client.reviewCodeIntelConfiguration(configuration.server_id, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["code-intel"] }) });
   const probe = useMutation({ mutationFn: () => client.testCodeIntelConfiguration(configuration.server_id, {
-    ...body, tool, ...(tool === "code_document_symbols" ? { path: path.trim() } : { query: query.trim() }),
+    ...body, tool, ...(tool === "code_document_symbols" ? { path } : { query: query.trim() }),
   }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ["code-intel"] }) });
   const reviewed = configuration.review_state === "reviewed";
   return <article className="extension-card">
@@ -102,7 +103,7 @@ export function LSPConfigurationCard({ client, enabled, configuration }: {
           placeholder="src/main.ts" maxLength={4096} onChange={(event) => { setPath(event.target.value); probe.reset(); }} /></label>
           : <label>{t("符号查询（可选）", "Symbol query (optional)")}<input value={query} disabled={probe.isPending} maxLength={4096}
             onChange={(event) => { setQuery(event.target.value); probe.reset(); }} /></label>}
-        <button className="settings-action" disabled={!enabled || probe.isPending || (tool === "code_document_symbols" && !path.trim())}
+        <button className="settings-action" disabled={!enabled || probe.isPending || (tool === "code_document_symbols" && !path)}
           onClick={() => probe.mutate()} type="button">{probe.isPending ? t("正在执行只读测试…", "Running readonly test…") : t("执行一次 LSP 只读测试", "Run one readonly LSP test")}</button>
       </>}
       {review.error && <p className="inline-warning" role="alert">{review.error.message}</p>}
@@ -112,7 +113,7 @@ export function LSPConfigurationCard({ client, enabled, configuration }: {
         <p>{t("能力指纹", "Capability fingerprint")}: {probe.data.result.capability_fingerprint}</p>
         <p>{t("查询指纹", "Query fingerprint")}: {probe.data.result.query_fingerprint}</p>
         {probe.data.result.items.length === 0 && <p>{t("本次查询返回 0 个符号。检查文件路径或换一个符号查询后重试。", "This query returned 0 symbols. Check the file path or try another symbol query.")}</p>}
-        <ul>{probe.data.result.items.map((item, index) => <li key={index}>{item.name || item.kind}{item.path ? ` · ${item.path}` : ""}
+        <ul>{probe.data.result.items.map((item, index) => <li key={index}>{item.name || item.kind}{item.path ? ` · ${formatWorkspacePathLabel(item.path)}` : ""}
           {item.range ? `:${item.range.start.line + 1}:${item.range.start.character + 1}` : ""}</li>)}</ul>
         {probe.data.result.warnings.map((warning, index) => <p className="inline-warning" key={index}>{warning}</p>)}
       </section>}

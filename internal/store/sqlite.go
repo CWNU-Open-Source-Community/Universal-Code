@@ -517,7 +517,11 @@ func migrationPlan() []migration {
 		migration{Version: 227, Name: "Turn end lifecycle hook audits", Statements: turnEndHookStatements},
 		migration{Version: 228, Name: "Post compaction lifecycle hook audits", Statements: postCompactionHookStatements},
 		migration{Version: 229, Name: "Post occurrence hook observation cap audits", Statements: hookAuditOutcomeCapStatements},
-		migration{Version: 230, Name: "Independent project browser network access", Statements: browserNetworkAccessStatements})
+		migration{Version: 230, Name: "Independent project browser network access", Statements: browserNetworkAccessStatements},
+		migration{Version: 231, Name: "Preserve exact workspace evidence paths", Statements: exactWorkspaceEvidencePathStatements},
+		migration{Version: 232, Name: "Preserve exact workspace snapshot paths", Statements: exactWorkspaceSnapshotPathStatements(), DisableForeignKeys: true},
+		migration{Version: 233, Name: "Preserve exact file edit apply paths", Statements: exactFileEditApplyPathStatements(), DisableForeignKeys: true},
+		migration{Version: 234, Name: "Preserve exact command working directories", Statements: exactCommandWorkingDirectoryStatements(), DisableForeignKeys: true})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {
@@ -1032,7 +1036,7 @@ func normalizeStoredFileEdit(edit fileedit.Edit) (fileedit.Edit, error) {
 	if strings.TrimSpace(edit.WorkspaceID) == "" {
 		return fileedit.Edit{}, errors.New("workspace id is required")
 	}
-	if strings.TrimSpace(edit.Path) == "" {
+	if edit.Path == "" {
 		return fileedit.Edit{}, errors.New("file edit path is required")
 	}
 	if strings.TrimSpace(edit.Status) == "" {

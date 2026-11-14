@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestFindingReportProjectionConvergesAcrossStores(t *testing.T) {
@@ -189,19 +191,91 @@ func TestSchemaV34ExecutionSurvivesFindingReportMigration(t *testing.T) {
 	}
 }
 
+func TestSchemaV232PreservesExistingReportsAndExactFanoutPaths(t *testing.T) {
+	st, run, root := createReadOnlyFanoutFixture(t, "finding-report-v231.db", 1, 231)
+	ctx := t.Context()
+	execution := createFindingReportSourceExecution(t, ctx, st, run.ID,
+		"historical-finding-plan", "historical-finding-execution")
+	original, _, err := st.EnsureReadOnlyFanoutFindingReport(ctx, execution.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var databasePath string
+	if err := st.db.QueryRowContext(ctx, "SELECT file FROM pragma_database_list WHERE name = 'main'").
+		Scan(&databasePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := Open(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = upgraded.Close() })
+	loaded, err := upgraded.GetFindingReport(ctx, original.ID)
+	if err != nil || loaded.ProjectionDigest != original.ProjectionDigest || len(loaded.Findings) != 1 ||
+		loaded.Findings[0].RelativePath != "src/module-a.go" || len(loaded.Findings[0].Evidence) != 2 {
+		t.Fatalf("historical report was not preserved: %#v, %v", loaded, err)
+	}
+
+	const scope = " src "
+	const relative = scope + "/module-a.go "
+	dir, err := rootfs.ExactAbsolutePath(filepath.Join(root, scope))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	})
+	writeReadOnlyFanoutFile(t, root, relative, "package source\n// exact path\n")
+	planned, err := application.NewReadOnlyFanoutPlanService(upgraded, policy.NewDefaultChecker()).
+		Create(ctx, application.CreateReadOnlyFanoutPlanRequest{
+			RunID: run.ID, Goal: "review source", ScopePath: scope, Tier: "1",
+			OperationKey: "exact-finding-plan", RequestedBy: "operator",
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := upgraded.GetReadOnlyFanoutPlan(ctx, planned.Plan.ID)
+	if err != nil || plan.ScopePath != scope || len(plan.Files) != 1 ||
+		plan.Files[0].RelativePath != relative {
+		t.Fatalf("plan did not preserve the exact path: %#v, %v", plan, err)
+	}
+	execution = executeFindingReportSource(t, ctx, upgraded, plan.ID, "exact-finding-execution", relative)
+	if execution.Status != domain.ReadOnlyFanoutExecutionCompleted {
+		t.Fatalf("execution for exact path did not complete: %#v", execution)
+	}
+	report, _, err := upgraded.EnsureReadOnlyFanoutFindingReport(ctx, execution.ID)
+	if err != nil || len(report.Findings) != 1 || report.Findings[0].RelativePath != relative ||
+		len(report.Findings[0].Evidence) != 2 || report.Findings[0].Evidence[0].RelativePath != relative ||
+		report.Findings[0].Evidence[1].RelativePath != relative {
+		t.Fatalf("report did not preserve the exact path: %#v, %v", report, err)
+	}
+}
+
 func createFindingReportSourceExecution(t *testing.T, ctx context.Context,
 	st *SQLiteStore, runID string, planKey string, executionKey string,
 ) domain.ReadOnlyFanoutExecution {
 	t.Helper()
 	plan := createReadOnlyFanoutExecutionPlan(t, ctx, st, runID, "1", planKey)
-	provider := &findingReportProvider{}
+	return executeFindingReportSource(t, ctx, st, plan.ID, executionKey, "src/module-a.go")
+}
+
+func executeFindingReportSource(t *testing.T, ctx context.Context,
+	st *SQLiteStore, planID, executionKey, sourcePath string,
+) domain.ReadOnlyFanoutExecution {
+	t.Helper()
+	provider := &findingReportProvider{sourcePath: sourcePath}
 	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "audit"})
 	router.RegisterProvider(provider)
 	router.SetRoute("review", llm.ModelRef{Provider: provider.Name(), Model: "audit"})
 	result, err := application.NewReadOnlyFanoutExecutionService(st, router,
 		policy.NewDefaultChecker()).WithRunExecutionLeaseOwner("finding-report-worker").
 		Execute(ctx, application.ExecuteReadOnlyFanoutRequest{
-			PlanID: plan.ID, OperationKey: executionKey,
+			PlanID: planID, OperationKey: executionKey,
 			RequestedBy: "operator", MaxOutputTokensPerShard: 512,
 		})
 	if err != nil {
@@ -210,13 +284,15 @@ func createFindingReportSourceExecution(t *testing.T, ctx context.Context,
 	return result.Execution
 }
 
-type findingReportProvider struct{}
+type findingReportProvider struct {
+	sourcePath string
+}
 
 func (*findingReportProvider) Name() string { return "finding-report" }
 func (*findingReportProvider) ListModels(context.Context) ([]llm.ModelInfo, error) {
 	return []llm.ModelInfo{{ID: "audit", Provider: "finding-report"}}, nil
 }
-func (*findingReportProvider) Chat(context.Context,
+func (p *findingReportProvider) Chat(context.Context,
 	llm.ChatRequest,
 ) (*llm.ChatResponse, error) {
 	encoded, _ := json.Marshal(domain.ReadOnlyFanoutReport{
@@ -226,12 +302,12 @@ func (*findingReportProvider) Chat(context.Context,
 			{
 				Severity: domain.ReadOnlyFindingHigh, Category: "correctness",
 				Title: "Unchecked boundary", Detail: "The input boundary is unchecked.",
-				Path: "src/module-a.go", LineStart: 1, LineEnd: 2, Confidence: 85,
+				Path: p.sourcePath, LineStart: 1, LineEnd: 2, Confidence: 85,
 			},
 			{
 				Severity: domain.ReadOnlyFindingHigh, Category: "correctness",
 				Title: "Unchecked boundary", Detail: "The input boundary is unchecked.",
-				Path: "src/module-a.go", LineStart: 1, LineEnd: 2, Confidence: 40,
+				Path: p.sourcePath, LineStart: 1, LineEnd: 2, Confidence: 40,
 			},
 		},
 	})

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/gitadvanced"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/toolcontract"
 )
 
@@ -204,7 +204,10 @@ func (e *MutationExecutor) ReviewIndexChange(ctx context.Context, root string, p
 
 func (e *MutationExecutor) ReviewSelected(ctx context.Context, root string, paths []string) (SelectedGitReview, error) {
 	paths, err := normalizeMutationPaths(paths)
-	if err != nil || len(paths) == 0 {
+	if err != nil {
+		return SelectedGitReview{}, apperror.New(apperror.CodeInvalidArgument, err.Error())
+	}
+	if len(paths) == 0 {
 		return SelectedGitReview{}, apperror.New(apperror.CodeInvalidArgument, "select at least one exact file path")
 	}
 	binding, err := e.AdvancedBinding(ctx, root)
@@ -212,16 +215,8 @@ func (e *MutationExecutor) ReviewSelected(ctx context.Context, root string, path
 		return SelectedGitReview{}, err
 	}
 	value := SelectedGitReview{Binding: binding, Files: []SelectedGitFile{}}
-	handle, err := os.OpenRoot(root)
-	if err != nil {
-		return value, err
-	}
-	defer handle.Close()
 	for _, path := range paths {
-		if strings.EqualFold(strings.Split(path, "/")[0], ".git") {
-			return value, errors.New("Git metadata cannot be selected")
-		}
-		file, err := readSelectedGitFile(handle, path)
+		file, err := readSelectedGitFile(root, path)
 		if err != nil {
 			return value, err
 		}
@@ -277,36 +272,18 @@ func (e *MutationExecutor) ReviewSelected(ctx context.Context, root string, path
 	return value, nil
 }
 
-func readSelectedGitFile(root *os.Root, path string) (SelectedGitFile, error) {
+func readSelectedGitFile(root, path string) (SelectedGitFile, error) {
 	value := SelectedGitFile{Path: path, Mode: "100644"}
-	parts := strings.Split(path, "/")
-	for i := 1; i <= len(parts); i++ {
-		info, err := root.Lstat(strings.Join(parts[:i], "/"))
-		if errors.Is(err, os.ErrNotExist) {
-			value.Missing = true
-			value.SHA256 = "missing"
-			return value, nil
-		}
-		if err != nil {
-			return value, err
-		}
-		if info.Mode()&os.ModeSymlink != 0 || (i < len(parts) && !info.IsDir()) {
-			return value, errors.New("selected path has a linked or invalid ancestor")
-		}
-		if i == len(parts) && (!info.Mode().IsRegular() || info.Size() > maxThreadDiffFileBytes) {
-			return value, errors.New("selected path is not a bounded regular file")
-		}
+	data, err := readBoundedWorktreeFile(root, path, maxThreadDiffFileBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		value.Missing = true
+		value.SHA256 = "missing"
+		return value, nil
 	}
-	f, err := root.Open(path)
 	if err != nil {
 		return value, err
 	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxThreadDiffFileBytes+1))
-	if err != nil {
-		return value, err
-	}
-	if len(data) > maxThreadDiffFileBytes || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
+	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return value, errors.New("selected file is not bounded UTF-8 text")
 	}
 	sum := sha256.Sum256(data)
@@ -320,6 +297,9 @@ func (e *MutationExecutor) threadGit(ctx context.Context, root, index string, st
 }
 
 func (e *MutationExecutor) threadGitWithAuthor(ctx context.Context, root, index string, stdin []byte, author *GitCommitAuthor, args ...string) (string, error) {
+	if err := rootfs.CheckExternalDirectory(root); err != nil {
+		return "", err
+	}
 	ctx, cancel := context.WithTimeout(ctx, MaxGitDuration)
 	defer cancel()
 	argv := append([]string{"-C", root, "--no-optional-locks", "--literal-pathspecs"}, args...)
@@ -408,7 +388,7 @@ func (e *MutationExecutor) PrepareSelectedCommit(ctx context.Context, root strin
 	if err != nil {
 		return nil, err
 	}
-	indexPath = strings.TrimSpace(indexPath)
+	indexPath = trimGitLineEnding(indexPath)
 	if err := checkThreadGitDispatch(ctx); err != nil {
 		return nil, err
 	}
@@ -613,7 +593,7 @@ func (e *MutationExecutor) PrepareSelectedIndex(ctx context.Context, root string
 	if err != nil {
 		return nil, err
 	}
-	indexPath = strings.TrimSpace(indexPath)
+	indexPath = trimGitLineEnding(indexPath)
 	if err := checkThreadGitDispatch(ctx); err != nil {
 		return nil, err
 	}
@@ -729,7 +709,7 @@ func (e *MutationExecutor) ObserveSelectedCommit(ctx context.Context, root strin
 	if err != nil {
 		return false, err
 	}
-	indexPath = strings.TrimSpace(indexPath)
+	indexPath = trimGitLineEnding(indexPath)
 	if _, err := os.Lstat(indexPath + ".lock"); !errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
@@ -833,7 +813,7 @@ func (e *MutationExecutor) ExecuteThreadBranch(ctx context.Context, root string,
 		if err != nil {
 			return MutationReceipt{}, err
 		}
-		path = strings.TrimSpace(path)
+		path = trimGitLineEnding(path)
 		if err := checkThreadGitDispatch(ctx); err != nil {
 			return MutationReceipt{}, err
 		}

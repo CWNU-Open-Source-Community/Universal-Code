@@ -55,7 +55,7 @@ func CaptureLinkedWorktreeBinding(ctx context.Context, root string) (gitadvanced
 	if err != nil {
 		return empty, err
 	}
-	registered, err := canonicalGitMetadataPath(strings.TrimSpace(string(raw)))
+	registered, err := canonicalGitMetadataPath(trimGitLineEnding(string(raw)))
 	if err != nil || !sameFilesystemPath(registered, dotGit) {
 		return empty, errors.New("linked worktree registration belongs to a different root")
 	}

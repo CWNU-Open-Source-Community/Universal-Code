@@ -81,8 +81,7 @@ func (e *AdvancedExecutor) CaptureReviewDiffEvidence(ctx context.Context, root,
 		DiffStat: boundedOutput(strings.TrimSpace(stat)), ChangedFiles: changedFiles,
 		Hunks: []gitadvanced.Hunk{}, Conflict: conflict, Complete: true,
 		Omissions: []string{}, CapturedAt: e.now().UTC()}
-	if len(rawDiff) > gitadvanced.MaxPreviewPatchBytes ||
-		strings.Contains(rawDiff, "GIT binary patch") || strings.Contains(rawDiff, "Binary files ") {
+	if len(rawDiff) > gitadvanced.MaxPreviewPatchBytes || unsupportedGitDiff(rawDiff) {
 		evidence.Complete = false
 		evidence.Omissions = append(evidence.Omissions,
 			"stable textual hunks omitted for binary or oversized review diff")

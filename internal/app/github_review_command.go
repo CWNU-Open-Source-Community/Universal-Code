@@ -201,7 +201,7 @@ func (a *App) newGitHubReviewService(managedRoot string,
 	if err := a.ensureStore(); err != nil {
 		return nil, err
 	}
-	root := strings.TrimSpace(managedRoot)
+	root := managedRoot
 	if root == "" {
 		root = filepath.Join(a.home, "worktrees")
 	}

@@ -1302,7 +1302,8 @@
           "source": "web/src",
           "versions": [
             1,
-            2
+            2,
+            3
           ],
           "mode": "write-current"
         }
@@ -1313,7 +1314,8 @@
           "source": "web/src",
           "versions": [
             1,
-            2
+            2,
+            3
           ],
           "status": "active"
         }
@@ -1356,6 +1358,7 @@
         "universal-code.turn-notifications.v1",
         "universal-code.workspace-tabs.v1",
         "universal-code.workspace-tabs.v2",
+        "universal-code.workspace-tabs.v3",
         "v2_file_upload.v1"
       ],
       "retired_identifiers": [
@@ -3240,6 +3243,7 @@
         "v2_draft_document.v1",
         "v2_image_upload.v1",
         "v2_native_clipboard_recovery.v1",
+        "v2_project_action_recovery.v1",
         "v2_recovery.v1"
       ],
       "retired_identifiers": [

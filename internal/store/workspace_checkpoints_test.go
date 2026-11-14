@@ -14,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspacecheckpoint"
 )
 
@@ -216,6 +217,61 @@ func TestSchemaV117UpgradeAddsWorkspaceCheckpointLedgerWithoutRewritingRuns(t *t
 				t.Fatalf("trigger %s does not contain %q: %s", name, fragment, triggerSQL)
 			}
 		}
+	}
+}
+
+func TestSchemaV232PreservesCheckpointReferencesAndExactPaths(t *testing.T) {
+	state, run, mission, root := newWorkspaceCheckpointStoreFixture(t)
+	t.Cleanup(func() { _ = state.Close() })
+	ctx := t.Context()
+	now := time.Now().UTC()
+	before := captureStoreCheckpoint(t, run, mission, root, "checkpoint-v231", "receipt-v231",
+		workspacecheckpoint.PhaseBefore, now)
+	if _, _, err := state.CreateWorkspaceCheckpoint(ctx, before); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "checkpoint-v231.db")
+	historical := historicalTestDatabaseFromSeed(t, state, path, 231)
+	if err := historical.Close(); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = upgraded.Close() })
+	loaded, err := upgraded.GetWorkspaceCheckpointSnapshot(ctx, before.Checkpoint.ID)
+	if err != nil || loaded.Checkpoint.ManifestSHA256 != before.Checkpoint.ManifestSHA256 {
+		t.Fatalf("existing checkpoint was not preserved: %+v, %v", loaded.Checkpoint, err)
+	}
+	for _, blob := range loaded.Blobs {
+		var refs int
+		err := upgraded.db.QueryRowContext(ctx, "SELECT reference_count FROM workspace_checkpoint_blobs WHERE sha256 = ?", blob.SHA256).Scan(&refs)
+		if err != nil || refs != 1 {
+			t.Fatalf("historical blob reference count = %d, %v", refs, err)
+		}
+	}
+	const relative = " notes.txt "
+	exact, err := rootfs.ExactAbsolutePath(filepath.Join(root, relative))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustCheckpointStoreWrite(t, exact, []byte("exact checkpoint content\n"))
+	t.Cleanup(func() { _ = os.Remove(exact) })
+	after := captureStoreCheckpointWithParent(t, run, mission, root, "checkpoint-v232", "receipt-v232",
+		before.Checkpoint.ID, workspacecheckpoint.PhaseAfter, now.Add(time.Minute))
+	if _, _, err := upgraded.CreateWorkspaceCheckpoint(ctx, after); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = upgraded.GetWorkspaceCheckpointSnapshot(ctx, after.Checkpoint.ID)
+	if err != nil || len(loaded.Entries) != 2 || loaded.Entries[0].Path != relative || !loaded.Entries[0].Recoverable {
+		t.Fatalf("checkpoint lost exact path: %+v, %v", loaded.Entries, err)
+	}
+	var refs int
+	err = upgraded.db.QueryRowContext(ctx, "SELECT reference_count FROM workspace_checkpoint_blobs WHERE sha256 = ?",
+		loaded.Entries[0].BlobSHA256).Scan(&refs)
+	if err != nil || refs != 1 {
+		t.Fatalf("new blob reference count = %d, %v", refs, err)
 	}
 }
 

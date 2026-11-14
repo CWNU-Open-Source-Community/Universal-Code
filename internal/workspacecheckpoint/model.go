@@ -241,6 +241,17 @@ type Checkpoint struct {
 	CreatedAt            time.Time     `json:"created_at"`
 }
 
+// SameGitIndex compares both content and presence. An absent index has the
+// same digest as an existing zero-byte index, which has a stored blob.
+func (c Checkpoint) SameGitIndex(other Checkpoint) bool {
+	return c.IndexSHA256 == other.IndexSHA256 && c.gitIndexPresent() == other.gitIndexPresent()
+}
+
+func (c Checkpoint) gitIndexPresent() bool {
+	digest := sha256.Sum256(nil)
+	return c.IndexBlobSHA256 != "" || c.IndexSHA256 != hex.EncodeToString(digest[:])
+}
+
 func (c Checkpoint) Validate() error {
 	for _, value := range []string{c.ID, c.RunID, c.MissionID, c.SessionID,
 		c.WorkspaceID, c.TriggerReceiptID} {
@@ -598,7 +609,7 @@ func validIdentity(value string) bool {
 }
 
 func validPath(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
+	if value == "" || !utf8.ValidString(value) ||
 		len([]rune(value)) > MaxPathRunes || strings.ContainsRune(value, 0) ||
 		strings.HasPrefix(value, "/") || strings.ContainsAny(value, `\:`) ||
 		path.Clean(value) != value || value == "." || value == ".." ||

@@ -1,8 +1,13 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { updateBrowserStorageRecord } from "../lib/browser-storage-record";
+import { formatWorkspacePathLabel } from "../lib/format";
 import type { LocaleText } from "../lib/locale";
 import { useConnectionStore } from "../state/connection";
 
-export const workspaceTabsStorageKey = "universal-code.workspace-tabs.v2";
+// v3 is an IndexedDB record. Older windows can keep their localStorage
+// snapshot, but cannot overwrite state written by the current version.
+export const workspaceTabsStorageKey = "universal-code.workspace-tabs.v3";
+const previousWorkspaceTabsStorageKey = "universal-code.workspace-tabs.v2";
 const legacyWorkspaceTabsStorageKey = "universal-code.workspace-tabs.v1";
 export const workspaceTabsChangedEvent = "universal-code:workspace-tabs";
 const changedEvent = workspaceTabsChangedEvent;
@@ -199,14 +204,6 @@ function sanitizeThreadState(raw: unknown): ThreadWorkspaceState | null {
   };
 }
 
-function readRawStorage(): string | null | undefined {
-  try {
-    return localStorage.getItem(workspaceTabsStorageKey);
-  } catch {
-    return undefined;
-  }
-}
-
 function readLegacyThreadState(threadID: string): ThreadWorkspaceState | null {
   try {
     const raw = localStorage.getItem(legacyWorkspaceTabsStorageKey);
@@ -219,12 +216,7 @@ function readLegacyThreadState(threadID: string): ThreadWorkspaceState | null {
   } catch { return null; }
 }
 
-function readAllPersisted(): Record<string, ThreadWorkspaceState> {
-  const raw = readRawStorage();
-  if (raw === undefined) {
-    storageReadable = false;
-    return cachedParsed;
-  }
+function readPersistedSnapshot(raw: string | null): Record<string, ThreadWorkspaceState> {
   if (raw === cachedRaw) {
     storageReadable = true;
     return cachedParsed;
@@ -264,7 +256,11 @@ function readAllPersisted(): Record<string, ThreadWorkspaceState> {
 export function getThreadWorkspaceState(threadID: string): ThreadWorkspaceState {
   if (!threadID) return emptyThreadWorkspaceState();
   const { key, persistent } = workspaceThreadKey(threadID);
-  const persisted = persistent ? readAllPersisted()[key] : undefined;
+  const persisted = persistent ? cachedParsed[key] : undefined;
+  return visibleThreadWorkspaceState(key, persistent, persisted);
+}
+
+function visibleThreadWorkspaceState(key: string, persistent: boolean, persisted: ThreadWorkspaceState | undefined) {
   let fallback = memoryFallback.get(key);
   if (fallback && failedBaselines.has(key)) {
     if (storageReadable && JSON.stringify(persisted ?? null) !== failedBaselines.get(key)) {
@@ -276,18 +272,106 @@ export function getThreadWorkspaceState(threadID: string): ThreadWorkspaceState 
     }
     return fallback;
   }
-  // The last readable persisted snapshot remains authoritative on read failure,
-  // including remote deletion or a writer whose clock is behind this one.
-  // Unsaved local writes were handled above.
+  // Keep the last readable record, including a remote deletion, on read error.
+  // Unsaved changes are handled above.
   if (persistent) return persisted ?? emptyThreadWorkspaceState();
   return fallback ?? emptyThreadWorkspaceState();
 }
 
-function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWorkspaceState) => ThreadWorkspaceState) {
+type WorkspaceMutation = { record?: string; finish: (committed: boolean) => void };
+type WorkspaceTransaction = (threads: Record<string, ThreadWorkspaceState>, readable: boolean) => WorkspaceMutation | undefined;
+
+let changeChannel: BroadcastChannel | undefined;
+function workspaceChangeChannel() {
+  if (!changeChannel) {
+    try { changeChannel = new window.BroadcastChannel(workspaceTabsStorageKey); }
+    catch { /* Focus and page restore also re-read the record. */ }
+  }
+  return changeChannel;
+}
+
+type QueuedWorkspaceTransaction = {
+  action?: WorkspaceTransaction;
+  unavailable?: () => WorkspaceMutation | undefined;
+};
+let workspaceTransactions: QueuedWorkspaceTransaction[] = [];
+
+function transactWorkspaceTabs(action?: WorkspaceTransaction, unavailable?: () => WorkspaceMutation | undefined) {
+  workspaceTransactions.push({ action, unavailable });
+  if (workspaceTransactions.length === 1) startWorkspaceTransaction(workspaceTransactions);
+}
+
+function startWorkspaceTransaction(queue: QueuedWorkspaceTransaction[]) {
+  const pending = queue[0];
+  if (!pending) return;
+  let mutation: WorkspaceMutation | undefined;
+  let snapshotChanged = false;
+  updateBrowserStorageRecord(workspaceTabsStorageKey, (stored) => {
+    // Import v2 only when no current record exists. Migration and the first
+    // update share this transaction, so two new windows cannot both seed it.
+    const raw = stored ?? localStorage.getItem(previousWorkspaceTabsStorageKey);
+    const previousRaw = cachedRaw;
+    const previousReadable = storageReadable;
+    const threads = readPersistedSnapshot(raw);
+    snapshotChanged = previousRaw !== cachedRaw || previousReadable !== storageReadable;
+    mutation = pending.action?.(threads, storageReadable);
+    return mutation?.record ?? (stored === null && storageReadable
+      ? raw ?? JSON.stringify({ version: 1, threads: {} } satisfies PersistedWorkspaceStore)
+      : undefined);
+  }, (result) => {
+    try {
+      if (result.ok && result.written) readPersistedSnapshot(result.value);
+      if (!result.ok && !mutation) mutation = pending.unavailable?.();
+      mutation?.finish(result.ok);
+      if (snapshotChanged || mutation || (result.ok && result.written)) {
+        window.dispatchEvent(new Event(changedEvent));
+      }
+      if (result.ok && result.written) workspaceChangeChannel()?.postMessage(null);
+    } finally {
+      // The database orders commits. Wait for this window's completion callback
+      // too, so the next update sees any changes that could not be saved.
+      queue.shift();
+      startWorkspaceTransaction(queue);
+    }
+  });
+}
+
+export function refreshWorkspaceTabs() {
+  transactWorkspaceTabs();
+}
+
+function withWorkspaceWrite(threadID: string, action: (
+  key: string, persistent: boolean, threads: Record<string, ThreadWorkspaceState>, readable: boolean,
+) => WorkspaceMutation | undefined) {
   if (!threadID) return;
   const { key, persistent } = workspaceThreadKey(threadID);
-  const current = getThreadWorkspaceState(threadID);
-  const startingSnapshot = persistent ? JSON.stringify(cachedParsed[key] ?? null) : "";
+  if (!persistent) {
+    const mutation = action(key, false, {}, false);
+    mutation?.finish(false);
+    if (mutation) window.dispatchEvent(new Event(changedEvent));
+    return;
+  }
+  const scope = workspaceScopeKey(threadID);
+  const scopedAction: WorkspaceTransaction = (threads, readable) => workspaceScopeKey(threadID) === scope
+    ? action(key, true, threads, readable)
+    : undefined;
+  transactWorkspaceTabs(scopedAction, () => scopedAction(cachedParsed, false));
+}
+
+type WorkspaceUpdate = (current: ThreadWorkspaceState) => ThreadWorkspaceState;
+
+function writeThreadWorkspaceState(threadID: string, updater: WorkspaceUpdate) {
+  withWorkspaceWrite(threadID, (key, persistent, threads, readable) =>
+    buildWorkspaceUpdate(threadID, key, persistent, threads, readable, updater));
+}
+
+function buildWorkspaceUpdate(
+  threadID: string, key: string, persistent: boolean, persistedThreads: Record<string, ThreadWorkspaceState>,
+  readable: boolean, updater: WorkspaceUpdate, observedSnapshot?: string, resolveConflict = false,
+): WorkspaceMutation | undefined {
+  const persisted = persistedThreads[key];
+  const snapshot = JSON.stringify(persisted ?? null);
+  const current = visibleThreadWorkspaceState(key, persistent, persisted);
   const candidate = updater(current);
   if (candidate === current) return;
   // A failed storage write leaves both the persisted snapshot and this in-memory
@@ -295,69 +379,67 @@ function writeThreadWorkspaceState(threadID: string, updater: (current: ThreadWo
   // or after a clock adjustment, so the new state remains authoritative.
   const updatedAt = Math.max(Date.now(), current.updatedAt + 1);
   let updated = sanitizeThreadState({ ...candidate, updatedAt }) ?? emptyThreadWorkspaceState();
-  const persistedThreads = persistent ? readAllPersisted() : {};
-  const persisted = persistedThreads[key];
   if (persistent && !persisted && !memoryFallback.has(key) && readLegacyThreadState(threadID) && !updated.notice) {
     updated = { ...updated, notice: workspaceLegacyTabsNotice };
   }
-  if (persistent && !storageReadable) {
-    if (!failedBaselines.has(key)) failedBaselines.set(key, JSON.stringify(persisted ?? null));
+  const retainFailure = () => {
+    if (!failedBaselines.has(key)) failedBaselines.set(key, snapshot);
     memoryFallback.set(key, { ...updated, notice: workspaceStorageFailureNotice });
-    window.dispatchEvent(new Event(changedEvent));
-    return;
+  };
+  if (!persistent) {
+    return { finish: () => memoryFallback.set(key, { ...updated, notice: workspaceStorageFailureNotice }) };
   }
-  if (persistent && !failedBaselines.has(key) && JSON.stringify(persisted ?? null) !== startingSnapshot) {
-    failedBaselines.set(key, startingSnapshot);
-    conflictSnapshots.set(key, JSON.stringify(persisted ?? null));
-    memoryFallback.set(key, { ...updated, notice: workspaceStorageConflictNotice });
-    window.dispatchEvent(new Event(changedEvent));
-    return;
+  if (!readable) return { finish: retainFailure };
+  if (observedSnapshot !== undefined && !failedBaselines.has(key) && snapshot !== observedSnapshot) {
+    return { finish: () => {
+      failedBaselines.set(key, observedSnapshot);
+      conflictSnapshots.set(key, snapshot);
+      memoryFallback.set(key, { ...updated, notice: workspaceStorageConflictNotice });
+    } };
   }
-  if (!persistent || (failedBaselines.has(key) && JSON.stringify(persisted ?? null) !== failedBaselines.get(key))) {
-    updated = { ...updated, notice: persistent ? workspaceStorageConflictNotice : workspaceStorageFailureNotice };
-    memoryFallback.set(key, updated);
-    window.dispatchEvent(new Event(changedEvent));
-    return;
+  if (!resolveConflict && failedBaselines.has(key) && snapshot !== failedBaselines.get(key)) {
+    return { finish: () => memoryFallback.set(key, { ...updated, notice: workspaceStorageConflictNotice }) };
   }
   if (updated.notice === workspaceStorageFailureNotice || updated.notice === workspaceStorageConflictNotice ||
       updated.notice === workspaceStorageConflictChangedNotice) {
     updated = { ...updated, notice: undefined };
   }
-  memoryFallback.set(key, updated);
   const payload: PersistedWorkspaceStore = {
     version: 1,
     threads: { ...persistedThreads, [key]: updated },
   };
-  try {
-    const encoded = JSON.stringify(payload);
-    localStorage.setItem(workspaceTabsStorageKey, encoded);
-    cachedRaw = encoded;
-    cachedParsed = payload.threads;
+  return { record: JSON.stringify(payload), finish: (committed) => {
+    if (!committed) {
+      retainFailure();
+      return;
+    }
+    memoryFallback.delete(key);
     failedBaselines.delete(key);
     conflictSnapshots.delete(key);
-  } catch {
-    if (!failedBaselines.has(key)) failedBaselines.set(key, JSON.stringify(persisted ?? null));
-    memoryFallback.set(key, { ...updated, notice: workspaceStorageFailureNotice });
-  }
-  window.dispatchEvent(new Event(changedEvent));
+  } };
 }
 
+let workspaceSubscribers = 0;
 function subscribeWorkspaceTabs(notify: () => void) {
-  const onStorage = (event: StorageEvent) => {
-    if (!event.key || event.key === workspaceTabsStorageKey) {
-      cachedRaw = undefined;
-      notify();
-    }
-  };
   window.addEventListener(changedEvent, notify);
-  window.addEventListener("storage", onStorage);
+  if (++workspaceSubscribers === 1) {
+    workspaceChangeChannel()?.addEventListener("message", refreshWorkspaceTabs);
+    window.addEventListener("focus", refreshWorkspaceTabs);
+    window.addEventListener("pageshow", refreshWorkspaceTabs);
+    refreshWorkspaceTabs();
+  }
   return () => {
     window.removeEventListener(changedEvent, notify);
-    window.removeEventListener("storage", onStorage);
+    if (--workspaceSubscribers === 0) {
+      changeChannel?.removeEventListener("message", refreshWorkspaceTabs);
+      window.removeEventListener("focus", refreshWorkspaceTabs);
+      window.removeEventListener("pageshow", refreshWorkspaceTabs);
+    }
   };
 }
 
 export function resetWorkspaceTabsMemoryCache() {
+  workspaceTransactions = [];
   memoryFallback.clear();
   failedBaselines.clear();
   conflictSnapshots.clear();
@@ -367,34 +449,38 @@ export function resetWorkspaceTabsMemoryCache() {
 }
 
 export function resolveWorkspaceStorageConflict(threadID: string, choice: "local" | "remote") {
-  const { key, persistent } = workspaceThreadKey(threadID);
-  if (!persistent || !failedBaselines.has(key)) return;
-  const remote = readAllPersisted()[key];
-  if (!storageReadable) return;
-  if (choice === "remote") {
-    failedBaselines.delete(key);
-    conflictSnapshots.delete(key);
-    memoryFallback.delete(key);
-    window.dispatchEvent(new Event(changedEvent));
-    return;
-  }
-  const latestSnapshot = JSON.stringify(remote ?? null);
-  if (conflictSnapshots.get(key) !== latestSnapshot) {
-    conflictSnapshots.set(key, latestSnapshot);
-    const local = memoryFallback.get(key);
-    if (local) memoryFallback.set(key, { ...local, notice: workspaceStorageConflictChangedNotice });
-    window.dispatchEvent(new Event(changedEvent));
-    return;
-  }
-  // The explicit choice authorizes replacing the last observed snapshot.
-  failedBaselines.set(key, latestSnapshot);
-  writeThreadWorkspaceState(threadID, (state) => ({ ...state, notice: undefined }));
+  withWorkspaceWrite(threadID, (key, persistent, threads, readable) => {
+    if (!readable || !failedBaselines.has(key)) return;
+    if (choice === "remote") {
+      return { finish: (committed) => {
+        if (!committed) return;
+        failedBaselines.delete(key);
+        conflictSnapshots.delete(key);
+        memoryFallback.delete(key);
+      } };
+    }
+    const latestSnapshot = JSON.stringify(threads[key] ?? null);
+    if (conflictSnapshots.get(key) !== latestSnapshot) {
+      return { finish: (committed) => {
+        if (!committed) return;
+        conflictSnapshots.set(key, latestSnapshot);
+        const local = memoryFallback.get(key);
+        if (local) memoryFallback.set(key, { ...local, notice: workspaceStorageConflictChangedNotice });
+      } };
+    }
+    // Check the version and commit the explicit choice in the same transaction.
+    return buildWorkspaceUpdate(threadID, key, persistent, threads, readable,
+      (state) => ({ ...state, notice: undefined }), undefined, true);
+  });
 }
 
 export function restoreLegacyWorkspaceTabs(threadID: string) {
   const legacy = readLegacyThreadState(threadID);
   if (!legacy) return;
-  writeThreadWorkspaceState(threadID, () => ({ ...legacy, notice: undefined }));
+  const { key, persistent } = workspaceThreadKey(threadID);
+  const observed = persistent ? JSON.stringify(cachedParsed[key] ?? null) : undefined;
+  withWorkspaceWrite(threadID, (key, persistent, threads, readable) =>
+    buildWorkspaceUpdate(threadID, key, persistent, threads, readable, () => ({ ...legacy, notice: undefined }), observed));
 }
 
 export function hasLegacyWorkspaceTabs(threadID: string): boolean {
@@ -428,13 +514,16 @@ function tryAddTab(
 }
 
 export function toggleWorkspaceFiles(threadID: string, currentRunID?: string) {
+  const closing = isWorkspaceKindOpen(getThreadWorkspaceState(threadID), "file");
   writeThreadWorkspaceState(threadID, (state) => {
-    const active = state.tabs.find((tab) => tab.id === state.activeTabID);
-    if (state.open && active?.kind === "file") {
-      return { ...state, open: false };
-    }
-    return activateOrCreateFileTab(state, currentRunID);
+    const open = isWorkspaceKindOpen(state, "file");
+    if (closing) return open ? { ...state, open: false } : state;
+    return open ? state : activateOrCreateFileTab(state, currentRunID);
   });
+}
+
+function isWorkspaceKindOpen(state: ThreadWorkspaceState, kind: WorkspaceTab["kind"]) {
+  return state.open && state.tabs.some((tab) => tab.id === state.activeTabID && tab.kind === kind);
 }
 
 export function focusWorkspaceFiles(threadID: string, currentRunID?: string) {
@@ -602,10 +691,11 @@ function ensureSingletonTab(
 }
 
 export function toggleWorkspaceSingletonTab(threadID: string, kind: "terminal" | "preview" | "review" | "records") {
+  const closing = isWorkspaceKindOpen(getThreadWorkspaceState(threadID), kind);
   writeThreadWorkspaceState(threadID, (state) => {
-    if (state.open && state.activeTabID === kind) {
-      return { ...state, open: false };
-    }
+    const open = isWorkspaceKindOpen(state, kind);
+    if (closing) return open ? { ...state, open: false } : state;
+    if (open) return state;
     const ensured = ensureSingletonTab(state, kind);
     return {
       ...state,
@@ -676,9 +766,9 @@ export function collapseWorkspacePanel(threadID: string) {
 }
 
 export function toggleWorkspaceFullView(threadID: string) {
-  writeThreadWorkspaceState(threadID, (state) => (state.tabs.length > 0
-    ? { ...state, open: true, fullView: !state.fullView }
-    : state));
+  const fullView = !getThreadWorkspaceState(threadID).fullView;
+  writeThreadWorkspaceState(threadID, (state) => state.tabs.length > 0 && (!state.open || state.fullView !== fullView)
+    ? { ...state, open: true, fullView } : state);
 }
 
 export function setWorkspaceFullView(threadID: string, fullView: boolean) {
@@ -724,7 +814,7 @@ export function workspaceTabTitle(tab: WorkspaceTab, t: LocaleText): string {
     case "file": {
       if (!tab.path || tab.path === ".") return t("文件", "Files");
       const trimmed = tab.path.replace(/\/+$/u, "");
-      const base = trimmed.split("/").at(-1) || trimmed;
+      const base = formatWorkspacePathLabel(trimmed.split("/").at(-1) || trimmed);
       return tab.line ? `${base}:${tab.line}` : base;
     }
     case "terminal":

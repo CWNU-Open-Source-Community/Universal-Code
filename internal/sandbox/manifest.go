@@ -348,7 +348,7 @@ func validateCommand(command CommandSpec) error {
 	if strings.IndexFunc(command.Executable, unicode.IsSpace) >= 0 {
 		return errors.New("command executable cannot contain whitespace")
 	}
-	if err := validateVirtualPath("command working directory", command.WorkingDirectory); err != nil {
+	if err := validateExactVirtualPath("command working directory", command.WorkingDirectory); err != nil {
 		return err
 	}
 	if len(command.Arguments) > MaxCommandArguments {
@@ -356,7 +356,7 @@ func validateCommand(command CommandSpec) error {
 	}
 	total := len(command.Executable)
 	for index, argument := range command.Arguments {
-		if err := validateBoundedText(fmt.Sprintf("command argument %d", index+1), argument,
+		if err := validateLiteralText(fmt.Sprintf("command argument %d", index+1), argument,
 			MaxCommandArgumentBytes, true); err != nil {
 			return err
 		}
@@ -541,7 +541,14 @@ func validateWorkspacePath(label, value string) error {
 }
 
 func validateVirtualPath(label, value string) error {
-	if err := validateBoundedText(label, value, 1024, false); err != nil {
+	if strings.TrimSpace(value) != value {
+		return fmt.Errorf("%s must be a clean absolute sandbox path below root", label)
+	}
+	return validateExactVirtualPath(label, value)
+}
+
+func validateExactVirtualPath(label, value string) error {
+	if err := validateLiteralText(label, value, 1024, false); err != nil {
 		return err
 	}
 	if !strings.HasPrefix(value, "/") || value == "/" || strings.Contains(value, `\`) || path.Clean(value) != value {
@@ -551,8 +558,15 @@ func validateVirtualPath(label, value string) error {
 }
 
 func validateBoundedText(label, value string, maxBytes int, allowEmpty bool) error {
-	if !utf8.ValidString(value) || strings.TrimSpace(value) != value || len(value) > maxBytes {
+	if strings.TrimSpace(value) != value {
 		return fmt.Errorf("%s must be normalized UTF-8 of at most %d bytes", label, maxBytes)
+	}
+	return validateLiteralText(label, value, maxBytes, allowEmpty)
+}
+
+func validateLiteralText(label, value string, maxBytes int, allowEmpty bool) error {
+	if !utf8.ValidString(value) || len(value) > maxBytes {
+		return fmt.Errorf("%s must be valid UTF-8 of at most %d bytes", label, maxBytes)
 	}
 	if !allowEmpty && value == "" {
 		return fmt.Errorf("%s is required", label)

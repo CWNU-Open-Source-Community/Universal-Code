@@ -59,12 +59,14 @@ func TestDockerStandardCodeManifestIsBackendNeutralAndExact(t *testing.T) {
 		DockerStandardCodeToolchainRust} {
 		t.Run(toolchain, func(t *testing.T) {
 			binding := dockerStandardCodeBindingFixture(toolchain)
+			binding.WorkingDirectory = " project "
+			binding.Arguments = append(binding.Arguments, "literal argument ")
 			manifest, err := DockerStandardCodeManifest(binding)
 			if err != nil {
 				t.Fatal(err)
 			}
 			parsed, ok := ParseDockerStandardCodeManifest(manifest)
-			if !ok || parsed.Toolchain != toolchain ||
+			if !ok || parsed.Toolchain != toolchain || parsed.WorkingDirectory != binding.WorkingDirectory ||
 				parsed.StdinPolicy != DockerStandardCodeStdinClosed ||
 				parsed.DrydockBindingSHA256 != binding.DrydockBindingSHA256 ||
 				strings.Join(parsed.Arguments, "\x00") != strings.Join(binding.Arguments, "\x00") {

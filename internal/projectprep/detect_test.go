@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"cyberagent-workbench/internal/projectprep"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func fixture(t *testing.T, files map[string]string) string {
@@ -66,6 +67,28 @@ func TestNPMPlanPinsSourcesCommandsAndPrivatePackages(t *testing.T) {
 	changed, _ := projectprep.Detect(context.Background(), fixture(t, files), "web")
 	if changed.Fingerprint == plan.Fingerprint || changed.CacheKey == plan.CacheKey {
 		t.Fatal("changed download origin retained consent/cache identity")
+	}
+}
+
+func TestDetectPreservesExactSpacedTarget(t *testing.T) {
+	root := fixture(t, map[string]string{"web/go.mod": "module example.org/neighbor\n"})
+	const name = "web "
+	target, err := rootfs.ExactAbsolutePath(filepath.Join(root, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(target) })
+	file := filepath.Join(target, "package.json")
+	if err := os.WriteFile(file, []byte(`{"name":"exact","scripts":{"test":"node --test"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(file) })
+	plan, err := projectprep.Detect(t.Context(), root, name)
+	if err != nil || plan.Ecosystem != "npm" || plan.Target != name || plan.Manifest.Path != name+"/package.json" {
+		t.Fatalf("spaced path selected the neighboring project: %+v (%v)", plan, err)
 	}
 }
 

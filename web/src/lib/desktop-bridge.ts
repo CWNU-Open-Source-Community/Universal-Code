@@ -1,5 +1,6 @@
 import { validTerminalShell, type TerminalShell } from "./desktop-terminal-settings";
 import { parsePluginSkillInstall, parseSkillPackageInventory, parseSkillPackageRemoval } from "../api/client";
+import { validWorkspaceDirectoryPath } from "../api/client/validation";
 import type { PluginSkillInstallView, ProjectlessDirectory, SkillPackageInventoryView, SkillPackageRemovalView } from "../api/types";
 import { validImageAttachments, type WorkspaceImageAttachment } from "../api/image-attachments";
 import { validFileAttachments, type WorkspaceFileAttachment } from "../api/file-attachments";
@@ -711,7 +712,7 @@ export async function selectDesktopWorkspaceDirectory(): Promise<DesktopWorkspac
   const selection = result.selection;
   if (result.status !== "selected" || !hasExactKeys(selection, ["handle", "directory_path", "name"]) ||
     typeof selection.handle !== "string" || !/^[a-f0-9]{64}$/u.test(selection.handle) ||
-    !boundedText(selection.directory_path, 1, 4096) || !boundedText(selection.name, 1, 128)) throw new Error("Native project selection was rejected");
+    !validWorkspaceDirectoryPath(selection.directory_path) || !boundedText(selection.name, 1, 128)) throw new Error("Native project selection was rejected");
   return selection as unknown as DesktopWorkspaceDirectorySelection;
 }
 export async function createDesktopWorkspace(handle: string, name: string): Promise<DesktopImportedWorkspace> {
@@ -750,8 +751,8 @@ export async function chooseDesktopProjectlessDirectory(): Promise<ProjectlessDi
   if (value.status !== "selected" || !hasExactKeys(settings,
     ["version", "directory_path", "default_directory_path"]) ||
     settings.version !== "projectless_directory.v1" ||
-    !boundedText(settings.directory_path, 1, 4096) ||
-    !boundedText(settings.default_directory_path, 1, 4096)) {
+    !validWorkspaceDirectoryPath(settings.directory_path) ||
+    !validWorkspaceDirectoryPath(settings.default_directory_path)) {
     throw new Error("Desktop chat directory selection result was rejected");
   }
   return settings as unknown as ProjectlessDirectory;

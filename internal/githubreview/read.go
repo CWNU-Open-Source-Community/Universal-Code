@@ -12,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"cyberagent-workbench/internal/gitadvanced"
+	"cyberagent-workbench/internal/outputsafe"
 )
 
 type SnapshotRequest struct {
@@ -951,12 +954,10 @@ func cloneValues(input url.Values) url.Values {
 }
 
 func sanitizeRepositoryPath(value string) string {
-	value = strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
-	if value == "" || strings.HasPrefix(value, "/") || strings.Contains(value, "\x00") ||
-		strings.Contains(value, "../") || value == ".." || len([]rune(value)) > 4096 {
+	if !gitadvanced.ValidRelativePath(value) || outputsafe.Sanitize([]byte(value)) != value {
 		return ""
 	}
-	return sanitizeIdentity(value, 4096)
+	return value
 }
 
 func safeGitHubURL(value string) string {

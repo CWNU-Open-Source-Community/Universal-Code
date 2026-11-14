@@ -184,6 +184,89 @@ async function openFiles(page: Page) {
   await expect(page.getByRole("button", { name: "关闭文件面板", exact: true })).toBeVisible();
 }
 
+async function holdWorkspaceWrites(page: Page) {
+  await page.evaluate(() => new Promise<void>((ready, reject) => {
+    const open = indexedDB.open("universal-code.workspace-tabs.v3");
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const transaction = db.transaction("records", "readwrite");
+      const store = transaction.objectStore("records");
+      let released = false;
+      window.addEventListener("release-workspace-storage-test", () => { released = true; }, { once: true });
+      transaction.oncomplete = () => db.close();
+      transaction.onabort = () => { db.close(); reject(transaction.error); };
+      const hold = () => {
+        store.get("current").onsuccess = () => {
+          ready();
+          if (!released) hold();
+        };
+      };
+      hold();
+    };
+  }));
+  return () => page.evaluate(() => window.dispatchEvent(new Event("release-workspace-storage-test")));
+}
+
+async function addFileTab(page: Page) {
+  await page.getByRole("button", { name: "新建或切换工作区标签" }).click();
+  await page.getByRole("menuitem", { name: "新建文件标签" }).click();
+}
+
+test("two windows keep both tab additions when writes overlap", async ({ page, context }) => {
+  await connect(page);
+  await importProject(page);
+  await submitRead(page);
+  await openFiles(page);
+  const tabs = (target: Page) => target.getByRole("tablist", { name: "右侧工作区标签" }).getByRole("tab");
+  await expect(tabs(page)).toHaveCount(1);
+
+  const other = await context.newPage();
+  await other.goto(page.url());
+  await reconnect(other);
+  await expect(tabs(other)).toHaveCount(1);
+
+  // Both windows request updates before the real IndexedDB store releases them.
+  const release = await holdWorkspaceWrites(page);
+  try {
+    await Promise.all([page, other].map(async (target) => {
+      await addFileTab(target);
+      await expect(tabs(target)).toHaveCount(1);
+    }));
+  } finally {
+    await release();
+  }
+
+  await expect(tabs(page)).toHaveCount(3);
+  await expect(tabs(other)).toHaveCount(3);
+
+  // Abort one real write while a second addition is queued in the same window.
+  const releaseAbort = await holdWorkspaceWrites(page);
+  try {
+    await page.evaluate(() => {
+      const put = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function (this: IDBObjectStore, value: unknown, key?: IDBValidKey) {
+        const request = put.call(this, value, key);
+        if (this.transaction.db.name === "universal-code.workspace-tabs.v3") {
+          IDBObjectStore.prototype.put = put;
+          this.transaction.abort();
+        }
+        return request;
+      };
+    });
+    await addFileTab(page);
+    await addFileTab(page);
+    await expect(tabs(page)).toHaveCount(3);
+  } finally {
+    await releaseAbort();
+  }
+  await expect(tabs(page)).toHaveCount(5);
+  await expect(tabs(other)).toHaveCount(5);
+  await other.reload();
+  await reconnect(other);
+  await expect(tabs(other)).toHaveCount(5);
+});
+
 async function editReadme(page: Page) {
   const files = page.locator(".v2-file-drawer");
   await files.getByRole("tab", { name: /^README\.md/u }).or(files.getByRole("button", { name: /^README\.md/u })).first().click();

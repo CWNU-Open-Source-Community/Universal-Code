@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestCaptureLinkedWorktreeBindingPreservesMetadataAndTracksDirtyBytes(t *testing.T) {
@@ -36,6 +38,29 @@ func TestCaptureLinkedWorktreeBindingPreservesMetadataAndTracksDirtyBytes(t *tes
 	staged, err := CaptureLinkedWorktreeBinding(t.Context(), root)
 	if err != nil || staged.IndexSHA256 == dirty.IndexSHA256 {
 		t.Fatalf("linked index was not bound: %+v %v", staged, err)
+	}
+	const paddedPath = " draft.txt "
+	exact, err := rootfs.ExactAbsolutePath(filepath.Join(root, paddedPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exact, []byte("exact draft\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(exact) })
+	if err := os.WriteFile(filepath.Join(root, " draft.txt"), []byte("neighbor\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	withDraft, err := CaptureLinkedWorktreeBinding(t.Context(), root)
+	if err != nil || withDraft.WorktreeSHA256 == staged.WorktreeSHA256 {
+		t.Fatalf("linked capture rejected the exact untracked name: %+v %v", withDraft, err)
+	}
+	if err := os.WriteFile(exact, []byte("updated exact draft\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	afterDraft, err := CaptureLinkedWorktreeBinding(t.Context(), root)
+	if err != nil || afterDraft.StatusSHA256 != withDraft.StatusSHA256 || afterDraft.WorktreeSHA256 == withDraft.WorktreeSHA256 {
+		t.Fatalf("linked capture did not bind the exact untracked file contents: %+v %v", afterDraft, err)
 	}
 	for name, before := range parentMetadata {
 		after, err := os.ReadFile(filepath.Join(source, ".git", name))

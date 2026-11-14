@@ -15,11 +15,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
 
 // Detect reads one explicit directory. It does not scan dependencies or execute
-// package-manager probes, and os.Root keeps every read inside the workspace.
+// package-manager probes, and the rooted filesystem keeps reads inside the workspace.
 func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 	if target == "" {
 		target = "."
@@ -34,7 +35,7 @@ func Detect(ctx context.Context, workspaceRoot, target string) (Plan, error) {
 	if err := ctx.Err(); err != nil {
 		return plan, err
 	}
-	root, err := os.OpenRoot(workspaceRoot)
+	root, err := rootfs.OpenExactRoot(workspaceRoot)
 	if err != nil {
 		return plan, errors.New("preparation workspace is unavailable")
 	}
@@ -137,7 +138,7 @@ type sourceFile struct {
 }
 type fileReader struct {
 	ctx    context.Context
-	root   *os.Root
+	root   *rootfs.ExactRoot
 	target string
 }
 

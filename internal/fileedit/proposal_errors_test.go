@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestProposalKnownPreconditionsHaveRecoverableCodesWithoutSaving(t *testing.T) {
@@ -99,7 +100,7 @@ func TestProposalUnknownIOAndPersistenceErrorsKeepTheirCause(t *testing.T) {
 	if err := os.WriteFile(path, []byte("before"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	handle, err := os.OpenRoot(root)
+	handle, err := rootfs.OpenExactRoot(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +142,7 @@ func TestProposalReadDistinguishesKnownSourceLimitsFromIOFailure(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			handle, err := os.OpenRoot(root)
+			handle, err := rootfs.OpenExactRoot(root)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -159,7 +160,7 @@ func TestSharedReadFailureWithUnknownSaveFailureRemainsInternal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "source"), []byte{0xff}, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	handle, err := os.OpenRoot(root)
+	handle, err := rootfs.OpenExactRoot(root)
 	if err != nil {
 		t.Fatal(err)
 	}

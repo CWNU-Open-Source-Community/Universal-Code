@@ -299,5 +299,9 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v228 | 重建 hook 审计表以接纳 post_compaction 生命周期事件 | rebuild the hook audit table to admit the post_compaction lifecycle event |
 | v229 | hook 已发生边界截断过量观测输出，审计保存 output_capped 并保留既有事件和脚本拒绝绑定 | cap post-occurrence hook observations and admit output_capped audits while preserving prior event and script bindings |
 | v230 | 保存独立的项目浏览器联网偏好、已结束任务的下次执行选择及不可变操作记录，支持浏览器策略修订与继承 | persist independent project browser network preferences, next-execution selections for terminal Runs and immutable operation records for browser policy revision and inheritance |
+| v231 | 保留工作区证据附件及会话来源中的原始路径，迁移时保留既有证据绑定 | preserve exact workspace evidence paths and retain existing attachment and Session message bindings during upgrade |
+| v232 | 只读并行分析、发现报告和工作区检查点保留原始路径，迁移时保留既有记录和关联 | preserve exact paths in read-only fan-out, finding reports, and Workspace checkpoints while retaining existing records and bindings |
+| v233 | 文件编辑应用记录保留原始路径及既有审批、结果关联 | preserve exact paths in the file edit apply journal and retain existing approval and result bindings |
+| v234 | 命令记录保留工作目录的原始空格及既有任务、执行身份关联 | preserve exact command working directories and retain existing Job and actor bindings |
 
 </details>

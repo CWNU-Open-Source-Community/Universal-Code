@@ -425,7 +425,7 @@ func validReadOnlyFanoutScope(value string) bool {
 }
 
 func validReadOnlyFanoutPath(value string) bool {
-	if value == "" || !utf8.ValidString(value) || strings.TrimSpace(value) != value ||
+	if value == "" || !utf8.ValidString(value) ||
 		strings.ContainsRune(value, 0) || strings.Contains(value, "\\") ||
 		len([]byte(value)) > MaxReadOnlyFanoutPathBytes || strings.HasPrefix(value, "/") ||
 		path.Clean(value) != value || value == "." || value == ".." ||

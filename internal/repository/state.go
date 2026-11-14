@@ -12,6 +12,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -224,16 +225,11 @@ func rejectRedirectedMetadata(ctx context.Context, dotGit string) error {
 }
 
 func resolveRoot(root string) (string, error) {
-	if root == "" || root != strings.TrimSpace(root) || strings.ContainsRune(root, 0) {
+	if root == "" || strings.ContainsFunc(root, unicode.IsControl) {
 		return "", apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root is unavailable")
 	}
-	resolved, err := filepath.Abs(root)
-	if err != nil {
-		return "", apperror.New(apperror.CodeFailedPrecondition,
-			"workspace root could not be resolved")
-	}
-	resolved, err = filepath.EvalSymlinks(resolved)
+	resolved, err := rootfs.EvalExactSymlinks(root)
 	if err != nil {
 		return "", apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root could not be resolved")

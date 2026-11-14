@@ -112,7 +112,7 @@ func (a EvidenceAttachment) Validate() error {
 			}
 		}
 	}
-	if a.SourceRef == "" || a.SourceRef != strings.TrimSpace(a.SourceRef) ||
+	if a.SourceRef == "" ||
 		!utf8.ValidString(a.SourceRef) || utf8.RuneCountInString(a.SourceRef) > MaxContextSourceRefRunes ||
 		strings.ContainsRune(a.SourceRef, 0) || !validWorkspaceEvidenceRef(a.SourceRef) {
 		return errors.New("evidence attachment source reference is invalid")

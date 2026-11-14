@@ -124,6 +124,50 @@ func TestAgentCodePayloadsAreStrictAndBounded(t *testing.T) {
 	}
 }
 
+func TestAgentCodePayloadPreservesWhitespaceInWorkspaceCoordinates(t *testing.T) {
+	const version = AgentCodeRegistryVersion
+	const exact = " note.txt "
+	for _, test := range []struct {
+		name    ToolName
+		field   string
+		payload any
+	}{
+		{WorkspaceListTool, "path", WorkspaceListPayload{Version: version, Path: " src ", Limit: 10}},
+		{WorkspaceReadTool, "path", WorkspaceReadPayload{Version: version, Path: exact, StartLine: 1, EndLine: 2}},
+		{WorkspaceGlobTool, "pattern", WorkspaceGlobPayload{Version: version, Pattern: exact, Limit: 10}},
+		{WorkspaceGrepTool, "pattern", WorkspaceGrepPayload{Version: version, Query: "needle", Pattern: exact, Limit: 10}},
+		{WorkspaceChangeTool, "path", WorkspaceChangePayload{Version: version, Action: "create", Path: exact, ExpectedSHA256: "missing", Content: "draft"}},
+		{WorkspaceChangeTool, "destination_path", WorkspaceChangePayload{Version: version, Action: "move", Path: "note.txt", ExpectedSHA256: strings.Repeat("a", 64), DestinationPath: exact, DestinationExpectedSHA256: "missing"}},
+		{WorkspaceDeleteTool, "confirm_path", WorkspaceDeletePayload{Version: version, Action: "propose", Path: exact, ConfirmPath: exact, ExpectedSHA256: strings.Repeat("a", 64)}},
+	} {
+		t.Run(string(test.name)+"/"+test.field, func(t *testing.T) {
+			raw, err := json.Marshal(test.payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			normalized, err := NormalizeAgentCodePayload(test.name, raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(raw, normalized) {
+				t.Fatalf("workspace coordinate changed from %s to %s", raw, normalized)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				t.Fatal(err)
+			}
+			fields[test.field] = json.RawMessage("\"note\\n.txt\"")
+			invalid, err := json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NormalizeAgentCodePayload(test.name, invalid); err == nil {
+				t.Fatal("workspace coordinate containing a control character was accepted")
+			}
+		})
+	}
+}
+
 func TestAgentCodeDefinitionsDescribeAutomaticOrdinaryChanges(t *testing.T) {
 	change, found := AgentCodeToolDefinition(WorkspaceChangeTool)
 	if !found || !strings.Contains(change.Description,

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestDarwinPIDEnumerationErrorsPropagate(t *testing.T) {
+func TestDarwinProcessObservationDistinguishesExitFromErrors(t *testing.T) {
 	// Compile the same private C wrappers used by production, replacing only
 	// libproc with a deterministic syscall-result injector in this probe binary.
 	binary := filepath.Join(t.TempDir(), "pid-list-probe")

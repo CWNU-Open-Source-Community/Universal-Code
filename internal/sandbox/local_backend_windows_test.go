@@ -937,7 +937,18 @@ func TestWindowsLocalSandboxRequestRejectsUNCDeviceAndBindingDrift(t *testing.T)
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("valid strict request rejected: %v", err)
 	}
+	spaced := valid
+	spaced.Manifest.Command.WorkingDirectory = "/workspace/ project"
+	if err := spaced.Validate(); err != nil {
+		t.Fatalf("leading space in a working directory was refused: %v", err)
+	}
 	for name, mutate := range map[string]func(*LocalRunRequest){
+		"working directory alias": func(value *LocalRunRequest) {
+			value.Manifest.Command.WorkingDirectory = "/workspace/project "
+		},
+		"working directory ancestor alias": func(value *LocalRunRequest) {
+			value.Manifest.Command.WorkingDirectory = "/workspace/project./nested"
+		},
 		"UNC root": func(value *LocalRunRequest) {
 			value.Binding.DrydockRoot = `\\server\share\drydock`
 			value.Binding.DrydockPathSHA256 = localHostPathDigest(value.Binding.DrydockRoot)

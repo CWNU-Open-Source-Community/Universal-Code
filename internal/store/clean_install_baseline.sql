@@ -1414,7 +1414,8 @@ CREATE TABLE "command_runtime_jobs" (
 		adapter_credential_policy TEXT NOT NULL,
 		permission_runtime_epoch TEXT NOT NULL DEFAULT '',
 		permission_generation INTEGER NOT NULL DEFAULT 0,
-		run_authorization_fence INTEGER NOT NULL DEFAULT 0 CHECK(run_authorization_fence >= 0), operator_invocation INTEGER NOT NULL DEFAULT 0 CHECK(operator_invocation IN (0,1)),
+		run_authorization_fence INTEGER NOT NULL DEFAULT 0 CHECK(run_authorization_fence >= 0),
+		operator_invocation INTEGER NOT NULL DEFAULT 0 CHECK(operator_invocation IN (0,1)),
 		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE RESTRICT,
 		FOREIGN KEY(mission_id) REFERENCES missions(id) ON DELETE RESTRICT,
 		FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE RESTRICT,
@@ -1509,7 +1510,7 @@ CREATE TABLE "command_runtime_jobs" (
 		CHECK(length(owner_id) BETWEEN 1 AND 256 AND owner_id = trim(owner_id) AND instr(owner_id, char(0)) = 0),
 		CHECK(length(executable_path) BETWEEN 1 AND 4096 AND executable_path = trim(executable_path)
 			AND instr(executable_path, char(0)) = 0),
-		CHECK(length(working_directory) BETWEEN 1 AND 4096 AND working_directory = trim(working_directory)
+		CHECK(length(working_directory) BETWEEN 1 AND 4096
 			AND instr(working_directory, char(0)) = 0),
 		CHECK(length(operation_digest) = 64 AND operation_digest = lower(operation_digest)
 			AND operation_digest NOT GLOB '*[^0-9a-f]*'),
@@ -2285,7 +2286,7 @@ CREATE TABLE file_edit_apply_operations (
 				AND destination_original_hash = '' AND destination_proposed_hash = ''
 				AND destination_observed_hash = '')),
 		CHECK(event_sequence > 0),
-		CHECK(path = trim(path) AND length(path) BETWEEN 1 AND 512 AND instr(path, char(0)) = 0),
+		CHECK(length(path) BETWEEN 1 AND 512 AND instr(path, char(0)) = 0),
 		CHECK(applied_by = trim(applied_by) AND length(applied_by) BETWEEN 1 AND 256
 			AND instr(applied_by, char(0)) = 0)
 	) WITHOUT ROWID;
@@ -2513,8 +2514,7 @@ CREATE TABLE finding_evidence (
 			AND source_fingerprint NOT GLOB '*[^0-9a-f]*'),
 		CHECK(length(source_digest) = 64 AND source_digest = lower(source_digest)
 			AND source_digest NOT GLOB '*[^0-9a-f]*'),
-		CHECK(relative_path = trim(relative_path)
-			AND length(relative_path) BETWEEN 1 AND 2048
+		CHECK(length(relative_path) BETWEEN 1 AND 2048
 			AND instr(relative_path, char(0)) = 0 AND instr(relative_path, char(92)) = 0
 			AND substr(relative_path, 1, 1) <> '/' AND relative_path NOT IN ('.', '..')
 			AND relative_path NOT LIKE '../%'
@@ -2771,8 +2771,7 @@ CREATE TABLE findings (
 			AND length(CAST(title AS BLOB)) <= 1024 AND instr(title, char(0)) = 0),
 		CHECK(detail = trim(detail) AND length(detail) BETWEEN 1 AND 2048
 			AND length(CAST(detail AS BLOB)) <= 8192 AND instr(detail, char(0)) = 0),
-		CHECK(relative_path = trim(relative_path)
-			AND length(relative_path) BETWEEN 1 AND 2048
+		CHECK(length(relative_path) BETWEEN 1 AND 2048
 			AND instr(relative_path, char(0)) = 0 AND instr(relative_path, char(92)) = 0
 			AND substr(relative_path, 1, 1) <> '/' AND relative_path NOT IN ('.', '..')
 			AND relative_path NOT LIKE '../%'
@@ -4603,7 +4602,7 @@ CREATE TABLE readonly_fanout_files (
 		CHECK(size_bytes BETWEEN 0 AND 131072),
 		CHECK(length(content_sha256) = 64 AND content_sha256 = lower(content_sha256)
 			AND content_sha256 NOT GLOB '*[^0-9a-f]*'),
-		CHECK(relative_path = trim(relative_path) AND length(relative_path) BETWEEN 1 AND 2048
+		CHECK(length(relative_path) BETWEEN 1 AND 2048
 			AND instr(relative_path, char(0)) = 0 AND instr(relative_path, char(92)) = 0
 			AND substr(relative_path, 1, 1) <> '/' AND relative_path NOT IN ('.', '..')
 			AND relative_path NOT LIKE '../%'
@@ -4635,7 +4634,7 @@ CREATE TABLE readonly_fanout_findings (
 		CHECK(category = trim(category) AND length(category) BETWEEN 1 AND 64),
 		CHECK(title = trim(title) AND length(title) BETWEEN 1 AND 256),
 		CHECK(detail = trim(detail) AND length(detail) BETWEEN 1 AND 2048),
-		CHECK(relative_path = trim(relative_path) AND length(relative_path) BETWEEN 1 AND 2048
+		CHECK(length(relative_path) BETWEEN 1 AND 2048
 			AND instr(relative_path, char(0)) = 0 AND instr(relative_path, char(92)) = 0
 			AND substr(relative_path, 1, 1) <> '/' AND relative_path NOT IN ('.', '..')
 			AND relative_path NOT LIKE '../%'
@@ -4768,7 +4767,7 @@ CREATE TABLE readonly_fanout_plans (
 		CHECK(total_bytes BETWEEN 0 AND 786432),
 		CHECK(excluded_count BETWEEN 0 AND 20000),
 		CHECK(shard_count BETWEEN 1 AND 6 AND shard_count = effective_parallelism),
-		CHECK(scope_path = trim(scope_path) AND length(scope_path) BETWEEN 1 AND 2048
+		CHECK(length(scope_path) BETWEEN 1 AND 2048
 			AND instr(scope_path, char(0)) = 0 AND instr(scope_path, char(92)) = 0
 			AND substr(scope_path, 1, 1) <> '/' AND scope_path <> '..'
 			AND scope_path NOT LIKE '../%' AND instr('/' || scope_path || '/', '/../') = 0),
@@ -11104,7 +11103,7 @@ CREATE TABLE session_continuity_nodes (
 			OR (kind IN ('fork', 'resume') AND parent_id IS NULL AND source_node_id IS NOT NULL))
 	);
 -- traverse-board-clean-install-object-boundary --
-CREATE TABLE session_evidence_attachments (
+CREATE TABLE "session_evidence_attachments" (
 		id TEXT PRIMARY KEY,
 		protocol_version TEXT NOT NULL,
 		operation_key_digest TEXT NOT NULL UNIQUE,
@@ -11129,7 +11128,7 @@ CREATE TABLE session_evidence_attachments (
 		CHECK(length(request_fingerprint) = 64 AND request_fingerprint = lower(request_fingerprint)
 			AND request_fingerprint NOT GLOB '*[^0-9a-f]*'),
 		CHECK(source_kind = 'workspace_file'),
-		CHECK(source_ref = trim(source_ref) AND length(source_ref) BETWEEN 1 AND 512
+		CHECK(length(source_ref) BETWEEN 1 AND 512
 			AND instr(source_ref, char(0)) = 0 AND instr(source_ref, char(9)) = 0
 			AND instr(source_ref, char(10)) = 0 AND instr(source_ref, char(13)) = 0
 			AND source_ref <> '.' AND substr(source_ref, 1, 1) <> '/'
@@ -13300,7 +13299,7 @@ CREATE TABLE workspace_checkpoint_entries (
 		CHECK(tracked IN (0, 1) AND staged IN (0, 1) AND binary IN (0, 1)
 			AND recoverable IN (0, 1)),
 		CHECK(line_endings IN ('', 'lf', 'crlf', 'mixed', 'none')),
-		CHECK(length(path) BETWEEN 1 AND 4096 AND path = trim(path)
+		CHECK(length(path) BETWEEN 1 AND 4096
 			AND instr(path, char(0)) = 0),
 		CHECK(length(index_oid) <= 128 AND instr(index_oid, char(0)) = 0),
 		CHECK(length(index_mode) <= 16 AND instr(index_mode, char(0)) = 0),
@@ -24867,7 +24866,8 @@ CREATE TRIGGER trg_session_message_provenance_insert
 			AND length(NEW.content_sha256) = 64
 			AND NEW.content_sha256 = lower(NEW.content_sha256)
 			AND NEW.content_sha256 NOT GLOB '*[^0-9a-f]*'
-			AND NEW.source_ref = trim(NEW.source_ref)
+			AND (NEW.source_kind IN ('workspace_file', 'workspace_listing', 'workspace_diff')
+				OR NEW.source_ref = trim(NEW.source_ref))
 			AND length(NEW.source_ref) <= 512 AND instr(NEW.source_ref, char(0)) = 0
 			AND instr(NEW.source_ref, char(9)) = 0 AND instr(NEW.source_ref, char(10)) = 0
 			AND instr(NEW.source_ref, char(13)) = 0

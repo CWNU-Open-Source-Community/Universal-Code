@@ -9,6 +9,7 @@ import (
 )
 
 func TestBuildEvidenceGraphMapsStableHunkAndMarksHeadDriftStale(t *testing.T) {
+	const exactPath = " file.go "
 	now := time.Date(2026, 8, 21, 2, 0, 0, 0, time.UTC)
 	base := strings.Repeat("1", 40)
 	head := strings.Repeat("2", 40)
@@ -23,10 +24,10 @@ func TestBuildEvidenceGraphMapsStableHunkAndMarksHeadDriftStale(t *testing.T) {
 		Capability: capability, Title: SanitizeRemoteText("title", MaxTextBytes),
 		Body: EmptyTextEvidence(), Author: "octocat", RequestedReviewers: []string{},
 		Files: []ChangedFile{}, Reviews: []Review{},
-		Threads: []ReviewThread{{ID: "thread_1", Path: "file.go", Side: "RIGHT", Line: 3,
+		Threads: []ReviewThread{{ID: "thread_1", Path: sanitizeRepositoryPath(exactPath), Side: "RIGHT", Line: 3,
 			Comments: []Comment{{NodeID: "comment_1", Author: "reviewer",
 				Body:      SanitizeRemoteText("fix", MaxTextBytes),
-				Position:  Position{Path: "file.go", Side: "RIGHT", Line: 3, CommitSHA: head},
+				Position:  Position{Path: sanitizeRepositoryPath(exactPath), Side: "RIGHT", Line: 3, CommitSHA: head},
 				CreatedAt: now, UpdatedAt: now}}}},
 		LooseComments: []Comment{}, CheckSuites: []CheckSuite{}, CheckRuns: []CheckRun{},
 		Jobs: []WorkflowJob{}, Artifacts: []ArtifactMetadata{}, Pagination: []PageEvidence{},
@@ -40,15 +41,16 @@ func TestBuildEvidenceGraphMapsStableHunkAndMarksHeadDriftStale(t *testing.T) {
 			StashSHA256: digest, SequenceSHA256: digest, ObjectFormat: "sha1", CapturedAt: now},
 		BaseSHA: base, HeadSHA: head, MergeBaseSHA: merge, DiffSHA256: digest,
 		CallChainSHA256: digest, DiffBytes: 100, DiffStat: "1 file changed",
-		ChangedFiles: []string{"file.go"}, Hunks: []gitadvanced.Hunk{{ID: digest,
-			Path: "file.go", OldStart: 1, OldLines: 3, NewStart: 1, NewLines: 4,
+		ChangedFiles: []string{exactPath}, Hunks: []gitadvanced.Hunk{{ID: digest,
+			Path: exactPath, OldStart: 1, OldLines: 3, NewStart: 1, NewLines: 4,
 			BaseBlob: base, IndexBlob: head, WorktreeSHA256: digest,
 			ContextSHA256: digest, PatchSHA256: digest, Patch: "@@ -1,3 +1,4 @@\n"}},
 		Conflict: gitadvanced.ConflictState{Files: []gitadvanced.ConflictFile{}},
 		Complete: true, Omissions: []string{}, CapturedAt: now}
 	graph, err := BuildEvidenceGraph(snapshot, diff, nil, now.Add(time.Second))
 	if err != nil || graph.State != EvidenceVerified || len(graph.Mappings) != 1 ||
-		graph.Mappings[0].HunkID != digest || graph.Mappings[0].Semantic.State != EvidenceNotRun {
+		graph.Mappings[0].Path != exactPath || graph.Mappings[0].HunkID != digest ||
+		graph.Mappings[0].Semantic.State != EvidenceNotRun {
 		t.Fatalf("current evidence graph failed: %v %#v", err, graph)
 	}
 	staleDiff := diff

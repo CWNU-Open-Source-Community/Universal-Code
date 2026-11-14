@@ -87,8 +87,7 @@ func (r Request) Validate() error {
 	}
 	documentTool := r.Tool != ToolWorkspaceSymbols
 	if documentTool {
-		if r.Path == "" || r.Path != strings.TrimSpace(r.Path) ||
-			utf8.RuneCountInString(r.Path) > 512 {
+		if r.Path == "" || r.Path == "." || utf8.RuneCountInString(r.Path) > 512 {
 			return apperror.New(apperror.CodeInvalidArgument,
 				"code-intel document path is required")
 		}

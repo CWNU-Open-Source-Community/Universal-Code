@@ -35,7 +35,7 @@ export interface V2RecoveryStore {
 type PersistentConflict = { id: number; key: string; changedAgain: boolean; unsavedOnly: boolean; keepLocal: () => void; useRemote: () => void };
 let nextPersistentBindingID = 0;
 
-function decodeRecord(raw: string): unknown {
+export function decodeRecoveryRecord(raw: string): unknown {
   const record: unknown = JSON.parse(raw);
   if (!record || typeof record !== "object" || Array.isArray(record) ||
     Object.keys(record).length !== 2 || !("version" in record) || record.version !== VERSION ||
@@ -61,7 +61,7 @@ class RecoveryStorage implements V2RecoveryStore {
 
   constructor(private readonly prefix: string) {}
 
-  private storageKey(key: string): string { return this.prefix + encodeURIComponent(key); }
+  storageKey(key: string): string { return this.prefix + encodeURIComponent(key); }
 
   private fail(operation: string, message: string): V2PersistenceError {
     this.failures.set(operation, message);
@@ -98,7 +98,7 @@ class RecoveryStorage implements V2RecoveryStore {
       return { found: false };
     }
     try {
-      const value = decodeRecord(raw);
+      const value = decodeRecoveryRecord(raw);
       this.clearFailure(`read:${key}`);
       return { found: true, value };
     } catch { throw this.fail(`read:${key}`, INVALID_RECORD); }
@@ -120,7 +120,7 @@ class RecoveryStorage implements V2RecoveryStore {
     this.readRecord(key);
     try {
       const raw = JSON.stringify({ version: VERSION, value });
-      decodeRecord(raw);
+      decodeRecoveryRecord(raw);
       window.localStorage.setItem(this.storageKey(key), raw);
     } catch { throw this.fail(`write:${key}`, WRITE_FAILED); }
     this.unsaved.delete(key);
@@ -333,6 +333,10 @@ export function V2RecoveryProvider({ client, scopeID, children }: {
 
 export function useV2RecoveryStore(): V2RecoveryStore | null {
   return useContext(RecoveryContext)?.store ?? null;
+}
+
+export function useV2RecoveryRecordKey(key: string): string | undefined {
+  return useContext(RecoveryContext)?.store?.storageKey(key);
 }
 
 const noSubscription = () => () => {};

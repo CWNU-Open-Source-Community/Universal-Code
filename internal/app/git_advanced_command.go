@@ -101,7 +101,7 @@ func (a *App) gitAdvancedCommand(ctx context.Context, args []string) error {
 	if err := a.ensureStore(); err != nil {
 		return err
 	}
-	root := strings.TrimSpace(*managedRoot)
+	root := *managedRoot
 	if root == "" {
 		root = filepath.Join(a.home, "worktrees")
 	}

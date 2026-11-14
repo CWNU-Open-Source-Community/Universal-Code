@@ -197,7 +197,6 @@ func NormalizeToolCall(call ToolCall) (ToolCall, error) {
 	call.ConnectorFingerprint = strings.TrimSpace(call.ConnectorFingerprint)
 	call.SupervisorToolCallID = strings.TrimSpace(call.SupervisorToolCallID)
 	call.LeaseID = strings.TrimSpace(call.LeaseID)
-	call.WorkspaceRoot = strings.TrimSpace(call.WorkspaceRoot)
 	call.RequestedBy = strings.TrimSpace(redact.String(call.RequestedBy))
 	call.BrowserActionSessionID = strings.TrimSpace(call.BrowserActionSessionID)
 	call.BrowserPermissionSnapshotID = strings.TrimSpace(call.BrowserPermissionSnapshotID)
@@ -595,7 +594,6 @@ func NormalizeReviewRequest(request ReviewRequest) (ReviewRequest, error) {
 	request.ProposalID = strings.TrimSpace(request.ProposalID)
 	request.IdempotencyKey = strings.TrimSpace(request.IdempotencyKey)
 	request.ReviewedBy = strings.TrimSpace(redact.String(request.ReviewedBy))
-	request.WorkspaceRoot = strings.TrimSpace(request.WorkspaceRoot)
 	request.Reason = strings.TrimSpace(redact.String(request.Reason))
 	if request.Action != ReviewApprove && request.Action != ReviewDeny {
 		return ReviewRequest{}, fmt.Errorf("invalid tool review action %q", request.Action)

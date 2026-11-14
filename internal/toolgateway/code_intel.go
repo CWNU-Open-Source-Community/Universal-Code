@@ -185,7 +185,7 @@ func NormalizeCodeIntelPayload(name ToolName, raw json.RawMessage) (
 	}
 	documentTool := name != CodeWorkspaceSymbolsTool
 	if documentTool != (value.Path != "") ||
-		(value.Path != "" && !validAgentCodeText(value.Path, 512, false)) {
+		(value.Path != "" && !validAgentCodePathArgument(value.Path, 512, false)) {
 		return CodeIntelPayload{}, nil, errors.New("code-intel document path is invalid")
 	}
 	positionTool := name == CodeDefinitionTool || name == CodeReferencesTool ||

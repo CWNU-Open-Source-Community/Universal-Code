@@ -22,7 +22,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [desktop-risk-restart-session](#desktop-risk-restart-session) | `ephemeral` | Desktop shell lifecycle maintainers | 2 | false |
 | [desktop-terminal-settings](#desktop-terminal-settings) | `internal-durable` | Desktop terminal maintainers | 1 | true |
 | [desktop-verification-settings](#desktop-verification-settings) | `internal-durable` | Desktop verification settings maintainers | 1 | true |
-| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 26 | true |
+| [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 27 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
 | [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
@@ -45,7 +45,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [standard-code-delivery-ledger](#standard-code-delivery-ledger) | `external-durable` | Standard Code delivery and public projection maintainers | 8 | true |
 | [supervisor-input-delivery-projection](#supervisor-input-delivery-projection) | `projection` | Supervisor input and context maintainers | 1 | true |
 | [supervisor-tool-rejection-diagnostics](#supervisor-tool-rejection-diagnostics) | `internal-durable` | Supervisor terminal accounting and private diagnostic maintainers | 1 | true |
-| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 63 | true |
+| [thread-run-session-ledgers](#thread-run-session-ledgers) | `internal-durable` | Thread, Run, Session, context, and message maintainers | 64 | true |
 | [thread-transcript-projection](#thread-transcript-projection) | `projection` | Thread transcript maintainers | 1 | true |
 | [tool-mutation-ledgers](#tool-mutation-ledgers) | `internal-durable` | Tool gateway, file edit, Git, and mutation maintainers | 44 | true |
 | [ui-reference-testing-contracts](#ui-reference-testing-contracts) | `projection` | React workbench and visual-regression maintainers | 4 | true |
@@ -804,11 +804,11 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - Retirement gate (`rebuild-from-source`): Rebuild source remains retained and independently verifiable; Replacement preserves ordering, cursor, invalidation, and redaction behavior; Retirement evidence proves a complete rebuild from the named source
 - Rebuild source: Go Application DTOs plus explicitly user-owned local presentation settings.
 - Writers:
-  - `desktop-web-presentation-state-writer` (`v1, v2`, write-current) at `web/src`
+  - `desktop-web-presentation-state-writer` (`v1, v2, v3`, write-current) at `web/src`
 - Readers:
-  - `desktop-web-presentation-state-reader` (`v1, v2`, active) at `web/src`
+  - `desktop-web-presentation-state-reader` (`v1, v2, v3`, active) at `web/src`
 
-<details><summary>26 active identifiers</summary>
+<details><summary>27 active identifiers</summary>
 
 - `desktop_chat_resource.v1`
 - `desktop_clipboard_files.v1`
@@ -835,6 +835,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `universal-code.turn-notifications.v1`
 - `universal-code.workspace-tabs.v1`
 - `universal-code.workspace-tabs.v2`
+- `universal-code.workspace-tabs.v3`
 - `v2_file_upload.v1`
 
 </details>
@@ -1868,7 +1869,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `thread-image-upload-recovery-reader` (`v1`, active) at `web/src/v2/components/image-input.tsx`
   - `pr-followup-local-intent-reader` (`v1`, active) at `web/src/v2/components/task-pr-followup.tsx`
 
-<details><summary>63 active identifiers</summary>
+<details><summary>64 active identifiers</summary>
 
 - `context_memory.v1`
 - `context_memory_candidate.v1`
@@ -1932,6 +1933,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `v2_draft_document.v1`
 - `v2_image_upload.v1`
 - `v2_native_clipboard_recovery.v1`
+- `v2_project_action_recovery.v1`
 - `v2_recovery.v1`
 
 </details>

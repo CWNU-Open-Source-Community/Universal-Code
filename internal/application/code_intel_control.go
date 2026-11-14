@@ -316,7 +316,7 @@ func (s *CodeIntelControlService) Test(ctx context.Context, serverID string, r C
 	if r.Tool != codeintel.ToolDocumentSymbols && r.Tool != codeintel.ToolWorkspaceSymbols {
 		return CodeIntelConfigurationTest{}, apperror.New(apperror.CodeInvalidArgument, "LSP setup probe supports document or workspace symbols only")
 	}
-	if r.WorkspaceID == "" || r.ExpectedDescriptorFingerprint == "" || (r.Tool == codeintel.ToolDocumentSymbols && strings.TrimSpace(r.Path) == "") {
+	if r.WorkspaceID == "" || r.ExpectedDescriptorFingerprint == "" || (r.Tool == codeintel.ToolDocumentSymbols && r.Path == "") {
 		return CodeIntelConfigurationTest{}, apperror.New(apperror.CodeInvalidArgument, "LSP setup probe requires a Workspace, reviewed fingerprint, and query input")
 	}
 	workspace, err := s.store.GetWorkspaceInfo(ctx, r.WorkspaceID)

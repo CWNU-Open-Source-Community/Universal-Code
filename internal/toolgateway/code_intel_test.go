@@ -68,9 +68,9 @@ func TestCodeIntelPayloadsAreStrictBoundedAndCanonical(t *testing.T) {
 	digestB := strings.Repeat("b", 64)
 	raw := json.RawMessage(`{"version":"code-intel-lsp.v1","server_id":"gopls","server_generation":"` +
 		digestA + `","capability_fingerprint":"` + digestB +
-		`","path":"main.go","line":1,"character":2,"include_declaration":true,"limit":20}`)
+		`","path":" main.go ","line":1,"character":2,"include_declaration":true,"limit":20}`)
 	value, canonical, err := NormalizeCodeIntelPayload(CodeReferencesTool, raw)
-	if err != nil || value.ServerID != "gopls" || !json.Valid(canonical) {
+	if err != nil || value.ServerID != "gopls" || value.Path != " main.go " || !json.Valid(canonical) {
 		t.Fatalf("valid semantic payload failed: value=%#v raw=%s err=%v", value, canonical, err)
 	}
 	_, repeated, err := NormalizeCodeIntelPayload(CodeReferencesTool, canonical)
@@ -85,6 +85,7 @@ func TestCodeIntelPayloadsAreStrictBoundedAndCanonical(t *testing.T) {
 			`,"include_declaration":true`, `,"write":true`, 1)},
 		{name: CodeReferencesTool, raw: strings.Replace(string(raw), "gopls",
 			"token=super-secret-value", 1)},
+		{name: CodeReferencesTool, raw: strings.Replace(string(raw), " main.go ", `main\t.go`, 1)},
 		{name: CodeWorkspaceSymbolsTool, raw: string(raw)},
 		{name: CodeCallHierarchyTool, raw: strings.Replace(string(raw),
 			`"include_declaration":true`, `"direction":"delete"`, 1)},

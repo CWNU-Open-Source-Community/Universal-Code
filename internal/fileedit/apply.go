@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const FileEditApplyProtocolVersion = "file_edit_apply.v1"
@@ -62,11 +63,14 @@ func (o ApplyOperation) Validate() error {
 		return errors.New("non-move FileEdit apply cannot contain destination metadata")
 	}
 	for _, value := range []string{o.RunID, o.SessionID, o.WorkspaceID, o.EditID,
-		o.Path, o.AppliedBy} {
+		o.AppliedBy} {
 		if value == "" || value != strings.TrimSpace(value) || len(value) > 256 ||
 			strings.ContainsRune(value, 0) {
 			return errors.New("FileEdit apply operation identity is invalid")
 		}
+	}
+	if o.Path == "" || utf8.RuneCountInString(o.Path) > 512 || strings.ContainsRune(o.Path, 0) {
+		return errors.New("FileEdit apply path is invalid")
 	}
 	return nil
 }

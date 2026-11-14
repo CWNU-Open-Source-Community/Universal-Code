@@ -53,12 +53,12 @@ it("creates with an explicit name and source folder only after the final confirm
   expect(name).toHaveFocus();
   await user.type(name, "我的项目");
   await user.click(within(dialog).getByRole("button", { name: "Add" }));
-  await user.type(within(dialog).getByRole("textbox", { name: "Project folder path" }), "D:\\我的项目");
+  await user.type(within(dialog).getByRole("textbox", { name: "Project folder path" }), "D:\\我的项目 ");
   await user.click(within(dialog).getByRole("button", { name: "Add" }));
   expect(importer).not.toHaveBeenCalled();
   await user.click(within(dialog).getByRole("button", { name: "Create project" }));
   await waitFor(() => expect(onSelect).toHaveBeenCalledExactlyOnceWith(workspace));
-  expect(importer).toHaveBeenCalledExactlyOnceWith("D:\\我的项目", undefined, "我的项目");
+  expect(importer).toHaveBeenCalledExactlyOnceWith("D:\\我的项目 ", undefined, "我的项目");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 

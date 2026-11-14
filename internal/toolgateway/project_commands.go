@@ -5,7 +5,10 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"unicode"
 
+	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
@@ -25,6 +28,11 @@ var projectCommandPresets = map[string]string{
 func ProjectCommandExecutable(id string) (string, bool) {
 	name, found := projectCommandPresets[id]
 	return name, found
+}
+
+// IsProjectGoFile identifies Go source files without changing the native path.
+func IsProjectGoFile(target string) bool {
+	return path.Ext(strings.TrimRightFunc(target, unicode.IsSpace)) == ".go"
 }
 
 func ProjectCommandSpec(id, executable, target string, launcher ...string) (runner.CommandRuntimeSpec, error) {
@@ -55,8 +63,11 @@ func ProjectCommandSpec(id, executable, target string, launcher ...string) (runn
 		if err := (workspaceidentity.PathPolicy{}).Check(target); err != nil {
 			return runner.CommandRuntimeSpec{}, err
 		}
-		if target == "" || filepath.IsAbs(target) || filepath.Ext(target) != ".go" || strings.HasPrefix(target, "-") || strings.ContainsAny(target, "\r\n\x00") {
+		if !IsProjectGoFile(target) || strings.HasPrefix(target, "-") {
 			return runner.CommandRuntimeSpec{}, fmt.Errorf("format.go requires one relative Go file")
+		}
+		if err := rootfs.CheckExternalDirectory(target); err != nil {
+			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeInvalidArgument, err.Error())
 		}
 		arguments = []string{"-w", "./" + filepath.ToSlash(target)}
 	}

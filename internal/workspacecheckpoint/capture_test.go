@@ -7,9 +7,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestCapturePreservesTrackedUntrackedBinaryIndexAndLineEndings(t *testing.T) {
@@ -230,6 +233,39 @@ func TestCaptureMarksWindowsPathCaseDriftUnavailable(t *testing.T) {
 		!strings.Contains(strings.Join(snapshot.Checkpoint.IncompleteReasons, "\n"),
 			"Workspace path casing differs from the Git index") {
 		t.Fatalf("case drift was not explicit: %+v", snapshot.Checkpoint)
+	}
+}
+
+func TestCaptureExplainsWhyGitIsUnavailableForAnExactWindowsRoot(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows Git path normalization")
+	}
+	parent := t.TempDir()
+	plain := filepath.Join(parent, "repo")
+	mustCheckpointWrite(t, filepath.Join(plain, "neighbor.txt"), []byte("neighbor\n"))
+	runCheckpointGit(t, plain, "init", "-q")
+	root, err := rootfs.ExactAbsolutePath(filepath.Join(parent, "repo "))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(root); err != nil {
+			t.Error(err)
+		}
+	})
+	mustCheckpointWrite(t, filepath.Join(root, "exact.txt"), []byte("exact root\n"))
+	snapshot, err := Capture(t.Context(), validCaptureRequest(root, time.Now().UTC()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	guardErr := rootfs.CheckExternalDirectory(root)
+	if guardErr == nil || snapshot.Checkpoint.RecoveryLevel != RecoveryUnavailable ||
+		!slices.Contains(snapshot.Checkpoint.IncompleteReasons, guardErr.Error()) {
+		t.Fatalf("expected explicit reason for unavailable Git state: %+v", snapshot.Checkpoint)
+	}
+	if len(snapshot.Entries) != 1 || snapshot.Entries[0].Path != "exact.txt" ||
+		snapshot.Entries[0].StoragePolicy != StorageStored {
+		t.Fatalf("capture did not stay in the exact root: %+v", snapshot.Entries)
 	}
 }
 

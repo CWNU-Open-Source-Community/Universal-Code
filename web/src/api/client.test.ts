@@ -3672,11 +3672,11 @@ describe("APIClient", () => {
 
   it("validates bounded Workspace evidence without accepting local root authority", async () => {
     const snapshot = { protocol_version: "workspace_explorer.v1", workspace_id: "workspace-1",
-      path: "src", kind: "directory", entries: [{ name: "main.go", path: "src/main.go",
+      path: " src ", kind: "directory", entries: [{ name: "main.go ", path: " src /main.go ",
         kind: "file", size_bytes: 120, readable: true }], content: "", total_bytes: 0,
       returned_bytes: 0, truncated: false, redaction_count: 0, root_path_exposed: false,
       provenance: { version: "context_provenance.v1", source_kind: "workspace_listing",
-        source_ref: "src", content_sha256: "a".repeat(64), instruction_authorized: false } };
+        source_ref: " src ", content_sha256: "a".repeat(64), instruction_authorized: false } };
     const envelope = (data: unknown) => new Response(JSON.stringify({
       version: "api.v1", request_id: "req-explorer", data,
     }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -3688,11 +3688,12 @@ describe("APIClient", () => {
       ] }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new APIClient("read-secret");
-    await expect(client.workspaceExplore("workspace-1", "src")).resolves.toEqual(snapshot);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("path=src");
-    await expect(client.workspaceExplore("workspace-1", "src"))
+    await expect(client.workspaceExplore("workspace-1", " src ")).resolves.toEqual(snapshot);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0]), "https://test.invalid").searchParams.get("path"))
+      .toBe(" src ");
+    await expect(client.workspaceExplore("workspace-1", " src "))
       .rejects.toThrow("bounded evidence contract");
-    await expect(client.workspaceExplore("workspace-1", "src"))
+    await expect(client.workspaceExplore("workspace-1", " src "))
       .rejects.toThrow("renderer path authority");
     await expect(client.workspaceExplore("workspace-1", "../private"))
       .rejects.toThrow("Go-issued relative path");

@@ -14,6 +14,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/session"
 )
 
@@ -82,18 +83,8 @@ func Explore(root string, workspaceID string, requested string) (ExplorerSnapsho
 }
 
 func normalizeExplorerPath(requested string) (string, error) {
-	original := requested
-	requested = strings.TrimSpace(requested)
 	if requested == "" {
-		if original != "" {
-			return "", apperror.New(apperror.CodeInvalidArgument,
-				"workspace explorer path cannot contain surrounding whitespace")
-		}
 		requested = "."
-	}
-	if original != "" && original != requested {
-		return "", apperror.New(apperror.CodeInvalidArgument,
-			"workspace explorer path cannot contain surrounding whitespace")
 	}
 	if !utf8.ValidString(requested) || utf8.RuneCountInString(requested) > MaxExplorerPathRunes ||
 		strings.ContainsRune(requested, 0) || filepath.IsAbs(requested) ||
@@ -113,7 +104,7 @@ func normalizeExplorerPath(requested string) (string, error) {
 			"workspace explorer path cannot leave the workspace")
 	}
 	canonical := filepath.ToSlash(cleaned)
-	if canonical != requested {
+	if canonical != requested || !filepath.IsLocal(cleaned) {
 		return "", apperror.New(apperror.CodeInvalidArgument,
 			"workspace explorer path must be canonical")
 	}
@@ -121,17 +112,11 @@ func normalizeExplorerPath(requested string) (string, error) {
 }
 
 func resolveExplorerTarget(root string, relative string) (string, os.FileInfo, error) {
-	root = strings.TrimSpace(root)
 	if root == "" {
 		return "", nil, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root is unavailable")
 	}
-	resolvedRoot, err := filepath.Abs(root)
-	if err != nil {
-		return "", nil, apperror.New(apperror.CodeFailedPrecondition,
-			"workspace root could not be resolved")
-	}
-	resolvedRoot, err = filepath.EvalSymlinks(resolvedRoot)
+	resolvedRoot, err := rootfs.EvalExactSymlinks(root)
 	if err != nil {
 		return "", nil, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root could not be resolved")
@@ -141,7 +126,7 @@ func resolveExplorerTarget(root string, relative string) (string, os.FileInfo, e
 		return "", nil, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root is unavailable")
 	}
-	target, err := filepath.Abs(filepath.Join(resolvedRoot, filepath.FromSlash(relative)))
+	target, err := rootfs.ExactAbsolutePath(filepath.Join(resolvedRoot, filepath.FromSlash(relative)))
 	if err != nil || !explorerWithinRoot(resolvedRoot, target) {
 		return "", nil, apperror.New(apperror.CodePolicyDenied,
 			"workspace explorer path cannot leave the workspace")
@@ -149,7 +134,11 @@ func resolveExplorerTarget(root string, relative string) (string, os.FileInfo, e
 	current := resolvedRoot
 	if relative != "." {
 		for _, component := range strings.Split(filepath.FromSlash(relative), string(os.PathSeparator)) {
-			current = filepath.Join(current, component)
+			current, err = rootfs.ExactAbsolutePath(filepath.Join(current, component))
+			if err != nil {
+				return "", nil, apperror.New(apperror.CodeFailedPrecondition,
+					"workspace explorer entry could not be resolved")
+			}
 			info, lookupErr := os.Lstat(current)
 			if os.IsNotExist(lookupErr) {
 				return "", nil, apperror.New(apperror.CodeNotFound,
@@ -179,12 +168,13 @@ func resolveExplorerTarget(root string, relative string) (string, os.FileInfo, e
 		return "", nil, apperror.New(apperror.CodePolicyDenied,
 			"workspace explorer does not follow redirected paths")
 	}
-	info, err := os.Lstat(resolvedTarget)
+	// Keep the native prefix when opening or inspecting a Windows path.
+	info, err := os.Lstat(target)
 	if err != nil {
 		return "", nil, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace explorer entry could not be inspected")
 	}
-	return resolvedTarget, info, nil
+	return target, info, nil
 }
 
 func exploreDirectory(target string, workspaceID string,
@@ -350,7 +340,7 @@ func safeExplorerName(value string) bool {
 	if value == "" || !utf8.ValidString(value) || utf8.RuneCountInString(value) > 255 {
 		return false
 	}
-	if value != strings.TrimSpace(value) || strings.ContainsAny(value, `/\:`) {
+	if strings.ContainsAny(value, `/\:`) || !filepath.IsLocal(value) {
 		return false
 	}
 	for _, current := range value {
@@ -370,19 +360,14 @@ func findingCount(values []redact.Finding) int {
 }
 
 func explorerWithinRoot(root string, candidate string) bool {
-	relative, err := filepath.Rel(root, candidate)
+	relative, err := filepath.Rel(rootfs.OrdinaryPath(root), rootfs.OrdinaryPath(candidate))
 	return err == nil && (relative == "." ||
 		(relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator))))
 }
 
 func sameExplorerPath(left string, right string) bool {
-	left, leftErr := filepath.Abs(left)
-	right, rightErr := filepath.Abs(right)
-	if leftErr != nil || rightErr != nil {
-		return false
-	}
-	left = filepath.Clean(left)
-	right = filepath.Clean(right)
+	left = filepath.Clean(rootfs.OrdinaryPath(left))
+	right = filepath.Clean(rootfs.OrdinaryPath(right))
 	if runtime.GOOS == "windows" {
 		return strings.EqualFold(left, right)
 	}

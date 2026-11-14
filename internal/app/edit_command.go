@@ -12,6 +12,7 @@ import (
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/fileedit"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspace"
 )
 
@@ -137,7 +138,7 @@ func (a *App) editPropose(ctx context.Context, manager fileEditManager, args []s
 	}
 	contentSet := flagWasSet(fs, "content")
 	contentFileSet := flagWasSet(fs, "content-file")
-	if strings.TrimSpace(*workspaceName) == "" || strings.TrimSpace(*path) == "" || contentSet == contentFileSet {
+	if strings.TrimSpace(*workspaceName) == "" || *path == "" || contentSet == contentFileSet {
 		return errors.New("usage: cyberagent edit propose --workspace <name> --path <path> (--content <text> | --content-file <path>) [--session <id>]")
 	}
 	replacement := *content
@@ -291,13 +292,14 @@ func flagWasSet(fs *flag.FlagSet, name string) bool {
 }
 
 func readEditContent(path string) (string, error) {
-	if path != strings.TrimSpace(path) {
-		return "", errors.New("content file path cannot contain surrounding whitespace")
-	}
 	if path == "" {
 		return "", errors.New("content file path is required")
 	}
-	info, err := os.Stat(path)
+	native, err := rootfs.ExactAbsolutePath(path)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(native)
 	if err != nil {
 		return "", err
 	}
@@ -307,7 +309,7 @@ func readEditContent(path string) (string, error) {
 	if info.Size() > fileedit.MaxContentBytes {
 		return "", fmt.Errorf("content file exceeds %d bytes", fileedit.MaxContentBytes)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(native)
 	if err != nil {
 		return "", err
 	}

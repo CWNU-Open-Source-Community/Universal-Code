@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { HealthView } from "../api/types";
+import { updateBrowserStorageRecord } from "../lib/browser-storage-record";
 import { useConnectionStore } from "../state/connection";
 import { DraftDocument, type DraftScope } from "./draft-document";
 import {
@@ -17,7 +18,8 @@ import {
   minWorkspaceWidth,
   openWorkspaceFile,
   promptLegacyWorkspaceTabs,
-  resetWorkspaceTabsMemoryCache,
+  refreshWorkspaceTabs,
+  resetWorkspaceTabsMemoryCache as clearWorkspaceCache,
   resolveWorkspaceStorageConflict,
   restoreLegacyWorkspaceTabs,
   selectWorkspaceTab,
@@ -35,6 +37,22 @@ import {
   workspaceStorageConflictChangedNotice,
   workspaceLegacyTabsNotice,
 } from "./workspace-tabs";
+
+function resetWorkspaceTabsMemoryCache() {
+  clearWorkspaceCache();
+  refreshWorkspaceTabs();
+}
+
+function delayNextTransaction() {
+  const transact = vi.mocked(updateBrowserStorageRecord);
+  const run = transact.getMockImplementation()!;
+  let queued: (() => void) | undefined;
+  transact.mockImplementationOnce((...args) => { queued = () => run(...args); });
+  return () => {
+    expect(queued).toBeDefined();
+    queued!();
+  };
+}
 
 describe("workspace-tabs store", () => {
   beforeEach(() => useConnectionStore.setState({ health: { data_store_id: "store-one" } as HealthView }));
@@ -139,6 +157,7 @@ describe("workspace-tabs store", () => {
       const entry = Object.values(persisted.threads)[0] as { updatedAt: number; width: number };
       entry.updatedAt = 1001; entry.width = 700;
       localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(persisted));
+      refreshWorkspaceTabs();
       expect(getThreadWorkspaceState("conflicted")).toMatchObject({ notice: workspaceStorageConflictNotice,
         tabs: [{ path: "first.ts" }, { path: "local.ts" }] });
       setWorkspaceWidth("conflicted", 600);
@@ -157,6 +176,7 @@ describe("workspace-tabs store", () => {
     const key = Object.keys(saved.threads).find((item) => JSON.parse(item).at(-1) === "changing-conflict")!;
     saved.threads[key].width = 600;
     localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
+    refreshWorkspaceTabs();
     expect(getThreadWorkspaceState("changing-conflict").notice).toBe(workspaceStorageConflictNotice);
     saved.threads[key].width = 700;
     localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
@@ -198,6 +218,7 @@ describe("workspace-tabs store", () => {
     if (deleted) delete saved.threads[key];
     else saved.threads[key].tabs[0].path = "remote.ts";
     localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
+    refreshWorkspaceTabs();
     const expectedTabs = deleted ? [] : [{ path: "remote.ts" }];
     expect(getThreadWorkspaceState(threadID).tabs).toMatchObject(expectedTabs);
 
@@ -210,72 +231,92 @@ describe("workspace-tabs store", () => {
     expect(getThreadWorkspaceState(threadID).tabs).toMatchObject([...expectedTabs, { path: "new-local.ts" }]);
   });
 
-  it("does not overwrite malformed data that appears during an update", () => {
+  it("does not overwrite malformed data that appears before a queued update starts", () => {
     openWorkspaceFile("late-corruption", { path: "existing.ts" });
-    const originalGet = Storage.prototype.getItem;
-    const originalSet = Storage.prototype.setItem;
-    let reads = 0;
-    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
-      if (key === workspaceTabsStorageKey && ++reads === 2) originalSet.call(this, key, "{broken");
-      return originalGet.call(this, key);
-    });
-    const write = vi.spyOn(Storage.prototype, "setItem");
+    const start = delayNextTransaction();
     openWorkspaceFile("late-corruption", { path: "local.ts" });
-    expect(write).not.toHaveBeenCalled();
-    read.mockRestore();
-    write.mockRestore();
+    localStorage.setItem(workspaceTabsStorageKey, "{broken");
+    start();
     expect(localStorage.getItem(workspaceTabsStorageKey)).toBe("{broken");
     expect(getThreadWorkspaceState("late-corruption").tabs).toMatchObject([{ path: "existing.ts" }, { path: "local.ts" }]);
   });
 
-  it.each(["local", "remote"] as const)("preserves a simultaneous update until the %s version is chosen", (choice) => {
-    openWorkspaceFile("simultaneous", { path: "existing.ts" });
-    const originalGet = Storage.prototype.getItem;
-    const originalSet = Storage.prototype.setItem;
-    let reads = 0;
-    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
-      if (key === workspaceTabsStorageKey && ++reads === 2) {
-        const saved = JSON.parse(originalGet.call(this, key)!);
-        const entryKey = Object.keys(saved.threads).find((item) => JSON.parse(item).at(-1) === "simultaneous")!;
-        saved.threads[entryKey].tabs.push({ id: "file:2", kind: "file", path: "remote.ts" });
-        originalSet.call(this, key, JSON.stringify(saved));
-      }
-      return originalGet.call(this, key);
-    });
-    const write = vi.spyOn(Storage.prototype, "setItem");
-    openWorkspaceFile("simultaneous", { path: "local.ts" });
-    expect(write).not.toHaveBeenCalled();
-    read.mockRestore();
-    write.mockRestore();
-    expect(getThreadWorkspaceState("simultaneous")).toMatchObject({ notice: workspaceStorageConflictNotice,
-      tabs: [{ path: "existing.ts" }, { path: "local.ts" }] });
-    resolveWorkspaceStorageConflict("simultaneous", choice);
+  it("applies a queued edit to the latest committed state", () => {
+    openWorkspaceFile("mine", { path: "existing.ts" });
+    openWorkspaceFile("other", { path: "other.ts" });
+    const start = delayNextTransaction();
+    openWorkspaceFile("mine", { path: "local.ts" });
+    expect(getThreadWorkspaceState("mine").tabs).toHaveLength(1);
+
+    const saved = JSON.parse(localStorage.getItem(workspaceTabsStorageKey)!);
+    const mine = Object.keys(saved.threads).find((key) => JSON.parse(key).at(-1) === "mine")!;
+    const other = Object.keys(saved.threads).find((key) => JSON.parse(key).at(-1) === "other")!;
+    saved.threads[mine].tabs.push({ id: "file:2", kind: "file", path: "remote.ts" });
+    saved.threads[mine].nextFileSeq = 3;
+    saved.threads[other].width = 700;
+    localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
+    start();
     resetWorkspaceTabsMemoryCache();
-    expect(getThreadWorkspaceState("simultaneous").tabs).toMatchObject([
-      { path: "existing.ts" }, { path: choice === "local" ? "local.ts" : "remote.ts" },
+    expect(getThreadWorkspaceState("mine").tabs).toMatchObject([
+      { path: "existing.ts" }, { path: "remote.ts" }, { path: "local.ts" },
+    ]);
+    expect(getThreadWorkspaceState("other").width).toBe(700);
+  });
+
+  it("merges the next queued edit with the fallback from an aborted write", () => {
+    const threadID = "late-abort";
+    openWorkspaceFile(threadID, { path: "existing.ts" });
+    let abort!: () => void;
+    vi.mocked(updateBrowserStorageRecord).mockImplementationOnce((name, update, finish) => {
+      expect(update(localStorage.getItem(name))).toContain("first.ts");
+      abort = () => finish({ ok: false });
+    });
+    openWorkspaceFile(threadID, { path: "first.ts" });
+    openWorkspaceFile(threadID, { path: "second.ts" });
+    expect(getThreadWorkspaceState(threadID).tabs).toMatchObject([{ path: "existing.ts" }]);
+    abort();
+    resetWorkspaceTabsMemoryCache();
+    expect(getThreadWorkspaceState(threadID).tabs).toMatchObject([
+      { path: "existing.ts" }, { path: "first.ts" }, { path: "second.ts" },
     ]);
   });
 
-  it("merges an intervening update to a different task without a conflict", () => {
-    openWorkspaceFile("mine", { path: "existing.ts" });
-    openWorkspaceFile("other", { path: "other.ts" });
-    const originalGet = Storage.prototype.getItem;
-    const originalSet = Storage.prototype.setItem;
-    let reads = 0;
-    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
-      if (key === workspaceTabsStorageKey && ++reads === 2) {
-        const saved = JSON.parse(originalGet.call(this, key)!);
-        const entryKey = Object.keys(saved.threads).find((item) => JSON.parse(item).at(-1) === "other")!;
-        saved.threads[entryKey].width = 700;
-        originalSet.call(this, key, JSON.stringify(saved));
-      }
-      return originalGet.call(this, key);
-    });
-    openWorkspaceFile("mine", { path: "local.ts" });
-    read.mockRestore();
-    expect(getThreadWorkspaceState("mine").tabs).toMatchObject([{ path: "existing.ts" }, { path: "local.ts" }]);
-    expect(getThreadWorkspaceState("mine").notice).toBeUndefined();
-    expect(getThreadWorkspaceState("other").width).toBe(700);
+  it("keeps the panel open when both queued clicks observed it closed", () => {
+    const start = delayNextTransaction();
+    toggleWorkspaceFiles("queued-open");
+    toggleWorkspaceFiles("queued-open");
+    start();
+    expect(getThreadWorkspaceState("queued-open")).toMatchObject({ open: true, activeTabID: "file:1" });
+    expect(getThreadWorkspaceState("queued-open").tabs).toHaveLength(1);
+  });
+
+  it("keeps edits in memory when a transaction is unavailable", () => {
+    openWorkspaceFile("mine", { path: "saved.ts" });
+    const saved = localStorage.getItem(workspaceTabsStorageKey);
+    vi.mocked(updateBrowserStorageRecord).mockImplementationOnce((_name, _update, finish) => finish({ ok: false }));
+    openWorkspaceFile("mine", { path: "unsaved.ts" });
+    expect(getThreadWorkspaceState("mine").tabs).toMatchObject([{ path: "saved.ts" }, { path: "unsaved.ts" }]);
+    expect(getThreadWorkspaceState("mine").notice).toBeTruthy();
+    expect(localStorage.getItem(workspaceTabsStorageKey)).toBe(saved);
+  });
+
+  it("imports scoped v2 tabs once and ignores old windows after the first v3 write", () => {
+    const oldKey = "universal-code.workspace-tabs.v2";
+    openWorkspaceFile("mine", { path: "legacy.ts" });
+    const legacy = localStorage.getItem(workspaceTabsStorageKey)!;
+    localStorage.setItem(oldKey, legacy);
+    localStorage.removeItem(workspaceTabsStorageKey);
+    try {
+      refreshWorkspaceTabs();
+      expect(getThreadWorkspaceState("mine").tabs).toMatchObject([{ path: "legacy.ts" }]);
+      openWorkspaceFile("mine", { path: "new.ts" });
+      expect(localStorage.getItem(oldKey)).toBe(legacy);
+      localStorage.setItem(oldKey, "{older-window-replaced-v2");
+      resetWorkspaceTabsMemoryCache();
+      expect(getThreadWorkspaceState("mine").tabs).toMatchObject([{ path: "legacy.ts" }, { path: "new.ts" }]);
+    } finally {
+      localStorage.removeItem(oldKey);
+    }
   });
 
   it("uses the latest saved tabs even when another window's clock is behind", () => {
@@ -285,9 +326,11 @@ describe("workspace-tabs store", () => {
     saved.threads[key].tabs[0].path = "remote.ts";
     saved.threads[key].updatedAt = 1;
     localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
+    refreshWorkspaceTabs();
     expect(getThreadWorkspaceState("older-clock").tabs).toMatchObject([{ path: "remote.ts" }]);
     delete saved.threads[key];
     localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(saved));
+    refreshWorkspaceTabs();
     expect(getThreadWorkspaceState("older-clock").tabs).toEqual([]);
   });
 
@@ -351,7 +394,7 @@ describe("workspace-tabs store", () => {
     ]);
   });
 
-  it("isolates per-chat workspace state and restores from localStorage after memory cache reset", () => {
+  it("isolates per-chat workspace state and restores persisted tabs after memory cache reset", () => {
     openWorkspaceFile("chat-a", { path: "cmd/main.go", line: 12 }, "run-a");
     focusWorkspaceSingletonTab("chat-a", "terminal");
     setWorkspaceTerminalSession("chat-a", "uterm-a");
@@ -429,6 +472,7 @@ describe("workspace-tabs store", () => {
       const key = Object.keys(persisted.threads).find((value) => JSON.parse(value).at(-1) === threadID)!;
       persisted.threads[key].width = 700;
       localStorage.setItem(workspaceTabsStorageKey, JSON.stringify(persisted));
+      refreshWorkspaceTabs();
       expect(getThreadWorkspaceState(threadID).width).toBe(700);
     } finally {
       now.mockRestore();

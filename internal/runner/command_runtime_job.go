@@ -263,8 +263,8 @@ type CommandRuntimeJobMetadata struct {
 func (m CommandRuntimeJobMetadata) Validate() error {
 	if !domain.ValidAgentID(m.ID) || !domain.ValidAgentID(m.RunID) ||
 		!validCommandRuntimeDigest(m.OperationDigest) || !m.State.Valid() ||
-		strings.TrimSpace(m.WorkingDirectory) != m.WorkingDirectory ||
 		m.WorkingDirectory == "" || len([]byte(m.WorkingDirectory)) > MaxCommandRuntimePathBytes ||
+		!validCommandRuntimeText(m.WorkingDirectory, false) ||
 		m.UpdatedAt.IsZero() {
 		return ErrCommandRuntimeBoundary
 	}
@@ -294,7 +294,7 @@ func (j CommandRuntimeJob) Validate() error {
 		j.ProfileSnapshotID, j.PermissionSnapshotID, j.LeaseID, j.LeaseOwnerID,
 		j.OwnerID,
 		j.SpecFingerprint, j.ExecutablePath, j.ExecutableSHA256,
-		j.EnvironmentSHA256, j.WorkingDirectory} {
+		j.EnvironmentSHA256} {
 		if strings.TrimSpace(value) != value || value == "" ||
 			!validCommandRuntimeText(value, false) {
 			return ErrCommandRuntimeBoundary
@@ -320,7 +320,8 @@ func (j CommandRuntimeJob) Validate() error {
 	}
 	if len([]byte(j.IntentJSON)) == 0 || len([]byte(j.IntentJSON)) > MaxCommandRuntimeStoredIntent ||
 		len([]byte(j.ExecutablePath)) > MaxCommandRuntimePathBytes ||
-		len([]byte(j.WorkingDirectory)) > MaxCommandRuntimePathBytes ||
+		j.WorkingDirectory == "" || len([]byte(j.WorkingDirectory)) > MaxCommandRuntimePathBytes ||
+		!validCommandRuntimeText(j.WorkingDirectory, false) ||
 		!jsonValid(j.IntentJSON) || !j.Profile.Valid() || !j.StdinPolicy.Valid() ||
 		(j.Network != CommandRuntimeNetworkDisabled &&
 			j.Network != CommandRuntimeNetworkHost) || !j.State.Valid() ||

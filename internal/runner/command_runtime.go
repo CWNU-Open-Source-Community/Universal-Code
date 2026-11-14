@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 const (
@@ -160,7 +161,7 @@ func NormalizeCommandRuntimeIntent(spec CommandRuntimeSpec) (CommandRuntimeSpec,
 	spec.Version = strings.TrimSpace(spec.Version)
 	spec.Profile = CommandRuntimeProfile(strings.ToLower(strings.TrimSpace(string(spec.Profile))))
 	spec.Executable = strings.TrimSpace(spec.Executable)
-	spec.WorkingDirectory = filepath.ToSlash(strings.TrimSpace(spec.WorkingDirectory))
+	spec.WorkingDirectory = filepath.ToSlash(spec.WorkingDirectory)
 	purpose := strings.TrimSpace(spec.Purpose)
 	if redact.String(purpose) != purpose {
 		return CommandRuntimeSpec{}, fmt.Errorf(
@@ -421,11 +422,10 @@ func CommandRuntimeSpecFingerprint(spec CommandRuntimeResolvedSpec) string {
 func resolveCommandRuntimeDirectory(workspaceRoot string,
 	relative string,
 ) (string, string, string, error) {
-	root, err := filepath.Abs(strings.TrimSpace(workspaceRoot))
-	if err != nil || !filepath.IsAbs(root) {
+	if workspaceRoot == "" {
 		return "", "", "", ErrCommandRuntimeBoundary
 	}
-	root, err = filepath.EvalSymlinks(root)
+	root, err := rootfs.EvalExactSymlinks(workspaceRoot)
 	if err != nil {
 		return "", "", "", fmt.Errorf("%w: workspace root is unavailable", ErrCommandRuntimeBoundary)
 	}
@@ -439,13 +439,20 @@ func resolveCommandRuntimeDirectory(workspaceRoot string,
 	if cleanRelative == ".." || strings.HasPrefix(cleanRelative, ".."+string(filepath.Separator)) {
 		return "", "", "", fmt.Errorf("%w: working directory escapes the workspace", ErrCommandRuntimeBoundary)
 	}
-	directory, err := filepath.EvalSymlinks(filepath.Join(root, cleanRelative))
+	requested := filepath.Join(root, cleanRelative)
+	if err := rootfs.CheckExternalDirectory(requested); err != nil {
+		return "", "", "", fmt.Errorf("%w: %w", ErrCommandRuntimeBoundary, err)
+	}
+	directory, err := rootfs.EvalExactSymlinks(requested)
 	if err != nil {
 		return "", "", "", fmt.Errorf("%w: working directory is unavailable", ErrCommandRuntimeBoundary)
 	}
 	info, err := os.Lstat(directory)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return "", "", "", fmt.Errorf("%w: working directory must be an existing non-link directory", ErrCommandRuntimeBoundary)
+	}
+	if err := rootfs.CheckExternalDirectory(directory); err != nil {
+		return "", "", "", fmt.Errorf("%w: %v", ErrCommandRuntimeBoundary, err)
 	}
 	within, err := pathWithin(directory, root)
 	if err != nil || !within {

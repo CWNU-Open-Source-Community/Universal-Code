@@ -792,7 +792,7 @@ describe("desktop native bridge", () => {
   });
 
   it("selects a native folder without registering and creates only from the opaque handle", async()=>{
-    const selected={handle:"a".repeat(64),directory_path:"D:/projects/chosen",name:"chosen"};
+    const selected={handle:"a".repeat(64),directory_path:"D:/projects/chosen ",name:"chosen"};
     const created={id:"ws-chosen",name:"Custom / name",created_at:"2026-10-20T00:00:00Z"};
     const choose=vi.fn().mockResolvedValue({status:"selected",selection:selected});const create=vi.fn().mockResolvedValue(created);
     installBridge({Bootstrap:vi.fn().mockResolvedValue({...bootstrap,control_token:"control-token-0123456789abcdefghijkl",control_enabled:false,run_creation_enabled:true,workspace_import_enabled:true,read_only_default:false}),SelectWorkspaceDirectory:choose,CreateWorkspace:create});
@@ -879,7 +879,7 @@ describe("desktop native bridge", () => {
   });
 
   it("selects a chat directory natively without accepting a renderer path", async () => {
-    const settings = { version: "projectless_directory.v1", directory_path: "D:\\Chats", default_directory_path: "C:\\Users\\me\\Documents\\Universal-Code" };
+    const settings = { version: "projectless_directory.v1", directory_path: "D:\\Chats ", default_directory_path: "C:\\Users\\me\\Documents\\Universal-Code" };
     const choose = vi.fn().mockResolvedValue({ status: "selected", settings });
     installBridge({ Bootstrap: vi.fn().mockResolvedValue({ ...bootstrap,
       control_token: "control-token-0123456789abcdefghijkl", run_creation_enabled: true,

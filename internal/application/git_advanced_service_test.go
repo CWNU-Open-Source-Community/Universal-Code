@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -168,22 +169,29 @@ func executeGitAdvancedFixture(t *testing.T, fixture gitAdvancedApplicationFixtu
 
 func TestGitAdvancedServiceRequiresApprovalCheckpointAndExactHunk(t *testing.T) {
 	fixture := newGitAdvancedApplicationFixture(t)
-	path := filepath.Join(fixture.root, "base.txt")
-	value, err := os.ReadFile(path)
+	const relative = " base.txt"
+	path := filepath.Join(fixture.root, relative)
+	neighbor := filepath.Join(fixture.root, "base.txt")
+	value, err := os.ReadFile(neighbor)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(path, value, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runFixtureGit(t, "-C", fixture.root, "--literal-pathspecs", "add", "--", relative)
+	runFixtureGit(t, "-C", fixture.root, "commit", "--quiet", "-m", "exact path fixture")
 	changed := strings.Replace(string(value), "two\n", "TWO\n", 1)
 	changed = strings.Replace(changed, "nineteen\n", "NINETEEN\n", 1)
 	if err := os.WriteFile(path, []byte(changed), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	discoverySpec := gitadvanced.Spec{ProtocolVersion: gitadvanced.ProtocolVersion,
-		Operation: gitadvanced.HunkStage}
+		Operation: gitadvanced.HunkStage, Paths: []string{relative}}
 	discovery, err := fixture.service.DiscoverHunks(t.Context(), fixture.run.ID,
 		discoverySpec)
 	if err != nil || len(discovery.Preview.Hunks) != 2 || discovery.Operation != nil ||
-		discovery.Approval != nil {
+		discovery.Approval != nil || discovery.Preview.Hunks[0].Path != relative {
 		t.Fatalf("hunk discovery created mutation authority: %v %#v", err, discovery)
 	}
 	spec := discoverySpec
@@ -221,6 +229,10 @@ func TestGitAdvancedServiceRequiresApprovalCheckpointAndExactHunk(t *testing.T) 
 	staged := runFixtureGit(t, "-C", fixture.root, "diff", "--cached")
 	if !strings.Contains(staged, "TWO") || strings.Contains(staged, "NINETEEN") {
 		t.Fatalf("approved exact hunk was not preserved: %s", staged)
+	}
+	names, err := exec.Command("git", "-C", fixture.root, "diff", "--cached", "--name-only", "-z").Output()
+	if err != nil || string(names) != relative+"\x00" {
+		t.Fatalf("approval staged a different path: %q (%v)", names, err)
 	}
 	replayed, err := fixture.service.Execute(t.Context(), GitAdvancedExecuteRequest{
 		ProtocolVersion: GitAdvancedAPIProtocolVersion, RunID: fixture.run.ID,
