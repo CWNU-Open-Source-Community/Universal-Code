@@ -732,9 +732,18 @@ jobs:
       - name: Verify Windows command runtime transports
         run: go test -v -count=1 ./internal/runner -run '^TestCommandRuntime(Platform(ShellSmoke|CancelReapsOwnedProcessTree)|WindowsPowerShell(5PowerShell7AndGitBashSmoke|5BindsWorkspaceProfileBeforeLaunch|5ProfileWatchdogReapsProcess|7KeepsExistingProfileEnvironment))$'
       - name: Verify exact Git paths on Windows
-        run: >-
-          go test -v -count=1 -timeout 5m ./internal/repository ./internal/application
-          -run '^Test(AdvancedHunksPreserveExactSpacedPaths|AdvancedGitRefusesWindowsPathsThatGitCannotAddress|ThreadGitSelectedCommitPreservesUnrelatedStagingAndExactBytes|GitAdvancedServiceRequiresApprovalCheckpointAndExactHunk)$'
+        shell: pwsh
+        run: |
+          # Git requires a direct repository root. Hosted RUNNER_TEMP can
+          # traverse a reparse point, and the test names need a short base.
+          $systemTemp = Get-ChildItem -LiteralPath $env:SystemRoot -Directory -Filter 'Temp'
+          if (!$systemTemp -or ($systemTemp.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Git path tests require a direct Windows system temp directory"
+          }
+          $env:TMP = $systemTemp.FullName
+          $env:TEMP = $systemTemp.FullName
+          go test -v -count=1 -timeout 5m ./internal/repository ./internal/application `
+            -run '^Test(AdvancedHunksPreserveExactSpacedPaths|AdvancedGitRefusesWindowsPathsThatGitCannotAddress|ThreadGitSelectedCommitPreservesUnrelatedStagingAndExactBytes|GitAdvancedServiceRequiresApprovalCheckpointAndExactHunk)$'
       - name: Verify Windows analyzer conformance boundaries
         shell: pwsh
         run: |
