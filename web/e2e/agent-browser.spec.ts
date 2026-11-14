@@ -54,6 +54,9 @@ test("native Agent Browser uses the production API and visible workbench", async
     await page.getByRole("button", { name: "设置", exact: true }).click();
     await page.getByRole("button", { name: "当前任务权限", exact: true }).click();
     const internet = page.getByRole("switch", { name: "允许联网", exact: true });
+    const advancedSettings = page.locator(".v2-permission-advanced > summary");
+    await expect(internet).toHaveCount(0);
+    await advancedSettings.click();
     await expect(internet).not.toBeChecked();
     await internet.click();
     await expect(internet).toBeChecked();
@@ -62,6 +65,8 @@ test("native Agent Browser uses the production API and visible workbench", async
     await page.getByLabel(/查看令牌|Read access token/u).fill(metadata.read_token);
     await page.getByLabel(/操作令牌|Control access token/u).fill(metadata.control_token);
     await page.getByRole("button", { name: "连接", exact: true }).click();
+    await expect(internet).toHaveCount(0);
+    await advancedSettings.click();
     await expect(internet).toBeChecked();
     await page.getByRole("button", { name: "返回应用", exact: true }).click();
     await expect(card).toHaveCount(0);
@@ -116,7 +121,7 @@ test("native Agent Browser uses the production API and visible workbench", async
     backend: "production app.ExecuteContext", frontend: "production Vite build", provider: "controlled offline fixture",
     provider_reply_held_for_capture: !before,
     full_permission_confirmed_in_ui: before, browser_network_enabled_in_ui: !before,
-    browser_network_settings_surface: before ? null : "settings/permissions",
+    browser_network_settings_surface: before ? null : "settings/permissions/advanced",
     browser_view_opened_explicitly: !before,
     viewport: page.viewportSize(), observed, closed,
   }, null, 2));

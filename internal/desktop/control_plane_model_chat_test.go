@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/credential"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/httpapi"
@@ -118,6 +119,14 @@ func TestControlPlaneCompletesARealAnthropicCompatibleDesktopThreadTurn(t *testi
 	}
 	var created httpapi.ThreadCreationControlView
 	decodeDesktopControlData(t, createdResponse, &created)
+	// This text-only fixture has no command runtime; explicitly select Preview.
+	selected, err := application.NewRunExecutionProfileService(plane.stateStore).Change(t.Context(), application.ChangeRunExecutionProfileRequest{
+		RunID: created.Run.ID, Profile: string(domain.RunExecutionProfilePreview),
+		OperationKey: "desktop-real-model-preview", RequestedBy: "test_operator", Reason: "Verify a text-only model turn",
+	})
+	if err != nil || selected.Profile.Profile != domain.RunExecutionProfilePreview || selected.Profile.IsDefaultPreview() {
+		t.Fatalf("select explicit Preview: %+v err=%v", selected, err)
+	}
 
 	executedResponse := desktopControlRequest(plane.Handler(), http.MethodPost,
 		"/api/v1/threads/"+created.Thread.ID+"/turns", "desktop-real-model-message-0001",

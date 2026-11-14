@@ -760,14 +760,28 @@ func TestAgentBrowserScopedAskRunAdvertisesDeclaredOrigins(t *testing.T) {
 	}
 	options := supervisorToolOptions{BrowserActions: supervisorBrowserActionTools{Capabilities: toolgateway.BrowserActionCapabilities{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, Available: true, Generation: a.Generation}, Authority: auth}}
 	specs := supervisorStructuredToolSpecs(turn.Mode.Surface, turn.Mode.Phase, st.base.executionPermission.Mode, false, false, options)
-	seen := 0
+	browserTools := map[toolgateway.ToolName]llm.ToolSpec{}
 	for _, spec := range specs {
 		if strings.HasPrefix(spec.Name, "browser_") {
-			seen++
+			browserTools[toolgateway.ToolName(spec.Name)] = spec
 		}
 	}
-	if seen != 9 {
-		t.Fatalf("scoped ask run must advertise the nine browser tools: %d", seen)
+	wantBrowserTools := []toolgateway.ToolName{
+		toolgateway.BrowserStatusTool, toolgateway.BrowserNavigateTool,
+		toolgateway.BrowserSnapshotTool, toolgateway.BrowserScreenshotTool,
+		toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool,
+		toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool,
+		toolgateway.BrowserUploadTool, toolgateway.BrowserMoveTool,
+	}
+	if len(browserTools) != len(wantBrowserTools) {
+		t.Fatalf("scoped ask browser tools: got=%v want=%v", browserTools, wantBrowserTools)
+	}
+	for _, name := range wantBrowserTools {
+		spec, found := browserTools[name]
+		definition, defined := toolgateway.AgentBrowserToolDefinition(name)
+		if !found || !defined || !bytes.Equal(spec.Parameters, definition.InputSchema) {
+			t.Fatalf("scoped ask run omitted the Agent browser contract for %s: %+v", name, spec)
+		}
 	}
 	call := agentBrowserFixtureCall(t, service, st, toolgateway.BrowserNavigateTool, `{"version":"browser_navigate.v2","url":"https://example.org/form"}`)
 	if _, e = runAgentBrowserFixtureCall(t, supervisor, turn, call); e != nil {

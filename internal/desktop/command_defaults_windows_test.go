@@ -26,6 +26,7 @@ func TestWindowsDesktopDefaultCommandsUseChatApprovalPolicy(t *testing.T) {
 	for _, mode := range []string{"ask", "auto", "full", "full_repair", "full_command_failure", "full_nonzero_exit", "runtime_missing"} {
 		t.Run(mode, func(t *testing.T) {
 			const model = "desktop-default-command-model"
+			const missingCommand = "uc_missing_fixture_command_761982.exe"
 			ordinaryFailure := mode == "full_command_failure" || mode == "full_nonzero_exit"
 			var calls atomic.Int32
 			qualificationFixture := &anthropicHarnessFixture{}
@@ -68,9 +69,24 @@ func TestWindowsDesktopDefaultCommandsUseChatApprovalPolicy(t *testing.T) {
 						return
 					}
 					wantFailed := ordinaryFailure && callNumber == 2
+					var stderr strings.Builder
 					for _, page := range receipt.Pages {
 						if page.ExitCode == nil || (wantFailed && *page.ExitCode == 0) || (!wantFailed && *page.ExitCode != 0) {
 							t.Errorf("actual tool output page has incorrect exit: %+v", page)
+						}
+						for _, frame := range page.Frames {
+							if frame.Stream == runner.CommandRuntimeStderr {
+								stderr.WriteString(frame.Text)
+							}
+						}
+					}
+					if wantFailed {
+						wantError := missingCommand
+						if mode == "full_nonzero_exit" {
+							wantError = "fixture expected failure"
+						}
+						if !strings.Contains(stderr.String(), wantError) {
+							t.Errorf("actual model result lost the command error %q: %s", wantError, stderr.String())
 						}
 					}
 					for _, job := range receipt.Jobs {
@@ -125,7 +141,9 @@ func TestWindowsDesktopDefaultCommandsUseChatApprovalPolicy(t *testing.T) {
 					}
 					command := `node -e "process.stdout.write('desktop-default-command')"`
 					if mode == "full_command_failure" && callNumber == 1 {
-						command = "uc_missing_fixture_command_761982"
+						// A path fails directly; a bare name scans installed modules
+						// and can exceed the command budget on CI hosts.
+						command = `& '.\` + missingCommand + `'`
 					}
 					if mode == "full_nonzero_exit" && callNumber == 1 {
 						command = `node -e "process.stderr.write('fixture expected failure'); process.exit(7)"`

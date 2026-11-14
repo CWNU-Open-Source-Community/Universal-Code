@@ -43,9 +43,7 @@
     "capability_grant": false,
     "command_runtime": {
       "adapter_installed": true,
-      "adapter_kind": "sandboxed_workspace",
       "adapter_ready": true,
-      "backend": "local_windows_lpac",
       "current_run_granted": false,
       "protocol_available": true
     },
