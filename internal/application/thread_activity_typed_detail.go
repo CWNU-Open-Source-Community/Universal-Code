@@ -529,6 +529,10 @@ func projectThreadActivityFileRead(call domain.SupervisorToolCall,
 		_ = json.Unmarshal(canonical, &input)
 		detail.Path, detail.StartLine, detail.EndLine = safeThreadActivityPath(input.Path),
 			input.StartLine, input.EndLine
+	case "workspace_view_image":
+		var input struct{ Path string }
+		_ = json.Unmarshal(canonical, &input)
+		detail.Path = safeThreadActivityPath(input.Path)
 	case toolgateway.WorkspaceGlobTool:
 		var input toolgateway.WorkspaceGlobPayload
 		_ = json.Unmarshal(canonical, &input)
@@ -541,6 +545,9 @@ func projectThreadActivityFileRead(call domain.SupervisorToolCall,
 	}
 	detail.Summary = threadActivityResultSummary(detail.ResultCount, detail.Truncated,
 		"文件读取已完成")
+	if name == "workspace_view_image" {
+		detail.Summary = threadActivityResultSummary(detail.ResultCount, detail.Truncated, "图片查看已完成")
+	}
 	return detail, nil
 }
 

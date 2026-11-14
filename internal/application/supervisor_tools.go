@@ -165,7 +165,7 @@ func supervisorStructuredToolSpecs(surface domain.ExecutionSurface,
 		definitions = toolgateway.PlanPhaseSupervisorToolDefinitions()
 	}
 	if configured.BrowserActions.Capabilities.Available && configured.BrowserActions.Capabilities.ProtocolVersion == toolgateway.AgentBrowserAuthorityVersion {
-		for _, name := range []toolgateway.ToolName{toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool} {
+		for _, name := range []toolgateway.ToolName{toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool, toolgateway.BrowserMoveTool} {
 			d, _ := toolgateway.AgentBrowserToolDefinition(name)
 			definitions = append(definitions, d)
 		}
@@ -370,7 +370,13 @@ func prepareSupervisorToolCalls(calls []llm.ToolCall, runID string, turn int, ro
 			return nil, errors.New(
 				"provider requested command runtime outside its advertised Code/Deliver adapter authority")
 		}
-		payload, err := toolgateway.NormalizeSupervisorToolPayload(name, call.Arguments)
+		var payload json.RawMessage
+		var err error
+		if name == toolgateway.CommandRuntimeTool {
+			payload, err = toolgateway.NormalizeCommandRuntimePayloadForAdapter(call.Arguments, configured.CommandRuntime.Adapter)
+		} else {
+			payload, err = toolgateway.NormalizeSupervisorToolPayload(name, call.Arguments)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -1024,6 +1030,9 @@ func (s *AgentRunner) invokeSupervisorToolWithTimeout(ctx context.Context, turn 
 	}
 	if name == toolgateway.BrowserScreenshotTool {
 		operationKey = supervisorBrowserScreenshotOperationKey(call)
+	}
+	if name == toolgateway.WorkspaceViewImageTool {
+		operationKey = supervisorWorkspaceImageOperationKey(call)
 	}
 	toolCall := toolgateway.ToolCall{
 		Name: name, Payload: json.RawMessage(call.PayloadJSON), OperationKey: operationKey,

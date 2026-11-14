@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -166,9 +167,13 @@ func newCLIApprovalFixtureWithPermission(t *testing.T, home string,
 		_ = state.Close()
 		t.Fatal(err)
 	}
+	capabilities := cliExecutionPermissionCapabilities(true, true)
+	// Construct the approval in its original live process, then end that grant
+	// before the separate CLI invocation reviews the pending tool call.
+	defer capabilities.RuntimeAuthority.RevokeRun(run.ID)
 	if permission != domain.RunExecutionPermissionAsk {
 		if _, err := application.NewThreadExecutionPermissionService(state,
-			cliExecutionPermissionCapabilities(true, true)).Change(t.Context(),
+			capabilities).Change(t.Context(),
 			application.ChangeThreadExecutionPermissionRequest{
 				ThreadID: domain.InitialThreadID(run.ID), Mode: string(permission), OperationKey: "cli-approval-initial-permission",
 				RequestedBy: "test_operator", ConfirmFull: permission == domain.RunExecutionPermissionFull,
@@ -193,10 +198,11 @@ func newCLIApprovalFixtureWithPermission(t *testing.T, home string,
 	checker := policy.NewDefaultChecker()
 	backend := &cliApprovalFetchBackend{}
 	handoff := application.NewRunExecutionHandoffService(state, router, checker).
+		WithExecutionPermissionCapabilities(capabilities).
 		WithWebEvidence(webevidence.NewService(state, nil, backend)).
 		WithWebFetchAuthorizationScheduler(true)
-	turns := application.NewThreadTurnService(state,
-		application.NewRunLifecycleControlService(state), handoff)
+	turns := application.NewThreadTurnServiceWithExecutionCapabilities(state,
+		application.NewRunLifecycleControlService(state), handoff, capabilities)
 	first, err := turns.Execute(t.Context(), application.ExecuteThreadTurnRequest{
 		Version:  domain.ThreadMessageProtocolVersion,
 		ThreadID: domain.InitialThreadID(run.ID), Content: "Read the reviewed source",
@@ -338,12 +344,14 @@ func TestCLIApprovalContinuationRequiresInvocationFullConfirmation(t *testing.T)
 		flags      []string
 		wantError  string
 		full       bool
+		notReady   bool
 	}{
 		{name: "confirmed Full", permission: domain.RunExecutionPermissionFull, full: true,
 			flags: []string{"--enable-permission-control", "--enable-danger-full-access", "--confirm-full"}},
 		{name: "cold Full", permission: domain.RunExecutionPermissionFull,
-			flags: []string{"--enable-permission-control", "--enable-danger-full-access"}},
-		{name: "no gates", permission: domain.RunExecutionPermissionFull},
+			flags: []string{"--enable-permission-control", "--enable-danger-full-access"}, wantError: "Reconfirm Full", notReady: true},
+		{name: "no gates", permission: domain.RunExecutionPermissionFull,
+			wantError: "Full execution permission is unavailable", notReady: true},
 		{name: "missing gates", permission: domain.RunExecutionPermissionFull,
 			flags: []string{"--confirm-full"}, wantError: "requires --enable-permission-control"},
 		{name: "Ask cannot confirm Full", permission: domain.RunExecutionPermissionAsk,
@@ -355,6 +363,22 @@ func TestCLIApprovalContinuationRequiresInvocationFullConfirmation(t *testing.T)
 			fixture := newCLIApprovalFixtureWithPermission(t, home,
 				cliApprovalTextResponse(t, "exact denial observed"), test.permission)
 			defer fixture.state.Close()
+			permissionBefore, err := fixture.state.GetRunExecutionPermission(t.Context(), fixture.run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkpointBefore, found, err := fixture.state.GetSupervisorCheckpoint(t.Context(), fixture.run.ID)
+			if err != nil || !found {
+				t.Fatalf("original approval checkpoint missing: found=%t err=%v", found, err)
+			}
+			roundsBefore, err := fixture.state.ListSupervisorToolRounds(t.Context(), checkpointBefore)
+			if err != nil {
+				t.Fatal(err)
+			}
+			eventsBefore, err := fixture.state.ListRunEvents(t.Context(), fixture.run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if _, err := application.ChangeBrowserNetworkAccess(t.Context(), fixture.state, nil, domain.ChangeBrowserNetworkAccessRequest{
 				Version: domain.BrowserNetworkAccessVersion, RunID: fixture.run.ID, ExpectedRevision: 1,
 				BrowserNetworkAccess: domain.BrowserNetworkInternet, OperationKey: "cli-continuation-browser-network", RequestedBy: "test_operator",
@@ -362,6 +386,10 @@ func TestCLIApprovalContinuationRequiresInvocationFullConfirmation(t *testing.T)
 				t.Fatal(err)
 			}
 			stdout, stderr, code := executeCLIApproval(t, fixture.router, "deny", fixture.approvalID, test.flags...)
+			permissionAfter, err := fixture.state.GetRunExecutionPermission(t.Context(), fixture.run.ID)
+			if err != nil || !reflect.DeepEqual(permissionBefore, permissionAfter) {
+				t.Fatalf("continuation changed durable permission: before=%+v after=%+v err=%v", permissionBefore, permissionAfter, err)
+			}
 			decision, err := fixture.state.GetApproval(t.Context(), fixture.approvalID)
 			if err != nil || decision.Status != approval.StatusDenied || !strings.Contains(stdout, "decision_saved: true") {
 				t.Fatalf("exact decision was not saved: %+v err=%v code=%d stdout=%q stderr=%q", decision, err, code, stdout, stderr)
@@ -369,20 +397,51 @@ func TestCLIApprovalContinuationRequiresInvocationFullConfirmation(t *testing.T)
 			if fixture.backend.callCount() != 0 {
 				t.Fatal("denied fetch executed")
 			}
+			full := test.full
 			if test.wantError != "" {
-				if code == 0 || !strings.Contains(stderr, test.wantError) || fixture.provider.requestCount() != 1 {
+				wantCode := 5
+				if test.notReady {
+					wantCode = 4
+				}
+				if code != wantCode || !strings.Contains(stderr, test.wantError) || fixture.provider.requestCount() != 1 {
 					t.Fatalf("invalid continuation: code=%d stderr=%s models=%d", code, stderr, fixture.provider.requestCount())
 				}
-				return
+				if !test.notReady {
+					return
+				}
+				checkpointAfter, found, err := fixture.state.GetSupervisorCheckpoint(t.Context(), fixture.run.ID)
+				if err != nil || !found || !reflect.DeepEqual(checkpointBefore, checkpointAfter) {
+					t.Fatalf("cold Full changed the pending checkpoint: before=%+v after=%+v err=%v", checkpointBefore, checkpointAfter, err)
+				}
+				roundsAfter, err := fixture.state.ListSupervisorToolRounds(t.Context(), checkpointAfter)
+				if err != nil || !reflect.DeepEqual(roundsBefore, roundsAfter) {
+					t.Fatalf("cold Full consumed pending tools: before=%+v after=%+v err=%v", roundsBefore, roundsAfter, err)
+				}
+				eventsAfter, err := fixture.state.ListRunEvents(t.Context(), fixture.run.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, event := range eventsAfter[len(eventsBefore):] {
+					if event.Source == "run_execution_handoff" {
+						t.Fatalf("cold Full created a new execution handoff: %+v", event)
+					}
+				}
+				// Reuse the saved decision after activating Full in this invocation.
+				stdout, stderr, code = executeCLIApproval(t, fixture.router, "deny", fixture.approvalID,
+					"--enable-permission-control", "--enable-danger-full-access", "--confirm-full")
+				if !strings.Contains(stdout, "decision_replayed: true") {
+					t.Fatalf("confirmed retry did not reuse the decision: code=%d stdout=%s stderr=%s", code, stdout, stderr)
+				}
+				full = true
 			}
-			if code != 0 || stderr != "" || !strings.Contains(stdout, "continuation: completed") || fixture.provider.requestCount() != 2 {
+			if code != 0 || stderr != "" || !strings.Contains(stdout, "continuation: completed") || fixture.provider.requestCount() != 2 || fixture.backend.callCount() != 0 {
 				t.Fatalf("continuation: code=%d stdout=%s stderr=%s models=%d", code, stdout, stderr, fixture.provider.requestCount())
 			}
-			if got, want := fixture.provider.lastRequestHasTool("browser_status"), test.full && browserruntime.AgentBrowserPlatformAvailable(); got != want {
+			if got, want := fixture.provider.lastRequestHasTool("browser_status"), full && browserruntime.AgentBrowserPlatformAvailable(); got != want {
 				t.Fatalf("continuation browser advertised=%t want=%t", got, want)
 			}
 			permission, err := fixture.state.GetRunExecutionPermission(t.Context(), fixture.run.ID)
-			if err != nil || permission.Mode != test.permission ||
+			if err != nil || !reflect.DeepEqual(permission, permissionBefore) ||
 				cliExecutionPermissionCapabilities(true, true).AllowsSnapshot(permission) {
 				t.Fatalf("continuation persisted Full authority: %+v err=%v", permission, err)
 			}

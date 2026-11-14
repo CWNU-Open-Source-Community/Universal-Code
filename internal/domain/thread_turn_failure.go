@@ -1,10 +1,11 @@
 package domain
 
 const (
-	ThreadFailureToolRequestRejected   = "tool_request_rejected"
-	ThreadFailureEmptyModelResponse    = "empty_model_response"
-	ThreadFailureInvalidModelResponse  = "invalid_model_response"
-	ThreadFailureContextWindowExceeded = "context_window_exceeded"
+	ThreadFailureToolRequestRejected    = "tool_request_rejected"
+	ThreadFailureEmptyModelResponse     = "empty_model_response"
+	ThreadFailureInvalidModelResponse   = "invalid_model_response"
+	ThreadFailureContextWindowExceeded  = "context_window_exceeded"
+	ThreadFailureFullPermissionNotReady = "full_permission_not_ready"
 )
 
 // ThreadTurnFailure is the immutable product-turn outcome. Committing its

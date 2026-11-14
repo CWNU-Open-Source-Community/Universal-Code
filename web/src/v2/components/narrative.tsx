@@ -1,12 +1,13 @@
-import { Children, isValidElement, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Children, isValidElement, memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import { replaceEqualDeep } from "@tanstack/react-query";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Copy, LoaderCircle, Split, Pencil, Quote } from "lucide-react";
+import { Check, Copy, LoaderCircle, Split, Pencil, Quote, ChevronRight } from "lucide-react";
 import { remarkCjkAutolinks } from "../../components/remark-cjk-autolinks";
 import type { APIClient } from "../../api/client";
 import type { ThreadSavedMessageView } from "../../api/types";
 import type { NarrativeEntry } from "../projection/narrative";
+import { groupNarrativeTasks, isFinalTaskReply, taskDurationLabel, type NarrativeTaskGroup } from "../projection/narrative-task";
 import { useLocale } from "../../lib/locale";
 import { V2ImagePreview } from "./image-input";
 import { V2FileAttachments } from "./file-input";
@@ -97,7 +98,7 @@ function MessageTime({ createdAt }: { createdAt: string }) {
     aria-label={t("消息时间：", "Message time: ") + full}>{formats.short.format(date)}</time>;
 }
 
-function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, user = false, onCompose, loadText, model }: {
+function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, user = false, onCompose, loadText }: {
   text: string;
   createdAt: string;
   branchSourceID?: string;
@@ -105,7 +106,6 @@ function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, us
   user?: boolean;
   onCompose?: (text: string) => void;
   loadText?: () => Promise<string>;
-  model?: string;
 }) {
   const { t } = useLocale();
   const [copied, setCopied] = useState<"idle" | "success" | "error">("idle");
@@ -195,7 +195,6 @@ function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, us
       {branching ? <LoaderCircle size={16} className="spin" aria-hidden="true" /> : <Split size={16} aria-hidden="true" />}
       <span className="v2-assistant-action-tooltip" aria-hidden="true">{branchLabel}</span>
     </button>
-    {model && <span className="v2-assistant-model" title={t("生成此回复的模型", "Model that produced this reply")}>{model}</span>}
     <MessageTime createdAt={createdAt} />
   </div>{branchError && <p className="v2-assistant-action-error" role="alert">{branchError}</p>}</>;
 }
@@ -204,6 +203,8 @@ interface NarrativeRowProps {
   client: APIClient;
   entry: NarrativeEntry;
   threadID: string;
+  presentation?: "process" | "final";
+  hidden?: boolean;
   onBranch?: BranchReply;
   onCompose?: (text: string) => void;
   onOpenThread?: (id: string) => void;
@@ -246,7 +247,7 @@ function MessageMarkdown({ entry, onOpenFile }: {
   >{entry.text}</ReactMarkdown>;
 }
 
-const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpenFile, onBranch, onOpenThread, onCompose }: NarrativeRowProps) {
+const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpenFile, onBranch, onOpenThread, onCompose, presentation, hidden }: NarrativeRowProps) {
   const { t } = useLocale();
   if (entry.kind === "peer") return <li className="v2-peer-turn"><V2PeerMessageCard message={entry.message}
     threadID={threadID} onOpenThread={onOpenThread} /></li>;
@@ -272,29 +273,91 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
       }} />}</li>;
   if (entry.kind === "assistant") return <li aria-live={entry.provisional ? "polite" : undefined}
     data-message-ids={(entry.messageIDs ?? [entry.id]).join(" ")} tabIndex={-1}
-    className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}`}>
+    hidden={hidden} className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}${presentation === "process" || !entry.task ? " is-task-progress" : ""}`}>
     <MessageMarkdown entry={entry} onOpenFile={onOpenFile} />
-    {!entry.provisional && entry.changeSourceID && entry.runId && typeof client.threadChanges === "function" &&
-      <V2TurnChanges client={client} threadID={threadID} runID={entry.runId} sourceEventID={entry.changeSourceID} />}
-    {!entry.provisional && <AssistantMessageActions text={entry.text} createdAt={entry.createdAt} branchSourceID={entry.branchSourceID} onBranch={onBranch} onCompose={onCompose} model={entry.model} />}
   </li>;
-  if (entry.kind === "activity") return <li className="v2-activity-turn">
+  if (entry.kind === "activity") return <li hidden={hidden} className="v2-activity-turn">
     <V2ActivityGroup client={client} entry={entry} threadID={threadID} /></li>;
   return <li className={`v2-notice tone-${entry.tone}`}>{entry.text}</li>;
 }, (previous, next) => previous.client === next.client && previous.threadID === next.threadID &&
   previous.onOpenFile === next.onOpenFile &&
   previous.onBranch === next.onBranch &&
   previous.onCompose === next.onCompose &&
-  previous.onOpenThread === next.onOpenThread &&
+  previous.onOpenThread === next.onOpenThread && previous.presentation === next.presentation && previous.hidden === next.hidden &&
   // Live updates reuse durable entries by reference. A durable refresh can
   // rebuild a group: compare its complete public projection before skipping it.
   replaceEqualDeep(previous.entry, next.entry) === previous.entry);
 
-export const V2Narrative = memo(function V2Narrative({ client, entries, threadID, workspaceID = "", onOpenFile, onBranch, onOpenThread, onCompose }: {
+const NarrativeTaskRow = memo(function NarrativeTaskRow({ client, group, threadID, locatedMessageID, ...actions }: {
+  client: APIClient; group: NarrativeTaskGroup; threadID: string; locatedMessageID?: string;
+} & Omit<NarrativeRowProps, "client" | "entry" | "threadID" | "presentation" | "hidden">) {
+  const { t } = useLocale();
+  const contentID = useId();
+  const terminal = group.task.state !== "running";
+  const finalReply = group.task.state === "completed"
+    ? group.entries.find((entry) => isFinalTaskReply(entry, group.task)) : undefined;
+  const hasProcess = group.entries.some((entry) => (entry.kind === "assistant" && entry !== finalReply) || entry.kind === "activity");
+  const target = locatedMessageID ? group.entries.find((entry) => entry.kind === "user" ? entry.id === locatedMessageID
+    : entry.kind === "assistant" && (entry.messageIDs ?? [entry.id]).includes(locatedMessageID)) : undefined;
+  const targetInProcess = target?.kind === "assistant" && target !== finalReply;
+  const [expansion, setExpansion] = useState({ state: group.task.state, finishedAt: group.task.finishedAt,
+    location: undefined as string | undefined, found: false, open: undefined as boolean | undefined });
+  const cycleChanged = expansion.state !== group.task.state || expansion.finishedAt !== group.task.finishedAt;
+  const locationChanged = expansion.location !== locatedMessageID;
+  const found = Boolean(target);
+  let expanded = expansion.open;
+  if (cycleChanged || locationChanged || expansion.found !== found) {
+    // Reveal a newly located message once, including after its history loads.
+    // A later manual toggle wins; an old location cannot pin a future ending open.
+    expanded = targetInProcess && (locationChanged || found && !expansion.found)
+      ? true : cycleChanged ? undefined : expansion.open;
+    setExpansion({ state: group.task.state, finishedAt: group.task.finishedAt,
+      location: locatedMessageID, found, open: expanded });
+  }
+  const open = expanded ?? !(group.task.state === "completed" && finalReply);
+  const duration = terminal ? taskDurationLabel(group.task, t) : undefined;
+  const firstProcess = group.entries.findIndex((entry) => entry.kind !== "user");
+  const inputs = firstProcess < 0 ? group.entries : group.entries.slice(0, firstProcess);
+  const work = firstProcess < 0 ? [] : group.entries.slice(firstProcess).filter((entry) => entry !== finalReply);
+  const replies = group.entries.filter((entry): entry is Extract<NarrativeEntry, { kind: "assistant" }> => entry.kind === "assistant");
+  const lastSavedReply = replies.findLast((entry) => !entry.provisional);
+  const footerText = finalReply?.kind === "assistant" ? finalReply.text : replies.map((entry) => entry.text).join("\n\n");
+  const showActions = terminal && Boolean(finalReply || !group.task.finalMessageID);
+  return <li className="v2-task-turn" data-task-id={group.task.id} data-task-state={group.task.state}>
+    {inputs.length > 0 && <ol className="v2-task-inputs">{inputs.map((entry) =>
+      <NarrativeRow client={client} entry={entry} key={entry.id} threadID={threadID} {...actions} />)}</ol>}
+    {terminal && hasProcess && <div className="v2-task-process-heading">
+      <button aria-expanded={open} aria-controls={contentID} onClick={() => setExpansion((current) => ({ ...current, open: !open }))} type="button">
+        {duration ?? t("查看过程", "View work")}<ChevronRight aria-hidden="true" size={14} />
+      </button>
+    </div>}
+    <ol className="v2-task-entries" id={contentID}>{work.map((entry) => {
+      // Inputs, external messages and failure/recovery notices stay visible.
+      const process = entry.kind === "assistant" || entry.kind === "activity";
+      return <NarrativeRow client={client} entry={entry} key={entry.id} threadID={threadID} {...actions}
+        presentation={process ? "process" : undefined} hidden={process && terminal && !open} />;
+    })}</ol>
+    {finalReply && <ol className="v2-task-final"><NarrativeRow client={client} entry={finalReply}
+      threadID={threadID} presentation="final" {...actions} /></ol>}
+    {terminal && group.task.changeSourceEventID && typeof client.threadChanges === "function" &&
+      <V2TurnChanges client={client} threadID={threadID} runID={group.task.runId} sourceEventID={group.task.changeSourceEventID} />}
+    {terminal && (showActions && footerText ? <AssistantMessageActions text={footerText}
+      createdAt={group.task.finishedAt ?? lastSavedReply?.createdAt ?? ""}
+      branchSourceID={finalReply?.kind === "assistant" ? finalReply.branchSourceID : lastSavedReply?.branchSourceID}
+      onBranch={actions.onBranch} onCompose={actions.onCompose} />
+      : <div className="v2-assistant-actions"><MessageTime createdAt={group.task.finishedAt ?? ""} /></div>)}
+  </li>;
+}, (previous, next) => previous.client === next.client && previous.threadID === next.threadID &&
+  previous.locatedMessageID === next.locatedMessageID && previous.onOpenFile === next.onOpenFile &&
+  previous.onBranch === next.onBranch && previous.onCompose === next.onCompose && previous.onOpenThread === next.onOpenThread &&
+  replaceEqualDeep(previous.group, next.group) === previous.group);
+
+export const V2Narrative = memo(function V2Narrative({ client, entries, threadID, workspaceID = "", onOpenFile, onBranch, onOpenThread, onCompose, locatedMessageID }: {
   client: APIClient;
   entries: NarrativeEntry[];
   threadID: string;
   workspaceID?: string;
+  locatedMessageID?: string;
   onBranch?: BranchReply;
   onCompose?: (text: string) => void;
   onOpenThread?: (id: string) => void;
@@ -306,7 +369,10 @@ export const V2Narrative = memo(function V2Narrative({ client, entries, threadID
   }) => void;
 }) {
   const resources = useMemo(() => ({ workspaceID }), [workspaceID]);
-  return <ChatResourceContext.Provider value={resources}><ChatLinkErrors /><ol className="v2-narrative">{entries.map((entry) =>
-    <NarrativeRow client={client} entry={entry} key={entry.id} threadID={threadID} onOpenFile={onOpenFile} onBranch={onBranch}
-      onOpenThread={onOpenThread} onCompose={onCompose} />)}</ol></ChatResourceContext.Provider>;
+  const groups = useMemo(() => groupNarrativeTasks(entries), [entries]);
+  return <ChatResourceContext.Provider value={resources}><ChatLinkErrors /><ol className="v2-narrative">{groups.map((entry) =>
+    entry.kind === "task" ? <NarrativeTaskRow client={client} group={entry} key={`task:${entry.id}`} threadID={threadID}
+      locatedMessageID={locatedMessageID} onOpenFile={onOpenFile} onBranch={onBranch} onOpenThread={onOpenThread} onCompose={onCompose} />
+      : <NarrativeRow client={client} entry={entry} key={entry.id} threadID={threadID} onOpenFile={onOpenFile} onBranch={onBranch}
+        onOpenThread={onOpenThread} onCompose={onCompose} />)}</ol></ChatResourceContext.Provider>;
 });

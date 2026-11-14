@@ -127,9 +127,14 @@ export function V2BrowserCDPControl({ client, runID, permissionMode,
   });
   const eligible = allowsFullCDP(permissionMode);
   const browserPermission = query.data?.browser_cdp_permission;
+  // A Thread preference may already be confirmed for its next Run. Starting
+  // CDP still needs the exact current Run's own live Full activation.
+  const currentExecutionRuntimeAvailable = executionRuntimeAvailable &&
+    query.data?.execution_permission.full_activation === "active" &&
+    query.data.execution_permission.runtime_gate_available;
   const checked = eligible && browserPermission?.mode === "full_debug";
   const canDisable = checked && Boolean(runID) && client.hasBrowserCDPPermissionControl;
-  const canEnable = !checked && Boolean(runID) && eligible && executionRuntimeAvailable &&
+  const canEnable = !checked && Boolean(runID) && eligible && currentExecutionRuntimeAvailable &&
     client.hasBrowserCDPPermissionControl && client.hasFullCDPDebug;
   const disabled = mutation.isPending || query.isLoading || query.isError ||
     !(canDisable || canEnable);
@@ -146,7 +151,8 @@ export function V2BrowserCDPControl({ client, runID, permissionMode,
       return false;
     }
   }, [normalizedTarget]);
-  const canOpenSession = checked && session?.runtime_available !== false &&
+  const canOpenSession = checked && currentExecutionRuntimeAvailable && browserPermission?.runtime_gate_available &&
+    session?.runtime_available !== false &&
     !activeSession && targetValid && Boolean(query.data?.execution_permission.revision) &&
     Boolean(browserPermission?.revision) &&
     client.hasFullCDPSessionControl;
@@ -159,7 +165,7 @@ export function V2BrowserCDPControl({ client, runID, permissionMode,
     controlEnabled: client.hasBrowserCDPPermissionControl,
     fullCDPEnabled: client.hasFullCDPDebug,
     sessionControlEnabled: client.hasFullCDPSessionControl,
-    executionRuntimeAvailable,
+    executionRuntimeAvailable: currentExecutionRuntimeAvailable,
   }, t);
   const toggle = () => {
     mutation.reset();

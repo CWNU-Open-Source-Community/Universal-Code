@@ -14,11 +14,12 @@ import { ThreadActivityToolDetailPanel } from "./activity-detail";
 import { applicationPreviewRequestCopy, applicationServicesQueryKey, type ApplicationPreviewRequest } from "../application-preview-request";
 import "./application-preview.css";
 
-export function V2ApplicationPreview({ client, runID, threadID, onClose, returnFocusRef, onRequestStart, startRequest, canRequestStart = true, embedded = false }: {
+export function V2ApplicationPreview({ client, runID, threadID, onClose, returnFocusRef, onRequestStart, startRequest, canRequestStart = true, embedded = false, onOpenBrowser }: {
   client: APIClient; runID: string; threadID: string; onClose: () => void;
   returnFocusRef: RefObject<HTMLElement | null>; onRequestStart: () => void;
   startRequest?: ApplicationPreviewRequest | null; canRequestStart?: boolean;
   embedded?: boolean;
+  onOpenBrowser?: () => void;
 }) {
   const { t } = useLocale();
   const queries = useQueryClient();
@@ -107,7 +108,7 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
       </section>
       {browserViewRunID === runID ? <V2AgentBrowser client={client} runID={runID} running
         onClose={() => { setBrowserViewRunID(null); requestAnimationFrame(() => browserViewTrigger.current?.focus()); }} /> : <>
-      <button className="v2-preview-view-browser" ref={browserViewTrigger} type="button" onClick={() => setBrowserViewRunID(runID)}>{t("查看浏览器", "View browser")}</button>
+      <button className="v2-preview-view-browser" ref={browserViewTrigger} type="button" onClick={() => onOpenBrowser ? onOpenBrowser() : setBrowserViewRunID(runID)}>{t("查看浏览器", "View browser")}</button>
       {(!selectedJobID || selected) && <V2PreviewBrowser key={JSON.stringify([browserRunID, source?.job_id ?? "manual"])} client={client} runID={browserRunID} threadID={threadID}
         currentRunID={runID} sourceService={source} sourceReadable={serviceReadable}
         candidates={serviceReadable ? serviceDetail.data?.candidate_urls : undefined} />}

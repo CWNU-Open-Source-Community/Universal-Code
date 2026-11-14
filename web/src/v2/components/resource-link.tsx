@@ -4,8 +4,8 @@ import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Copy, Download, ExternalLink, File, GitPullRequest, GitBranch, Globe, PanelsTopLeft } from "lucide-react";
 import { desktopBridgeAvailable } from "../../lib/desktop-bridge";
-import { fileLabel, nativeResourcesAvailable, openWebURL, parseProjectFileLink, previewWebURL, readChatResource, resourceAction, saveWebURL, shortWebLabel, webURL, type ChatResourceRef } from "../../lib/chat-resources";
-import { fileMenuItems, ResourceMenu, type MenuPosition, type ResourceMenuItem } from "./resource-menu";
+import { fileLabel, nativeResourcesAvailable, openWebURL, parseProjectFileLink, previewWebURL, readChatResource, resourceAction, resourceErrorMessage, saveWebURL, shortWebLabel, webURL, type ChatResourceRef } from "../../lib/chat-resources";
+import { fileMenuItems, ResourceMenu, ResourceNotice, type MenuPosition, type ResourceMenuItem } from "./resource-menu";
 import { V2ImageViewer } from "./image-viewer";
 
 export const ChatResourceContext = createContext({ workspaceID: "" });
@@ -75,12 +75,16 @@ export function ResourceLink({ href = "", children, runID, onOpenFile }: { href?
     window.addEventListener("resize", close); document.addEventListener("scroll", scroll, true); document.addEventListener("keydown", escape);
     return () => { window.removeEventListener("resize", close); document.removeEventListener("scroll", scroll, true); document.removeEventListener("keydown", escape); };
   }, [hover]);
-  const result = (message: string, error = false) => setNotice({ message, error });
+  const result = (message: string, error = false) => {
+    clearTimeout(timer.current); setHover(false);
+    setNotice({ message: error ? resourceErrorMessage(message, t) : message, error });
+  };
   const reference: ChatResourceRef = { workspace_id: workspaceID, run_id: runID, path: file?.path };
   const enter = () => { clearTimeout(timer.current); timer.current = setTimeout(() => setHover(true), 250); };
   const leave = () => { clearTimeout(timer.current); timer.current = setTimeout(() => setHover(false), 160); };
   const open = async () => {
     setHover(false);
+    setNotice({ message: "", error: false });
     if (url) return openWebURL(url.href);
     if (!file) return;
     let path = file.path;
@@ -121,14 +125,15 @@ export function ResourceLink({ href = "", children, runID, onOpenFile }: { href?
     title={file ? `${file.path}${file.line ? ` (line ${file.line})` : ""}` : url!.href}
     onClick={(event) => { event.preventDefault(); void open().catch((error) => result(error instanceof Error ? error.message : t("无法打开资源", "Could not open resource"), true)); }}
     onMouseEnter={enter} onMouseLeave={leave} onFocus={enter} onBlur={leave}
-    onContextMenu={(event) => { event.preventDefault(); clearTimeout(timer.current); setHover(false); setMenu({ x: event.clientX, y: event.clientY, trigger: event.currentTarget }); }}
-    onKeyDown={(event) => { if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setHover(false); setMenu({ x: rect.left, y: rect.bottom, trigger: event.currentTarget }); } }}>
+    onContextMenu={(event) => { event.preventDefault(); clearTimeout(timer.current); setHover(false); setNotice({ message: "", error: false }); setMenu({ x: event.clientX, y: event.clientY, trigger: event.currentTarget }); }}
+    onKeyDown={(event) => { if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setHover(false); setNotice({ message: "", error: false }); setMenu({ x: rect.left, y: rect.bottom, trigger: event.currentTarget }); } }}>
     <Icon aria-hidden="true" />{rawLabel ? file ? fileLabel(file) : shortWebLabel(url!) : children}
   </a>
-    {hover && !menu && trigger.current && <FloatingPreview trigger={trigger.current} filePath={file ? `${file.path}${file.line ? ` (line ${file.line})` : ""}` : undefined} fileRef={file ? reference : undefined}
-      url={url ?? undefined} onEnter={() => clearTimeout(timer.current)} onLeave={leave} onOpen={() => { void open().catch((error) => result(String(error), true)); }} />}
+    {hover && !menu && !notice.message && trigger.current && <FloatingPreview trigger={trigger.current} filePath={file ? `${file.path}${file.line ? ` (line ${file.line})` : ""}` : undefined} fileRef={file ? reference : undefined}
+      url={url ?? undefined} onEnter={() => clearTimeout(timer.current)} onLeave={leave} onOpen={() => { void open().catch((error) => result(resourceErrorMessage(error, t), true)); }} />}
     {menu && <ResourceMenu position={menu} items={items} onClose={() => setMenu(null)} onResult={result} />}
-    {notice.message && <span className="v2-resource-status" role={notice.error ? "alert" : "status"}>{notice.message}</span>}
+    {notice.message && trigger.current && <ResourceNotice trigger={trigger.current} message={notice.message} error={notice.error}
+      onClose={() => setNotice({ message: "", error: false })} />}
     {image && <V2ImageViewer image={image} blob={image.blob} url={image.url} onClose={() => setImage(null)} returnFocusRef={trigger} />}
   </>;
 }

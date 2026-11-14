@@ -953,6 +953,9 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 	for {
 		// Each logical model request uses the current confirmed records. A
 		// transport retry remains bound to the same prepared request and audit.
+		if err := s.requireSupervisorPermissionCurrent(ctx, prepared.tools.permission); err != nil {
+			return result, s.recordFailure(ctx, &result, err, 0)
+		}
 		if err := refreshLongTermMemories(); err != nil {
 			return result, s.recordFailure(ctx, &result, err, 0)
 		}
@@ -967,6 +970,10 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			request.Tools = refreshBrowserModelTools(request.Tools, prepared.tools.options.BrowserActions.Capabilities)
 		}
 		modelRequest := request
+		exposure, exposureErr := s.supervisorToolExposureContext(ctx, turn, prepared.tools.permission, prepared.tools.options, request.Tools)
+		if exposureErr != nil {
+			return result, s.recordFailure(ctx, &result, exposureErr, 0)
+		}
 		pinConfirmationWaiting := contextPinConfirmationBoundary(prepared.toolRounds)
 		modelContextLayout := prepared.layout
 		if supervisorNativeToolRounds(prepared.toolRounds) == domain.MaxSupervisorToolRounds {
@@ -983,10 +990,15 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 		if pinConfirmationWaiting {
 			modelRequest = contextPinConfirmationRequest(modelRequest)
 		}
+		modelRequest = supervisorToolExposureRequest(modelRequest, exposure)
+		modelContextLayout = modelContextLayout.shifted(1)
 		modelRequest, err = prepareModelHarnessRequest(s.router, prepared.ref,
 			llm.HarnessWorkloadRoot, modelRequest)
 		if err == nil {
 			modelRequest, err = s.supervisorBrowserImages(ctx, turn.Checkpoint, prepared.ref, modelRequest, prepared.toolRounds)
+		}
+		if err == nil {
+			modelRequest, err = s.supervisorWorkspaceImages(ctx, turn, modelRequest, prepared.toolRounds, s.router.DescribeVision(prepared.ref).State == llm.VisionSupported)
 		}
 		if err == nil {
 			modelRequest, err = s.supervisorMCPContent(ctx, turn, modelRequest, prepared.toolRounds, s.router.DescribeVision(prepared.ref).State == llm.VisionSupported)

@@ -1247,6 +1247,17 @@ type ThreadTranscriptItemView struct {
 	Provisional           bool                             `json:"provisional"`
 	Durable               bool                             `json:"durable"`
 	CreatedAt             time.Time                        `json:"created_at"`
+	Task                  *ThreadTranscriptTaskView        `json:"task,omitempty"`
+}
+
+type ThreadTranscriptTaskView struct {
+	ID                  string     `json:"id"`
+	InputMessageID      string     `json:"input_message_id"`
+	State               string     `json:"state"`
+	StartedAt           *time.Time `json:"started_at,omitempty"`
+	FinishedAt          *time.Time `json:"finished_at,omitempty"`
+	FinalMessageID      string     `json:"final_message_id,omitempty"`
+	ChangeSourceEventID string     `json:"change_source_event_id,omitempty"`
 }
 
 type ThreadActivitySummaryView struct {
@@ -2005,6 +2016,11 @@ func threadTranscriptItemView(value threadtranscript.Item) ThreadTranscriptItemV
 		PromotedToMessageID: value.PromotedToMessageID, PromotedFromMessageID: value.PromotedFromMessageID,
 		Provisional: value.Provisional,
 		Durable:     value.Durable, CreatedAt: value.CreatedAt,
+	}
+	if value.Task != nil {
+		view.Task = &ThreadTranscriptTaskView{ID: value.Task.ID, InputMessageID: value.Task.InputMessageID,
+			State: value.Task.State, StartedAt: value.Task.StartedAt, FinishedAt: value.Task.FinishedAt,
+			FinalMessageID: value.Task.FinalMessageID, ChangeSourceEventID: value.Task.ChangeSourceEventID}
 	}
 	if application.SupportsThreadActivityDetail(value.ToolName) &&
 		value.DurableCallID != "" {

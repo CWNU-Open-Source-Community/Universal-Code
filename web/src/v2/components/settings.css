@@ -319,6 +319,8 @@
 .v2-provider-heading button:disabled { cursor: default; opacity: .52; }
 
 .v2-permission-settings-card { overflow: visible; }
+.v2-permission-advanced { border-top: 1px solid var(--v2-border); margin-top: 20px; }
+.v2-permission-advanced > summary { cursor: pointer; font-size: 13px; padding: 16px 0; }
 .v2-permission-settings-card > header { align-items: center; border-bottom: 1px solid var(--v2-border); display: flex; justify-content: space-between; padding: 14px 16px; }
 .v2-permission-settings-card > header h2 { font-size: 14px; margin: 0 0 3px; }
 .v2-permission-settings-card > header p { color: var(--v2-muted); margin: 0; }

@@ -1,4 +1,4 @@
-import { localUIMessage } from "../../lib/local-ui-message";
+import { fullPermissionNotReadyMessage, localUIMessage } from "../../lib/local-ui-message";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command, SquarePen } from "lucide-react";
@@ -37,7 +37,7 @@ export type V2ComposerSubmitResult = void | typeof v2ComposerNotSubmitted;
 export function V2Composer({ client, threadID, workspaceID, runID, workspaces, disabled = false, submitDisabled = false,
   projectID, allowProjectless = false,
   placeholder, newThreadControls, threadControls, runActive = false, onManageModels,
-  pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, onStop, draft, onDraftChange,
+  pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, onStop, draft, onDraftChange, onStartNextMessage,
   fileReferenceUnavailableReason, confirmedSubmission, presentedSubmissionErrors = [] }: {
   client: APIClient;
   threadID: string;
@@ -60,6 +60,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   onStop?: () => boolean;
   draft?: string;
   onDraftChange?: (content: string, expected?: string) => void;
+  onStartNextMessage?: () => void;
   fileReferenceUnavailableReason?: string;
   confirmedSubmission?: V2TurnInput | null;
   presentedSubmissionErrors?: ReadonlyArray<Pick<V2TurnInput, "threadID" | "workspaceID" | "operationKey">>;
@@ -309,7 +310,9 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         ? failure.submission.operationKey : undefined;
       if (currentScope.current === scope) setError({ reason,
         message: reason instanceof APIRequestError && reason.turnFailed === true
-          ? reason.code === "CANCELLED"
+          ? reason.code === "FAILED_PRECONDITION" && reason.message === fullPermissionNotReadyMessage
+            ? fullPermissionNotReadyMessage
+            : reason.code === "CANCELLED"
             ? t("本轮已停止，输入和已完成的工作已保留。可发送新消息继续。", "This turn stopped. Your input and completed work are kept. Send a new message to continue.")
             : t("本轮执行失败，输入和已完成的工作已保留。可发送新消息继续。", "This turn failed. Your input and completed work are kept. Send a new message to continue.")
           : reason instanceof Error ? reason.message : t("消息发送失败", "Message could not be sent"),
@@ -442,6 +445,13 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
           setError(null);
           requestAnimationFrame(() => inputRef.current?.focus());
         }} />}
+      {onStartNextMessage && <div className="v2-composer-draft-actions">
+        <button className="v2-composer-chip" disabled={disabled} onClick={() => {
+          onStartNextMessage();
+          setEditorExpanded(true);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }} type="button">{t("编写下一条", "Write next message")}</button>
+      </div>}
       <MarkdownInput label={threadID ? t("继续对话", "Continue conversation") : t("开始新对话", "Start a new conversation")} disabled={disabled}
         onChange={(next) => { promptHistory.cancel(); setContent(next); setError(null); }} onSubmit={() => void submit()}
         onHistoryNavigate={promptHistory.navigate} onHistoryCancel={promptHistory.cancel}
@@ -491,8 +501,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
               onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void addFiles(files); }} />}
           {!threadID && newThreadControls}
           {threadID && threadControls?.(hasUnsentDraft)}
-          {threadID && <V2PermissionControl client={client} threadID={threadID}
-            onOpenModelSettings={onManageModels ? () => onManageModels(false) : undefined} />}
+          {threadID && <V2PermissionControl client={client} threadID={threadID} />}
         </div>
         <div className="v2-composer-actions">
           {onManageModels && (threadID || onPendingModelRouteChange) &&

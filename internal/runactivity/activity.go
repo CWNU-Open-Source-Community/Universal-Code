@@ -217,6 +217,9 @@ func projectEvent(event events.Event) (Item, bool) {
 			base.Detail = "任务上下文超出当前模型的输入窗口，本轮已结束。历史和已完成的操作已保留；请缩短本次输入，或切换到上下文窗口更大的模型后继续。"
 		} else if stringField(event.PayloadJSON, "error_code") == "FAILED_PRECONDITION" {
 			switch stringField(event.PayloadJSON, "failure_stage") {
+			case domain.ThreadFailureFullPermissionNotReady:
+				base.Title = "Full 权限尚未就绪"
+				base.Detail = "Full 权限在当前应用中尚未就绪。请在聊天权限中重新确认 Full，或切换为 Ask / Auto 后重试。"
 			case "tool_request_rejected":
 				base.Title = "模型的工具请求无效"
 				base.Detail = "模型的工具请求未通过校验，该批请求尚未执行。此前已完成的操作已保留，可发送新消息继续。"

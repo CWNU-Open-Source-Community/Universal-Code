@@ -35,6 +35,8 @@ func failedProductTurnError(failure domain.ThreadTurnFailure) error {
 		message = "The task context exceeds this model's input window. History and completed work are preserved; shorten the current input, shorten or remove a fixed requirement, or select a model with a larger context window"
 	} else if code == apperror.CodeFailedPrecondition {
 		switch failure.FailureStage {
+		case domain.ThreadFailureFullPermissionNotReady:
+			message = "Full 权限在当前应用中尚未就绪。请在聊天权限中重新确认 Full，或切换为 Ask / Auto 后重试。"
 		case domain.ThreadFailureToolRequestRejected:
 			message = "The model's tool request was rejected before this batch executed. Earlier completed actions are preserved; send a new message to continue"
 		case domain.ThreadFailureEmptyModelResponse:

@@ -1,4 +1,5 @@
 import { desktopBridgeAvailable, desktopErrorMessage } from "./desktop-bridge";
+import type { LocaleText } from "./locale";
 
 export const chatResourceVersion = "desktop_chat_resource.v1";
 export interface ChatResourceRef {
@@ -69,6 +70,22 @@ export async function saveWebURL(url: string): Promise<void> {
 }
 
 export interface FileLinkTarget { path: string; line?: number }
+export const absoluteFilePath = (path: string) => /^(?:[\\/]|[a-z]:[\\/])/iu.test(path);
+
+export function resourceErrorMessage(value: unknown, t: LocaleText): string {
+  const message = typeof value === "string" ? value : desktopErrorMessage(value);
+  switch (message) {
+    case "File must be inside this workspace":
+      return t("此路径不在这条消息的工作区内，无法执行文件操作。请使用工作区内文件的链接。", "This path is outside this message's workspace. Use a link to a file in that workspace.");
+    case "File reference does not belong to this run":
+      return t("此文件链接不属于这条消息的任务，无法执行文件操作。", "This file link does not belong to this message's task.");
+    case "Invalid file reference":
+    case "Invalid file path":
+      return t("文件链接的路径无效，请检查链接是否指向工作区中的文件。", "This file link has an invalid path. Check that it points to a workspace file.");
+    default: return message;
+  }
+}
+
 export function parseProjectFileLink(href: string): FileLinkTarget | null {
   if (!href || href.startsWith("//") || /^[#?]/u.test(href) || /[\u0000-\u001f\u007f]/u.test(href)) return null;
   let raw: string;
@@ -88,7 +105,7 @@ export function parseProjectFileLink(href: string): FileLinkTarget | null {
 }
 
 export function fileLabel(file: FileLinkTarget): string {
-  return `${file.path.split("/").pop()}${file.line ? ` (line ${file.line})` : ""}`;
+  return `${absoluteFilePath(file.path) ? file.path : file.path.split("/").pop()}${file.line ? ` (line ${file.line})` : ""}`;
 }
 export function shortWebLabel(url: URL): string {
   const parts = url.pathname.split("/").filter(Boolean);

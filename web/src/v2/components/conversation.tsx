@@ -1,14 +1,14 @@
-import { localUIMessage } from "../../lib/local-ui-message";
+import { fullPermissionNotReadyMessage, localUIMessage } from "../../lib/local-ui-message";
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpen, ChevronDown, CircleEllipsis, Download, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, ShieldCheck, PanelTop, SquareTerminal, X } from "lucide-react";
+import { Archive, BookOpen, ChevronDown, CircleEllipsis, Download, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, Globe, ShieldCheck, PanelTop, SquareTerminal, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
 import { usePublicModelStream } from "../../hooks/use-public-model-stream";
 import { useRunEventStream } from "../../hooks/use-run-event-stream";
-import { prepareThreadNarrative, projectLiveThreadNarrative, type NarrativeEntry } from "../projection/narrative";
+import { mergePendingNarrative, prepareThreadNarrative, projectLiveThreadNarrative, type NarrativeEntry } from "../projection/narrative";
 import { useV2ThreadTranscript } from "../use-thread-transcript";
 import { useV2ReplyReading } from "../use-reply-reading";
 import type { V2ReplyReading } from "../use-thread-unread";
@@ -53,7 +53,7 @@ import { V2ThreadRunRecovery } from "./thread-run-recovery";
 import { useV2ThreadExecution, V2ThreadExecutionControl, V2PausedThreadControl } from "./thread-execution-control";
 import { useFileEditLeave } from "../../components/file-edit-drafts";
 import { UserTerminalPanel, type TerminalQuoteResult } from "../../components/user-terminal-panel";
-import { desktopUserTerminalEnabled } from "../../lib/desktop-bridge";
+import { desktopSharedBrowserEnabled, desktopUserTerminalEnabled } from "../../lib/desktop-bridge";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { eventShortcut, shortcutLabel, useChatPreferences } from "../chat-preferences";
 import {
@@ -309,6 +309,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const contextTrigger = useRef<HTMLButtonElement>(null);
   const contextReturnFocus = useRef<HTMLButtonElement | null>(null);
   const previewTrigger = useRef<HTMLButtonElement>(null);
+  const browserTrigger = useRef<HTMLButtonElement>(null);
   const recordsTrigger = useRef<HTMLButtonElement>(null);
   const recordsReturnFocus = useRef<HTMLButtonElement | null>(null);
   const composerContainerRef = useRef<HTMLDivElement>(null);
@@ -323,7 +324,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const terminalAvailable = desktopUserTerminalEnabled();
   const currentRunIDRef = useRef("");
 
-  const openSingletonSurface = useCallback((kind: "terminal" | "preview" | "review" | "records") => {
+  const openSingletonSurface = useCallback((kind: "terminal" | "preview" | "browser" | "review" | "records") => {
     setContextOpen(false);
     const perform = () => {
       focusWorkspaceSingletonTab(threadID, kind);
@@ -336,7 +337,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     perform();
   }, [activeWorkspaceTab?.kind, docked, leaveFileEdit, threadID, workspaceVisible]);
 
-  const toggleSingletonSurface = useCallback((kind: "terminal" | "preview" | "review" | "records") => {
+  const toggleSingletonSurface = useCallback((kind: "terminal" | "preview" | "browser" | "review" | "records") => {
     setContextOpen(false);
     if (docked) {
       if (workspaceVisible && activeWorkspaceTab?.kind === "file") {
@@ -481,6 +482,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           return fileReturnFocus.current?.isConnected ? fileReturnFocus.current : fileTrigger.current;
         case "terminal":
           return terminalReturnFocus.current?.isConnected ? terminalReturnFocus.current : terminalTrigger.current;
+        case "browser":
+          return browserTrigger.current;
         case "preview":
           return previewTrigger.current;
         case "review":
@@ -614,7 +617,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     const pending: NarrativeEntry[] = optimistic.filter(({ text, images, attachments }) => !existingUserText.has(JSON.stringify([text, imageIdentities(images), fileAttachmentIdentities(attachments)])))
       .map((entry) => ({ id: entry.id, kind: "user", text: entry.text,
         images: entry.images, attachments: entry.attachments, createdAt: entry.createdAt, provisional: true }));
-    return pending.length ? [...liveNarrative, ...pending] : liveNarrative;
+    return mergePendingNarrative(liveNarrative, pending);
   }, [messageID, durableNarrative, liveNarrative, existingUserText, optimistic]);
   const transcriptSources = useMemo(() => new Map(transcriptItems.map((item) => [item.id, item])), [transcriptItems]);
   const visibleNarrative = useMemo(() => {
@@ -624,6 +627,10 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     return narrative.filter((entry) => {
       if (recoveryRepresentsNotice(entry, detailQuery.data?.recovery)) return false;
       const source = entry.kind === "user" ? transcriptSources.get(entry.id) : undefined;
+      // The main input stays pending until the whole task commits, including
+      // internal tool continuations. Its exact task binding proves it has
+      // already started; only inputs still waiting belong solely to the queue.
+      if (source?.task && source.task.input_message_id === source.canonical_id) return true;
       return !(source?.source === "operator" && source.kind === "operator_input" && source.status === "pending" &&
         source.durable && !source.provisional && source.run_id === queueBinding?.runID &&
         source.source_ref && queuedIDs.has(source.source_ref));
@@ -1087,6 +1094,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           terminalReturnFocus.current = terminalTrigger.current;
           toggleSingletonSurface("terminal");
         }} ref={terminalTrigger} type="button"><SquareTerminal aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("终端", "Terminal")}</span></button>
+        {desktopSharedBrowserEnabled() && <button aria-label={t("浏览器", "Browser")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "browser"} onClick={() => toggleSingletonSurface("browser")}
+          ref={browserTrigger} title={t("浏览器", "Browser")} type="button"><Globe aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("浏览器", "Browser")}</span></button>}
         <button aria-label={t("应用预览", "App preview")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "preview"} onClick={() => toggleSingletonSurface("preview")}
           ref={previewTrigger} title={t("应用预览", "App preview")} type="button"><PanelTop aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("应用预览", "App preview")}</span></button>
       </div>
@@ -1167,12 +1176,13 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         {!transcriptQuery.isLoading && !transcriptQuery.isError && narrative.length === 0 && <div className="v2-transcript-empty">
           <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
             ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
-        <V2Narrative client={client} entries={visibleNarrative} threadID={threadID} workspaceID={detail.thread.workspace_id ?? ""} onOpenFile={openFile}
+        <V2Narrative client={client} entries={visibleNarrative} locatedMessageID={messageID} threadID={threadID} workspaceID={detail.thread.workspace_id ?? ""} onOpenFile={openFile}
           onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread}
           onCompose={client.hasThreadControl && onDraftChange && detail.thread.status !== "archived" ? composeMessage : undefined} />
         {submissionNotices.map(({ input, error }) =>
           <div className="v2-notice tone-warning" key={input.operationKey} role="alert">
             <p>{v2TurnWasNotQueued(error) ? t("这条消息未入队，草稿与引用已保留。请重新选择、移除引用或处理当前限制后重试。", "This message was not queued. Your draft and references are kept. Update the references or resolve the current restrictions, then retry.")
+              : v2TurnFailed(error) && error instanceof APIRequestError && error.code === "FAILED_PRECONDITION" && error.message === fullPermissionNotReadyMessage ? localUIMessage(fullPermissionNotReadyMessage, t)
               : v2TurnFailed(error) ? t("本轮执行未完成，失败记录与已完成的修改会保留。可以直接发送“继续”或补充要求。", "This turn did not finish. The failure history and completed changes are kept. Send “continue” or add instructions.")
               : observations[input.operationKey] ?? t("暂时无法确认这条消息的结果。草稿与引用已保留；发送新要求时会先核对原提交，也可以重试核对。", "The result of this message is not yet confirmed. Your draft and references are kept. Sending new instructions will first check the original submission; you can also retry the check.")}</p>
             <details><summary>{t("查看原因", "Show reason")}</summary>{error instanceof Error ? localUIMessage(error.message, t) : t("请求失败", "Request failed")}</details>
@@ -1231,8 +1241,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </p>}
       {reconciling ? <p className="v2-composer-caption" role="status">{t("正在核对上次提交，避免重复执行。可以继续编辑，核对完成后再发送。", "Checking the previous submission to avoid duplicate execution. You can keep editing and send when the check finishes.")}</p>
         : executionQuery.data?.state === "stopping" && <p className="v2-composer-caption" role="status">{t("正在停止执行。可以继续编辑，停止完成后再发送。", "Stopping execution. You can keep editing and send when stopping finishes.")}</p>}
-      {working && draft && onDraftChange && submittedContents.has(draft.trim()) &&
-        <button className="v2-composer-chip" onClick={() => onDraftChange("")} type="button">{t("编写下一条", "Write next message")}</button>}
       {detail.recovery && <V2ThreadRunRecovery recovery={detail.recovery}
         approvalSaved={narrative.some((entry) => recoveryRepresentsNotice(entry, detail.recovery))} />}
       {executionQuery.data?.state === "idle" && executionQuery.data.last_turn_interrupted &&
@@ -1252,6 +1260,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         submitDisabled={reconciling || executionQuery.data?.state === "stopping" ||
           executionQuery.data?.state === "stop_failed"}
         draft={draft} onDraftChange={onDraftChange}
+        onStartNextMessage={working && draft && onDraftChange && submittedContents.has(draft.trim())
+          ? () => onDraftChange("") : undefined}
         onStop={() => {
           const button = stopButtonRef.current;
           if (!button || button.disabled) return false;

@@ -128,8 +128,7 @@ func (a *API) serveThreadExecutionPermissionControl(writer http.ResponseWriter,
 			return
 		}
 		projected := threadExecutionPermissionView(
-			current.Permission, a.executionPermissionCapabilities,
-			currentRunPermissionPointer(current.CurrentRunPermission))
+			current.Permission, a.executionPermissionCapabilities)
 		projected.AppliesToCurrentRun = current.CurrentRunSynchronized
 		effect := string(domain.ThreadExecutionPermissionNoActiveRun)
 		if current.CurrentRunID != "" {
@@ -200,7 +199,7 @@ func (a *API) serveThreadExecutionPermissionControl(writer http.ResponseWriter,
 		currentRunPermission = &permission
 	}
 	projected := threadExecutionPermissionView(
-		result.Permission, a.executionPermissionCapabilities, currentRunPermission)
+		result.Permission, a.executionPermissionCapabilities)
 	projected.AppliesToCurrentRun = result.CurrentRunEffect.AppliesToCurrentRun()
 	currentRunMode := ""
 	if currentRunPermission != nil {
@@ -217,13 +216,15 @@ func (a *API) serveThreadExecutionPermissionControl(writer http.ResponseWriter,
 
 func threadExecutionPermissionView(value domain.ThreadExecutionPermissionSnapshot,
 	capabilities domain.ExecutionPermissionRuntimeCapabilities,
-	currentRun *domain.RunExecutionPermissionSnapshot,
 ) ThreadExecutionPermissionView {
 	matrix, _ := value.CapabilityMatrix()
 	runtimeGateAvailable := value.Mode.IsApprovalMode() && capabilities.Allows(value.Mode)
 	if value.Mode == domain.RunExecutionPermissionFull {
+		// This is the Thread preference's activation state. A deferred choice
+		// can be ready for a successor while the current Run keeps its grant.
+		// CurrentRunSynchronized compares policy; Run detail reports Run authority.
 		runtimeGateAvailable = runtimeGateAvailable && capabilities.RuntimeAuthority != nil &&
-			capabilities.RuntimeAuthority.AllowsThreadFullAccess(value, currentRun)
+			capabilities.RuntimeAuthority.AllowsThreadFullAccess(value, nil)
 	}
 	activation, unavailable := approvalFullActivation(value.Mode, runtimeGateAvailable, capabilities)
 	return ThreadExecutionPermissionView{
@@ -252,11 +253,4 @@ func threadExecutionPermissionView(value domain.ThreadExecutionPermissionSnapsho
 		ExecutionAuthorized: value.ExecutionAuthorized, CapabilityGrant: value.CapabilityGrant,
 		AppliesToCurrentRun: false, AppliesToFutureSuccessorRuns: true,
 	}
-}
-
-func currentRunPermissionPointer(value domain.RunExecutionPermissionSnapshot) *domain.RunExecutionPermissionSnapshot {
-	if value.ID == "" {
-		return nil
-	}
-	return &value
 }

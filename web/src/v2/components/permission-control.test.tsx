@@ -46,7 +46,24 @@ function control(executionPermission = permission()): ThreadExecutionPermissionC
 }
 
 describe("Composer permission integration", () => {
-  it("reads webpage and search status only when expanded inside permissions, without granting access", async () => {
+  it.each(["ask", "full"] as const)("shows the actual %s Run application result without a separate CDP switch", async (mode) => {
+    const future = { ...control(permission({ mode: "full", approval_mode: "full", full_activation: "active" })),
+      current_run_mode: mode, current_run_effect: mode === "ask" ? "deferred" : "applied", current_run_synchronized: mode === "full" };
+    const get = vi.fn().mockResolvedValue({ browser_cdp_permission: { mode: "restricted", runtime_gate_available: false },
+      execution_permission: { mode, revision: 1, full_activation: "inactive", runtime_gate_available: false } });
+    const client = { getThreadExecutionPermission: vi.fn().mockResolvedValue(future), get,
+      hasExecutionPermissionControl: true, hasBrowserCDPPermissionControl: true, hasFullCDPDebug: true } as unknown as APIClient;
+    const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queries}><V2PermissionControl client={client} threadID="thread-1" variant="settings" /></QueryClientProvider>);
+    expect(await screen.findByText("完全访问已激活")).toBeVisible();
+    if (mode === "ask") expect(screen.getByText("当前执行保持不变，选择用于下一次执行")).toBeVisible();
+    expect(screen.queryByRole("switch", { name: "完整 CDP 控制" })).not.toBeInTheDocument();
+    expect(get).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "完全访问权限" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("完全访问未激活")).not.toBeInTheDocument();
+  });
+
+  it("offers only three daily approval modes without loading or changing a separate web policy", async () => {
     const user = userEvent.setup();
     const get = vi.fn().mockResolvedValue({ run: { status: "paused" },
       mode: { scope: { network_mode: "disabled", allowed_targets: [] } }, execution_permission: { mode: "conservative" } });
@@ -60,15 +77,14 @@ describe("Composer permission integration", () => {
     render(<QueryClientProvider client={queries}><V2PermissionControl client={client} threadID="thread-1" /></QueryClientProvider>);
     await user.click(await screen.findByRole("button", { name: "请求批准" }));
     expect(get).not.toHaveBeenCalled(); expect(providerSearchReadiness).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "网页访问与搜索" }));
-    expect(await screen.findByText("网页搜索 · 搜索待验证")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "当前任务网页搜索模式" })).toBeInTheDocument();
-    expect(get).toHaveBeenCalledExactlyOnceWith("/runs/run-1", {}, expect.any(AbortSignal));
-    expect(providerSearchReadiness).toHaveBeenCalledExactlyOnceWith("thread-1", expect.any(AbortSignal));
+    expect(within(screen.getByRole("group", { name: "执行权限档位" })).getAllByRole("menuitemradio")
+      .map((element) => element.getAttribute("aria-label"))).toEqual(["请求批准", "帮我批准", "完全访问权限"]);
+    expect(screen.queryByRole("button", { name: "网页访问与搜索" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(changeThreadExecutionPermission).not.toHaveBeenCalled();
     expect(setRunWebAccess).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "网页访问与搜索" }));
-    await waitFor(() => expect(screen.queryByRole("combobox", { name: "当前任务网页搜索模式" })).not.toBeInTheDocument());
+    expect(get).not.toHaveBeenCalled(); expect(providerSearchReadiness).not.toHaveBeenCalled();
   });
 
   it.each(["click", "Enter"] as const)("keeps a real Composer draft and its attachments through cancellation and %s permission confirmation", async (activation) => {

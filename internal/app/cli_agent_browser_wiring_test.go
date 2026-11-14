@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/browserruntime"
@@ -120,7 +121,8 @@ func TestCLIExecutionEntrypointsWireOrdinaryAgentBrowser(t *testing.T) {
 		network       domain.BrowserNetworkAccess
 		flags         []string
 		browserWanted bool
-		denied        bool
+		wantCode      int
+		wantError     string
 	}{
 		{name: "step confirmed Full", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet,
 			flags: []string{"--enable-permission-control", "--enable-danger-full-access", "--confirm-full"}, browserWanted: true},
@@ -128,26 +130,36 @@ func TestCLIExecutionEntrypointsWireOrdinaryAgentBrowser(t *testing.T) {
 			flags: []string{"--max-steps", "1", "--enable-permission-control", "--enable-danger-full-access", "--confirm-full"}, browserWanted: true},
 		{name: "step confirmed Full network off", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkOff,
 			flags: []string{"--enable-permission-control", "--enable-danger-full-access", "--confirm-full"}},
-		{name: "step without process gates", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet},
+		{name: "step without process gates", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet,
+			wantCode: 4, wantError: "Full execution permission is unavailable"},
 		{name: "step cold Full", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet,
-			flags: []string{"--enable-permission-control", "--enable-danger-full-access"}},
+			flags: []string{"--enable-permission-control", "--enable-danger-full-access"}, wantCode: 4, wantError: "Reconfirm Full"},
 		{name: "execute cold Full", command: "execute", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet,
-			flags: []string{"--enable-permission-control", "--enable-danger-full-access"}},
+			flags: []string{"--enable-permission-control", "--enable-danger-full-access"}, wantCode: 4, wantError: "Reconfirm Full"},
 		{name: "step Ask without Full gates", command: "step", permission: domain.RunExecutionPermissionAsk, network: domain.BrowserNetworkInternet, browserWanted: true},
 		{name: "step Auto without Full gates", command: "step", permission: domain.RunExecutionPermissionAuto, network: domain.BrowserNetworkInternet, browserWanted: true},
 		{name: "execute Ask without Full gates", command: "execute", permission: domain.RunExecutionPermissionAsk, network: domain.BrowserNetworkInternet,
 			flags: []string{"--max-steps", "1"}, browserWanted: true},
 		{name: "step Ask network off", command: "step", permission: domain.RunExecutionPermissionAsk, network: domain.BrowserNetworkOff},
 		{name: "confirm without process gates", command: "step", permission: domain.RunExecutionPermissionFull, network: domain.BrowserNetworkInternet,
-			flags: []string{"--confirm-full"}, denied: true},
+			flags: []string{"--confirm-full"}, wantCode: 5, wantError: "requires --enable-permission-control"},
 		{name: "confirm without Full preference", command: "execute", permission: domain.RunExecutionPermissionAsk, network: domain.BrowserNetworkInternet,
-			flags: []string{"--enable-permission-control", "--enable-danger-full-access", "--confirm-full"}, denied: true},
+			flags: []string{"--enable-permission-control", "--enable-danger-full-access", "--confirm-full"}, wantCode: 5, wantError: "current Full preference"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			home := newCanonicalCLIHome(t)
 			t.Setenv("CYBERAGENT_HOME", home)
 			runID := createCLIAgentBrowserRun(t, home, test.permission, test.network)
+			state, err := store.Open(filepath.Join(home, "cyberagent.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer state.Close()
+			permission, err := state.GetRunExecutionPermission(t.Context(), runID)
+			if err != nil {
+				t.Fatal(err)
+			}
 			wantBrowser := test.browserWanted && browserruntime.AgentBrowserPlatformAvailable()
 			provider := &cliAgentBrowserProvider{expectBrowser: wantBrowser}
 			router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
@@ -157,9 +169,13 @@ func TestCLIExecutionEntrypointsWireOrdinaryAgentBrowser(t *testing.T) {
 			code := executeContextWithConfig(t.Context(), args, &stdout, &stderr, func(app *App) {
 				app.router = router
 			})
-			if test.denied {
+			persisted, err := state.GetRunExecutionPermission(t.Context(), runID)
+			if err != nil || !reflect.DeepEqual(persisted, permission) {
+				t.Fatalf("CLI invocation changed durable permission: %+v err=%v", persisted, err)
+			}
+			if test.wantCode != 0 {
 				requests, _ := provider.snapshot()
-				if code != 5 || len(requests) != 0 {
+				if code != test.wantCode || !strings.Contains(stderr.String(), test.wantError) || len(requests) != 0 {
 					t.Fatalf("unconfirmed CLI dispatch: code=%d requests=%d stderr=%s", code, len(requests), stderr.String())
 				}
 				assertCLIAgentBrowserDurableResult(t, home, runID, false)
@@ -189,6 +205,11 @@ func TestCLIWakeConsumeWiresOrdinaryAgentBrowser(t *testing.T) {
 			t.Setenv("CYBERAGENT_HOME", home)
 			runID := createCLIAgentBrowserRun(t, home, domain.RunExecutionPermissionFull, domain.BrowserNetworkInternet)
 			state, err := store.Open(filepath.Join(home, "cyberagent.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer state.Close()
+			permission, err := state.GetRunExecutionPermission(t.Context(), runID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -223,11 +244,26 @@ func TestCLIWakeConsumeWiresOrdinaryAgentBrowser(t *testing.T) {
 				args = append(args, "--confirm-full")
 			}
 			err = app.runWake(t.Context(), args)
-			if err != nil || stderr.Len() != 0 ||
+			if !confirmFull {
+				requests, _ := provider.snapshot()
+				if apperror.CodeOf(err) != apperror.CodeFailedPrecondition || stderr.Len() != 0 || len(requests) != 0 ||
+					!strings.Contains(stdout.String(), "consumption_status: failed") ||
+					!strings.Contains(stdout.String(), "stop_reason: "+domain.ThreadFailureFullPermissionNotReady) ||
+					!strings.Contains(stdout.String(), "model_called: false") ||
+					!strings.Contains(stdout.String(), "tool_called: false") {
+					_ = state.Close()
+					t.Fatalf("cold Full wake was not rejected before execution: stdout=%s stderr=%s err=%v requests=%d",
+						stdout.String(), stderr.String(), err, len(requests))
+				}
+			} else if err != nil || stderr.Len() != 0 ||
 				!strings.Contains(stdout.String(), "consumption_status: completed") {
 				_ = state.Close()
 				t.Fatalf("CLI wake consume failed: stdout=%s stderr=%s err=%v",
 					stdout.String(), stderr.String(), err)
+			}
+			persisted, err := state.GetRunExecutionPermission(t.Context(), runID)
+			if err != nil || !reflect.DeepEqual(persisted, permission) {
+				t.Fatalf("wake invocation changed durable permission: %+v err=%v", persisted, err)
 			}
 			if err := state.Close(); err != nil {
 				t.Fatal(err)
@@ -236,7 +272,9 @@ func TestCLIWakeConsumeWiresOrdinaryAgentBrowser(t *testing.T) {
 			if providerErr != nil {
 				t.Fatal(providerErr)
 			}
-			assertCLIAgentBrowserRequests(t, requests, confirmFull)
+			if confirmFull {
+				assertCLIAgentBrowserRequests(t, requests, true)
+			}
 			assertCLIAgentBrowserDurableResult(t, home, runID, confirmFull)
 		})
 	}
@@ -252,12 +290,13 @@ func TestCLIApprovalExecutionHandoffWiresOrdinaryAgentBrowser(t *testing.T) {
 		permissionGate, fullGate   bool
 		confirmFull, browserWanted bool
 		wantError                  string
+		wantNotReady               bool
 	}{
 		{name: "confirmed Full", permission: domain.RunExecutionPermissionFull,
 			permissionGate: true, fullGate: true, confirmFull: true, browserWanted: true},
 		{name: "cold Full", permission: domain.RunExecutionPermissionFull,
-			permissionGate: true, fullGate: true},
-		{name: "no gates", permission: domain.RunExecutionPermissionFull},
+			permissionGate: true, fullGate: true, wantNotReady: true},
+		{name: "no gates", permission: domain.RunExecutionPermissionFull, wantNotReady: true},
 		{name: "missing Full gate", permission: domain.RunExecutionPermissionFull,
 			permissionGate: true, confirmFull: true, wantError: "requires --enable-permission-control"},
 		{name: "missing permission gate", permission: domain.RunExecutionPermissionFull,
@@ -322,15 +361,25 @@ func TestCLIApprovalExecutionHandoffWiresOrdinaryAgentBrowser(t *testing.T) {
 				Version: domain.RunExecutionHandoffProtocolVersion, RunID: runID, MaxSteps: 1,
 				OperationKey: "cli-agent-browser-approval-handoff", RequestedBy: "cli_approval",
 			})
-			if err != nil || result.Handoff.Result == nil ||
-				result.Handoff.Result.Status != domain.RunExecutionHandoffCompleted {
+			wantStatus := domain.RunExecutionHandoffCompleted
+			if test.wantNotReady {
+				wantStatus = domain.RunExecutionHandoffFailed
+			}
+			if err != nil || result.Handoff.Result == nil || result.Handoff.Result.Status != wantStatus {
 				t.Fatalf("approval execution handoff=%#v err=%v", result, err)
 			}
 			requests, providerErr := provider.snapshot()
 			if providerErr != nil {
 				t.Fatal(providerErr)
 			}
-			assertCLIAgentBrowserRequests(t, requests, test.browserWanted)
+			if test.wantNotReady {
+				if result.Handoff.Result.StopReason != domain.ThreadFailureFullPermissionNotReady ||
+					result.Handoff.Result.ModelCalled || result.Handoff.Result.ToolCalled || len(requests) != 0 {
+					t.Fatalf("cold Full handoff executed work: result=%+v requests=%d", result.Handoff.Result, len(requests))
+				}
+			} else {
+				assertCLIAgentBrowserRequests(t, requests, test.browserWanted)
+			}
 			assertCLIAgentBrowserDurableResult(t, home, runID, test.browserWanted)
 			cancelRuntime()
 			if err := closeRuntime(); err != nil {

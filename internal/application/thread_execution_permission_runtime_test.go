@@ -4,11 +4,213 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/events"
+	"cyberagent-workbench/internal/llm"
+	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/store"
 )
+
+func TestThreadFullReactivationAppliesAtRunningIdleBoundary(t *testing.T) {
+	st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	capabilities := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, DangerFullAccessEnabled: true, RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
+	service := application.NewThreadExecutionPermissionService(st, capabilities)
+	first, err := service.Change(t.Context(), application.ChangeThreadExecutionPermissionRequest{ThreadID: input.ThreadID, Mode: "full", ConfirmFull: true, OperationKey: "full-before-interactive-reply", RequestedBy: "test_operator", Reason: "explicit initial Full confirmation"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &scriptedToolProvider{responses: []*llm.ChatResponse{textResponse(rootActionResponse(domain.RootActionFinish, "Reply finished", "done", ""))}}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	execution := application.NewRunExecutionHandoffWithRuntime(st, router, policy.NewDefaultChecker(), application.RunRuntimeDependencies{ExecutionCapabilities: capabilities}).WithGeneratedContextCompaction(false)
+	turns := application.NewThreadTurnServiceWithExecutionCapabilities(st, application.NewRunLifecycleControlService(st), execution, capabilities)
+	if _, err := turns.Execute(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	currentRun, err := st.GetRun(t.Context(), run.ID)
+	if err != nil || currentRun.Status != domain.RunRunning {
+		t.Fatalf("fixture is not an idle live chat: %+v %v", currentRun, err)
+	}
+	checkpoint, found, err := st.GetSupervisorCheckpoint(t.Context(), run.ID)
+	if err != nil || !found || checkpoint.Phase != domain.SupervisorIdle {
+		t.Fatalf("fixture checkpoint not idle: %+v %v", checkpoint, err)
+	}
+	lease, found, err := st.GetRunExecutionLease(t.Context(), run.ID)
+	if err != nil || found && lease.ActiveAt(time.Now().UTC()) {
+		t.Fatalf("fixture lease still active: %+v %v", lease, err)
+	}
+	before, err := st.GetRunExecutionPermission(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cold := capabilities
+	cold.RuntimeAuthority = domain.NewExecutionPermissionRuntimeAuthority()
+	coldService := application.NewThreadExecutionPermissionService(st, cold)
+	if cold.RuntimeAuthority.AllowsThreadFullAccess(first.Permission, &before) {
+		t.Fatal("a cold process restored Full without confirmation")
+	}
+	request := application.ChangeThreadExecutionPermissionRequest{ThreadID: input.ThreadID, Mode: "full", ConfirmFull: true, OperationKey: "full-reactivation-after-reply", RequestedBy: "test_operator", Reason: "explicitly reactivate Full in this chat"}
+	result, err := coldService.Change(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := st.GetRunExecutionPermission(t.Context(), run.ID)
+	if err != nil || result.CurrentRunEffect != domain.ThreadExecutionPermissionApplied || after.ID == before.ID || after.Revision != before.Revision+1 || !cold.RuntimeAuthority.AllowsThreadFullAccess(result.Permission, &after) || !cold.AllowsSnapshot(after) {
+		t.Fatalf("idle Full reconfirmation did not activate current snapshots: result=%+v before=%+v after=%+v err=%v", result, before, after, err)
+	}
+	generation, active := cold.FullAccessGeneration(after)
+	if !active || cold.AllowsSnapshot(before) {
+		t.Fatal("reactivation reused the old Run snapshot")
+	}
+	replayed, err := coldService.Change(t.Context(), request)
+	if now, ok := cold.FullAccessGeneration(after); err != nil || !replayed.Replayed || !ok || now != generation {
+		t.Fatalf("exact retry rotated Full authority: result=%+v generation=%d current=%d err=%v", replayed, generation, now, err)
+	}
+	currentRun, err = st.GetRun(t.Context(), run.ID)
+	if err != nil || currentRun.Status != domain.RunRunning || len(provider.Requests()) != 1 {
+		t.Fatalf("permission confirmation changed lifecycle or called a model: run=%+v requests=%d err=%v", currentRun, len(provider.Requests()), err)
+	}
+}
+
+func TestThreadFullReactivationRejectsBusyRunWithoutPartialCommit(t *testing.T) {
+	for _, busy := range []string{"lease", "prepared_input", "terminal"} {
+		t.Run(busy, func(t *testing.T) {
+			st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+			capabilities := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, DangerFullAccessEnabled: true, RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
+			service := application.NewThreadExecutionPermissionService(st, capabilities)
+			first, err := service.Change(t.Context(), application.ChangeThreadExecutionPermissionRequest{ThreadID: input.ThreadID, Mode: "full", ConfirmFull: true, OperationKey: "full-before-busy-reconfirmation", RequestedBy: "test_operator", Reason: "initial Full confirmation"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, err := st.GetRunExecutionPermission(t.Context(), run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			generation, _ := capabilities.FullAccessGeneration(before)
+			if _, err = application.NewRunService(st).Start(t.Context(), run.ID); err != nil {
+				t.Fatal(err)
+			}
+			switch busy {
+			case "lease", "prepared_input":
+				lease, err := st.AcquireRunExecutionLease(t.Context(), domain.AcquireRunExecutionLeaseRequest{RunID: run.ID, OwnerID: "concurrent-execution", TTL: time.Minute})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if busy == "prepared_input" {
+					queued, err := st.EnqueueOperatorSteering(t.Context(), domain.EnqueueOperatorSteeringRequest{RunID: run.ID, SessionID: run.SessionID, Content: "pending execution", OperationKey: "busy-full-prepared-input", RequestedBy: "test_operator"})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err = st.BeginSupervisorSteeringTurnForMessage(t.Context(), lease.Lease, queued.Message.ID); err != nil {
+						t.Fatal(err)
+					}
+					if _, _, err = st.ReleaseRunExecutionLease(t.Context(), lease.Lease); err != nil {
+						t.Fatal(err)
+					}
+				}
+			case "terminal":
+				now := time.Now().UTC()
+				if err := st.CreateTerminalSession(t.Context(), store.TerminalSessionRecord{ID: "busy-full-terminal", ProtocolVersion: "user_terminal_session.v1", RunID: run.ID, WorkspaceID: "ws-tool-boundary", State: "running", Cwd: ".", Columns: 80, Rows: 24, CreatedAt: now, LastActivityAt: now}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = service.Change(t.Context(), application.ChangeThreadExecutionPermissionRequest{ThreadID: input.ThreadID, Mode: "full", ConfirmFull: true, OperationKey: "blocked-full-reconfirmation", RequestedBy: "test_operator", Reason: "do not rotate a busy Full Run"})
+			if apperror.CodeOf(err) != apperror.CodeFailedPrecondition {
+				t.Fatalf("busy %s did not reject reconfirmation: %v", busy, err)
+			}
+			after, getErr := st.GetRunExecutionPermission(t.Context(), run.ID)
+			thread, getThreadErr := st.GetThreadExecutionPermission(t.Context(), input.ThreadID)
+			if getErr != nil || getThreadErr != nil || after.ID != before.ID || thread.ID != first.Permission.ID {
+				t.Fatalf("busy rejection partially committed permission: before=%+v after=%+v thread=%+v err=%v/%v", before, after, thread, getErr, getThreadErr)
+			}
+			if now, ok := capabilities.FullAccessGeneration(before); !ok || now != generation {
+				t.Fatal("rejected reconfirmation changed existing runtime activation")
+			}
+		})
+	}
+}
+
+func TestDeferredSameFullConfirmationBindsNextExplicitInputWithoutRevokingBusyRun(t *testing.T) {
+	st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	capabilities := domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, DangerFullAccessEnabled: true,
+		RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()}
+	service := application.NewThreadExecutionPermissionService(st, capabilities)
+	if _, err := service.Change(t.Context(), application.ChangeThreadExecutionPermissionRequest{
+		ThreadID: input.ThreadID, Mode: "full", ConfirmFull: true, OperationKey: "full-before-approval-wait",
+		RequestedBy: "test_operator", Reason: "initial explicit Full confirmation",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := st.GetRunExecutionPermission(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation, _ := capabilities.FullAccessGeneration(current)
+	fence, err := capabilities.RuntimeAuthority.IssueRunAuthorizationFence(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = application.NewRunService(st).Start(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := st.AcquireRunExecutionLease(t.Context(), domain.AcquireRunExecutionLeaseRequest{RunID: run.ID, OwnerID: "waiting-approval-owner", TTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run.Transition(domain.RunWaitingApproval, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	status, err := events.New(run.ID, run.MissionID, events.RunStatusChangedEvent, "run_service", run.ID,
+		map[string]any{"from": domain.RunRunning, "to": domain.RunWaitingApproval, "reason": "existing execution awaits approval"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TransitionRun(t.Context(), run, domain.RunRunning, status); err != nil {
+		t.Fatal(err)
+	}
+	request := application.ChangeThreadExecutionPermissionRequest{ThreadID: input.ThreadID, Mode: "full", ConfirmFull: true,
+		OperationKey: "full-confirmed-during-approval-wait", RequestedBy: "test_operator", Reason: "explicitly confirm Full for future input"}
+	pending, err := service.Change(t.Context(), request)
+	if err != nil || pending.CurrentRunEffect != domain.ThreadExecutionPermissionDeferred ||
+		!capabilities.RuntimeAuthority.AllowsThreadFullAccess(pending.Permission, nil) {
+		t.Fatalf("deferred Full confirmation lost its future grant: %+v err=%v", pending, err)
+	}
+	if !capabilities.RuntimeAuthority.AllowsFullAccessGeneration(current, generation) ||
+		!capabilities.RuntimeAuthority.AllowsRunAuthorizationFence(run.ID, fence) {
+		t.Fatal("deferred confirmation revoked the busy Full Run")
+	}
+	provider := &scriptedToolProvider{responses: []*llm.ChatResponse{textResponse(rootActionResponse(domain.RootActionFinish, "Full successor replied", "done", ""))}}
+	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+	router.RegisterProvider(provider)
+	execution := application.NewRunExecutionHandoffWithRuntime(st, router, policy.NewDefaultChecker(), application.RunRuntimeDependencies{ExecutionCapabilities: capabilities}).WithGeneratedContextCompaction(false)
+	turns := application.NewThreadTurnServiceWithExecutionCapabilities(st, application.NewRunLifecycleControlService(st), execution, capabilities)
+	if _, err := turns.Execute(t.Context(), input); err == nil || len(provider.Requests()) != 0 {
+		t.Fatalf("a new input displaced the leased approval wait: requests=%d err=%v", len(provider.Requests()), err)
+	}
+	unchanged, err := st.GetRunExecutionPermission(t.Context(), run.ID)
+	if err != nil || unchanged.ID != current.ID || !capabilities.RuntimeAuthority.AllowsRunAuthorizationFence(run.ID, fence) {
+		t.Fatalf("blocked successor changed current permission or fence: %+v err=%v", unchanged, err)
+	}
+	if _, _, err := st.ReleaseRunExecutionLease(t.Context(), lease.Lease); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.NewRunService(st).Resume(t.Context(), run.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := turns.Execute(t.Context(), input)
+	if err != nil || result.Submission.Run.ID == run.ID || len(provider.Requests()) != 1 {
+		t.Fatalf("same-mode deferred grant did not advance after the wait ended: run=%s requests=%d err=%v", result.Submission.Run.ID, len(provider.Requests()), err)
+	}
+	bound, err := st.GetRunExecutionPermission(t.Context(), result.Submission.Run.ID)
+	if err != nil || !capabilities.RuntimeAuthority.AllowsThreadFullAccess(pending.Permission, &bound) {
+		t.Fatalf("same-mode Full successor is not active: %+v err=%v", bound, err)
+	}
+}
 
 func TestThreadFullAccessColdStartRequiresExplicitSameModeReconfirmation(t *testing.T) {
 	ctx := context.Background()
@@ -287,5 +489,8 @@ func TestDeferredThreadEscalationPreservesCurrentRunAuthorizationFence(t *testin
 	}
 	if authority.AllowsThreadFullAccess(full.Permission, &current) {
 		t.Fatal("deferred Full preference activated authority for the current Auto Run")
+	}
+	if !authority.AllowsThreadFullAccess(full.Permission, nil) {
+		t.Fatal("explicit deferred Full confirmation did not activate the future Thread preference")
 	}
 }

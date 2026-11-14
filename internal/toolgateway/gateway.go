@@ -928,7 +928,7 @@ func validateToolArguments(call ToolCall) error {
 			}
 		case BrowserStatusTool, BrowserNavigateTool, BrowserSnapshotTool,
 			BrowserClickTool, BrowserTypeTool, BrowserScreenshotTool, BrowserScrollTool, BrowserKeyTool,
-			BrowserUploadTool:
+			BrowserUploadTool, BrowserMoveTool:
 			if !recordedExecutionActor(call) || call.AgentID == "" ||
 				call.LeaseID == "" {
 				return errors.New("browser actions require a fenced root Supervisor")

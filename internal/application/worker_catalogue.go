@@ -2,11 +2,12 @@ package application
 
 import (
 	"context"
-	"cyberagent-workbench/internal/apperror"
 	"encoding/json"
 	"errors"
 	"sort"
 
+	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/mcp"
@@ -20,6 +21,29 @@ type workerToolEntry struct {
 type workerToolCatalogue struct {
 	tools map[string]workerToolEntry
 	mcp   supervisorMCPTools
+}
+
+func (c workerToolCatalogue) normalizeCommandCalls(calls []llm.ToolCall) ([]llm.ToolCall, error) {
+	out := append([]llm.ToolCall(nil), calls...)
+	for index, call := range out {
+		if call.Name != string(toolgateway.CommandRuntimeTool) {
+			continue
+		}
+		entry, available := c.tools[call.Name]
+		if !available {
+			return nil, errors.New("worker command is outside the currently available delegated catalogue")
+		}
+		authority, err := commandruntimeadapter.DecodeAuthority(entry.authority)
+		if err != nil {
+			return nil, err
+		}
+		payload, err := toolgateway.NormalizeCommandRuntimePayloadForAdapter(call.Arguments, authority.Adapter)
+		if err != nil {
+			return nil, err
+		}
+		out[index].Arguments = payload
+	}
+	return out, nil
 }
 
 func (c workerToolCatalogue) specs() []llm.ToolSpec {
@@ -116,7 +140,7 @@ func (s *AgentRunner) workerToolCatalogue(ctx context.Context, ref domain.AgentA
 			return c, err
 		}
 		if err == nil {
-			for _, name := range []toolgateway.ToolName{toolgateway.BrowserStatusTool, toolgateway.BrowserNavigateTool, toolgateway.BrowserSnapshotTool, toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool, toolgateway.BrowserScreenshotTool, toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool} {
+			for _, name := range []toolgateway.ToolName{toolgateway.BrowserStatusTool, toolgateway.BrowserNavigateTool, toolgateway.BrowserSnapshotTool, toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool, toolgateway.BrowserScreenshotTool, toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool, toolgateway.BrowserUploadTool, toolgateway.BrowserMoveTool} {
 				if d, ok := toolgateway.AgentBrowserToolDefinition(name); ok {
 					add(d, authority)
 				}

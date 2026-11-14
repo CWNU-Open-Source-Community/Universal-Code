@@ -332,6 +332,10 @@ func (s *RunCapabilityReadinessService) Project(ctx context.Context,
 	drydockReady := drydockFound && requireCurrentRunFileDrydock(ctx, s.store, run.ID, drydockWorkspace) == nil &&
 		(drydockWorkspace.State == runworktree.StateReady ||
 			drydockWorkspace.State == runworktree.StateDelivered)
+	ownedWorkspace, err := runHasOwnedFileWorkspace(ctx, s.store, run.ID)
+	if err != nil {
+		return RunCapabilityReadiness{}, err
+	}
 	advertisedAdapter := commandruntimeadapter.Identity{}
 	advertised := false
 	if s.commandRuntime != nil {
@@ -360,7 +364,7 @@ func (s *RunCapabilityReadinessService) Project(ctx context.Context,
 	}
 	value := capabilityReadinessProjection{run: run, mode: mode, profile: profile,
 		permission: permission, cdp: cdp, interaction: interaction,
-		activeLease: activeLease, drydockReady: drydockReady, runtime: s.runtime,
+		activeLease: activeLease, drydockReady: drydockReady, ownedWorkspace: ownedWorkspace, runtime: s.runtime,
 		advertisedAdapter: advertisedAdapter, advertised: advertised,
 		verificationSettings:       verificationSettings,
 		advertisementAuthoritative: s.commandRuntime != nil}.project()
@@ -410,6 +414,7 @@ type capabilityReadinessProjection struct {
 	interaction                domain.RunExecutionInteractionSnapshot
 	activeLease                bool
 	drydockReady               bool
+	ownedWorkspace             bool
 	runtime                    CapabilityReadinessRuntime
 	advertisedAdapter          commandruntimeadapter.Identity
 	advertised                 bool
@@ -446,7 +451,9 @@ func (p capabilityReadinessProjection) commandRuntimeReadiness() CommandRuntimeR
 			ready = p.runtime.SBXBackendReady
 		}
 		result.AdapterReady = result.AdapterReady || ready
-		if !adapter.AllowsPermission(p.permission.Mode) ||
+		if (adapter.Kind == commandruntimeadapter.KindHostUnsandboxed && p.ownedWorkspace) ||
+			(adapter.Kind == commandruntimeadapter.KindSandboxedWorkspace && !p.ownedWorkspace) ||
+			!adapter.AllowsPermission(p.permission.Mode) ||
 			commandRuntimeExecutionProfile(adapter) != p.profile.Profile {
 			continue
 		}
@@ -539,15 +546,18 @@ func (p capabilityReadinessProjection) profileOptions() []CapabilityReadinessOpt
 				CapabilityRemediationRestartWithStartupGate)
 		}
 		runtimeAvailable := true
+		ordinaryHost := target == domain.RunExecutionProfileLocal && p.localHostCommandAvailable()
 		switch target {
 		case domain.RunExecutionProfileLocal:
-			runtimeAvailable = p.addLocalBackendBlockers(builder)
+			if !ordinaryHost {
+				runtimeAvailable = p.addLocalBackendBlockers(builder)
+			}
 		case domain.RunExecutionProfileDocker:
 			runtimeAvailable = p.addDockerBackendBlockers(builder)
 		case domain.RunExecutionProfileSBX:
 			runtimeAvailable = p.addSBXBackendBlockers(builder)
 		}
-		if target != domain.RunExecutionProfilePreview &&
+		if target != domain.RunExecutionProfilePreview && !ordinaryHost &&
 			p.interaction.WorkspaceTrust != domain.WorkspaceTrustTrusted {
 			runtimeAvailable = false
 			builder.add(CapabilityBlockerWorkspaceUntrusted,
@@ -556,6 +566,19 @@ func (p capabilityReadinessProjection) profileOptions() []CapabilityReadinessOpt
 		options = append(options, builder.finish(selectable, runtimeAvailable))
 	}
 	return options
+}
+
+func (p capabilityReadinessProjection) localHostCommandAvailable() bool {
+	if p.ownedWorkspace || !p.runtime.RunExecutionEnabled {
+		return false
+	}
+	for _, adapter := range p.runtime.CommandRuntimeAdapters {
+		if adapter.Kind == commandruntimeadapter.KindHostUnsandboxed &&
+			adapter.AllowsPermission(p.permission.Mode) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p capabilityReadinessProjection) interactionOptions() []CapabilityReadinessOption {

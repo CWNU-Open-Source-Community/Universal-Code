@@ -105,7 +105,7 @@ func (s *RunExecutionProfileService) Change(ctx context.Context,
 	if err != nil {
 		return ChangeRunExecutionProfileResult{}, apperror.Normalize(err)
 	}
-	if current.Profile == target {
+	if current.Profile == target && !(current.IsDefaultPreview() && target == domain.RunExecutionProfilePreview) {
 		if replay, found, err := s.loadReplay(ctx, keyDigest, requestFingerprint,
 			normalized.RunID, normalized.RequestedBy, target); err != nil {
 			return ChangeRunExecutionProfileResult{}, err

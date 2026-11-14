@@ -64,10 +64,11 @@ describe("V2ExecutionSettings", () => {
     const controls = setup();
     render(controls.ui("thread-1"));
     expect(await screen.findByText("项目：指定验收目录")).toBeInTheDocument();
-    const picker = screen.getByRole("group", { name: "编码环境后端" });
-    expect(within(picker).getAllByRole("button")).toHaveLength(3);
-    expect(within(picker).getByRole("button", { name: /^Local/u })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText(/审批偏好决定操作如何获批/u)).toBeInTheDocument();
+    const picker = screen.getByRole("group", { name: "Run 执行环境" });
+    expect(within(picker).getByRole("button", { name: /Docker Engine/u })).toBeInTheDocument();
+    expect(within(picker).getByRole("button", { name: /本地工作区/u })).toBeInTheDocument();
+    expect(screen.queryByText(/先选择执行环境，再确认信任项目并启用 Code/u)).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "编码环境后端" })).not.toBeInTheDocument();
     expect(controls.postControl).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /本地工作区/u }));
     await waitFor(() => expect(controls.postControl).toHaveBeenCalledWith(

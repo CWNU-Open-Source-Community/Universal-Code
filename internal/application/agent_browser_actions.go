@@ -14,10 +14,16 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/browserruntime"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/imageattachment"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/toolgateway"
 )
+
+type agentBrowserPointerRuntime interface {
+	ClickPoint(context.Context, browserruntime.AgentBrowserPoint) (browserruntime.AgentBrowserInteraction, error)
+	MovePointer(context.Context, browserruntime.AgentBrowserPoint) (browserruntime.AgentBrowserInteraction, error)
+}
 
 func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, scope toolgateway.AgentBrowserExecutionScope, name toolgateway.ToolName, raw json.RawMessage) (toolgateway.BrowserActionExecutionResult, error) {
 	a := scope.Authority
@@ -91,19 +97,15 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 		return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("browser session retired before dispatch; original authority cannot be rebound")
 	}
 	r := slot.runtime
-	if r == nil && name == toolgateway.BrowserNavigateTool {
+	shared := s.options.SharedPage != nil && a.Role == domain.AgentRoleRoot
+	start := name == toolgateway.BrowserNavigateTool || (shared && name != toolgateway.BrowserStatusTool)
+	if r == nil && start {
 		slot.view.State = "starting"
 		slot.launchAttempted = true
 	}
 	s.mu.Unlock()
-	if r == nil && name == toolgateway.BrowserNavigateTool {
-		runtimeAuthority := browserruntime.AgentBrowserAuthority{RunID: a.RunID, ManagerBootID: a.ManagerBootID, SessionID: a.BrowserSessionID, Generation: a.SessionGeneration, PermissionSnapshotID: a.PermissionSnapshotID, PermissionRevision: a.PermissionRevision, PermissionActivation: slot.activation, RunAuthorizationFence: a.RunAuthorizationFence, PermissionMode: string(a.PermissionMode)}
-		r, e = s.launch(ctx, browserruntime.AgentBrowserStartRequest{HomePath: s.options.HomePath, Authority: runtimeAuthority, Product: s.options.Product, Headless: s.options.Headless, RuntimeDeadline: time.Now().Add(s.options.SessionLifetime), NetworkMode: browserruntime.AgentBrowserNetworkMode(a.BrowserNetworkAccess), ScopedOrigins: append([]string(nil), a.DeclaredOrigins...), ReviewNetworkWrite: s.reviewNetworkWrite(a), CheckAuthority: func(c context.Context, received browserruntime.AgentBrowserAuthority) error {
-			if received != runtimeAuthority {
-				return agentBrowserUnavailable("runtime activation does not match its private slot")
-			}
-			return s.checkResource(c, a)
-		}})
+	if r == nil && start {
+		r, e = s.startRuntime(ctx, a, slot)
 		if e == nil {
 			s.mu.Lock()
 			slot.runtime = r
@@ -122,7 +124,7 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 			var launchFailure *browserruntime.AgentBrowserLaunchError
 			if errors.As(e, &launchFailure) && launchFailure.Cleanup.SessionID == a.BrowserSessionID {
 				receipt := launchFailure.Cleanup
-				receipt.CleanupPending = receipt.CleanupPending || !receipt.ProcessesStopped() || !receipt.ProfileRemoved
+				receipt.CleanupPending = !receipt.Complete()
 				slot.view.Cleanup = &receipt
 			}
 			s.mu.Unlock()
@@ -211,8 +213,21 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 			slot.titleURL = snapshot.CanonicalURL
 			s.mu.Unlock()
 		}
-	case toolgateway.BrowserClickTool:
-		value, e = r.Click(ctx, p.SnapshotID, p.ElementRef)
+	case toolgateway.BrowserClickTool, toolgateway.BrowserMoveTool:
+		if p.Point != nil {
+			pointer, ok := r.(agentBrowserPointerRuntime)
+			if !ok {
+				return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("browser coordinate input is unavailable")
+			}
+			point := browserruntime.AgentBrowserPoint{X: p.Point.X, Y: p.Point.Y, DocumentEpoch: p.Point.DocumentEpoch, Viewport: browserruntime.AgentBrowserViewport{Width: p.Point.Viewport.Width, Height: p.Point.Viewport.Height}}
+			if name == toolgateway.BrowserMoveTool {
+				value, e = pointer.MovePointer(ctx, point)
+			} else {
+				value, e = pointer.ClickPoint(ctx, point)
+			}
+		} else {
+			value, e = r.Click(ctx, p.SnapshotID, p.ElementRef)
+		}
 	case toolgateway.BrowserTypeTool:
 		value, e = r.Type(ctx, p.SnapshotID, p.ElementRef, p.Value, p.Mode == "replace")
 	case toolgateway.BrowserUploadTool:
@@ -308,6 +323,9 @@ func normalizeAgentBrowserActionError(err error) error {
 	}
 	if errors.Is(err, browserruntime.ErrAgentBrowserStaleReference) {
 		return apperror.Wrap(apperror.CodeFailedPrecondition, "stale_browser_reference: snapshot or input invalidated the old refs; obtain a new snapshot before the next input; never automatically repeat an outcome_unknown action", err)
+	}
+	if errors.Is(err, browserruntime.ErrAgentBrowserScreenshotUnavailable) {
+		return apperror.Wrap(apperror.CodeFailedPrecondition, browserruntime.ErrAgentBrowserScreenshotUnavailable.Error(), err)
 	}
 	return apperror.Wrap(apperror.CodeFailedPrecondition, "Agent browser action failed", err)
 }

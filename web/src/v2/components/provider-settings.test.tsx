@@ -192,6 +192,89 @@ async function fillRequiredProvider(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("V2 custom Provider settings", () => {
+  it("keeps a qualified exact provider/model usable after an unchanged Save, but invalidates a real edit", async () => {
+    const definition = provider({ id: "official-deepseek", display_name: "DeepSeek", default_model: "deepseek-v4-flash",
+      models: ["deepseek-v4-flash"], endpoint_url: "https://api.deepseek.com/chat/completions" });
+    const controls = createClient([definition]);
+    let currentRevision = definition.revision;
+    let qualifiedRevision = 0;
+    const upsert = controls.upsertProviderDefinition.getMockImplementation()!;
+    const qualify = controls.qualifyModelHarness.getMockImplementation()!;
+    const available = controls.availableModelRoutes.getMockImplementation()!;
+    controls.upsertProviderDefinition.mockImplementation(async (...args) => {
+      const result = await upsert(...args); currentRevision = result.definition.revision; return result;
+    });
+    controls.qualifyModelHarness.mockImplementation(async (...args) => {
+      const result = await qualify(...args); qualifiedRevision = currentRevision; return result;
+    });
+    controls.availableModelRoutes.mockImplementation(async () => {
+      const result = await available();
+      return { ...result, routes: result.routes.map((route: { definition_revision: number }) => ({ ...route,
+        harness_ready: route.definition_revision === qualifiedRevision, selectable: route.definition_revision === qualifiedRevision })) };
+    });
+    const user = userEvent.setup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const threadRouteKey = ["v2", "thread", "existing-thread", "model-route"];
+    queryClient.setQueryData(threadRouteKey, { harness_ready: false });
+    render(<QueryClientProvider client={queryClient}><V2ProviderSettings client={controls.client} /></QueryClientProvider>);
+    await user.click(await screen.findByRole("button", { name: /official-deepseek/u }));
+    await user.click(screen.getByRole("button", { name: "测试并验证 Harness" }));
+    await user.click(within(screen.getByRole("dialog", { name: "测试并验证 Harness？" })).getByRole("button", { name: "开始验证" }));
+    expect(await screen.findByRole("status", { name: "Harness 验证结果" })).toHaveTextContent("验证通过");
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await screen.findByRole("button", { name: /official-deepseek/u });
+    expect(controls.upsertProviderDefinition).not.toHaveBeenCalled();
+    expect(controls.changeProviderCredential).not.toHaveBeenCalled();
+    expect((await controls.client.availableModelRoutes()).routes[0]).toMatchObject({
+      provider_id: "official-deepseek", model: "deepseek-v4-flash", definition_revision: definition.revision, selectable: true,
+    });
+    expect(controls.qualifyModelHarness).toHaveBeenCalledExactlyOnceWith({ version: "model_harness_qualification.v1",
+      provider: "official-deepseek", model: "deepseek-v4-flash", confirm_qualification: true });
+    expect(queryClient.getQueryState(threadRouteKey)?.isInvalidated).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: /official-deepseek/u }));
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "DeepSeek team" } });
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await screen.findByRole("button", { name: /official-deepseek/u });
+    expect(controls.upsertProviderDefinition).toHaveBeenCalledOnce();
+    expect((await controls.client.availableModelRoutes()).routes[0]).toMatchObject({ definition_revision: definition.revision + 1, selectable: false });
+    expect(controls.qualifyModelHarness).toHaveBeenCalledOnce();
+  });
+
+  it("treats advanced JSON formatting and nested object key order as the same saved definition", async () => {
+    const controls = createClient([provider({ advanced_config: {
+      request_body: { temperature: 0, metadata: { tags: ["a", "b"], enabled: true } },
+      request_headers: { Authorization: { $credential: "acme", template: "Bearer ${secret}" }, "X-Region": "west" },
+    } })]);
+    const user = userEvent.setup(); renderSettings(controls.client);
+    await user.click(await screen.findByRole("button", { name: /Acme AI/u }));
+    fireEvent.change(screen.getByRole("textbox", { name: "高级 JSON" }), { target: { value: JSON.stringify({
+      request_headers: { "X-Region": "west", Authorization: { template: "Bearer ${secret}", $credential: "acme" } },
+      request_body: { metadata: { enabled: true, tags: ["a", "b"] }, temperature: 0 },
+    }, null, 4) } });
+    expect(screen.getByRole("button", { name: "测试并验证 Harness" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await screen.findByRole("button", { name: /Acme AI/u });
+    expect(controls.upsertProviderDefinition).not.toHaveBeenCalled();
+    expect(controls.changeProviderCredential).not.toHaveBeenCalled();
+  });
+
+  it("still saves a replacement API key when provider definition fields are unchanged", async () => {
+    const controls = createClient([provider()]);
+    const user = userEvent.setup(); renderSettings(controls.client);
+    await user.click(await screen.findByRole("button", { name: /Acme AI/u }));
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "replacement-test-key" } });
+    await user.click(screen.getByRole("checkbox", { name: /把凭据引用同步到高级 JSON/u }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await screen.findByRole("button", { name: /Acme AI/u });
+    expect(controls.changeProviderCredential).toHaveBeenCalledExactlyOnceWith("acme", {
+      version: "provider_credential.v1", action: "set", confirm: true, secret: "replacement-test-key",
+    });
+    expect(controls.upsertProviderDefinition).toHaveBeenCalledOnce();
+    expect(controls.qualifyModelHarness).not.toHaveBeenCalled();
+  });
+
   it("keeps model catalog and output customization collapsed by default and allows them after expanding advanced settings", async () => {
     const controls = createClient();
     controls.discoverProviderModels.mockResolvedValue({ models: [{ id: "gpt-6-astra" }], truncated: false });

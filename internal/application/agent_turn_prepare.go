@@ -71,6 +71,13 @@ type agentTurnCapabilities struct {
 func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.SupervisorTurn,
 	result LifecycleResult, input string,
 ) (*agentTurnPreparation, LifecycleResult, error) {
+	executionPermission, err := s.store.GetRunExecutionPermission(ctx, turn.Run.ID)
+	if err == nil {
+		err = requireSupervisorPermissionReady(s.executionCapabilities, executionPermission)
+	}
+	if err != nil {
+		return nil, result, s.recordFailure(ctx, &result, err, 0)
+	}
 	threadEndTurn, err := supervisorThreadEndTurn(ctx, s.store, *turn)
 	if err != nil {
 		failure := s.recordFailure(ctx, &result, err, 0)
@@ -207,10 +214,14 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	if err := requirePinnedProjectInstructionSelection(turn.Run.Config, memory); err != nil {
 		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
-	executionPermission, err := s.store.GetRunExecutionPermission(ctx, turn.Run.ID)
+	// Context preparation may wait on a model compaction. Build execution
+	// scopes from the current snapshot rather than the early readiness read.
+	executionPermission, err = s.store.GetRunExecutionPermission(ctx, turn.Run.ID)
+	if err == nil {
+		err = requireSupervisorPermissionReady(s.executionCapabilities, executionPermission)
+	}
 	if err != nil {
-		failure := s.recordFailure(ctx, &result, err, 0)
-		return nil, result, failure
+		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
 	commandRuntime, err := s.supervisorCommandRuntimeTools(ctx, turn.Run.ID,
 		executionPermission.Mode)

@@ -126,13 +126,14 @@ func TestDesktopBridgeBindsOnlyReviewedMethods(t *testing.T) {
 	typ := reflect.TypeFor[*DesktopBridge]()
 	want := []string{
 		"Bootstrap", "ChatResourceAction", "ChooseProjectlessDirectory", "CloseUserTerminal", "ConfirmTerminalSettings", "ConfirmVerificationSettings", "CreateWorkspace", "GetDebugTerminalAgentInput",
-		"GetTerminalSettings", "GetUserTerminal", "GetVerificationSettings", "GrantDebugTerminalAgentInput",
+		"GetSharedBrowser", "GetTerminalSettings", "GetUserTerminal", "GetVerificationSettings", "GrantDebugTerminalAgentInput",
 		"ImportWorkspace", "InspectClipboardFiles", "InstallSkillPackage",
-		"ListSkillPackages", "OpenExternalURL", "OpenWorkspace", "PasteClipboardFiles", "PreviewExternalURL", "PreviewSkillPackage",
+		"ListSkillPackages", "OpenExternalURL", "OpenSharedBrowser", "OpenWorkspace", "PasteClipboardFiles", "PreviewExternalURL", "PreviewSkillPackage",
 		"ReadChatResource", "ReadUserTerminal", "RemoveSkillPackage", "ResizeUserTerminal",
 		"RestartWithRiskProfile", "RestartWithSandboxSettings", "RestartWithVerificationSettings",
 		"RevokeDebugTerminalAgentInput",
 		"SaveExternalURL", "SelectSkillPackage", "SelectWorkspaceDirectory",
+		"SetSharedBrowserSurface", "SharedBrowserCommand",
 		"StartUserTerminal", "WorkspaceLaunchers", "WriteUserTerminal",
 	}
 	if typ.NumMethod() != len(want) {
@@ -200,7 +201,7 @@ func TestDesktopBridgeBootstrapsMemoryOnlyClosedAuthority(t *testing.T) {
 		bootstrap.WorkspaceImportEnabled ||
 		bootstrap.ProjectlessWorkspacesEnabled ||
 		bootstrap.RendererPathInputSupported ||
-		bootstrap.RiskProfileRestartEnabled || bootstrap.ChatGPTAuthEnabled {
+		bootstrap.RiskProfileRestartEnabled || bootstrap.ChatGPTAuthEnabled || bootstrap.SharedBrowserEnabled {
 		t.Fatalf("unexpected bootstrap: %#v", bootstrap)
 	}
 	raw, err := json.Marshal(bootstrap)
@@ -208,6 +209,7 @@ func TestDesktopBridgeBootstrapsMemoryOnlyClosedAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertExactJSONKeys(t, string(raw), []string{
+		"shared_browser_enabled",
 		"agent_code_tools_enabled", "api_base_url", "api_version", "app_version", "approval_control_enabled",
 		"code_intel_enabled",
 		"control_enabled", "control_token",

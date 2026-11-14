@@ -19,13 +19,13 @@ func validateSupervisorBrowserBatch(calls []llm.ToolCall) error {
 		if !toolgateway.IsBrowserActionTool(name) || !toolgateway.IsAgentBrowserPayload(call.Arguments) {
 			continue
 		}
-		if (name == toolgateway.BrowserClickTool || name == toolgateway.BrowserTypeTool || name == toolgateway.BrowserUploadTool) && invalidator != "" {
-			return fmt.Errorf("unresolved_snapshot_dependency: %s cannot use current snapshot refs after %s in the same batch; send one input with current refs, then browser_snapshot (optionally browser_screenshot), and use the returned snapshot_id and refs in the next response", name, invalidator)
+		if (name == toolgateway.BrowserClickTool || name == toolgateway.BrowserTypeTool || name == toolgateway.BrowserUploadTool || name == toolgateway.BrowserMoveTool) && invalidator != "" {
+			return fmt.Errorf("unresolved_snapshot_dependency: %s cannot use current snapshot refs or screenshot coordinates after %s in the same batch; send one input with current refs, then browser_snapshot (optionally browser_screenshot), and use the returned snapshot_id and refs in the next response", name, invalidator)
 		}
 		switch name {
 		case toolgateway.BrowserNavigateTool, toolgateway.BrowserSnapshotTool,
 			toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool, toolgateway.BrowserUploadTool,
-			toolgateway.BrowserKeyTool, toolgateway.BrowserScrollTool:
+			toolgateway.BrowserKeyTool, toolgateway.BrowserScrollTool, toolgateway.BrowserMoveTool:
 			invalidator = name
 		}
 	}

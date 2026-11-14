@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"cyberagent-workbench/internal/app"
 	"cyberagent-workbench/internal/apperror"
@@ -723,6 +725,11 @@ func runDesktop(config desktopOptions) error {
 		}
 	}
 
+	sharedBrowserOptions, closeSharedBrowser, err := prepareSharedBrowser(homePath)
+	if err != nil {
+		return err
+	}
+	defer closeSharedBrowser()
 	databasePath := filepath.Join(homePath, "cyberagent.db")
 	var computerUseExecutable string
 	if goruntime.GOOS == "windows" && config.runExecution {
@@ -732,6 +739,7 @@ func runDesktop(config desktopOptions) error {
 		}
 	}
 	controlPlane, err := desktop.OpenControlPlane(desktop.ControlPlaneConfig{
+		SharedBrowser:         sharedBrowserOptions,
 		TerminalSettingsStore: terminalSettingsStore,
 		DatabasePath:          databasePath, HomePath: homePath, ReadToken: readToken,
 		ControlToken:          controlToken,
@@ -827,6 +835,12 @@ func runDesktop(config desktopOptions) error {
 	commandRuntimeAdapterInstalled, commandRuntimeAdapterReady :=
 		controlPlane.CommandRuntimeProcessStatus()
 	bridge, err := desktop.NewDesktopBridge(desktop.DesktopBridgeConfig{
+		SharedBrowser: func() desktop.SharedBrowserController {
+			if controlPlane.SharedBrowser() == nil {
+				return nil
+			}
+			return controlPlane.SharedBrowser()
+		}(),
 		TerminalSettingsStore: terminalSettingsStore,
 		TerminalSettingsConfirmer: func() desktop.DesktopTerminalSettingsConfirmer {
 			if terminalSettingsStore == nil {
@@ -907,6 +921,7 @@ func runDesktop(config desktopOptions) error {
 		return err
 	}
 
+	var browserClosing, browserClosed atomic.Bool
 	appOptions := &options.App{
 		Title: app.Name, Width: defaultDesktopWidth, Height: defaultDesktopHeight,
 		MinWidth: 480, MinHeight: 600,
@@ -925,6 +940,26 @@ func runDesktop(config desktopOptions) error {
 		},
 		OnShutdown: func(context.Context) {
 			lifecycle.Stop()
+		},
+		OnBeforeClose: func(ctx context.Context) bool {
+			browser := controlPlane.SharedBrowser()
+			if browser == nil || browserClosed.Load() {
+				return false
+			}
+			if browserClosing.CompareAndSwap(false, true) {
+				// Keep the native message pump alive while outstanding CDP calls
+				// detach. Blocking its UI thread here would deadlock COM cleanup.
+				go func() {
+					closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					if err := browser.Close(closeCtx); err != nil {
+						fmt.Fprintln(os.Stderr, "browser shutdown:", err)
+					}
+					browserClosed.Store(true)
+					runtime.Quit(ctx)
+				}()
+			}
+			return true
 		},
 		Bind: []interface{}{bridge},
 		// Keep Wails' production context-menu filter: editable controls and

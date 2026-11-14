@@ -14,8 +14,8 @@ import (
 	"cyberagent-workbench/internal/runmutation"
 )
 
-func readBrowserNetworkPreference(ctx context.Context, q runControlQueryer, workspaceID string) (domain.BrowserNetworkPreference, error) {
-	p := domain.BrowserNetworkPreference{WorkspaceID: workspaceID, BrowserNetworkAccess: domain.BrowserNetworkOff}
+func readBrowserNetworkPreference(ctx context.Context, q runControlQueryer, workspaceID string, defaultMode domain.BrowserNetworkAccess) (domain.BrowserNetworkPreference, error) {
+	p := domain.BrowserNetworkPreference{WorkspaceID: workspaceID, BrowserNetworkAccess: defaultMode}
 	var origins string
 	err := q.QueryRowContext(ctx, `SELECT revision,mode,origins_json FROM workspace_browser_network_preferences WHERE workspace_id=?`, workspaceID).Scan(&p.Revision, &p.BrowserNetworkAccess, &origins)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -29,7 +29,7 @@ func readBrowserNetworkPreference(ctx context.Context, q runControlQueryer, work
 }
 
 func (s *SQLiteStore) GetBrowserNetworkPreference(ctx context.Context, workspaceID string) (domain.BrowserNetworkPreference, error) {
-	return readBrowserNetworkPreference(ctx, s.db, workspaceID)
+	return readBrowserNetworkPreference(ctx, s.db, workspaceID, s.defaultBrowserNetworkAccess())
 }
 
 func readSuccessorBrowserNetworkPreference(ctx context.Context, q runControlQueryer, runID string) (domain.BrowserNetworkPreference, bool, error) {
@@ -46,7 +46,13 @@ func readSuccessorBrowserNetworkPreference(ctx context.Context, q runControlQuer
 	return p, true, err
 }
 
-func readBrowserNetworkSelection(ctx context.Context, q runControlQueryer, runID, workspaceID string) (domain.BrowserNetworkAccessSelection, error) {
+func trustedDefaultBrowserNetwork(ctx context.Context, q runControlQueryer, runID string) (bool, error) {
+	var implicit bool
+	err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM runs r WHERE r.id=? AND `+trustedDefaultBrowserNetworkSQL+`)`, runID).Scan(&implicit)
+	return implicit, err
+}
+
+func readBrowserNetworkSelection(ctx context.Context, q runControlQueryer, runID, workspaceID string, defaultMode domain.BrowserNetworkAccess) (domain.BrowserNetworkAccessSelection, error) {
 	v := domain.BrowserNetworkAccessSelection{Version: domain.BrowserNetworkAccessVersion, RunID: runID, WorkspaceID: workspaceID}
 	if runID != "" {
 		var raw string
@@ -81,7 +87,7 @@ func readBrowserNetworkSelection(ctx context.Context, q runControlQueryer, runID
 		}
 	}
 	if v.WorkspaceID != "" {
-		p, err := readBrowserNetworkPreference(ctx, q, v.WorkspaceID)
+		p, err := readBrowserNetworkPreference(ctx, q, v.WorkspaceID, defaultMode)
 		if err != nil {
 			return v, err
 		}
@@ -100,7 +106,7 @@ func (s *SQLiteStore) GetBrowserNetworkAccess(ctx context.Context, runID, worksp
 			return domain.BrowserNetworkAccessSelection{}, err
 		}
 	}
-	return readBrowserNetworkSelection(ctx, s.db, runID, workspaceID)
+	return readBrowserNetworkSelection(ctx, s.db, runID, workspaceID, s.defaultBrowserNetworkAccess())
 }
 
 func writeBrowserNetworkPreference(ctx context.Context, tx *sql.Tx, p domain.BrowserNetworkPreference, requestedBy string) error {
@@ -137,7 +143,7 @@ func (s *SQLiteStore) ChangeBrowserNetworkAccess(ctx context.Context, r domain.C
 	if !errors.Is(err, sql.ErrNoRows) {
 		return empty, err
 	}
-	current, err := readBrowserNetworkSelection(ctx, tx, r.RunID, r.WorkspaceID)
+	current, err := readBrowserNetworkSelection(ctx, tx, r.RunID, r.WorkspaceID, s.defaultBrowserNetworkAccess())
 	if err != nil {
 		return empty, err
 	}
@@ -192,7 +198,7 @@ func (s *SQLiteStore) ChangeBrowserNetworkAccess(ctx context.Context, r domain.C
 		if exists != 1 {
 			return empty, apperror.New(apperror.CodeNotFound, "Project was not found")
 		}
-		p, err := readBrowserNetworkPreference(ctx, tx, current.WorkspaceID)
+		p, err := readBrowserNetworkPreference(ctx, tx, current.WorkspaceID, s.defaultBrowserNetworkAccess())
 		if err != nil {
 			return empty, err
 		}
@@ -202,7 +208,7 @@ func (s *SQLiteStore) ChangeBrowserNetworkAccess(ctx context.Context, r domain.C
 			return empty, err
 		}
 	}
-	v, err := readBrowserNetworkSelection(ctx, tx, r.RunID, current.WorkspaceID)
+	v, err := readBrowserNetworkSelection(ctx, tx, r.RunID, current.WorkspaceID, s.defaultBrowserNetworkAccess())
 	if err != nil {
 		return empty, err
 	}

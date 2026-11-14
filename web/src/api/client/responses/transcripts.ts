@@ -69,6 +69,19 @@ export function validThreadWebEvidence(value: unknown): boolean {
   }
 }
 
+function validThreadTranscriptTask(value: unknown): boolean {
+  const required = ["id", "input_message_id", "state"];
+  const optional = ["started_at", "finished_at", "final_message_id", "change_source_event_id"];
+  return isRecord(value) && hasOnlyKeys(value, [...required, ...optional]) &&
+    required.every((key) => Object.prototype.hasOwnProperty.call(value, key)) &&
+    Boolean(boundedIdentity(value.id)) && Boolean(boundedIdentity(value.input_message_id)) &&
+    typeof value.state === "string" && ["running", "completed", "interrupted", "failed"].includes(value.state) &&
+    (value.started_at === undefined || validDate(value.started_at)) &&
+    (value.finished_at === undefined || validDate(value.finished_at)) &&
+    (value.final_message_id === undefined || Boolean(boundedIdentity(value.final_message_id))) &&
+    (value.change_source_event_id === undefined || Boolean(boundedIdentity(value.change_source_event_id)));
+}
+
 export function parseThreadTranscriptItem(value: unknown): ThreadTranscriptItemView {
   const required = ["activity_type", "canonical_id", "created_at", "durable", "id",
     "instruction_authorized", "kind", "provisional", "run_id",
@@ -76,7 +89,7 @@ export function parseThreadTranscriptItem(value: unknown): ThreadTranscriptItemV
   const optional = ["activity_detail_ref", "activity_summary", "attempt_id", "boundary_reason", "detail",
     "detail_available", "delivery_mode", "durable_call_id", "promoted_to_message_id", "promoted_from_message_id",
     "model", "model_attempt", "position", "source_ref", "status", "stream_call_id", "stream_item_id",
-    "stream_response_id", "tool_name", "tool_round", "web_evidence", "images", "attachments", "peer_message"];
+    "stream_response_id", "tool_name", "tool_round", "web_evidence", "images", "attachments", "peer_message", "task"];
   if (!isRecord(value) || !hasOnlyKeys(value, [...required, ...optional]) ||
     required.some((key) => !Object.prototype.hasOwnProperty.call(value, key)) ||
     value.version !== "thread_transcript.v1" || !boundedIdentity(value.id) ||
@@ -126,6 +139,9 @@ export function parseThreadTranscriptItem(value: unknown): ThreadTranscriptItemV
   }
   if (value.attachments !== undefined && (!validFileAttachments(value.attachments) || value.source !== "operator")) {
     throw new APIRequestError("消息附件引用无效。", "INVALID_RESPONSE", 502);
+  }
+  if (value.task !== undefined && !validThreadTranscriptTask(value.task)) {
+    throw new APIRequestError("Thread transcript task is invalid", "INVALID_RESPONSE", 502);
   }
   if ((value.source === "peer" || value.kind === "peer_message" || value.peer_message !== undefined) &&
     (value.source !== "peer" || value.kind !== "peer_message" || value.instruction_authorized !== false ||

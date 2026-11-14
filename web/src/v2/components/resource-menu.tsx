@@ -1,12 +1,48 @@
 import { useLocale, type LocaleText } from "../../lib/locale";
 import { useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Copy, Download, File, FolderOpen, SquareArrowOutUpRight } from "lucide-react";
+import { Copy, Download, File, FolderOpen, SquareArrowOutUpRight, X } from "lucide-react";
 import { resourceAction, type ChatResourceRef } from "../../lib/chat-resources";
 import "./resource-links.css";
 
 export interface ResourceMenuItem { label: string; icon?: ReactNode; action: () => void | Promise<unknown>; divider?: boolean; disabled?: boolean; successMessage?: string }
 export interface MenuPosition { x: number; y: number; trigger: HTMLElement }
+export function ResourceNotice({ trigger, message, error, onClose }: {
+  trigger: HTMLElement; message: string; error: boolean; onClose: () => void;
+}) {
+  const { t } = useLocale();
+  const element = useRef<HTMLDivElement>(null);
+  const [point, setPoint] = useState({ x: 0, y: 0 });
+  const dismiss = useEffectEvent(onClose);
+  useLayoutEffect(() => {
+    const place = () => {
+      if (!trigger.isConnected) { dismiss(); return; }
+      const anchor = trigger.getBoundingClientRect(), box = element.current?.getBoundingClientRect();
+      if (!box) return;
+      setPoint({ x: Math.max(8, Math.min(anchor.left, window.innerWidth - box.width - 8)),
+        y: Math.max(8, Math.min(anchor.bottom + 8, window.innerHeight - box.height - 8)) });
+    };
+    const outside = (event: PointerEvent) => { if (!element.current?.contains(event.target as Node)) dismiss(); };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); dismiss(); trigger.focus(); }
+    };
+    place();
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", escape, true);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("keydown", escape, true);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [trigger, message]);
+  return createPortal(<div ref={element} className="v2-resource-menu v2-resource-notice" role={error ? "alert" : "status"}
+    data-shared-browser-occluder="" style={{ left: point.x, top: point.y }}>
+    <span>{message}</span><button type="button" aria-label={t("关闭", "Close")} onClick={() => { onClose(); trigger.focus(); }}><X size={16} /></button>
+  </div>, trigger.closest(".v2-shell") ?? document.body);
+}
 export function fileMenuItems(reference: ChatResourceRef, open: () => void | Promise<unknown>, t: LocaleText): ResourceMenuItem[] {
   return [
     { label: t("打开文件", "Open file"), icon: <File />, action: open },

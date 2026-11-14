@@ -32,14 +32,11 @@ import {
   type V2ConfiguredModelProviderPreset,
 } from "./model-provider-presets";
 import { V2PermissionControl } from "./permission-control";
-import { V2BrowserNetworkSettings } from "./browser-network-control";
+import { V2AdvancedPermissionSettings } from "./permission-advanced-settings";
 import { V2ProviderSettings } from "./provider-settings";
-import { V2RuntimeCapabilityControl } from "./runtime-capability-control";
 import { saveChatPreferences, useChatPreferences, type SendPreference } from "../chat-preferences";
 import { V2KeyboardSettings } from "./keyboard-settings";
 import { V2NotificationSettings } from "./notification-settings";
-import { V2ExecutionSettings } from "./execution-settings";
-import { V2CommandServiceSettings } from "./command-service-settings";
 import { V2ProjectlessDirectorySettings } from "./projectless-directory-settings";
 import { V2WebAccessSettings } from "./web-access-settings";
 import { TypographySettingsPanel } from "./typography-settings";
@@ -94,7 +91,7 @@ function ConnectionsSettings({ client, threadID, sourceRunID, onSelect, onOpenGi
       </section>
       <section aria-labelledby="connection-task-environment"><h2 id="connection-task-environment">{t("运行设置", "Runtime settings")}</h2>
         <button onClick={() => onSelect("environment")} type="button"><span><strong>{t("执行环境设置", "Execution environment settings")}</strong><small>{t("检测 Local、Docker Engine 与官方 sbx，保存启用选项和固定镜像。", "Detect Local, Docker Engine, and official sbx; save enabled options and pinned images.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
-        <button onClick={() => onSelect("permissions")} type="button"><span><strong>{t("任务权限与执行环境", "Task permissions & environment")}</strong><small>{threadID ? t("选择操作确认方式，查看项目访问范围与执行环境。", "Choose approval behavior and view project access and the execution environment.") : t("查看当前环境；打开任务后可调整它的操作权限。", "View the current environment. Open a task to adjust its permissions.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
+        <button onClick={() => onSelect("permissions")} type="button"><span><strong>{t("任务权限", "Task permissions")}</strong><small>{threadID ? t("选择操作确认方式。", "Choose how operations are approved.") : t("打开任务后可调整它的操作权限。", "Open a task to adjust its permissions.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
         <button onClick={() => onSelect("about")} type="button"><span><strong>{t("应用连接与诊断", "App connection & diagnostics")}</strong><small>{t("查看版本和连接状态，处理连接问题。", "View version and connection status and troubleshoot connection issues.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
       </section>
     </nav>
@@ -399,7 +396,7 @@ function ModelSettingsPage({ client, initialAdvancedOpen = false, prepareForDraf
   const advancedPanel = <section className="v2-model-advanced">
       <button aria-expanded={advancedOpen} className="v2-model-advanced-toggle"
         onClick={() => setAdvancedOpen((open) => !open)} type="button">
-        {t("高级模型设置：默认模型、能力诊断与费用预算", "Advanced model settings: defaults, capabilities & cost budgets")}
+        {t("默认模型与价格", "Default model and pricing")}
       </button>
       {advancedOpen && <><p>{t("新对话可在输入区直接选模型；这里管理未单独选择时的默认值。价格表只用于启用金额上限的任务。", "Choose a model directly in a new conversation. Set defaults here for tasks without a specific selection. Pricing is only used for tasks with a cost limit.")}</p>
         <ModelAvailabilitySettings client={client} /></>}
@@ -524,13 +521,10 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
         onOpenPermissions={() => onSelectSection("permissions")} onOpenEnvironment={() => onSelectSection("environment")} />}
       {section === "permissions" && <><h1>{t("权限", "Permissions")}</h1>
         <section className="v2-settings-section"><h2>{t("任务权限", "Task permissions")}</h2>
-          <V2PermissionControl client={client} threadID={threadID} variant="settings"
-            onOpenModelSettings={() => onSelectSection("models")} />
+          <V2PermissionControl client={client} threadID={threadID} variant="settings" />
         </section>
-        <V2BrowserNetworkSettings client={client} threadID={threadID} draftWorkspaceID={draftWorkspaceID} />
-        <V2CommandServiceSettings client={client} threadID={threadID} />
-        <V2ExecutionSettings client={client} threadID={threadID} workspaces={workspaces} />
-        <section className="v2-settings-section"><V2RuntimeCapabilityControl /></section></>}
+        <V2AdvancedPermissionSettings client={client} threadID={threadID} workspaces={workspaces}
+          draftWorkspaceID={draftWorkspaceID} onOpenModelSettings={() => onSelectSection("models")} /></>}
       {section === "appearance" && <AppearanceSettings />}
       {section === "usage" && <Suspense fallback={<p role="status">{t("正在加载用量统计…", "Loading usage…")}</p>}>
         <UsageSettings client={client} threadID={threadID} onOpenThread={onOpenThread} />

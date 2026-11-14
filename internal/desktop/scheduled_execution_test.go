@@ -96,6 +96,14 @@ func TestControlPlaneAutomaticScheduleExecutesWithoutRendererAndDoesNotReplayOnR
 	}
 	var thread httpapi.ThreadCreationControlView
 	decodeDesktopControlData(t, created, &thread)
+	// This text-only fixture has no command runtime; explicitly select Preview.
+	selected, err := application.NewRunExecutionProfileService(first.stateStore).Change(t.Context(), application.ChangeRunExecutionProfileRequest{
+		RunID: thread.Run.ID, Profile: string(domain.RunExecutionProfilePreview),
+		OperationKey: "scheduled-desktop-preview", RequestedBy: "test_operator", Reason: "Verify a text-only scheduled turn",
+	})
+	if err != nil || selected.Profile.Profile != domain.RunExecutionProfilePreview || selected.Profile.IsDefaultPreview() {
+		t.Fatalf("select explicit Preview: %+v err=%v", selected, err)
+	}
 	anchor := time.Now().UTC().Add(-time.Second)
 	body, err := json.Marshal(httpapi.ScheduledJobCreateRequestView{
 		Version:    domain.ScheduledJobProtocolVersion,

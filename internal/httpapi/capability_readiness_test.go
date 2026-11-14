@@ -109,9 +109,24 @@ func TestRunCapabilityReadinessHTTPCurrentFixtureMatchesGoProjection(t *testing.
 		view.Permissions[1].Value != "auto" || view.Permissions[2].Value != "full" ||
 		!view.Permissions[0].Selected || view.CapabilityGrant ||
 		!view.CommandRuntime.AdapterInstalled || !view.CommandRuntime.AdapterReady ||
-		view.CommandRuntime.CurrentRunGranted || view.CommandRuntime.AdapterKind != "sandboxed_workspace" ||
-		view.CommandRuntime.Backend != application.CommandRuntimeLocalSandboxBackend {
+		view.CommandRuntime.CurrentRunGranted || view.CommandRuntime.AdapterKind != "" ||
+		view.CommandRuntime.Backend != "" {
 		t.Fatalf("current readiness contract changed: %#v", view)
+	}
+	// This ordinary Run has no owned workspace for the installed sandbox
+	// adapter, so its installation is visible without selecting it for this Run.
+	var dataFields struct {
+		Data struct {
+			CommandRuntime map[string]json.RawMessage `json:"command_runtime"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &dataFields); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"adapter_kind", "backend"} {
+		if _, found := dataFields.Data.CommandRuntime[field]; found {
+			t.Fatalf("unselected adapter exposed %s", field)
+		}
 	}
 
 	// Capture the real HTTP envelope, normalizing only generated request/Run IDs.

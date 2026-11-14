@@ -24,12 +24,7 @@ type agentBrowserCDP struct {
 
 // The only dial remains in the audited restricted_cdp_transport adapter; this
 // dispatcher receives an already validated owned-loopback connection.
-type agentBrowserConnection interface {
-	ReadJSON(any) error
-	WriteJSON(any) error
-	SetWriteDeadline(time.Time) error
-	Close() error
-}
+type agentBrowserConnection = AgentBrowserConnection
 type agentBrowserPending struct {
 	session string
 	reply   chan cdpWireMessage
@@ -76,7 +71,7 @@ var agentBrowserCDPMethods = map[string]bool{
 	"Page.enable":            true, "DOM.enable": true, "Runtime.enable": true, "Accessibility.enable": true,
 	"Network.enable": true, "Network.setBlockedURLs": true, "Network.setBypassServiceWorker": true,
 	"Fetch.enable": false, "Fetch.continueRequest": false, "Fetch.failRequest": false,
-	"Page.getFrameTree": true, "Page.createIsolatedWorld": true, "Page.navigate": true, "Page.captureScreenshot": true,
+	"Page.getFrameTree": true, "Page.getLayoutMetrics": true, "Page.createIsolatedWorld": true, "Page.navigate": true, "Page.captureScreenshot": true,
 	"Page.setLifecycleEventsEnabled": true,
 	"DOM.getDocument":                true, "DOM.resolveNode": true, "DOM.scrollIntoViewIfNeeded": true, "DOM.focus": true,
 	// Upload sets file paths on one snapshot-resolved file input; the
@@ -188,6 +183,9 @@ func (c *agentBrowserCDP) call(ctx context.Context, session, method string, para
 		return ErrAgentBrowserClosed
 	case message := <-reply:
 		if message.Error != nil {
+			if method == "Page.captureScreenshot" {
+				return ErrAgentBrowserScreenshotUnavailable
+			}
 			return fmt.Errorf("browser protocol %s failed (%d)", method, message.Error.Code)
 		}
 		if len(message.Result) == 0 {

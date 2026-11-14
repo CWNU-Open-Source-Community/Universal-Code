@@ -62,6 +62,7 @@ const (
 	BrowserTypeTool                 ToolName = "browser_type"
 	BrowserScreenshotTool           ToolName = "browser_screenshot"
 	BrowserScrollTool               ToolName = "browser_scroll"
+	BrowserMoveTool                 ToolName = "browser_move"
 	BrowserKeyTool                  ToolName = "browser_key"
 	BrowserUploadTool               ToolName = "browser_upload"
 	OneShotCommandProposeTool       ToolName = "one_shot_command_propose"

@@ -19,7 +19,8 @@ function show(value?: NonNullable<ThreadDetailView["statistics"]>) {
 
 it("shows recorded conversation totals, weighted speed, cache ratio and context occupancy", () => {
   show(statistics());
-  expect(screen.getByText("2 轮 56 步")).toBeInTheDocument();
+  expect(screen.getByText("2 次输入 · 56 步")).toBeInTheDocument();
+  expect(screen.getByTitle(/本对话累计 2 次用户输入/)).toHaveAttribute("title", expect.stringContaining("重试和协议纠正合并计数"));
   expect(screen.getByText("245 tok/s")).toBeInTheDocument();
   expect(screen.getByText("2.2M tok")).toBeInTheDocument();
   expect(screen.getByText("缓存命中 97%")).toBeInTheDocument();
@@ -74,7 +75,7 @@ it("uses the selected interface language", () => {
   localStorage.setItem("prayu.locale.v1", "en-US");
   show(statistics());
   expect(screen.getByRole("group", { name: "Conversation statistics" })).toBeInTheDocument();
-  expect(screen.getByText("2 turns 56 steps")).toBeInTheDocument();
+  expect(screen.getByText("2 inputs · 56 steps")).toBeInTheDocument();
   expect(screen.getByText("Cache hit 97%")).toBeInTheDocument();
 });
 

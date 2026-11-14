@@ -4,12 +4,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { APIClient } from "../../api/client";
 import type { RunDetailView, ThreadExecutionPermissionControlView } from "../../api/types";
-import { LocaleProvider, type PrayuLocale } from "../../lib/locale";
+import { LocaleProvider } from "../../lib/locale";
+import { capabilityReadinessFixture } from "../../test/capability-readiness";
 import { v2QueryKeys } from "../query-keys";
 import { browserCDPQueryKey } from "./browser-cdp-control";
 import { V2Composer } from "./composer";
-import { V2PermissionControl } from "./permission-control";
-import { V2RunNetworkAuthorityControl } from "./run-network-authority-control";
+import { V2Settings } from "./settings";
 
 afterEach(() => { cleanup(); window.localStorage.removeItem("prayu.locale.v1"); });
 
@@ -22,8 +22,7 @@ function control(threadID: string): ThreadExecutionPermissionControlView {
       persistent_terminal: false, background_process: false, agent_terminal_input: false, risk_tier: "minimal",
       required_gate: "operation_authority", policy_version: "execution_permission_policy.v2",
       operator_confirmed: false, runtime_gate_available: true,
-      runtime: { workspace_sandbox_enabled: true, operator_approval_enabled: true,
-        danger_full_access_enabled: true,  },
+      runtime: { workspace_sandbox_enabled: true, operator_approval_enabled: true, danger_full_access_enabled: true },
       capability_matrix: { workspace_read: true, workspace_write: true, sandboxed_command_runtime: true,
         unsandboxed_host_process: false, network_access: false, credential_access: false,
         user_home_access: false, persistent_user_terminal: false, persistent_agent_terminal: false,
@@ -37,249 +36,156 @@ function control(threadID: string): ThreadExecutionPermissionControlView {
 }
 
 function runDetail(runID: string): RunDetailView {
-  // These are the display/read fields used by the real network and CDP panels.
-  return { run: { id: runID, status: "paused" },
+  return { run: { id: runID, status: "paused" }, mission: { workspace_id: "workspace-1" },
     execution_permission: control(runID).execution_permission,
-    mode: { revision: 1, scope: { network_mode: "disabled", allowed_targets: [] } },
+    execution_profile: { profile: "preview", backend: "noop", risk_tier: "minimal",
+      approval_policy: "none", required_gate: "none", revision: 1 },
+    execution_interaction: { mode: "preview", workspace_trust: "untrusted", command_form: "none",
+      execution_profile: "preview", required_gate: "none", revision: 1 },
+    mode: { revision: 1, scope: { network_mode: "disabled", allowed_targets: [], web_access_mode: "disabled" } },
   } as unknown as RunDetailView;
 }
 
-function install(variant: "menu" | "settings" | "network-menu" = "menu", locale: PrayuLocale = "zh-CN") {
-  window.localStorage.setItem("prayu.locale.v1", locale);
+function install(variant: "composer" | "settings" = "settings") {
+  window.localStorage.setItem("prayu.locale.v1", "zh-CN");
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const get = vi.fn(async (path: string) => runDetail(path.slice("/runs/".length)));
+  const get = vi.fn(async (path: string) => {
+    if (path.startsWith("/threads/")) return { thread: { id: path.split("/").at(-1), workspace_id: "workspace-1" },
+      active_run: { id: "run-" + path.split("/").at(-1) } };
+    if (path.endsWith("/browser-network")) return { version: "browser_network_access.v1", workspace_id: "workspace-1",
+      run_id: path.split("/")[2], revision: 1, browser_network_access: "off", browser_origins: [] };
+    return runDetail(path.slice("/runs/".length));
+  });
   const providerSearchReadiness = vi.fn(async () => ({
-    state: "provider_unqualified", reason: "provider_native_qualification_required",
-    remediation: "qualify_provider_search", search_policy: "provider_native", provider: "Fixture",
+    state: "network_disabled", reason: "run_network_disabled", remediation: "enable_network_allowlist",
   }));
   const setRunWebAccess = vi.fn(async (runID: string, request: { web_allowed_targets: string[] }) => ({
     mode: { ...runDetail(runID).mode, revision: 2, scope: { network_mode: "disabled", allowed_targets: [], web_access_mode: "rules", web_allowed_targets: request.web_allowed_targets } },
     replayed: false,
   }));
-  const changeThreadExecutionPermission = vi.fn();
+  const changeThreadExecutionPermission = vi.fn(); const putControl = vi.fn();
   const onSubmit = vi.fn(async () => {});
-  const client = { hasControl: true, hasThreadControl: true, hasExecutionPermissionControl: true,
+  const client = { baseURL: "/api/v1", hasControl: true, hasThreadControl: true, hasExecutionPermissionControl: true,
     getThreadExecutionPermission: vi.fn(async (threadID: string) => control(threadID)),
-    get, providerSearchReadiness, setRunWebAccess, changeThreadExecutionPermission,
+    runCapabilityReadiness: vi.fn(async (runID: string) => capabilityReadinessFixture(runID)),
+    get, providerSearchReadiness, setRunWebAccess, changeThreadExecutionPermission, putControl,
   } as unknown as APIClient;
   const tree = (threadID: string) => <LocaleProvider><QueryClientProvider client={queries}>
-    {variant === "menu" ? <V2Composer client={client} threadID={threadID} workspaceID="" workspaces={[]}
+    {variant === "composer" ? <V2Composer client={client} threadID={threadID} workspaceID="" workspaces={[]}
       onWorkspaceChange={() => {}} onSubmit={onSubmit} />
-      : variant === "network-menu" ? <V2RunNetworkAuthorityControl client={client} threadID={threadID}
-        runID={"run-" + threadID} variant="menu" />
-      : <V2PermissionControl client={client} threadID={threadID} variant="settings" />}
-    <button type="button">Outside</button>
+      : <V2Settings client={client} threadID={threadID} workspaces={[]} section="permissions"
+        onOpenHistory={vi.fn()} onSelectSection={vi.fn()} />}
   </QueryClientProvider></LocaleProvider>;
   const view = render(tree("thread-a"));
   return { ...view, queries, get, providerSearchReadiness, setRunWebAccess, changeThreadExecutionPermission,
-    onSubmit, changeThread: () => view.rerender(tree("thread-b")) };
+    putControl, onSubmit, changeThread: () => view.rerender(tree("thread-b")) };
 }
 
-async function openNetwork(user: ReturnType<typeof userEvent.setup>, name = "网页访问与搜索") {
-  const trigger = await screen.findByRole("button", { name });
-  await user.click(trigger);
-  const dialog = screen.getByRole("dialog", { name });
-  await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "当前任务网页搜索模式" })).toBeEnabled());
-  return { trigger, dialog };
+async function openAdvanced(user: ReturnType<typeof userEvent.setup>) {
+  const summary = screen.getByText("高级设置", { selector: ".v2-permission-advanced > summary" });
+  await user.click(summary);
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "当前任务网页搜索模式" })).toBeEnabled());
+  return summary;
 }
 
-describe("Composer network layout and interaction", () => {
-  it("loads network facts only in the existing popover, without a composer details block or a write", async () => {
-    const user = userEvent.setup(); const fixture = install();
+async function useRules(user: ReturnType<typeof userEvent.setup>) {
+  await user.selectOptions(screen.getByRole("combobox", { name: "当前任务网页搜索模式" }), "rules");
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" })).toBeEnabled());
+}
+
+describe("Unified daily permissions and advanced restrictions", () => {
+  it("keeps a real Composer draft with only three approval choices and no network setup", async () => {
+    const user = userEvent.setup(); const fixture = install("composer");
     const draft = screen.getByRole("textbox", { name: "继续对话" });
     await user.type(draft, "Keep this unsent draft");
     await user.click(await screen.findByRole("button", { name: "请求批准" }));
-    expect(screen.getByRole("menu", { name: "选择执行权限" })).toBeVisible();
-    expect(fixture.get).not.toHaveBeenCalled(); expect(fixture.providerSearchReadiness).not.toHaveBeenCalled();
-    const { trigger, dialog } = await openNetwork(user);
-    expect(trigger).toHaveAttribute("type", "button");
-    expect(trigger).toHaveAttribute("aria-controls", dialog.id);
-    expect(dialog).toHaveClass("v2-network-popover");
-    expect(dialog).toHaveFocus();
-    expect(fixture.container.querySelector(".v2-composer details")).toBeNull();
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(fixture.get).toHaveBeenCalledExactlyOnceWith("/runs/run-thread-a", {}, expect.any(AbortSignal));
-    expect(fixture.providerSearchReadiness).toHaveBeenCalledExactlyOnceWith("thread-a", expect.any(AbortSignal));
-    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
-    expect(fixture.changeThreadExecutionPermission).not.toHaveBeenCalled();
-    expect(fixture.onSubmit).not.toHaveBeenCalled();
+    const options = within(screen.getByRole("group", { name: "执行权限档位" })).getAllByRole("menuitemradio");
+    expect(options.map((option) => option.getAttribute("aria-label"))).toEqual(["请求批准", "帮我批准", "完全访问权限"]);
+    expect(screen.queryByRole("button", { name: "网页访问与搜索" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitemradio", { name: "完全访问权限" }));
+    const dialog = screen.getByRole("dialog", { name: "启用完全访问权限？" });
+    expect(within(dialog).getByText(/项目文件、执行本机命令和访问公共网络/u)).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "取消" }));
     expect(draft).toHaveValue("Keep this unsent draft");
+    expect(fixture.get).not.toHaveBeenCalled(); expect(fixture.providerSearchReadiness).not.toHaveBeenCalled();
+    expect(fixture.setRunWebAccess).not.toHaveBeenCalled(); expect(fixture.putControl).not.toHaveBeenCalled();
+    expect(fixture.changeThreadExecutionPermission).not.toHaveBeenCalled(); expect(fixture.onSubmit).not.toHaveBeenCalled();
   });
 
-  it.each(["Escape", "close", "outside"] as const)("dismisses by %s without submitting or losing the draft", async (action) => {
+  it("loads explicit preview, web-off and browser-off settings only after opening Advanced", async () => {
     const user = userEvent.setup(); const fixture = install();
-    const draft = screen.getByRole("textbox", { name: "继续对话" });
-    await user.type(draft, "Retain draft");
-    const { trigger, dialog } = await openNetwork(user);
-    if (action === "Escape") await user.keyboard("{Escape}");
-    else if (action === "close") await user.click(within(dialog).getByRole("button", { name: "关闭网页访问与搜索" }));
-    else await user.click(screen.getByRole("button", { name: "Outside" }));
-    expect(screen.queryByRole("dialog", { name: "网页访问与搜索" })).not.toBeInTheDocument();
-    expect(action === "outside" ? screen.getByRole("button", { name: "Outside" }) : trigger).toHaveFocus();
-    expect(draft).toHaveValue("Retain draft");
-    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
-    expect(fixture.onSubmit).not.toHaveBeenCalled();
+    await screen.findByRole("button", { name: "请求批准" });
+    expect(fixture.get).not.toHaveBeenCalled(); expect(fixture.providerSearchReadiness).not.toHaveBeenCalled();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    await openAdvanced(user);
+    expect(screen.getByRole("combobox", { name: "当前任务网页搜索模式" })).toHaveValue("disabled");
+    const environment = screen.getByRole("group", { name: "Run 执行环境" });
+    expect(within(environment).getByRole("button", { name: /预览/u })).toHaveAttribute("aria-pressed", "true");
+    expect(within(environment).getByRole("button", { name: /Docker Engine/u })).toBeInTheDocument();
+    expect(await screen.findByRole("switch", { name: "允许联网" })).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByRole("switch", { name: "完整 CDP 控制" })).not.toBeInTheDocument();
+    expect(fixture.providerSearchReadiness).toHaveBeenCalledWith("thread-a", expect.any(AbortSignal));
+    expect(fixture.setRunWebAccess).not.toHaveBeenCalled(); expect(fixture.putControl).not.toHaveBeenCalled();
+    expect(fixture.changeThreadExecutionPermission).not.toHaveBeenCalled();
   });
 
-  it("opens from the keyboard and localizes the menu host and close control", async () => {
-    const user = userEvent.setup(); const fixture = install("menu", "en-US");
-    const trigger = await screen.findByRole("button", { name: "Web access and search" });
-    trigger.focus(); await user.keyboard("{Enter}");
-    const dialog = screen.getByRole("dialog", { name: "Web access and search" });
-    expect(dialog).toHaveFocus();
-    expect(within(dialog).getByRole("button", { name: "Close web access and search" })).toBeVisible();
-    await user.keyboard("{Escape}");
-    expect(trigger).toHaveFocus(); expect(fixture.onSubmit).not.toHaveBeenCalled();
-  });
-
-  it("discards the open panel and its draft when the target Thread changes", async () => {
+  it.each(["cancel", "close", "backdrop"] as const)("cancels an advanced confirmation by %s without discarding its draft", async (action) => {
     const user = userEvent.setup(); const fixture = install();
-    await openNetwork(user);
-    await user.type(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" }), "docs.example.org");
-    fixture.changeThread();
-    const trigger = await screen.findByRole("button", { name: "网页访问与搜索" });
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("dialog", { name: "网页访问与搜索" })).not.toBeInTheDocument();
-    await user.click(trigger);
-    expect(await screen.findByRole("textbox", { name: "追加允许的 HTTPS 主机" })).toHaveValue("");
-    await waitFor(() => expect(fixture.get).toHaveBeenCalledWith("/runs/run-thread-b", {}, expect.any(AbortSignal)));
-    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
-  });
-
-  it("cancels an inner network confirmation before closing the outer popover", async () => {
-    const user = userEvent.setup(); const fixture = install();
-    const { trigger } = await openNetwork(user);
-    await user.type(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" }), "docs.example.org");
-    await user.click(screen.getByRole("button", { name: "审核并追加" }));
-    expect(screen.getByRole("dialog", { name: "追加网页访问范围？" })).toBeVisible();
-    expect(screen.getByRole("dialog", { name: "追加网页访问范围？" }).parentElement?.parentElement).toBe(document.body);
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog", { name: "追加网页访问范围？" })).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "网页访问与搜索" })).toBeVisible();
-    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(); expect(trigger).toHaveFocus();
-  });
-
-  it.each(["cancel", "close", "backdrop"] as const)("cancels the body portal by %s while keeping the network draft", async (action) => {
-    const user = userEvent.setup(); const fixture = install();
-    const { dialog } = await openNetwork(user);
+    await openAdvanced(user); await useRules(user);
+    fixture.setRunWebAccess.mockClear();
     const input = screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" });
     await user.type(input, "docs.example.org");
     const review = screen.getByRole("button", { name: "审核并追加" });
     await user.click(review);
     const confirmation = screen.getByRole("dialog", { name: "追加网页访问范围？" });
     expect(confirmation.parentElement?.parentElement).toBe(document.body);
-    expect(dialog).not.toContainElement(confirmation);
     if (action === "backdrop") await user.click(confirmation.parentElement!);
     else await user.click(within(confirmation).getByRole("button", { name: action === "cancel" ? "取消" : "关闭" }));
-    expect(screen.queryByRole("dialog", { name: "追加网页访问范围？" })).not.toBeInTheDocument();
-    expect(dialog).toBeVisible(); expect(input).toHaveValue("docs.example.org");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(input).toHaveValue("docs.example.org");
     await waitFor(() => expect(review).toHaveFocus());
     expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
-    expect(fixture.onSubmit).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])("removes the portal on Thread switch with pending=%s and keeps the original request target", async (pending) => {
+  it("keeps a pending write on its original Thread while the new settings start collapsed", async () => {
     const user = userEvent.setup(); const fixture = install();
+    await openAdvanced(user); await useRules(user);
+    fixture.setRunWebAccess.mockClear();
     let release: (() => void) | undefined;
     fixture.setRunWebAccess.mockImplementation(async (runID, request) => {
       await new Promise<void>((resolve) => { release = resolve; });
-      return { mode: { ...runDetail(runID).mode, revision: 2,
+      return { mode: { ...runDetail(runID).mode, revision: 3,
         scope: { network_mode: "disabled", allowed_targets: [], web_access_mode: "rules", web_allowed_targets: request.web_allowed_targets } }, replayed: false };
     });
-    await openNetwork(user);
     await user.type(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" }), "docs.example.org");
     await user.click(screen.getByRole("button", { name: "审核并追加" }));
-    if (pending) await user.click(within(screen.getByRole("dialog", { name: "追加网页访问范围？" }))
-      .getByRole("button", { name: "允许这些主机" }));
+    await user.click(within(screen.getByRole("dialog", { name: "追加网页访问范围？" })).getByRole("button", { name: "允许这些主机" }));
+    expect(fixture.setRunWebAccess).toHaveBeenCalledExactlyOnceWith("run-thread-a", {
+      version: "run_web_access_control.v1", expected_mode_revision: 2,
+      web_allowed_targets: ["docs.example.org"], web_access_mode: "rules", reason: "v2 operator-selected web access",
+    }, expect.stringMatching(/^v2-run-web-access-/u));
     fixture.changeThread();
-    expect(screen.queryByRole("dialog", { name: "追加网页访问范围？" })).not.toBeInTheDocument();
-    await openNetwork(user);
-    expect(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" })).toHaveValue("");
-    if (pending) {
-      expect(fixture.setRunWebAccess.mock.calls[0]?.[0]).toBe("run-thread-a");
-      await act(async () => { release?.(); });
-      expect(fixture.queries.getQueryData<RunDetailView>(browserCDPQueryKey("run-thread-b"))?.mode.scope.allowed_targets).toEqual([]);
-    }
-    expect(fixture.setRunWebAccess).toHaveBeenCalledTimes(pending ? 1 : 0);
-    await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(fixture.container.querySelector(".v2-permission-advanced")).not.toHaveAttribute("open");
+    await act(async () => { release?.(); });
+    expect(fixture.queries.getQueryData<RunDetailView>(browserCDPQueryKey("run-thread-b"))).toBeUndefined();
     expect(fixture.onSubmit).not.toHaveBeenCalled();
   });
 
-  it("clears the portal guard when the same Thread changes its current Run", async () => {
+  it("discards a confirmation when the same Thread receives a new current Run", async () => {
     const user = userEvent.setup(); const fixture = install();
-    await openNetwork(user);
+    await openAdvanced(user); await useRules(user);
     await user.type(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" }), "docs.example.org");
     await user.click(screen.getByRole("button", { name: "审核并追加" }));
     act(() => { fixture.queries.setQueryData(v2QueryKeys.permission("thread-a"), {
       ...control("thread-a"), current_run_id: "run-next",
     }); });
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "追加网页访问范围？" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await waitFor(() => expect(fixture.get).toHaveBeenCalledWith("/runs/run-next", {}, expect.any(AbortSignal)));
-    expect(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" })).toHaveValue("");
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
-  });
-
-  it("keeps the native network menu open while cancelling its body portal", async () => {
-    const user = userEvent.setup(); const fixture = install("network-menu");
-    await user.click(screen.getByRole("button", { name: "网页访问状态" }));
-    const menu = screen.getByRole("dialog", { name: "当前执行网页访问" });
-    await user.type(await within(menu).findByRole("textbox", { name: "追加允许的 HTTPS 主机" }), "docs.example.org");
-    const review = within(menu).getByRole("button", { name: "审核并追加" });
-    await user.click(review);
-    const confirmation = screen.getByRole("dialog", { name: "追加网页访问范围？" });
-    expect(confirmation.parentElement?.parentElement).toBe(document.body);
-    await user.click(within(confirmation).getByRole("button", { name: "取消" }));
-    expect(menu).toBeVisible(); expect(review).toHaveFocus();
-    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
-  });
-
-  it("retains a pending inner confirmation and the exact network request", async () => {
-    const user = userEvent.setup(); const fixture = install();
-    let release: (() => void) | undefined;
-    fixture.setRunWebAccess.mockImplementation(async (runID, request) => {
-      await new Promise<void>((resolve) => { release = resolve; });
-      return { mode: { ...runDetail(runID).mode, revision: 2,
-        scope: { network_mode: "disabled", allowed_targets: [], web_access_mode: "rules", web_allowed_targets: request.web_allowed_targets } }, replayed: false };
-    });
-    await openNetwork(user);
-    await user.type(screen.getByRole("textbox", { name: "追加允许的 HTTPS 主机" }), "docs.example.org");
-    await user.click(screen.getByRole("button", { name: "审核并追加" }));
-    await user.click(within(screen.getByRole("dialog", { name: "追加网页访问范围？" })).getByRole("button", { name: "允许这些主机" }));
-    await waitFor(() => expect(fixture.setRunWebAccess).toHaveBeenCalledExactlyOnceWith("run-thread-a", {
-      version: "run_web_access_control.v1", expected_mode_revision: 1,
-      web_allowed_targets: ["docs.example.org"], web_access_mode: "rules", reason: "v2 operator-selected web access",
-    }, expect.stringMatching(/^v2-run-web-access-/u)));
-    await user.keyboard("{Escape}");
-    expect(screen.getByRole("dialog", { name: "网页访问与搜索" })).toBeVisible();
-    expect(screen.getByRole("dialog", { name: "追加网页访问范围？" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "网页访问与搜索" }));
-    expect(screen.getByRole("dialog", { name: "追加网页访问范围？" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "关闭网页访问与搜索" }));
-    await user.click(screen.getByRole("button", { name: "Outside" }));
-    expect(screen.getByRole("dialog", { name: "网页访问与搜索" })).toBeVisible();
-    expect(screen.getByRole("dialog", { name: "追加网页访问范围？" })).toBeVisible();
-    await act(async () => { release?.(); });
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "追加网页访问范围？" })).not.toBeInTheDocument());
-    expect(fixture.onSubmit).not.toHaveBeenCalled();
-  });
-
-  it("keeps settings expansion in the settings page and localizes its status", async () => {
-    const user = userEvent.setup(); const fixture = install("settings", "en-US");
-    expect(await screen.findByText("Applied to the current and future runs.")).toBeVisible();
-    const summary = screen.getByText("Web access and search");
-    expect(summary.tagName).toBe("SUMMARY");
-    await user.click(summary);
-    expect(await screen.findByText("Current task web access")).toBeVisible();
-    expect(summary.closest("details")).toHaveAttribute("open");
-    expect(fixture.container.querySelector(".v2-network-popover")).toBeNull();
-    expect(fixture.setRunWebAccess).not.toHaveBeenCalled();
+    expect(screen.getByRole("combobox", { name: "当前任务网页搜索模式" })).toHaveValue("disabled");
   });
 });
 
-// Retain textarea coverage through the supported plain-text editing mode.
 beforeEach(() => localStorage.setItem("universal-code.composer-plain-text", "true"));

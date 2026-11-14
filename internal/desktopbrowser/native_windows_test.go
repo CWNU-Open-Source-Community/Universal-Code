@@ -1,0 +1,645 @@
+//go:build windows
+
+package desktopbrowser
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"runtime"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+)
+
+type probeUI struct {
+	dispatcher *Dispatcher
+	hwnd       uintptr
+	done       chan struct{}
+}
+type winMessage struct {
+	HWND           uintptr
+	Message        uint32
+	WParam, LParam uintptr
+	Time           uint32
+	X, Y           int32
+	Private        uint32
+}
+
+func startProbeUI(t *testing.T) *probeUI {
+	t.Helper()
+	ready := make(chan *probeUI, 1)
+	failed := make(chan error, 1)
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		d, err := NewDispatcher()
+		if err != nil {
+			failed <- err
+			return
+		}
+		class := windows.StringToUTF16Ptr("STATIC")
+		title := windows.StringToUTF16Ptr("Universal Code native WebView2 probe")
+		style := uintptr(0x00cf0000)
+		if os.Getenv("UC_NATIVE_BROWSER_VISIBLE") == "1" {
+			style |= 0x10000000
+		}
+		hwnd, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), style, 80, 80, 1100, 800, 0, 0, 0, 0)
+		if hwnd == 0 {
+			failed <- err
+			_ = d.Close()
+			return
+		}
+		ui := &probeUI{d, hwnd, make(chan struct{})}
+		ready <- ui
+		var message winMessage
+		for {
+			result, _, _ := user32.NewProc("GetMessageW").Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
+			if int32(result) <= 0 {
+				break
+			}
+			user32.NewProc("TranslateMessage").Call(uintptr(unsafe.Pointer(&message)))
+			user32.NewProc("DispatchMessageW").Call(uintptr(unsafe.Pointer(&message)))
+		}
+		close(ui.done)
+	}()
+	select {
+	case err := <-failed:
+		t.Fatal(err)
+	case ui := <-ready:
+		t.Cleanup(func() {
+			_ = ui.dispatcher.Invoke(context.Background(), func() error {
+				destroyWindow.Call(ui.hwnd)
+				_ = ui.dispatcher.Close()
+				user32.NewProc("PostQuitMessage").Call(0)
+				return nil
+			})
+			select {
+			case <-ui.done:
+			case <-time.After(5 * time.Second):
+				t.Error("native probe UI did not terminate")
+			}
+		})
+		return ui
+	case <-time.After(10 * time.Second):
+		t.Fatal("native probe UI did not initialize")
+	}
+	return nil
+}
+
+type probeCDP struct {
+	t       *testing.T
+	conn    JSONConnection
+	id      int64
+	session string
+}
+
+func (c *probeCDP) call(method string, params any) json.RawMessage {
+	c.t.Helper()
+	c.id++
+	if err := c.conn.WriteJSON(map[string]any{"id": c.id, "method": method, "params": params, "sessionId": c.session}); err != nil {
+		c.t.Fatalf("%s dispatch: %v", method, err)
+	}
+	for {
+		var message struct {
+			ID     int64           `json:"id"`
+			Result json.RawMessage `json:"result"`
+			Error  any             `json:"error"`
+		}
+		if err := c.conn.ReadJSON(&message); err != nil {
+			c.t.Fatal(err)
+		}
+		if message.ID == c.id {
+			if message.Error != nil {
+				c.t.Fatalf("%s: %v", method, message.Error)
+			}
+			return message.Result
+		}
+	}
+}
+func (c *probeCDP) evaluate(expression string) string {
+	c.t.Helper()
+	raw := c.call("Runtime.evaluate", map[string]any{"expression": expression, "returnByValue": true, "awaitPromise": true})
+	var result struct {
+		Result struct {
+			Value any `json:"value"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.t.Fatal(err)
+	}
+	return fmt.Sprint(result.Result.Value)
+}
+
+// TestNativeBrowserProbe uses the installed WebView2 runtime and real child
+// controllers. Opt in on Windows; CI without an interactive desktop skips it.
+func TestNativeBrowserProbe(t *testing.T) {
+	if os.Getenv("UC_NATIVE_BROWSER_PROBE") != "1" {
+		t.Skip("set UC_NATIVE_BROWSER_PROBE=1 to exercise installed WebView2")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
+	defer cancel()
+	ui := startProbeUI(t)
+	var writes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/write" {
+			writes.Add(1)
+			fmt.Fprint(w, "accepted")
+			return
+		}
+		if r.URL.Path == "/worker.js" {
+			w.Header().Set("Content-Type", "text/javascript")
+			fmt.Fprint(w, `onmessage=()=>fetch('/write',{method:'POST',body:'worker body'}).then(r=>postMessage(r.status))`)
+			return
+		}
+		if r.URL.Path == "/shared.js" {
+			w.Header().Set("Content-Type", "text/javascript")
+			fmt.Fprint(w, `onconnect=e=>{e.ports[0].onmessage=()=>fetch('/write',{method:'POST',body:'shared body'}).then(r=>e.ports[0].postMessage(r.status))}`)
+			return
+		}
+		if r.URL.Path == "/sw.js" {
+			w.Header().Set("Content-Type", "text/javascript")
+			fmt.Fprint(w, `self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('message',e=>e.waitUntil(fetch('/write',{method:'POST',body:'service body'})))`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		if r.URL.Path == "/a" {
+			http.SetCookie(w, &http.Cookie{Name: "shared_login", Value: "persisted", Path: "/", MaxAge: 3600})
+		}
+		fmt.Fprintf(w, `<!doctype html><title>Native %s</title><button id="increment" onclick="this.dataset.count=String(Number(this.dataset.count||0)+1)">Increment</button><script>window.worker=new Worker('/worker.js')</script>`, r.URL.Path)
+	}))
+	defer server.Close()
+	profile := t.TempDir()
+	host, err := NewHost(ctx, HostOptions{ParentHWND: ui.hwnd, Dispatcher: ui.dispatcher, UserDataDir: profile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.Close(context.Background()) })
+	page, err := host.CreateTab(ctx, TabOptions{ID: "probe-page-a", URL: server.URL + "/a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = page.SetSurface(ctx, Bounds{X: 10, Y: 40, Width: 800, Height: 600}, true); err != nil {
+		t.Fatal(err)
+	}
+	connection, err := page.OpenCDP(ctx, CDPOptions{Events: []string{"Page.frameNavigated", "Page.lifecycleEvent", "DOM.documentUpdated"}, Dispatch: func(ctx context.Context, send func() error) error { return send() }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	go func() { <-ctx.Done(); _ = connection.Close() }()
+	cdp := &probeCDP{t: t, conn: connection, session: page.ID()}
+	cdp.call("Runtime.enable", map[string]any{})
+	waitProbe(t, ctx, func() bool { return page.State().Title == "Native /a" })
+	if got := cdp.evaluate(`document.getElementById('increment').click();document.getElementById('increment').dataset.count`); got != "1" {
+		t.Fatalf("visible page DOM mismatch: %s", got)
+	}
+	if got := cdp.evaluate(`document.cookie`); !strings.Contains(got, "shared_login=persisted") {
+		t.Fatalf("missing login cookie: %s", got)
+	}
+	for _, kind := range []string{"mouseMoved", "mousePressed", "mouseReleased"} {
+		cdp.call("Input.dispatchMouseEvent", map[string]any{"type": kind, "x": 16, "y": 16, "button": "left", "clickCount": 1})
+	}
+	if got := cdp.evaluate(`document.getElementById('increment').dataset.count`); got != "2" {
+		t.Fatalf("actual native page mouse click did not affect DOM: %s", got)
+	}
+	if page.(*nativePage).cursor == 0 {
+		t.Fatalf("CDP mouse input did not create a native agent cursor: %v", page.(*nativePage).cursorError)
+	}
+	if os.Getenv("UC_NATIVE_BROWSER_VISIBLE") == "1" {
+		if err = ui.dispatcher.Invoke(ctx, func() error {
+			showWindow.Call(ui.hwnd, 5)
+			p := page.(*nativePage)
+			p.positionCursor()
+			var before, after nativeRect
+			user32.NewProc("GetWindowRect").Call(p.cursor, uintptr(unsafe.Pointer(&before)))
+			moveWindow.Call(ui.hwnd, 280, 180, 1100, 800, 1)
+			user32.NewProc("GetWindowRect").Call(p.cursor, uintptr(unsafe.Pointer(&after)))
+			if after.Left-before.Left != 200 || after.Top-before.Top != 100 {
+				return fmt.Errorf("agent cursor did not follow native parent move: before=%+v after=%+v", before, after)
+			}
+			showWindow.Call(ui.hwnd, 0)
+			if visible, _, _ := user32.NewProc("IsWindowVisible").Call(p.cursor); visible != 0 {
+				return fmt.Errorf("agent cursor stayed visible after its desktop parent was hidden")
+			}
+			showWindow.Call(ui.hwnd, 5)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = page.Navigate(ctx, server.URL+"/b"); err != nil {
+		t.Fatal(err)
+	}
+	waitProbe(t, ctx, func() bool { return page.State().Title == "Native /b" && page.State().CanGoBack })
+	if err = page.Back(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitProbe(t, ctx, func() bool { return page.State().Title == "Native /a" && page.State().CanGoForward })
+	second, err := host.CreateTab(ctx, TabOptions{ID: "probe-page-b", URL: server.URL + "/second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = second.SetSurface(ctx, Bounds{}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.WriteJSON(map[string]any{"id": 99, "method": "Runtime.evaluate", "params": map[string]any{"expression": "1"}, "sessionId": second.ID()}); err == nil {
+		t.Fatal("connection accepted a sibling controller identity")
+	}
+	if err = connection.WriteJSON(map[string]any{"id": 99, "method": "Target.createTarget", "params": map[string]any{}, "sessionId": page.ID()}); err == nil {
+		t.Fatal("page connection accepted a Target mutation")
+	}
+	if got := cdp.evaluate(`window.shared=new SharedWorker('/shared.js');shared.port.start();'ready'`); got != "ready" {
+		t.Fatal(got)
+	}
+	if got := cdp.evaluate(`navigator.serviceWorker.register('/sw.js').then(()=>navigator.serviceWorker.ready).then(r=>{window.sw=r.active;return 'ready'})`); got != "ready" {
+		t.Fatal(got)
+	}
+	lease, err := host.AcquireControl(ctx, page.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen atomic.Int32
+	var bodyMu sync.Mutex
+	bodies := map[string]bool{}
+	err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func(context.Context) error) error {
+		seen.Add(1)
+		if strings.HasSuffix(request.URL, "/write") {
+			bodyMu.Lock()
+			bodies[string(request.Body)] = request.BodyComplete
+			bodyMu.Unlock()
+			return fmt.Errorf("denied by probe")
+		}
+		return dispatch(ctx)
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cdp.call("Runtime.evaluate", map[string]any{"expression": "worker.postMessage('go')"})
+	cdp.call("Runtime.evaluate", map[string]any{"expression": "shared.port.postMessage('go');sw.postMessage('go')"})
+	waitProbe(t, ctx, func() bool { bodyMu.Lock(); defer bodyMu.Unlock(); return len(bodies) >= 3 })
+	bodyMu.Lock()
+	for _, kind := range []string{"worker body", "shared body", "service body"} {
+		if !bodies[kind] {
+			t.Errorf("native request body missing/incomplete for %q: %#v", kind, bodies)
+		}
+	}
+	bodyMu.Unlock()
+	if writes.Load() != 0 {
+		t.Fatal("worker POST bypassed native policy")
+	}
+	var enabled uintptr
+	_ = ui.dispatcher.Invoke(ctx, func() error {
+		enabled, _, _ = user32.NewProc("IsWindowEnabled").Call(page.(*nativePage).container)
+		return nil
+	})
+	if enabled == 0 {
+		t.Fatal("agent lease disabled native human input")
+	}
+	leaseConnection, err := page.OpenCDP(ctx, CDPOptions{Dispatch: lease.Dispatch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked, unblock := make(chan struct{}), make(chan struct{})
+	if err = ui.dispatcher.Post(func() { close(blocked); <-unblock }); err != nil {
+		t.Fatal(err)
+	}
+	<-blocked
+	writeDone := make(chan error, 1)
+	go func() {
+		writeDone <- leaseConnection.WriteJSON(map[string]any{"id": 1, "method": "Runtime.evaluate", "params": map[string]any{"expression": "window.revokedWrite=true"}, "sessionId": page.ID()})
+	}()
+	waitProbe(t, ctx, func() bool {
+		ui.dispatcher.mu.Lock()
+		defer ui.dispatcher.mu.Unlock()
+		return len(ui.dispatcher.queue) > 0
+	})
+	lease.Cancel()
+	close(unblock)
+	if err = <-writeDone; err == nil {
+		t.Fatal("revoked queued CDP write was dispatched")
+	}
+	_ = leaseConnection.Close()
+	if got := cdp.evaluate(`String(window.revokedWrite)`); got != "undefined" {
+		t.Fatalf("revoked UI write mutated native document: %s", got)
+	}
+	if err = lease.Release(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cdp.call("Runtime.evaluate", map[string]any{"expression": "worker.postMessage('go')"})
+	waitProbe(t, ctx, func() bool { return writes.Load() == 1 })
+	if err = page.Focus(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = connection.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if page.State().Closed {
+		t.Fatal("detaching CDP closed user's page")
+	}
+	if err = second.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("real WebView2 parent=%x child=%x cursor=%x: DOM/mouse interaction, history, cookie, exact-page CDP, dedicated/shared/service-worker request+body denial, native human input and queued lease cancellation passed", ui.hwnd, page.(*nativePage).container, page.(*nativePage).cursor)
+}
+
+func waitProbe(t *testing.T, ctx context.Context, predicate func() bool) {
+	t.Helper()
+	for !predicate() {
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+func TestNativeParentDestroyClosesPages(t *testing.T) {
+	if os.Getenv("UC_NATIVE_BROWSER_PROBE") != "1" {
+		t.Skip("requires native WebView2 probe")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	ui := startProbeUI(t)
+	host, err := NewHost(ctx, HostOptions{ParentHWND: ui.hwnd, Dispatcher: ui.dispatcher, UserDataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := host.CreateTab(ctx, TabOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ui.dispatcher.Invoke(ctx, func() error { destroyWindow.Call(ui.hwnd); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !page.State().Closed {
+		t.Fatal("destroying the native parent left the browser page alive")
+	}
+	if _, err = host.CreateTab(ctx, TabOptions{}); err == nil {
+		t.Fatal("destroyed native parent accepted a new page")
+	}
+}
+
+func TestNativeLoginPopupPreservesOpenerAndPolicy(t *testing.T) {
+	if os.Getenv("UC_NATIVE_BROWSER_PROBE") != "1" {
+		t.Skip("requires native WebView2 probe")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	ui := startProbeUI(t)
+	var writes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		switch r.URL.Path {
+		case "/opener":
+			fmt.Fprint(w, `<title>Opener</title><script>window.addEventListener('message',e=>window.popupMessage=e.data)</script>`)
+		case "/popup":
+			fmt.Fprint(w, `<title>Login popup</title><script>window.opener.postMessage('signed-in','*');fetch('/popup-write',{method:'POST',body:'popup body'})</script>`)
+		case "/popup-write":
+			writes.Add(1)
+			fmt.Fprint(w, "sent")
+		}
+	}))
+	defer server.Close()
+	popupEvents := make(chan Event, 2)
+	navigations := make(chan Event, 16)
+	host, err := NewHost(ctx, HostOptions{ParentHWND: ui.hwnd, Dispatcher: ui.dispatcher, UserDataDir: t.TempDir(), OnEvent: func(event Event) {
+		if event.Kind == "popup" {
+			popupEvents <- event
+		}
+		if event.Kind == "navigated" {
+			navigations <- event
+		}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.Close(context.Background()) })
+	page, err := host.CreateTab(ctx, TabOptions{URL: server.URL + "/opener"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = page.SetSurface(ctx, Bounds{Width: 800, Height: 600}, true); err != nil {
+		t.Fatal(err)
+	}
+	connection, err := page.OpenCDP(ctx, CDPOptions{Dispatch: func(ctx context.Context, send func() error) error { return send() }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	go func() { <-ctx.Done(); _ = connection.Close() }()
+	cdp := &probeCDP{t: t, conn: connection, session: page.ID()}
+	waitProbe(t, ctx, func() bool { return page.State().Title == "Opener" })
+	lease, err := host.AcquireControl(ctx, page.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release(context.Background())
+	denied := make(chan NetworkRequest, 2)
+	if err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func(context.Context) error) error {
+		if strings.HasSuffix(request.URL, "/popup-write") {
+			denied <- request
+			return fmt.Errorf("denied popup write")
+		}
+		return dispatch(ctx)
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := cdp.evaluate(`window.loginWindow=window.open('/popup','login-window');String(!!window.loginWindow)`); got != "true" {
+		t.Fatalf("window.open lost WindowProxy: %s", got)
+	}
+	var popup Event
+	select {
+	case popup = <-popupEvents:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if popup.OpenerID != page.ID() || popup.State.ID == page.ID() {
+		t.Fatalf("invalid popup identity: %+v", popup)
+	}
+	child, ok := host.Tab(popup.State.ID)
+	if !ok {
+		t.Fatal("popup event did not identify an existing native tab")
+	}
+	waitProbe(t, ctx, func() bool { return child.State().Title == "Login popup" })
+	waitProbe(t, ctx, func() bool { return cdp.evaluate(`String(window.popupMessage)`) == "signed-in" })
+	select {
+	case request := <-denied:
+		if string(request.Body) != "popup body" || !request.BodyComplete {
+			t.Fatalf("popup request body incomplete: %+v", request)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if writes.Load() != 0 {
+		t.Fatal("login popup escaped its Host's active network policy")
+	}
+	if err = lease.Release(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var focusBefore, focusAfter uintptr
+	_ = ui.dispatcher.Invoke(ctx, func() error { focusBefore, _, _ = user32.NewProc("GetFocus").Call(); return nil })
+	cdp.call("Input.dispatchMouseEvent", map[string]any{"type": "mouseMoved", "x": 15, "y": 15})
+	_ = ui.dispatcher.Invoke(ctx, func() error { focusAfter, _, _ = user32.NewProc("GetFocus").Call(); return nil })
+	if focusBefore != focusAfter {
+		t.Fatal("agent pointer overlay changed native keyboard focus")
+	}
+	if err = page.Navigate(ctx, "http://127.0.0.1:1/unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	waitProbe(t, ctx, func() bool { return page.State().Error != "" && !page.State().Loading })
+	foundOpener, foundPopup := false, false
+	for {
+		select {
+		case event := <-navigations:
+			if strings.Contains(event.State.URL, "/unavailable") {
+				t.Fatal("failed native navigation emitted a history success")
+			}
+			if event.State.URL == server.URL+"/opener" {
+				foundOpener = true
+			}
+			if event.State.URL == server.URL+"/popup" {
+				foundPopup = true
+			}
+		default:
+			if !foundOpener || !foundPopup {
+				t.Fatalf("missing successful navigation events: opener=%t popup=%t", foundOpener, foundPopup)
+			}
+			t.Log("hidden native login popup preserved opener/postMessage and POST policy; failed navigation excluded from history; agent cursor preserved focus")
+			return
+		}
+	}
+}
+
+func TestNativeNetworkDispatchContextFencesQueuedRequest(t *testing.T) {
+	if os.Getenv("UC_NATIVE_BROWSER_PROBE") != "1" {
+		t.Skip("requires native WebView2 probe")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	ui := startProbeUI(t)
+	var writes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/write" {
+			writes.Add(1)
+			fmt.Fprint(w, "sent")
+			return
+		}
+		fmt.Fprint(w, "<!doctype html><title>Queue source</title>")
+	}))
+	defer server.Close()
+	host, err := NewHost(ctx, HostOptions{ParentHWND: ui.hwnd, Dispatcher: ui.dispatcher, UserDataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.Close(context.Background()) })
+	page, err := host.CreateTab(ctx, TabOptions{URL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitProbe(t, ctx, func() bool { return page.State().Title == "Queue source" })
+	connection, err := page.OpenCDP(ctx, CDPOptions{Dispatch: func(ctx context.Context, send func() error) error { return send() }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	go func() { <-ctx.Done(); _ = connection.Close() }()
+	cdp := &probeCDP{t: t, conn: connection, session: page.ID()}
+	lease, err := host.AcquireControl(ctx, page.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, cancelOp := context.WithCancel(ctx)
+	defer cancelOp()
+	reviewStarted, beginSend := make(chan struct{}), make(chan struct{})
+	sendResult := make(chan error, 1)
+	if err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func(context.Context) error) error {
+		if !strings.HasSuffix(request.URL, "/write") {
+			return dispatch(ctx)
+		}
+		close(reviewStarted)
+		select {
+		case <-beginSend:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		err := dispatch(op)
+		sendResult <- err
+		return err
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	cdp.call("Runtime.evaluate", map[string]any{"expression": "fetch('/write',{method:'POST',body:'queued'}).then(()=>window.fetchSettled=true).catch(()=>window.fetchSettled=true)"})
+	select {
+	case <-reviewStarted:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	blocked, unblock := make(chan struct{}), make(chan struct{})
+	if err = ui.dispatcher.Post(func() { close(blocked); <-unblock }); err != nil {
+		t.Fatal(err)
+	}
+	<-blocked
+	close(beginSend)
+	waitProbe(t, ctx, func() bool {
+		ui.dispatcher.mu.Lock()
+		defer ui.dispatcher.mu.Unlock()
+		return len(ui.dispatcher.queue) > 0
+	})
+	cancelOp()
+	close(unblock)
+	select {
+	case err = <-sendResult:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("queued HTTP dispatch ignored cancelled operation: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	waitProbe(t, ctx, func() bool { return cdp.evaluate("String(window.fetchSettled)") == "true" })
+	if writes.Load() != 0 {
+		t.Fatal("cancelled queued HTTP request reached the server")
+	}
+	if err = lease.Release(ctx); err != nil {
+		t.Fatal(err)
+	}
+	lease, err = host.AcquireControl(ctx, page.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release(context.Background())
+	dispatched, reviewReturn := make(chan struct{}), make(chan struct{})
+	if err = lease.InstallNetworkPolicy(ctx, NetworkPolicy{Done: lease.Done(), ReviewRequest: func(ctx context.Context, request NetworkRequest, dispatch func(context.Context) error) error {
+		err := dispatch(ctx)
+		if strings.HasSuffix(request.URL, "/write") && err == nil {
+			close(dispatched)
+			select {
+			case <-reviewReturn:
+			case <-ctx.Done():
+			}
+		}
+		return err
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	cdp.call("Runtime.evaluate", map[string]any{"expression": "fetch('/write',{method:'POST',body:'actual'})"})
+	select {
+	case <-dispatched:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	// Keep ReviewRequest blocked after dispatch returns. The native request
+	// must already be sent; no later review-return/allow flag may be required.
+	waitProbe(t, ctx, func() bool { return writes.Load() == 1 })
+	close(reviewReturn)
+	t.Log("hidden native HTTP dispatch completed before review returned; cancelled queued dispatch never reached server")
+}

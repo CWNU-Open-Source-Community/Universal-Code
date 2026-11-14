@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import type { V2FileReference } from "./file-context";
 import type { PageResult, ThreadDetailView, ThreadExecutionView, ThreadTranscriptItemView, WorkspaceView } from "../../api/types";
+import type { ThreadTranscriptActivityItem } from "../projection/narrative";
 import type { ThreadReview } from "../../api/task-delivery";
 import { v2QueryKeys } from "../query-keys";
 import { V2RecoveryProvider } from "../recovery-storage";
@@ -26,9 +27,10 @@ vi.mock("../../hooks/use-public-model-stream", () => ({
   usePublicModelStream: () => ({ error: null, snapshot: null, status: streams.model }),
 }));
 
-vi.mock("../projection/narrative", () => ({
+vi.mock("../projection/narrative", async (original) => ({
+  ...await original<typeof import("../projection/narrative")>(),
   projectThreadNarrative: () => [],
-  prepareThreadNarrative: (items: ThreadTranscriptItemView[]) => ({ entries: items.map((item) => ({
+  prepareThreadNarrative: (items: ThreadTranscriptActivityItem[]) => ({ entries: items.map((item) => ({
     id: item.id,
     kind: item.source === "operator" ? "user" : "assistant",
     text: item.detail ?? item.title,
@@ -39,21 +41,26 @@ vi.mock("../projection/narrative", () => ({
     promotedFromMessageID: item.promoted_from_message_id,
     runId: item.run_id,
     branchSourceID: item.durable && !item.provisional ? item.id : undefined,
+    ...(item.task ? { task: { id: item.task.id, inputMessageID: item.task.input_message_id, runId: item.run_id,
+      state: item.task.state, finalMessageID: item.task.final_message_id } } : {}),
   })) }),
   projectLiveThreadNarrative: (prepared: { entries: unknown[] }) => prepared.entries,
 }));
 
 vi.mock("./composer", () => ({
-  V2Composer: ({ disabled, onSubmit, onStop, threadID, fileReferenceUnavailableReason }: {
+  V2Composer: ({ disabled, onSubmit, onStop, onStartNextMessage, threadID, fileReferenceUnavailableReason }: {
     disabled: boolean;
     onSubmit: (content: string, files?: V2FileReference[]) => Promise<void>;
     onStop?: () => boolean;
+    onStartNextMessage?: () => void;
     threadID: string;
     fileReferenceUnavailableReason?: string;
-  }) => { composerStop.current = onStop; return <button data-file-reference-unavailable={fileReferenceUnavailableReason}
+  }) => { composerStop.current = onStop; return <div data-testid="composer">
+    {onStartNextMessage && <button onClick={onStartNextMessage} type="button">编写下一条</button>}
+    <button data-file-reference-unavailable={fileReferenceUnavailableReason}
     disabled={disabled} onClick={() => void onSubmit(`pending-${threadID}`, composerFiles.current).catch(() => undefined)} type="button">
     发送 {threadID}
-  </button>; },
+  </button></div>; },
 }));
 
 vi.mock("../../components/user-terminal-panel", () => ({
@@ -105,6 +112,11 @@ function transcriptItem(id: string, detailText: string, sequence: number): Threa
     verifiable: true,
     version: "thread_transcript.v1",
   };
+}
+
+function completedTranscriptItem(item: ThreadTranscriptItemView): ThreadTranscriptActivityItem {
+  return { ...item, task: { id: `input:${item.id}`, input_message_id: `input:${item.id}`,
+    state: "completed", final_message_id: item.id } };
 }
 
 function page(items: ThreadTranscriptItemView[], nextCursor = ""): PageResult<ThreadTranscriptItemView> {
@@ -910,7 +922,7 @@ describe("V2Conversation", () => {
     await user.click(screen.getByRole("button", { name: "发送 thread-a" }));
     expect(await screen.findByText("正在发送消息")).toBeInTheDocument();
     expect(screen.queryByText("正在工作")).not.toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "对话统计" })).toHaveTextContent("2 轮 56 步");
+    expect(screen.getByRole("group", { name: "对话统计" })).toHaveTextContent("2 次输入 · 56 步");
     expect(screen.queryByText(/停止会取消/u)).not.toBeInTheDocument();
 
     const completed = detail("thread-a").thread;
@@ -948,6 +960,7 @@ describe("V2Conversation", () => {
     // The settled mutation leaves the cache, but the leftover draft still
     // matches the accepted payload, so the chip stays available.
     const chip = await screen.findByRole("button", { name: "编写下一条" });
+    expect(within(screen.getByTestId("composer")).getByRole("button", { name: "编写下一条" })).toBe(chip);
 
     await user.click(chip);
     expect(onDraftChange).toHaveBeenCalledWith("");
@@ -1265,6 +1278,40 @@ describe("V2Conversation", () => {
     expect(await screen.findByRole("dialog", { name: "工作区文件" })).toBeInTheDocument();
   });
 
+  it("opens the plain delivered HTML filename and its file content in the wide workspace dock", async () => {
+    const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains("v2-shell") ? 1140 : this.classList.contains("v2-conversation") ? 841 : 0;
+      });
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    try {
+      const filename = "pelican-bicycle.html";
+      const sentence = `页面已完成并写入工作区： ${filename}（341 行，包含 SVG 和交互）。`;
+      const content = "<!doctype html><title>Pelican bicycle preview</title>";
+      const client = baseClient({
+        fileEditChangeSet: vi.fn().mockResolvedValue({ workspace_id: "workspace-1" }),
+        getPage: vi.fn(() => Promise.resolve(page([transcriptItem("plain-html-file", sentence, 1)]))) as unknown as APIClient["getPage"],
+      });
+      const directory = await client.workspaceExplore("workspace-1", ".");
+      vi.mocked(client.workspaceExplore).mockImplementation(async (_workspaceID, path = ".") => path === "." ? {
+        ...directory, entries: [{ name: filename, path: filename, kind: "file", readable: true, size_bytes: content.length }],
+      } : { ...directory, path, kind: "file", entries: [], content });
+      const view = renderConversation(client);
+      view.container.classList.add("v2-shell", "has-sidebar");
+      const link = await screen.findByRole("link", { name: filename });
+      expect(link).toHaveClass("v2-file-link");
+      expect(link.closest("p")).toHaveTextContent(sentence);
+      await userEvent.click(link);
+      const dock = await screen.findByRole("complementary", { name: "工作区文件" });
+      expect(dock.closest(".v2-conversation-stage")).not.toBeNull();
+      expect(await within(dock).findByText(content)).toBeInTheDocument();
+      expect(within(dock).getByRole("tab", { name: filename })).toHaveAttribute("aria-selected", "true");
+      expect(client.workspaceExplore).toHaveBeenCalledWith("workspace-1", filename, expect.any(AbortSignal));
+    } finally {
+      cleanup(); clientWidth.mockRestore(); vi.unstubAllGlobals();
+    }
+  });
+
   it("resolves the originating Run's workspace before reading files in V2FileDrawer", async () => {
     const client = baseClient({
       fileEditChangeSet: vi.fn(() => Promise.resolve({
@@ -1349,7 +1396,7 @@ describe("V2Conversation", () => {
 
   it("copies assistant message and code blocks to the clipboard with visual feedback", async () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
-    const codeItem = transcriptItem("item-with-code", "这是一段分析：\n\n```typescript\nconst sum = (a: number, b: number) => a + b;\n```", 1);
+    const codeItem = completedTranscriptItem(transcriptItem("item-with-code", "这是一段分析：\n\n```typescript\nconst sum = (a: number, b: number) => a + b;\n```", 1));
     const client = baseClient({
       getPage: vi.fn(() => Promise.resolve(page([codeItem]))) as unknown as APIClient["getPage"],
     });
@@ -1372,7 +1419,7 @@ describe("V2Conversation", () => {
     const onBranchCreated = vi.fn();
     const postControl = vi.fn().mockResolvedValue({ version: "thread_branch.v1", thread: branched, source_event_id: "selected-reply" });
     const client = baseClient({ postControl, getPage: vi.fn().mockResolvedValue(page([
-      transcriptItem("selected-reply", "Earlier answer", 1), transcriptItem("later-reply", "Later answer", 2),
+      completedTranscriptItem(transcriptItem("selected-reply", "Earlier answer", 1)), completedTranscriptItem(transcriptItem("later-reply", "Later answer", 2)),
     ])) });
     const user = userEvent.setup();
     renderConversation(client, "thread-a", undefined, { onBranchCreated });
@@ -1389,7 +1436,7 @@ describe("V2Conversation", () => {
     const postControl = vi.fn().mockRejectedValueOnce(new Error("Branch response lost"))
       .mockResolvedValue({ version: "thread_branch.v1", thread: detail("new-branch").thread, source_event_id: "selected-reply" });
     const client = baseClient({ postControl, getPage: vi.fn().mockResolvedValue(page([
-      transcriptItem("selected-reply", "Keep this answer", 1),
+      completedTranscriptItem(transcriptItem("selected-reply", "Keep this answer", 1)),
     ])) });
     const user = userEvent.setup();
     renderConversation(client, "thread-a", undefined, { onBranchCreated });

@@ -138,7 +138,7 @@ func threadActivityToolKind(name toolgateway.ToolName) string {
 		return "web_search"
 	case name == toolgateway.WebFetchTool || name == toolgateway.WebCitationTool:
 		return "web_fetch"
-	case name == toolgateway.WorkspaceReadTool || name == toolgateway.WorkspaceListTool ||
+	case name == toolgateway.WorkspaceReadTool || name == "workspace_view_image" || name == toolgateway.WorkspaceListTool ||
 		name == toolgateway.WorkspaceGlobTool || name == toolgateway.WorkspaceGrepTool:
 		return "file_read"
 	case name == toolgateway.WorkspaceChangeTool || name == toolgateway.WorkspaceApplyTool ||
@@ -159,6 +159,7 @@ func threadActivityToolKind(name toolgateway.ToolName) string {
 func threadActivityToolLabel(name toolgateway.ToolName) string {
 	labels := map[toolgateway.ToolName]string{
 		toolgateway.WorkspaceListTool: "列出目录", toolgateway.WorkspaceReadTool: "读取文件",
+		"workspace_view_image":        "查看图片",
 		toolgateway.WorkspaceGlobTool: "匹配文件", toolgateway.WorkspaceGrepTool: "搜索工作区",
 		toolgateway.WorkspaceChangeTool: "提议文件修改", toolgateway.WorkspaceApplyTool: "应用文件修改",
 		toolgateway.WorkspaceDeleteTool: "删除文件", toolgateway.WebSearchTool: "联网搜索",
@@ -170,6 +171,7 @@ func threadActivityToolLabel(name toolgateway.ToolName) string {
 		toolgateway.BrowserNavigateTool:    "浏览器导航", toolgateway.BrowserSnapshotTool: "读取页面快照",
 		toolgateway.BrowserClickTool: "点击页面元素", toolgateway.BrowserTypeTool: "填写页面输入",
 		toolgateway.BrowserScreenshotTool: "截取页面画面",
+		toolgateway.BrowserMoveTool:       "移动页面指针",
 	}
 	if label := labels[name]; label != "" {
 		return label
@@ -276,6 +278,10 @@ func projectThreadActivityWorkspaceInput(value *ThreadActivityToolFacts, name to
 			appendThreadActivityFact(&value.Parameters, "lines", "行范围",
 				fmt.Sprintf("%d-%d", input.StartLine, input.EndLine))
 		}
+	case "workspace_view_image":
+		var input struct{ Path string }
+		_ = json.Unmarshal(raw, &input)
+		value.Target = safeThreadActivityPath(input.Path)
 	case toolgateway.WorkspaceGlobTool:
 		var input toolgateway.WorkspaceGlobPayload
 		_ = json.Unmarshal(raw, &input)

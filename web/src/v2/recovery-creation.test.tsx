@@ -27,6 +27,9 @@ function fixture() {
   return { baseURL: "/api/v1", inspectThreadCreationRequest: vi.fn().mockResolvedValue(absent),
     get: vi.fn().mockResolvedValue({ thread }), createThread: vi.fn().mockResolvedValue({ thread }),
     selectProjectSkills: vi.fn().mockResolvedValue(undefined),
+    changeThreadExecutionPermission: vi.fn().mockImplementation(async (_id, body) => ({
+      execution_permission: { approval_mode: body.mode, full_activation: body.mode === "full" ? "active" : "inactive" },
+    })),
     submitThreadTurn: vi.fn(), executeRun: vi.fn() };
 }
 function mount(client: ReturnType<typeof fixture>, selectedWorkspace = workspaceID, onRecovered = vi.fn()) {
@@ -50,6 +53,108 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("first-message creation recovery", () => {
+  const prepareApproval = (view: ReturnType<typeof mount>, mode: "ask" | "auto" | "full") => {
+    let intent!: CreationIntent;
+    act(() => { intent = view.helper().prepare(request, request.goal, files, request.goal, [], undefined, [], undefined, [], mode); });
+    return intent;
+  };
+
+  it("applies the selected permission before handing off the first input, requiring live Full confirmation", async () => {
+    const client = fixture();
+    const view = mount(client);
+    const intent = prepareApproval(view, "full");
+    await act(async () => { await expect(view.helper().resolve(intent)).rejects.toThrow("确认完全访问"); });
+    expect(client.createThread).not.toHaveBeenCalled();
+    expect(client.changeThreadExecutionPermission).not.toHaveBeenCalled();
+    let resolved!: ThreadView;
+    await act(async () => { resolved = await view.helper().resolve(intent, true); });
+    expect(client.changeThreadExecutionPermission).toHaveBeenCalledWith(thread.id, {
+      mode: "full", confirm_full: true, reason: "New conversation approval preference selection",
+    }, expect.any(String));
+    expect(client.createThread.mock.invocationCallOrder[0]).toBeLessThan(client.changeThreadExecutionPermission.mock.invocationCallOrder[0]);
+    act(() => { view.helper().handoff(intent, resolved); });
+    expect(view.store().entries("creation:")).toHaveLength(0);
+    expect(view.store().entries("turn:")).toHaveLength(1);
+  });
+
+  it("keeps the draft and creation key when permission activation fails, without handing off a turn", async () => {
+    const client = fixture();
+    client.changeThreadExecutionPermission.mockRejectedValueOnce(new Error("activation unavailable"));
+    const view = mount(client);
+    const intent = prepareApproval(view, "full");
+    await act(async () => { await expect(view.helper().resolve(intent, true)).rejects.toThrow("activation unavailable"); });
+    expect(() => view.helper().handoff(intent, thread)).toThrow();
+    expect(view.store().read(`creation:${intent.operationID}`, null)).toEqual(intent);
+    expect(view.store().entries("turn:")).toHaveLength(0);
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    const retry = prepareApproval(view, "auto");
+    expect(retry.operationID).toBe(intent.operationID);
+    await act(async () => { await view.helper().resolve(retry); });
+    expect(client.createThread).toHaveBeenCalledTimes(1);
+    expect(client.changeThreadExecutionPermission).toHaveBeenLastCalledWith(thread.id, {
+      mode: "auto", confirm_full: false, reason: "New conversation approval preference selection",
+    }, expect.any(String));
+  });
+
+  it("does not restore Full authorization from the creation journal or from read-only inspection", async () => {
+    const client = fixture();
+    const original = mount(client);
+    const intent = prepareApproval(original, "full");
+    await act(async () => { await original.helper().resolve(intent, true); });
+    original.unmount();
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    client.changeThreadExecutionPermission.mockClear();
+    const restored = mount(client);
+    const open = await screen.findByRole("button", { name: "打开原对话" });
+    expect(client.changeThreadExecutionPermission).not.toHaveBeenCalled();
+    expect(() => restored.helper().handoff(intent, thread)).toThrow();
+    fireEvent.click(open);
+    expect(await screen.findByRole("dialog", { name: "启用完全访问权限？" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(client.changeThreadExecutionPermission).not.toHaveBeenCalled();
+    expect(restored.onRecovered).not.toHaveBeenCalled();
+    fireEvent.click(open);
+    fireEvent.click(screen.getByRole("button", { name: "确认并继续" }));
+    await waitFor(() => expect(restored.onRecovered).toHaveBeenCalledTimes(1));
+    expect(client.changeThreadExecutionPermission).toHaveBeenCalledTimes(1);
+    expect(client.createThread).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not hand off a first turn when Full is saved but not activated", async () => {
+    const client = fixture();
+    client.changeThreadExecutionPermission.mockResolvedValueOnce({ execution_permission: { approval_mode: "full", full_activation: "inactive" } });
+    const view = mount(client);
+    const intent = prepareApproval(view, "full");
+    await act(async () => { await expect(view.helper().resolve(intent, true)).rejects.toThrow("权限尚未生效"); });
+    expect(() => view.helper().handoff(intent, thread)).toThrow();
+    expect(view.store().entries("turn:")).toHaveLength(0);
+  });
+
+  it("serializes permission submission and preserves the original handoff after leaving the page", async () => {
+    const client = fixture();
+    let activate!: (value: any) => void;
+    client.changeThreadExecutionPermission.mockImplementation(() => new Promise((resolve) => { activate = resolve; }));
+    const view = mount(client);
+    const intent = prepareApproval(view, "auto");
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开原对话" }));
+    await waitFor(() => expect(client.changeThreadExecutionPermission).toHaveBeenCalledTimes(1));
+    expect(() => view.helper().prepare(request, request.goal, files, request.goal, [], undefined, [], undefined, [], "ask")).toThrow("正在提交");
+    await expect(view.helper().resolve(intent)).rejects.toThrow("正在提交");
+    expect(client.changeThreadExecutionPermission).toHaveBeenCalledTimes(1);
+    view.unmount();
+    const remounted = mount(client);
+    await screen.findByRole("button", { name: "打开原对话" });
+    expect(screen.getByRole("button", { name: "打开原对话" })).toBeDisabled();
+    expect(() => remounted.helper().prepare(request, request.goal, files, request.goal, [], undefined, [], undefined, [], "ask")).toThrow("正在提交");
+    await expect(remounted.helper().resolve(intent)).rejects.toThrow("正在提交");
+    await act(async () => activate({ execution_permission: { approval_mode: "auto", full_activation: "inactive" } }));
+    expect(view.onRecovered).toHaveBeenCalledWith(thread, request.goal, files, expect.objectContaining({ threadID: thread.id }), false);
+    expect(remounted.helper().pending).toBe(false);
+    expect(screen.queryByRole("button", { name: "打开原对话" })).not.toBeInTheDocument();
+  });
+
   it("leaves a handled current image error to its action row while preserving other scopes and the creation guard", async () => {
     const client = fixture();
     const view = mount(client);
@@ -261,7 +366,7 @@ describe("first-message creation recovery", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开原对话" }));
     expect(second.onRecovered).toHaveBeenCalledWith(expect.objectContaining({ id: thread.id }), `  ${request.goal}  `, files,
       expect.objectContaining({ threadID: thread.id, content: request.goal, draft: `  ${request.goal}  `,
-        operationKey: `v2-thread-create-turn-${intent.operationID}`, createdAt: intent.createdAt }));
+        operationKey: `v2-thread-create-turn-${intent.operationID}`, createdAt: intent.createdAt }), true);
     const input = second.onRecovered.mock.calls[0][3];
     expect(second.store().read(recoveryTurnKey(input), null)).toEqual(input);
     expect(input.content).toBe(request.goal);

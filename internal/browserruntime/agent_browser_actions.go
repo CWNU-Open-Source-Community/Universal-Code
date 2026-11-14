@@ -93,6 +93,9 @@ func (r *AgentBrowserRuntime) Navigate(ctx context.Context, rawURL string) (Agen
 }
 
 func (r *AgentBrowserRuntime) NavigateWithViewport(ctx context.Context, rawURL string, viewport AgentBrowserViewport) (AgentBrowserNavigation, error) {
+	if r.attached != nil {
+		return AgentBrowserNavigation{}, errors.New("shared native page uses the user-visible viewport; resize the browser pane instead")
+	}
 	if err := viewport.validate(); err != nil {
 		return AgentBrowserNavigation{}, err
 	}
@@ -369,7 +372,8 @@ func (r *AgentBrowserRuntime) input(ctx context.Context, method string, params a
 }
 
 // An uncertain partial key/mouse sequence must not leave held input available
-// to later operations. Invalidate the complete slot and reap its owned tree.
+// to later operations. Invalidate the complete agent slot and release its
+// resources; an attached native page remains owned by the user.
 func (r *AgentBrowserRuntime) unknown(err error) error {
 	r.Cancel()
 	return &AgentBrowserActionError{Err: err, Dispatched: true, OutcomeUnknown: true}
@@ -388,8 +392,15 @@ func (r *AgentBrowserRuntime) Click(ctx context.Context, snapshot, ref string) (
 	r.mu.Lock()
 	r.refs = map[string]agentBrowserRef{}
 	r.mu.Unlock()
-	for _, kind := range []string{"mousePressed", "mouseReleased"} {
-		if kind == "mouseReleased" {
+	kinds := []string{"mousePressed", "mouseReleased"}
+	if r.attached != nil {
+		// WebView2 must first receive the pointer position before a native
+		// press/release can reach the page. Hover can change the target, so
+		// recheck its current signature, hit-test and position before pressing.
+		kinds = []string{"mouseMoved", "mousePressed", "mouseReleased"}
+	}
+	for _, kind := range kinds {
+		if kind == "mouseReleased" || (r.attached != nil && kind == "mousePressed") {
 			if err = r.check(op, stored.epoch); err != nil {
 				return AgentBrowserInteraction{}, r.unknown(err)
 			}
@@ -402,7 +413,11 @@ func (r *AgentBrowserRuntime) Click(ctx context.Context, snapshot, ref string) (
 				return AgentBrowserInteraction{}, r.unknown(ErrAgentBrowserTargetChanged)
 			}
 		}
-		if err = r.input(op, "Input.dispatchMouseEvent", map[string]any{"type": kind, "x": node.X, "y": node.Y, "button": "left", "clickCount": 1}); err != nil {
+		params := map[string]any{"type": kind, "x": node.X, "y": node.Y}
+		if kind != "mouseMoved" {
+			params["button"], params["clickCount"] = "left", 1
+		}
+		if err = r.input(op, "Input.dispatchMouseEvent", params); err != nil {
 			return AgentBrowserInteraction{}, err
 		}
 	}
@@ -503,7 +518,11 @@ func (r *AgentBrowserRuntime) Scroll(ctx context.Context, deltaX, deltaY float64
 		return AgentBrowserInteraction{}, err
 	}
 	defer end()
-	if err = r.input(op, "Input.dispatchMouseEvent", map[string]any{"type": "mouseWheel", "x": 640, "y": 450, "deltaX": deltaX, "deltaY": deltaY}); err != nil {
+	viewport, err := r.currentViewport(op)
+	if err != nil {
+		return AgentBrowserInteraction{}, err
+	}
+	if err = r.input(op, "Input.dispatchMouseEvent", map[string]any{"type": "mouseWheel", "x": float64(viewport.Width) / 2, "y": float64(viewport.Height) / 2, "deltaX": deltaX, "deltaY": deltaY}); err != nil {
 		return AgentBrowserInteraction{}, err
 	}
 	return r.interaction("scroll"), nil
@@ -540,6 +559,10 @@ func (r *AgentBrowserRuntime) Screenshot(ctx context.Context) (AgentBrowserScree
 	if err != nil {
 		return AgentBrowserScreenshot{}, err
 	}
+	viewport, err := r.currentViewport(op)
+	if err != nil {
+		return AgentBrowserScreenshot{}, err
+	}
 	var capture struct{ Data string }
 	if err = r.call(op, "Page.captureScreenshot", map[string]any{"format": "png", "captureBeyondViewport": false, "fromSurface": true}, &capture); err != nil {
 		return AgentBrowserScreenshot{}, err
@@ -556,5 +579,15 @@ func (r *AgentBrowserRuntime) Screenshot(ctx context.Context) (AgentBrowserScree
 		return AgentBrowserScreenshot{}, err
 	}
 	sum := sha256.Sum256(data)
-	return AgentBrowserScreenshot{r.request.Authority.SessionID, doc.url, doc.epoch, "image/png", hex.EncodeToString(sum[:]), len(data), data, time.Now().UTC()}, nil
+	after, err := r.currentViewport(op)
+	if err != nil {
+		return AgentBrowserScreenshot{}, err
+	}
+	if after != viewport {
+		return AgentBrowserScreenshot{}, ErrAgentBrowserStaleReference
+	}
+	if err = r.check(op, doc.epoch); err != nil {
+		return AgentBrowserScreenshot{}, err
+	}
+	return AgentBrowserScreenshot{SessionID: r.request.Authority.SessionID, CanonicalURL: doc.url, DocumentEpoch: doc.epoch, MediaType: "image/png", SHA256: hex.EncodeToString(sum[:]), Bytes: len(data), PNG: data, CompletedAt: time.Now().UTC(), Viewport: &viewport, ImageWidth: config.Width, ImageHeight: config.Height}, nil
 }

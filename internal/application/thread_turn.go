@@ -34,6 +34,7 @@ type ThreadTurnService struct {
 	lifecycleHooks   *hooks.Engine
 	runtimeAuthority *domain.ExecutionPermissionRuntimeAuthority
 	evidence         *EvidenceAttachmentService
+	commandDefaults  *threadCommandDefaults
 	turnMu           sync.Mutex
 	activeTurns      map[string]*activeThreadTurn
 }
@@ -346,6 +347,9 @@ func (s *ThreadTurnService) prepareSubmissionLifecycleMode(ctx context.Context,
 	normalized SubmitThreadMessageRequest, result ExecuteThreadTurnResult, automatic bool,
 ) (ExecuteThreadTurnResult, error) {
 	submission := result.Submission
+	if err := s.prepareDefaultCommandProfile(ctx, submission.Run); err != nil {
+		return result, err
+	}
 	switch submission.Run.Status {
 	case domain.RunCreated:
 		controlled, err := s.lifecycle.Apply(ctx, ControlRunLifecycleRequest{
@@ -478,6 +482,16 @@ func (s *ThreadTurnService) advancePastExhaustedBudget(ctx context.Context, requ
 func (s *ThreadTurnService) pendingEpochConfiguration(ctx context.Context,
 	store threadEpochTransitionStore, threadRecord domain.Thread, active domain.Run,
 ) (bool, error) {
+	if pending, err := s.defaultCommandNeedsSuccessor(ctx, active); err != nil || pending {
+		return pending, err
+	}
+	if reader, ok := s.threads.store.(interface {
+		DesktopBrowserDefaultNeedsSuccessor(context.Context, string) (bool, error)
+	}); ok {
+		if pending, err := reader.DesktopBrowserDefaultNeedsSuccessor(ctx, active.ID); err != nil || pending {
+			return pending, apperror.Normalize(err)
+		}
+	}
 	if reader, ok := s.threads.store.(threadModelRoutePreferenceReader); ok {
 		preference, found, err := reader.GetThreadModelRoutePreference(ctx, threadRecord.ID)
 		if err != nil {
@@ -532,7 +546,16 @@ func (s *ThreadTurnService) pendingEpochConfiguration(ctx context.Context,
 	if err != nil {
 		return false, apperror.Normalize(err)
 	}
-	return threadPermission.Mode != runPermission.Mode, nil
+	if threadPermission.Mode != runPermission.Mode {
+		return true, nil
+	}
+	// A confirmation may be deferred while a Full Run is preparing or waiting
+	// for approval. A new Thread grant must bind through a quiescent successor
+	// even when both durable snapshots have the same Full policy.
+	return threadPermission.Mode == domain.RunExecutionPermissionFull &&
+		s.runtimeAuthority != nil &&
+		s.runtimeAuthority.AllowsThreadFullAccess(threadPermission, nil) &&
+		!s.runtimeAuthority.AllowsThreadFullAccess(threadPermission, &runPermission), nil
 }
 
 func (s *ThreadTurnService) advancePastFailedTurn(ctx context.Context,

@@ -414,33 +414,9 @@ func (s *SQLiteStore) ListThreadTranscriptSourceBefore(ctx context.Context, thre
 	if beforeOrdinal < 0 || beforeSequence < 0 || (beforeOrdinal == 0 && beforeSequence != 0) {
 		return nil, errors.New("thread transcript source cursor is invalid")
 	}
-	// A committed Session message is recorded after its tools. Keep the user's
-	// original queue event as the narrative anchor only when both durable records
-	// are exactly bound. This lookup is independent of the requested page, so a
-	// queue event and its later Session record cannot produce two user bubbles.
-	query := `WITH bound_operator_messages AS (
-		SELECT queued.event_id AS queued_event_id, recorded.event_id AS session_event_id
-		FROM thread_runs binding
-		JOIN operator_steering_messages steering ON steering.run_id = binding.run_id
-			AND steering.session_id = binding.session_id AND steering.status = 'committed'
-		JOIN session_messages message ON message.id = steering.session_message_id
-			AND message.session_id = steering.session_id AND message.role = 'user'
-			AND message.source_kind = 'operator_message' AND message.instruction_authorized = 1
-			AND message.content_sha256 = steering.content_sha256 AND message.content = steering.content
-		JOIN run_events queued ON queued.run_id = steering.run_id
-			AND queued.type = 'operator.steering_queued' AND queued.subject_id = steering.id
-		JOIN run_events recorded ON recorded.run_id = steering.run_id
-			AND recorded.type = 'session.message_created' AND recorded.subject_id = CAST(message.id AS TEXT)
-			AND recorded.sequence > queued.sequence
-			AND json_extract(recorded.payload_json, '$.message_id') = message.id
-			AND json_extract(recorded.payload_json, '$.session_id') = message.session_id
-			AND json_extract(recorded.payload_json, '$.role') = 'user'
-			AND json_extract(recorded.payload_json, '$.source_kind') = 'operator_message'
-			AND json_extract(recorded.payload_json, '$.instruction_authorized') = 1
-			AND json_extract(recorded.payload_json, '$.content_sha256') = message.content_sha256
-			AND json_extract(recorded.payload_json, '$.content') = message.content
-		WHERE binding.thread_id = ?
-	), transcript AS (
+	// Preserve the original queue anchor as soon as an exact completed segment
+	// records its user row, even while the next automatic segment is running.
+	query := threadOperatorMessageBindingsCTE + `, transcript AS (
 		SELECT binding.thread_id, binding.ordinal, binding.run_id, binding.session_id,
 			COALESCE(binding.predecessor_run_id, '') AS predecessor_run_id,
 			COALESCE(predecessor.status, '') AS predecessor_run_status,
@@ -458,16 +434,7 @@ func (s *SQLiteStore) ListThreadTranscriptSourceBefore(ctx context.Context, thre
 			COALESCE(predecessor.status, ''), current.status, event.sequence,
 			event.event_id, event.version, event.mission_id, event.type,
 			event.source, COALESCE(event.subject_id, ''), event.payload_json,
-			CASE WHEN EXISTS (SELECT 1 FROM bound_operator_messages bound WHERE bound.queued_event_id = event.event_id)
-				THEN COALESCE(steering.content, '')
-			WHEN EXISTS (SELECT 1 FROM run_events boundary
-				JOIN session_messages original ON original.id=json_extract(boundary.payload_json,'$.user_message_id')
-				WHERE boundary.run_id=event.run_id AND boundary.type='agent.turn_completed' AND boundary.source='run_supervisor'
-				AND json_extract(boundary.payload_json,'$.tool_round_boundary')=1
-				AND json_extract(boundary.payload_json,'$.operator_message_id')=steering.id
-				AND original.session_id=steering.session_id AND original.content_sha256=steering.content_sha256
-				AND original.content=steering.content AND original.role='user' AND original.source_kind='operator_message')
-				THEN '' ELSE COALESCE(steering.content, '') END,
+			COALESCE(steering.content, ''),
 			COALESCE(steering.status, ''),
 			EXISTS (SELECT 1 FROM bound_operator_messages bound
 				WHERE bound.queued_event_id = event.event_id OR bound.session_event_id = event.event_id),
@@ -496,7 +463,12 @@ func (s *SQLiteStore) ListThreadTranscriptSourceBefore(ctx context.Context, thre
 	}
 	query += ` ORDER BY ordinal DESC, sequence DESC LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	tx, finish, err := s.beginThreadRequestObservation(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer finish()
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +495,25 @@ func (s *SQLiteStore) ListThreadTranscriptSourceBefore(ctx context.Context, thre
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	indexes := map[string]*threadTaskIndex{}
+	for position := range items {
+		index := indexes[items[position].RunID]
+		if index == nil {
+			index, err = loadThreadTaskIndex(ctx, tx, threadID, items[position].RunID)
+			if err != nil {
+				return nil, err
+			}
+			indexes[items[position].RunID] = index
+		}
+		items[position].Task = index.forSource(items[position])
+	}
+	return items, nil
 }
 
 // EnsureThreadSuccessor returns the current live Run when one already exists,
@@ -669,6 +659,13 @@ func (s *SQLiteStore) ensureThreadSuccessor(ctx context.Context, threadID,
 		if found {
 			candidate.Config.BrowserNetworkAccess, candidate.Config.BrowserOrigins = preference.BrowserNetworkAccess, preference.BrowserOrigins
 		} else {
+			implicit := false
+			if s.desktopBrowserDefaults.Load() {
+				implicit, err = trustedDefaultBrowserNetwork(ctx, tx, predecessor.ID)
+				if err != nil {
+					return domain.Thread{}, domain.Run{}, false, err
+				}
+			}
 			permission, err := getCurrentRunExecutionPermissionSnapshot(ctx, tx, predecessor.ID)
 			if err != nil {
 				return domain.Thread{}, domain.Run{}, false, err
@@ -676,6 +673,9 @@ func (s *SQLiteStore) ensureThreadSuccessor(ctx context.Context, threadID,
 			// Freeze the predecessor's effective choice before the successor gets
 			// the Thread's current execution permission, which may have changed.
 			candidate.Config.BrowserNetworkAccess = predecessor.Config.EffectiveBrowserNetworkAccess(permission.Mode)
+			if implicit {
+				candidate.Config.BrowserNetworkAccess = domain.BrowserNetworkInternet
+			}
 			candidate.Config.BrowserOrigins = append([]string(nil), predecessor.Config.BrowserOrigins...)
 			if candidate.Config.BrowserNetworkAccess == domain.BrowserNetworkInternet {
 				candidate.Config.BrowserOrigins = nil

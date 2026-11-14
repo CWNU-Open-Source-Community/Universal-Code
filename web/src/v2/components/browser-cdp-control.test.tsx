@@ -37,16 +37,18 @@ function permission(mode: RunBrowserCDPPermissionView["mode"]): RunBrowserCDPPer
 }
 
 function renderControl({ initial = permission("restricted"), runID = "run-1",
-  mode = "full", executionRuntimeAvailable = true, sessionControlEnabled = true }: {
+  mode = "full", executionRuntimeAvailable = true, runExecutionRuntimeAvailable = true, sessionControlEnabled = true }: {
   initial?: RunBrowserCDPPermissionView;
   runID?: string;
   mode?: ThreadExecutionPermissionView["mode"] | null;
   executionRuntimeAvailable?: boolean;
+  runExecutionRuntimeAvailable?: boolean;
   sessionControlEnabled?: boolean;
 } = {}) {
   const get = vi.fn().mockResolvedValue({
     browser_cdp_permission: initial,
-    execution_permission: { revision: 4 },
+    execution_permission: { revision: 4, mode: "full", full_activation: runExecutionRuntimeAvailable ? "active" : "inactive",
+      runtime_gate_available: runExecutionRuntimeAvailable },
   });
   const postControl = vi.fn().mockImplementation((_path, body: { mode: "restricted" | "full_debug" }) =>
     Promise.resolve({ browser_cdp_permission: permission(body.mode), replayed: false }));
@@ -78,6 +80,15 @@ function renderControl({ initial = permission("restricted"), runID = "run-1",
 }
 
 describe("V2BrowserCDPControl", () => {
+  it("blocks starting a cold current Run browser while preserving permission revocation", async () => {
+    const controls = renderControl({ initial: permission("full_debug"), runExecutionRuntimeAvailable: false });
+    const toggle = await screen.findByRole("switch", { name: "完整 CDP 控制" });
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+    expect(toggle).toBeEnabled();
+    expect(screen.getByRole("button", { name: "启动会话" })).toBeDisabled();
+    expect(controls.openFullCDPSession).not.toHaveBeenCalled();
+  });
+
   it("turns an included Full CDP grant off immediately without confirmation", async () => {
     const user = userEvent.setup();
     const controls = renderControl({ initial: permission("full_debug") });

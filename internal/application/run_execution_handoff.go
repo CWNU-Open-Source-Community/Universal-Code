@@ -409,6 +409,8 @@ func (s *RunExecutionHandoffService) executeSelectionWithLease(ctx context.Conte
 		errorCode = strings.ToLower(string(apperror.CodeOf(executionErr)))
 		if errors.Is(executionErr, errSupervisorContextWindow) {
 			execution.StopReason = domain.ThreadFailureContextWindowExceeded
+		} else if errors.Is(executionErr, errSupervisorFullPermissionNotReady) {
+			execution.StopReason = domain.ThreadFailureFullPermissionNotReady
 		}
 	}
 	if execution.StopReason == "" {

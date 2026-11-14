@@ -5004,8 +5004,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Read recorded file changes before one Thread reply
-         * @description Read-only net change summary for applied FileEdit records since the previous durable assistant reply in the same Run. The source event must be an assistant Session message in this Thread. Repeated edits are combined, unapplied proposals are excluded, and current workspace files are never read. Redacted or discontinuous histories omit counts and diff bodies; bounded diff omission is explicit.
+         * Read recorded file changes for one Thread task
+         * @description Read-only net change summary for the exact task.change_source_event_id in this Thread. Completed tasks use their proven final assistant Session event; interrupted or failed tasks use their execution handoff ending event. Applied FileEdit records are combined across all attempts of that input. Historical assistant replies without task ownership retain the previous-reply interval. Unapplied proposals are excluded and current workspace files are never read. Redacted or discontinuous histories omit counts and diff bodies; bounded diff omission is explicit.
          */
         get: operations["getThreadChanges"];
         put?: never;
@@ -6675,7 +6675,7 @@ export interface components {
             /** @enum {string} */
             class: "workspace_read" | "workspace_write";
             /** @enum {string} */
-            name: "workspace_list" | "workspace_read" | "workspace_glob" | "workspace_grep" | "workspace_change" | "workspace_apply" | "workspace_delete";
+            name: "workspace_list" | "workspace_read" | "workspace_view_image" | "workspace_glob" | "workspace_grep" | "workspace_change" | "workspace_apply" | "workspace_delete";
             read_only: boolean;
             refusal_reason?: string;
             /** @enum {string} */
@@ -14600,7 +14600,7 @@ export interface components {
             duration_milliseconds: number;
             label: string;
             /** @enum {string} */
-            name: "command_runtime" | "workspace_list" | "workspace_read" | "workspace_glob" | "workspace_grep" | "workspace_change" | "workspace_apply" | "workspace_delete" | "web_search" | "web_fetch" | "web_citation" | "mcp_tool_search" | "mcp_tool_call" | "code_workspace_symbols" | "code_document_symbols" | "code_definition" | "code_references" | "code_implementation" | "code_hover" | "code_signature_help" | "code_diagnostics" | "code_call_hierarchy" | "code_type_hierarchy" | "github_review_evidence_list" | "github_review_evidence_read" | "browser_status" | "browser_navigate" | "browser_snapshot" | "browser_click" | "browser_type" | "browser_screenshot";
+            name: "command_runtime" | "workspace_list" | "workspace_read" | "workspace_view_image" | "workspace_glob" | "workspace_grep" | "workspace_change" | "workspace_apply" | "workspace_delete" | "web_search" | "web_fetch" | "web_citation" | "mcp_tool_search" | "mcp_tool_call" | "code_workspace_symbols" | "code_document_symbols" | "code_definition" | "code_references" | "code_implementation" | "code_hover" | "code_signature_help" | "code_diagnostics" | "code_call_hierarchy" | "code_type_hierarchy" | "github_review_evidence_list" | "github_review_evidence_read" | "browser_status" | "browser_navigate" | "browser_snapshot" | "browser_click" | "browser_type" | "browser_screenshot" | "browser_move";
             /** Format: date-time */
             started_at: string;
             /** @enum {string} */
@@ -15720,6 +15720,7 @@ export interface components {
             stream_call_id?: string;
             stream_item_id?: string;
             stream_response_id?: string;
+            task?: components["schemas"]["ThreadTranscriptTaskView"];
             title: string;
             tool_name?: string;
             /** Format: int32 */
@@ -15728,6 +15729,18 @@ export interface components {
             /** @enum {string} */
             version: "thread_transcript.v1";
             web_evidence?: components["schemas"]["ThreadWebEvidenceView"];
+        };
+        ThreadTranscriptTaskView: {
+            change_source_event_id?: string;
+            final_message_id?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            id: string;
+            input_message_id: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** @enum {string} */
+            state: "running" | "completed" | "interrupted" | "failed";
         };
         ThreadTurnControlRequestView: {
             attachments?: components["schemas"]["FileAttachmentReference"][];
@@ -29155,7 +29168,7 @@ export interface operations {
     getThreadChanges: {
         parameters: {
             query: {
-                /** @description Durable assistant session.message_created event ID from the Thread transcript */
+                /** @description task.change_source_event_id from the Thread transcript, or a historical assistant Session event without task ownership */
                 source_event_id: string;
             };
             header?: never;

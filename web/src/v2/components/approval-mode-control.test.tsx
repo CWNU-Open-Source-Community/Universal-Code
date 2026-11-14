@@ -33,8 +33,8 @@ describe.each(["menu", "settings"] as const)("V2ApprovalModeControl English %s",
       .map((item) => item.getAttribute("aria-label"))).toEqual(["Request approval", "Approve for me", "Full access"]);
     expect(screen.getByText("Execution permissions")).toBeVisible();
     expect(screen.getByText("Full access inactive")).toBeVisible();
-    expect(screen.getByRole(role, { name: "Request approval" })).toHaveAccessibleDescription(/public network requests need approval/u);
-    expect(screen.getByText(/Read-only claims are checked against actual effects/u)).toBeVisible();
+    expect(screen.getByRole(role, { name: "Request approval" })).toHaveAccessibleDescription(/approval for file, command, and web operations/u);
+    expect(screen.queryByText(/Read-only claims are checked against actual effects/u)).not.toBeInTheDocument();
     expect(view.container.textContent).not.toMatch(/[\u3400-\u9fff]/u);
     await user.click(screen.getByRole(role, { name: "Approve for me" }));
     expect(initial.onRequestChange).toHaveBeenCalledExactlyOnceWith({ mode: "auto", confirmFull: false });
@@ -46,7 +46,8 @@ describe.each(["menu", "settings"] as const)("V2ApprovalModeControl English %s",
     await open(user); await user.click(screen.getByRole(role, { name: "Full access" }));
     const dialog = screen.getByRole("dialog", { name: "Enable Full access?" });
     expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
-    expect(within(dialog).getByText(/operating system, provider, and runtime/u)).toBeVisible();
+    expect(within(dialog).getByText(/project file access, local commands, and public network access/u)).toBeVisible();
+    expect(within(dialog).getByText(/Configured environment and network restrictions still apply/u)).toBeVisible();
     expect(dialog.textContent).not.toMatch(/[\u3400-\u9fff]/u);
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(initial.onRequestChange).not.toHaveBeenCalled();
@@ -184,7 +185,8 @@ describe.each(["menu", "settings"] as const)("V2ApprovalModeControl %s", (varian
     await user.click(screen.getByRole(role, { name: "完全访问权限" }));
     const dialog = screen.getByRole("dialog", { name: "启用完全访问权限？" });
     expect(initial.onRequestChange).not.toHaveBeenCalled();
-    expect(within(dialog).getByText(/操作系统、供应商和运行环境限制/u)).toBeInTheDocument();
+    expect(within(dialog).getByText(/访问项目文件、执行本机命令和访问公共网络/u)).toBeInTheDocument();
+    expect(within(dialog).getByText(/已设置的环境与网络限制仍然有效/u)).toBeInTheDocument();
     const close = within(dialog).getByRole("button", { name: "关闭" });
     const confirm = within(dialog).getByRole("button", { name: "确认启用" });
     expect(close).toHaveFocus();
@@ -284,6 +286,53 @@ describe.each(["menu", "settings"] as const)("V2ApprovalModeControl %s", (varian
     expect(initial.onRequestChange).not.toHaveBeenCalled();
     await user.click(screen.getByRole(role, { name: "帮我批准" }));
     expect(initial.onRequestChange).toHaveBeenCalledExactlyOnceWith({ mode: "auto", confirmFull: false });
+  });
+});
+
+describe.each(["menu", "settings"] as const)("V2ApprovalModeControl pre-creation %s", (variant) => {
+  const role = variant === "menu" ? "menuitemradio" : "button";
+  async function open(user: ReturnType<typeof userEvent.setup>) {
+    if (variant === "menu") await user.click(screen.getByRole("button", { expanded: false }));
+  }
+
+  it("confirms the choice once without presenting a running activation", async () => {
+    const user = userEvent.setup();
+    const initial = props({ variant, selectionOnly: true });
+    const view = render(<V2ApprovalModeControl {...initial} />);
+    await open(user);
+    expect(view.container.textContent).not.toMatch(/已激活|未激活|重新激活/u);
+    await user.click(screen.getByRole(role, { name: "完全访问权限" }));
+    const dialog = screen.getByRole("dialog", { name: "确认完全访问权限？" });
+    expect(within(dialog).getByText(/项目文件、执行本机命令和访问公共网络/u)).toBeVisible();
+    expect(initial.onRequestChange).not.toHaveBeenCalled();
+    await user.dblClick(within(dialog).getByRole("button", { name: "确认" }));
+    expect(initial.onRequestChange).toHaveBeenCalledExactlyOnceWith({ mode: "full", confirmFull: true });
+    view.rerender(<V2ApprovalModeControl {...initial} mode="full" fullActivation="active" />);
+    if (variant === "menu") {
+      const trigger = screen.getByRole("button", { expanded: false });
+      expect(trigger).toHaveTextContent(/^完全访问权限$/u);
+      expect(trigger).toHaveAttribute("title", "完全访问权限");
+    }
+    await open(user);
+    expect(screen.getByRole(role, { name: "完全访问权限" })).toHaveAccessibleDescription("允许文件、本机命令与公共网络访问，无需逐次批准。");
+    expect(view.container.textContent).not.toMatch(/已激活|未激活|重新激活|已选择/u);
+  });
+
+  it("allows a fresh confirmation after the pre-creation Full choice expires", async () => {
+    const user = userEvent.setup();
+    const initial = props({ variant, selectionOnly: true, mode: "full", fullActivation: "inactive" });
+    const view = render(<V2ApprovalModeControl {...initial} />);
+    await open(user);
+    const confirmationRole = variant === "menu" ? "menuitem" : "button";
+    await user.click(screen.getByRole(confirmationRole, { name: "确认完全访问权限" }));
+    expect(initial.onRequestChange).not.toHaveBeenCalled();
+    await user.click(within(screen.getByRole("dialog", { name: "确认完全访问权限？" })).getByRole("button", { name: "取消" }));
+    expect(initial.onRequestChange).not.toHaveBeenCalled();
+    await open(user);
+    await user.click(screen.getByRole(confirmationRole, { name: "确认完全访问权限" }));
+    await user.click(within(screen.getByRole("dialog", { name: "确认完全访问权限？" })).getByRole("button", { name: "确认" }));
+    expect(initial.onRequestChange).toHaveBeenCalledExactlyOnceWith({ mode: "full", confirmFull: true });
+    expect(view.container.textContent).not.toMatch(/已激活|未激活|重新激活/u);
   });
 });
 

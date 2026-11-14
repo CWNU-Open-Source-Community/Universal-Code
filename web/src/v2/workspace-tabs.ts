@@ -31,6 +31,8 @@ export type WorkspacePreviewTab = {
   kind: "preview";
 };
 
+export type WorkspaceBrowserTab = { id: "browser"; kind: "browser" };
+
 export type WorkspaceReviewTab = {
   id: "review";
   kind: "review";
@@ -45,6 +47,7 @@ export type WorkspaceTab =
   | WorkspaceFileTab
   | WorkspaceTerminalTab
   | WorkspacePreviewTab
+  | WorkspaceBrowserTab
   | WorkspaceReviewTab
   | WorkspaceRecordsTab;
 
@@ -135,6 +138,7 @@ function sanitizeTab(raw: unknown): WorkspaceTab | null {
     const shellName = typeof candidate.shellName === "string" && candidate.shellName ? candidate.shellName : undefined;
     return { id: "terminal", kind: "terminal", ...(shellName ? { shellName } : {}) };
   }
+  if (candidate.kind === "browser") return { id: "browser", kind: "browser" };
   if (candidate.kind === "preview") return { id: "preview", kind: "preview" };
   if (candidate.kind === "review") return { id: "review", kind: "review" };
   if (candidate.kind === "records") return { id: "records", kind: "records" };
@@ -580,7 +584,7 @@ export function updateWorkspaceFileTabPath(threadID: string, tabID: string, next
 
 function ensureSingletonTab(
   state: ThreadWorkspaceState,
-  kind: "terminal" | "preview" | "review" | "records",
+  kind: "terminal" | "preview" | "browser" | "review" | "records",
 ): { tabs: WorkspaceTab[]; activeTabID: string; notice?: string } {
   if (state.tabs.some((tab) => tab.id === kind)) {
     return { tabs: state.tabs, activeTabID: kind };
@@ -589,6 +593,7 @@ function ensureSingletonTab(
     ? { id: "terminal", kind: "terminal", ...(state.terminalShellName ? { shellName: state.terminalShellName } : {}) }
     : kind === "preview"
       ? { id: "preview", kind: "preview" }
+      : kind === "browser" ? { id: "browser", kind: "browser" }
       : kind === "review" ? { id: "review", kind: "review" } : { id: "records", kind: "records" };
   const result = tryAddTab(state.tabs, added);
   if (!result.accepted) {
@@ -601,7 +606,7 @@ function ensureSingletonTab(
   return { tabs: result.tabs, activeTabID: kind };
 }
 
-export function toggleWorkspaceSingletonTab(threadID: string, kind: "terminal" | "preview" | "review" | "records") {
+export function toggleWorkspaceSingletonTab(threadID: string, kind: "terminal" | "preview" | "browser" | "review" | "records") {
   writeThreadWorkspaceState(threadID, (state) => {
     if (state.open && state.activeTabID === kind) {
       return { ...state, open: false };
@@ -617,7 +622,7 @@ export function toggleWorkspaceSingletonTab(threadID: string, kind: "terminal" |
   });
 }
 
-export function focusWorkspaceSingletonTab(threadID: string, kind: "terminal" | "preview" | "review" | "records") {
+export function focusWorkspaceSingletonTab(threadID: string, kind: "terminal" | "preview" | "browser" | "review" | "records") {
   writeThreadWorkspaceState(threadID, (state) => {
     const ensured = ensureSingletonTab(state, kind);
     return {
@@ -729,6 +734,8 @@ export function workspaceTabTitle(tab: WorkspaceTab, t: LocaleText): string {
     }
     case "terminal":
       return tab.shellName || t("终端", "Terminal");
+    case "browser":
+      return t("浏览器", "Browser");
     case "preview":
       return t("应用预览", "App preview");
     case "review":
@@ -747,6 +754,8 @@ export function workspaceTabTooltip(tab: WorkspaceTab, workspaceName: string, t:
       return tab.shellName
         ? `${t("终端", "Terminal")} · ${tab.shellName} (${workspaceName})`
         : `${t("终端", "Terminal")} · ${workspaceName}`;
+    case "browser":
+      return t("浏览器", "Browser");
     case "preview":
       return t("应用预览", "App preview");
     case "review":
@@ -762,6 +771,8 @@ export function workspaceSurfaceAriaLabel(kind: WorkspaceTab["kind"], t: LocaleT
       return t("工作区文件", "Workspace files");
     case "terminal":
       return t("任务终端", "Task terminal");
+    case "browser":
+      return t("浏览器", "Browser");
     case "preview":
       return t("应用预览", "App preview");
     case "review":
@@ -777,6 +788,8 @@ export function workspaceCollapseAriaLabel(kind: WorkspaceTab["kind"], t: Locale
       return t("关闭文件面板", "Close file panel");
     case "terminal":
       return t("收起终端", "Collapse terminal");
+    case "browser":
+      return t("浏览器", "Browser");
     case "preview":
       return t("收起应用预览", "Close app preview");
     case "review":
