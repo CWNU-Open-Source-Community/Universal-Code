@@ -20,13 +20,20 @@ import (
 
 func TestNormalizeCommandRuntimeProcessPinsAbsoluteExecutableAndEnvironment(t *testing.T) {
 	root := t.TempDir()
+	directory := " project"
+	if runtime.GOOS != "windows" {
+		directory += " "
+	}
+	if err := os.Mkdir(filepath.Join(root, directory), 0700); err != nil {
+		t.Fatal(err)
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	resolved, err := NormalizeCommandRuntimeSpec(CommandRuntimeSpec{
 		Version: CommandRuntimeProtocolVersion, Profile: CommandRuntimeProcess,
-		Executable: executable, Arguments: []string{"--help"}, WorkingDirectory: ".",
+		Executable: executable, Arguments: []string{"--help"}, WorkingDirectory: directory,
 		Environment: []CommandRuntimeEnvironment{{Name: "COMMAND_RUNTIME_TEST", Value: "safe"}},
 		StdinPolicy: CommandRuntimeStdinClosed, CloseInitialStdin: true,
 		TimeoutMilliseconds: 1000,
@@ -41,7 +48,7 @@ func TestNormalizeCommandRuntimeProcessPinsAbsoluteExecutableAndEnvironment(t *t
 	if !resolved.ExecutablePinned || resolved.ProfileStartupFiles ||
 		resolved.EnvironmentInherited || len(resolved.ExecutableSHA256) != 64 ||
 		len(resolved.EnvironmentSHA256) != 64 || len(resolved.WorkspaceRootSHA256) != 64 ||
-		resolved.Spec.WorkingDirectory != "." {
+		resolved.Spec.WorkingDirectory != directory || filepath.Base(resolved.AbsoluteDirectory) != directory {
 		t.Fatalf("resolved contract widened authority: %#v", resolved)
 	}
 	joined := strings.Join(resolved.Environment, "\n")

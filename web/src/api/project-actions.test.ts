@@ -51,13 +51,14 @@ it("rejects execution without control and binds responses to the requested Run a
   expect(parseProjectActionResult({ ...result, job: { ...result.job, state: "failed", can_stop: false, exit_code: 1, stderr: "test failed" } }, "run-1").job.exit_code).toBe(1);
 });
 
-it("normalizes a requested test directory and rejects an observation from another directory", async () => {
-  const fetch = vi.fn().mockResolvedValueOnce(response({ ...actions, target: "web" })).mockResolvedValueOnce(response(actions));
+it("preserves significant spaces in the directory and rejects an observation from its neighbor", async () => {
+  const fetch = vi.fn().mockResolvedValueOnce(response({ ...actions, target: " web " }))
+    .mockResolvedValueOnce(response({ ...actions, target: "web" }));
   vi.stubGlobal("fetch", fetch);
   const client = new APIClient("read");
-  await client.listProjectActions("run-1", "./web/");
-  expect(fetch.mock.calls[0][0]).toBe("/api/v1/runs/run-1/project-actions?target=web");
-  await expect(client.listProjectActions("run-1", "web")).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  await client.listProjectActions("run-1", "./ web /");
+  expect(fetch.mock.calls[0][0]).toBe("/api/v1/runs/run-1/project-actions?target=+web+");
+  await expect(client.listProjectActions("run-1", " web ")).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
   await expect(client.listProjectActions("run-1", "../other")).rejects.toThrow();
   expect(fetch).toHaveBeenCalledTimes(2);
 });

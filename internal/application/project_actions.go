@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -14,8 +16,11 @@ import (
 	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/projectprep"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
+	"cyberagent-workbench/internal/toolgateway"
+	"cyberagent-workbench/internal/workspaceidentity"
 )
 
 const ProjectActionsProtocolVersion = "project-actions.v1"
@@ -300,6 +305,9 @@ func (s *ProjectActionsService) List(ctx context.Context, runID string, targets 
 			if prepareErr == nil && action.Configured && (action.CommandID == "test.python" || action.CommandID == "test.pytest") {
 				_, prepareErr = PrepareProjectCommandForAdapter(run, slot, target, service.adapter, root)
 			}
+			if prepareErr == nil && slot == "test" {
+				prepareErr = rootfs.CheckExternalDirectory(target)
+			}
 			if prepareErr == nil {
 				prepareErr = service.projectPresetReady(ctx, action.CommandID)
 			}
@@ -362,9 +370,42 @@ func operatorProjectJobID(runID, key string) string {
 	return jobID
 }
 
+// ValidateProjectFormatTarget requires one regular file before passing its
+// path to gofmt, which can also take a directory and walk its children.
+func ValidateProjectFormatTarget(workspaceRoot, target string) error {
+	if err := (workspaceidentity.PathPolicy{}).Check(target); err != nil {
+		return err
+	}
+	if !toolgateway.IsProjectGoFile(target) {
+		return apperror.New(apperror.CodeInvalidArgument, "format.go requires one relative Go file")
+	}
+	if err := rootfs.CheckExternalDirectory(filepath.Join(workspaceRoot, target)); err != nil {
+		return apperror.New(apperror.CodeInvalidArgument, err.Error())
+	}
+	root, err := rootfs.OpenExactRoot(workspaceRoot)
+	if err != nil {
+		return apperror.New(apperror.CodeFailedPrecondition, "formatter workspace is unavailable")
+	}
+	defer root.Close()
+	name := filepath.FromSlash(target)
+	for parent := filepath.Dir(name); parent != "."; parent = filepath.Dir(parent) {
+		info, err := root.Lstat(parent)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return apperror.New(apperror.CodeInvalidArgument, "formatter target must be inside an existing directory without links")
+		}
+	}
+	if info, err := root.Lstat(name); err != nil || !info.Mode().IsRegular() {
+		return apperror.New(apperror.CodeInvalidArgument, "formatter target must be an existing regular Go file")
+	}
+	return nil
+}
+
 func (s *ProjectActionsService) Run(ctx context.Context, request ProjectActionRequest) (ProjectActionResultView, error) {
-	if !domain.ValidAgentID(request.RunID) || !domain.ValidAgentID(request.RequestedBy) || (request.Slot != "test" && request.Slot != "format") || !request.ConfirmExecution || request.Target != strings.TrimSpace(request.Target) {
-		return ProjectActionResultView{}, apperror.New(apperror.CodeInvalidArgument, "a confirmed project action with normalized target is required")
+	if !domain.ValidAgentID(request.RunID) || !domain.ValidAgentID(request.RequestedBy) || (request.Slot != "test" && request.Slot != "format") || !request.ConfirmExecution {
+		return ProjectActionResultView{}, apperror.New(apperror.CodeInvalidArgument, "a confirmed project action is required")
+	}
+	if err := (workspaceidentity.PathPolicy{}).Check(request.Target); err != nil {
+		return ProjectActionResultView{}, err
 	}
 	key, err := domain.NormalizeAgentOperationKey(request.OperationKey)
 	if err != nil || key != request.OperationKey {
@@ -410,6 +451,9 @@ func (s *ProjectActionsService) Run(ctx context.Context, request ProjectActionRe
 		return ProjectActionResultView{}, err
 	}
 	var detectedPlan *projectprep.Plan
+	if err := rootfs.CheckExternalDirectory(request.Target); err != nil {
+		return ProjectActionResultView{}, apperror.New(apperror.CodeInvalidArgument, err.Error())
+	}
 	if id == "" {
 		policy, err := projectconfig.PathPolicy(run.Config)
 		if err != nil {
@@ -484,6 +528,10 @@ func (s *ProjectActionsService) Run(ctx context.Context, request ProjectActionRe
 						return apperror.New(apperror.CodeConflict, "detected project sources changed before test execution; inspect the project again")
 					}
 					return checkDetectedProjectPaths(run, current)
+				}
+			} else if request.Slot == "format" {
+				before = func(_ context.Context, root string) error {
+					return ValidateProjectFormatTarget(root, request.Target)
 				}
 			}
 			value, executeErr := service.runPreparedOperatorCommand(owned, OperatorCommandRequest{RunID: run.ID, OperationKey: operationKey, RequestedBy: request.RequestedBy, Command: spec, ConfirmExecution: true}, func(value OperatorCommandResult) { publish(value, nil) }, before, nil)

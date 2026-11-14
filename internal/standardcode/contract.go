@@ -117,8 +117,8 @@ func validRelativeDirectory(value string) bool {
 	if value == "." {
 		return true
 	}
-	return value != "" && value == strings.TrimSpace(value) && utf8.ValidString(value) &&
-		!strings.ContainsRune(value, 0) && !strings.Contains(value, `\`) &&
+	return value != "" && utf8.ValidString(value) &&
+		!strings.ContainsFunc(value, unicode.IsControl) && !strings.Contains(value, `\`) &&
 		!strings.HasPrefix(value, "/") && value != ".." &&
 		!strings.HasPrefix(value, "../") && path.Clean(value) == value
 }

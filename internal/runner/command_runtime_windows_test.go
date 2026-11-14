@@ -25,7 +25,8 @@ import (
 )
 
 func TestCommandRuntimeDirectoryRejectsWindowsPathAliasing(t *testing.T) {
-	plain := filepath.Join(t.TempDir(), "project")
+	root := t.TempDir()
+	plain := filepath.Join(root, "project")
 	exact, err := rootfs.ExactAbsolutePath(plain + " ")
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +42,14 @@ func TestCommandRuntimeDirectoryRejectsWindowsPathAliasing(t *testing.T) {
 	}
 	if _, _, _, err := resolveCommandRuntimeDirectory(plain+" ", "."); !errors.Is(err, ErrCommandRuntimeBoundary) {
 		t.Fatalf("unsafe working directory should be rejected before dispatch: %v", err)
+	}
+	if _, _, _, err := resolveCommandRuntimeDirectory(root, "project "); !errors.Is(err, ErrCommandRuntimeBoundary) {
+		t.Fatalf("unsafe relative working directory should be rejected before dispatch: %v", err)
+	}
+	spec := commandRuntimeTestPowerShellSpec()
+	spec.WorkingDirectory = "project "
+	if _, err := NormalizeCommandRuntimeSpec(spec, root); !errors.Is(err, ErrCommandRuntimeBoundary) {
+		t.Fatalf("intent silently selected the neighboring directory: %v", err)
 	}
 }
 

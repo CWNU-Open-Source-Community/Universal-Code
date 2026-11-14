@@ -520,7 +520,8 @@ func migrationPlan() []migration {
 		migration{Version: 230, Name: "Independent project browser network access", Statements: browserNetworkAccessStatements},
 		migration{Version: 231, Name: "Preserve exact workspace evidence paths", Statements: exactWorkspaceEvidencePathStatements},
 		migration{Version: 232, Name: "Preserve exact workspace snapshot paths", Statements: exactWorkspaceSnapshotPathStatements(), DisableForeignKeys: true},
-		migration{Version: 233, Name: "Preserve exact file edit apply paths", Statements: exactFileEditApplyPathStatements(), DisableForeignKeys: true})
+		migration{Version: 233, Name: "Preserve exact file edit apply paths", Statements: exactFileEditApplyPathStatements(), DisableForeignKeys: true},
+		migration{Version: 234, Name: "Preserve exact command working directories", Statements: exactCommandWorkingDirectoryStatements(), DisableForeignKeys: true})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

@@ -2250,8 +2250,11 @@ Execution retains existing permission, approval and lease checks and produces
 an ordinary command Job. Host execution retains its explicit acknowledgement;
 owned workspaces use their sandbox without host fallback. Test directories and
 format files are checked against the pinned excluded paths; read-only projects
-cannot be formatted. An existing UI operation key reads its original Job even
-after restart, without starting the action again. Docker needs the updated
+cannot be formatted. Enter the file or directory name with its original spaces.
+Windows command execution rejects path components ending in a space or dot
+when native tools could resolve a different name. An existing UI operation key
+reads its original Job even after restart, without starting the action again.
+Docker needs the updated
 [fixed image](standard-code-docker.md#fixed-image) for npm and gofmt. Tool IDs
 without one of these presets do not become shell commands.
 

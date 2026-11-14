@@ -302,5 +302,6 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v231 | 保留工作区证据附件及会话来源中的原始路径，迁移时保留既有证据绑定 | preserve exact workspace evidence paths and retain existing attachment and Session message bindings during upgrade |
 | v232 | 只读并行分析、发现报告和工作区检查点保留原始路径，迁移时保留既有记录和关联 | preserve exact paths in read-only fan-out, finding reports, and Workspace checkpoints while retaining existing records and bindings |
 | v233 | 文件编辑应用记录保留原始路径及既有审批、结果关联 | preserve exact paths in the file edit apply journal and retain existing approval and result bindings |
+| v234 | 命令记录保留工作目录的原始空格及既有任务、执行身份关联 | preserve exact command working directories and retain existing Job and actor bindings |
 
 </details>

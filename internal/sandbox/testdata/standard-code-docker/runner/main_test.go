@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -39,6 +40,26 @@ func TestFixedProjectToolchainsKeepFormatterAndNestedNPMInGuest(t *testing.T) {
 	}
 	if bindings["NPM_CONFIG_USERCONFIG"] == "" || bindings["NPM_CONFIG_GLOBALCONFIG"] == "" || bindings["NPM_CONFIG_USERCONFIG"] == bindings["NPM_CONFIG_GLOBALCONFIG"] {
 		t.Fatal("npm config files are not independently bound")
+	}
+}
+
+func TestResolveWorkingDirectoryPreservesSignificantSpaces(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := " project"
+	if runtime.GOOS != "windows" {
+		dir += " "
+	}
+	exact := filepath.Join(root, dir)
+	for _, name := range []string{exact, filepath.Join(root, strings.TrimSpace(dir))} {
+		if err := os.Mkdir(name, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, err := resolveWorkingDirectory(root, dir); err != nil || got != exact {
+		t.Fatalf("guest chose the wrong directory: %q (%v)", got, err)
 	}
 }
 

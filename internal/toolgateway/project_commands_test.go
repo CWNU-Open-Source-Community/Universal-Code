@@ -3,6 +3,7 @@ package toolgateway
 import (
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"cyberagent-workbench/internal/runner"
@@ -19,6 +20,7 @@ func TestProjectCommandsAreNativeRegistryPresets(t *testing.T) {
 		{"test.pytest", "", []string{"-m", "pytest"}},
 		{"test.rust", "", []string{"test", "--offline"}},
 		{"format.go", "pkg/example.go", []string{"-w", "./pkg/example.go"}},
+		{"format.go", " example.go", []string{"-w", "./ example.go"}},
 	} {
 		if _, registered := TypedActionIDs()[test.id]; !registered {
 			t.Fatalf("missing preset %s", test.id)
@@ -51,5 +53,13 @@ func TestProjectCommandsAreNativeRegistryPresets(t *testing.T) {
 	}
 	if _, err := ProjectCommandSpec("test.npm", filepath.Join(t.TempDir(), "node.exe"), "web"); err == nil {
 		t.Fatal("npm silently substituted Node's built-in runner")
+	}
+	spec, err := ProjectCommandSpec("format.go", filepath.Join(t.TempDir(), "gofmt.exe"), "example.go ")
+	if runtime.GOOS == "windows" {
+		if err == nil {
+			t.Fatal("Windows formatter accepted a name that may alias a different file")
+		}
+	} else if err != nil || !reflect.DeepEqual(spec.Arguments, []string{"-w", "./example.go "}) {
+		t.Fatalf("formatter did not preserve the exact argument: %q (%v)", spec.Arguments, err)
 	}
 }

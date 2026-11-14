@@ -161,7 +161,7 @@ func NormalizeCommandRuntimeIntent(spec CommandRuntimeSpec) (CommandRuntimeSpec,
 	spec.Version = strings.TrimSpace(spec.Version)
 	spec.Profile = CommandRuntimeProfile(strings.ToLower(strings.TrimSpace(string(spec.Profile))))
 	spec.Executable = strings.TrimSpace(spec.Executable)
-	spec.WorkingDirectory = filepath.ToSlash(strings.TrimSpace(spec.WorkingDirectory))
+	spec.WorkingDirectory = filepath.ToSlash(spec.WorkingDirectory)
 	purpose := strings.TrimSpace(spec.Purpose)
 	if redact.String(purpose) != purpose {
 		return CommandRuntimeSpec{}, fmt.Errorf(
@@ -439,7 +439,11 @@ func resolveCommandRuntimeDirectory(workspaceRoot string,
 	if cleanRelative == ".." || strings.HasPrefix(cleanRelative, ".."+string(filepath.Separator)) {
 		return "", "", "", fmt.Errorf("%w: working directory escapes the workspace", ErrCommandRuntimeBoundary)
 	}
-	directory, err := rootfs.EvalExactSymlinks(filepath.Join(root, cleanRelative))
+	requested := filepath.Join(root, cleanRelative)
+	if err := rootfs.CheckExternalDirectory(requested); err != nil {
+		return "", "", "", fmt.Errorf("%w: %w", ErrCommandRuntimeBoundary, err)
+	}
+	directory, err := rootfs.EvalExactSymlinks(requested)
 	if err != nil {
 		return "", "", "", fmt.Errorf("%w: working directory is unavailable", ErrCommandRuntimeBoundary)
 	}

@@ -86,6 +86,28 @@ it("runs a detected test without asking the user to configure the pinned action"
   expect(client.runProjectAction).toHaveBeenCalledWith("run-1", "test", "web", expect.stringMatching(/^project-action-/));
 });
 
+it("inspects and runs the literal directory, including its surrounding spaces", async () => {
+  const { client, ui } = setup();
+  render(ui());
+  await readyTests();
+  const target = " web ";
+  fireEvent.change(screen.getByLabelText(/测试目录/), { target: { value: target } });
+  await waitFor(() => expect(client.listProjectActions).toHaveBeenCalledWith("run-1", target, expect.any(AbortSignal)));
+  fireEvent.click(await readyTests());
+  await waitFor(() => expect(client.runProjectAction).toHaveBeenCalledWith("run-1", "test", target, expect.any(String)));
+});
+
+it("sends the exact formatter path, including its leading space", async () => {
+  const { client, ui } = setup();
+  client.runProjectAction.mockResolvedValueOnce({ ...result(), slot: "format", command_id: "format.go" });
+  render(ui());
+  await readyTests();
+  const target = " value.go";
+  fireEvent.change(screen.getByLabelText(/要格式化的文件/), { target: { value: target } });
+  fireEvent.click(screen.getByRole("button", { name: "格式化文件" }));
+  await waitFor(() => expect(client.runProjectAction).toHaveBeenCalledWith("run-1", "format", target, expect.any(String)));
+});
+
 it("keeps an unknown outcome on the same request key and does not automatically rerun", async () => {
   const { client, ui } = setup();
   client.runProjectAction.mockRejectedValueOnce(new TypeError("Network disconnected"));

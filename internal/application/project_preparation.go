@@ -19,6 +19,7 @@ import (
 	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/projectprep"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
 )
@@ -206,7 +207,14 @@ func (s *ProjectPreparationService) inspect(ctx context.Context, runID, target s
 		err = errors.New("项目为只读；请在允许修改的任务中准备依赖")
 	}
 	if err == nil && plan.Ready {
-		_, err = PrepareProjectPreparationCommand(plan, service.adapter, files.Workspace.RootPath, false)
+		for _, directory := range []string{files.Workspace.RootPath, plan.Target, plan.WorkspaceRoot} {
+			if err = rootfs.CheckExternalDirectory(directory); err != nil {
+				break
+			}
+		}
+		if err == nil {
+			_, err = PrepareProjectPreparationCommand(plan, service.adapter, files.Workspace.RootPath, false)
+		}
 		if err == nil {
 			err = service.projectPreparationReady(ctx, plan.Ecosystem)
 		}

@@ -80,6 +80,11 @@ func (a *App) runProjectAction(ctx context.Context, args []string) error {
 	if receipt, found, err := application.ReadOperatorCommand(ctx, a.store, request); found || err != nil {
 		return writeOperatorCommandResult(a.out, receipt, err)
 	}
+	if fs.Arg(1) == "format" {
+		if err := application.ValidateProjectFormatTarget(files.Workspace.RootPath, *target); err != nil {
+			return err
+		}
+	}
 	if files.Drydock == nil && !*confirmHost {
 		return apperror.New(apperror.CodeInvalidArgument, "project actions require explicit host-execution acknowledgement")
 	}
@@ -139,7 +144,11 @@ func (a *App) runProjectAction(ctx context.Context, args []string) error {
 			return err
 		}
 		commands.SetCommandRuntimePolicy(a.checker)
-		view, err := application.NewProjectActionsService(a.store, commands, drydocks).List(ctx, run.ID)
+		directory := "."
+		if fs.Arg(1) == "test" && *target != "" {
+			directory = *target
+		}
+		view, err := application.NewProjectActionsService(a.store, commands, drydocks).List(ctx, run.ID, directory)
 		if err != nil {
 			return err
 		}

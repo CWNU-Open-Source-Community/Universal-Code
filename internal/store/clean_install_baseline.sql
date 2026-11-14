@@ -1414,7 +1414,8 @@ CREATE TABLE "command_runtime_jobs" (
 		adapter_credential_policy TEXT NOT NULL,
 		permission_runtime_epoch TEXT NOT NULL DEFAULT '',
 		permission_generation INTEGER NOT NULL DEFAULT 0,
-		run_authorization_fence INTEGER NOT NULL DEFAULT 0 CHECK(run_authorization_fence >= 0), operator_invocation INTEGER NOT NULL DEFAULT 0 CHECK(operator_invocation IN (0,1)),
+		run_authorization_fence INTEGER NOT NULL DEFAULT 0 CHECK(run_authorization_fence >= 0),
+		operator_invocation INTEGER NOT NULL DEFAULT 0 CHECK(operator_invocation IN (0,1)),
 		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE RESTRICT,
 		FOREIGN KEY(mission_id) REFERENCES missions(id) ON DELETE RESTRICT,
 		FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE RESTRICT,
@@ -1509,7 +1510,7 @@ CREATE TABLE "command_runtime_jobs" (
 		CHECK(length(owner_id) BETWEEN 1 AND 256 AND owner_id = trim(owner_id) AND instr(owner_id, char(0)) = 0),
 		CHECK(length(executable_path) BETWEEN 1 AND 4096 AND executable_path = trim(executable_path)
 			AND instr(executable_path, char(0)) = 0),
-		CHECK(length(working_directory) BETWEEN 1 AND 4096 AND working_directory = trim(working_directory)
+		CHECK(length(working_directory) BETWEEN 1 AND 4096
 			AND instr(working_directory, char(0)) = 0),
 		CHECK(length(operation_digest) = 64 AND operation_digest = lower(operation_digest)
 			AND operation_digest NOT GLOB '*[^0-9a-f]*'),

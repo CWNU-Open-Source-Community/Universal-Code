@@ -46,7 +46,7 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
   }, []);
   const testDirectory = testTarget ?? targets.test;
   let inspectedTarget: string | undefined;
-  try { inspectedTarget = normalizePreparationTarget(testDirectory.trim() || "."); }
+  try { inspectedTarget = normalizePreparationTarget(testDirectory || "."); }
   catch { /* Invalid input stays editable and cannot start an action. */ }
   const actions = useQuery({ queryKey: [...actionKey(client, runID), inspectedTarget ?? null],
     queryFn: ({ signal }) => client.listProjectActions(runID, inspectedTarget!, signal),
@@ -168,7 +168,7 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
         return <form key={slot} onSubmit={(event) => {
           event.preventDefault();
           if (!ready || !available || active) return;
-          submit({ runID, slot, target: directory ? inspectedTarget! : targets.format.trim(), key: "project-action-" + crypto.randomUUID() });
+          submit({ runID, slot, target: directory ? inspectedTarget! : targets.format, key: "project-action-" + crypto.randomUUID() });
         }}>
           <h3>{slot === "test" ? t("测试", "Tests") : t("格式化", "Formatting")}</h3>
           {action?.command_id ? <><code>{action.command_id}</code>{!action.configured && <small>{t("根据项目文件检测", "Detected from project files")}</small>}</>
@@ -185,7 +185,7 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
           </label>}
           {action?.reason && <p className="v2-delivery-muted">{reasonLabel(action.reason)}</p>}
           <button type="submit" disabled={!ready || !available || active || execute.isPending || working || !client.hasControl ||
-            !client.hasRunExecution || (needsFile && !targets[slot].trim())}>
+            !client.hasRunExecution || (needsFile && targets.format === "")}>
             {slot === "test" ? t("运行测试", "Run tests") : t("格式化文件", "Format file")}
           </button>
         </form>;

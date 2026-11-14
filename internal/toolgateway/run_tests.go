@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/runner"
@@ -50,7 +49,7 @@ func NormalizeRunTestsPayload(raw json.RawMessage) (RunTestsInput, json.RawMessa
 		if i.EffectiveAction() == CommandRuntimeActionStart {
 			maximum = runner.MaxCommandRuntimeTimeout.Milliseconds()
 		}
-		if i.Target == "" || strings.TrimSpace(i.Target) != i.Target || i.TimeoutMilliseconds < 1 || i.TimeoutMilliseconds > maximum ||
+		if i.Target == "" || i.TimeoutMilliseconds < 1 || i.TimeoutMilliseconds > maximum ||
 			i.JobID != "" || i.Cursor != nil || i.MaxBytes != nil || i.WaitMilliseconds != nil {
 			return i, nil, errors.New("run_tests run/start requires a relative target and bounded timeout; use action=start for tests longer than 25000 milliseconds")
 		}

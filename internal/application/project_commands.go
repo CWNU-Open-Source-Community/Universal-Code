@@ -16,6 +16,7 @@ import (
 	"cyberagent-workbench/internal/projectconfig"
 	"cyberagent-workbench/internal/projectprep"
 	"cyberagent-workbench/internal/repository"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/sandbox"
 	"cyberagent-workbench/internal/toolgateway"
@@ -85,6 +86,9 @@ func PrepareProjectCommandForAdapter(run domain.Run, slot, target string, adapte
 		if err := policy.Check(target); err != nil {
 			return runner.CommandRuntimeSpec{}, err
 		}
+		if err := rootfs.CheckExternalDirectory(target); err != nil {
+			return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeInvalidArgument, err.Error())
+		}
 	}
 	if (slot == "format") != (id == "format.go") {
 		return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "configured command preset does not match its project action")
@@ -110,7 +114,12 @@ func PrepareProjectCommandForAdapter(run domain.Run, slot, target string, adapte
 		if detectErr != nil {
 			return runner.CommandRuntimeSpec{}, detectErr
 		}
-		_, lockErr := os.Lstat(filepath.Join(workspaceRoot[0], filepath.FromSlash(target), "pylock.toml"))
+		root, err := rootfs.OpenExactRoot(workspaceRoot[0])
+		if err != nil {
+			return runner.CommandRuntimeSpec{}, err
+		}
+		_, lockErr := root.Lstat(filepath.Join(filepath.FromSlash(plan.Target), "pylock.toml"))
+		_ = root.Close()
 		if lockErr == nil || !os.IsNotExist(lockErr) {
 			if lockErr != nil || plan.Ecosystem != "python" || !plan.Ready {
 				return runner.CommandRuntimeSpec{}, apperror.New(apperror.CodeFailedPrecondition, "Python dependency lock is unavailable; inspect and prepare the project before testing")
