@@ -76,9 +76,9 @@ func (o Operation) Validate() error {
 	for _, target := range o.Targets {
 		var valid bool
 		switch target.Kind {
-		case "file":
+		case "file", "directory":
 			valid = target.Locator != "" && text(target.Locator, 4096)
-		case "directory", "endpoint", "process":
+		case "endpoint", "process":
 			valid = normalized(target.Locator, 4096)
 		}
 		if !valid || seen[target] {
