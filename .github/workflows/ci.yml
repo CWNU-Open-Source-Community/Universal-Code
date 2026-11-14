@@ -742,6 +742,17 @@ jobs:
           }
           $env:TMP = $systemTemp.FullName
           $env:TEMP = $systemTemp.FullName
+          # The formatter test starts gofmt through the native executable
+          # resolver. Use the direct installation prepared above.
+          if ($env:RUNNER_ENVIRONMENT -eq 'github-hosted') {
+            $programFiles = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
+            $fixedGoBin = Join-Path $programFiles 'Go\bin'
+            $fixedGofmt = Get-Item -LiteralPath (Join-Path $fixedGoBin 'gofmt.exe') -ErrorAction Stop
+            if ($fixedGofmt.PSIsContainer -or ($fixedGofmt.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw "Formatter tests require the fixed Go installation's gofmt.exe"
+            }
+            $env:PATH = $fixedGoBin + [IO.Path]::PathSeparator + $env:PATH
+          }
           $exactPathTests = @(
             'TestAdvancedHunksPreserveExactSpacedPaths'
             'TestAdvancedGitRefusesWindowsPathsThatGitCannotAddress'
