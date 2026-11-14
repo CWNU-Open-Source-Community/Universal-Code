@@ -61,10 +61,9 @@ function integer(value: unknown, minimum = 0, maximum = Number.MAX_SAFE_INTEGER)
 
 function relativePath(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && [...value].length <= 4_096 &&
-    value.trim() === value && !value.startsWith("/") && !value.includes("\\") &&
-    !value.includes(":") && !/[\u0000-\u001f\u007f]/u.test(value) &&
-    value.split("/").every((part) => part !== "" && part.trim() === part &&
-      part !== "." && part !== ".." && part.toLowerCase() !== ".git");
+    !value.includes("\\") && !value.includes(":") && !/\p{Cc}/u.test(value) &&
+    value.split("/").every((part) => part !== "" && part !== "." && part !== ".." &&
+      part.trim().replace(/[ .]+$/u, "").toLowerCase() !== ".git");
 }
 
 function worktreeName(value: unknown): value is string {
@@ -121,7 +120,8 @@ export function validGitAdvancedSpec(value: unknown): value is GitAdvancedSpecVi
       return false;
     }
   }
-  if ((value.paths !== undefined && !stringArray(value.paths, 200, relativePath)) ||
+  if ((value.paths !== undefined &&
+      !stringArray(value.paths, 200, (item) => relativePath(item) && !item.startsWith("-"))) ||
     (value.hunk_ids !== undefined && !stringArray(value.hunk_ids, 200,
       (item) => typeof item === "string" && digest.test(item))) ||
     (value.commits !== undefined && !stringArray(value.commits, 128,

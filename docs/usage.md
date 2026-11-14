@@ -2404,6 +2404,12 @@ read-only in-process inspection, creates the exact proposal, then re-renders and
 same inspection before Approval and execution. The confirmed result prints the reviewed
 preview together with the Approval and receipt; any drift inside the invocation is rejected.
 
+Quote an exact file path in CLI arguments, for example `--path " notes.txt"`. The desktop
+path field accepts one repository-relative path per line, including spaces and commas.
+Git for Windows can normalize components ending in a space or dot. Native Git operations
+reject workspace roots with these names and block affected advanced operations before
+mutation. The workspace file tools can still address these names on a supporting filesystem.
+
 The closed operation and flag mapping is:
 
 | Operations | Typed flags |

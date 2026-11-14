@@ -109,9 +109,21 @@ describe("Git advanced browser contract", () => {
       recipe: { name: "go_test", max_steps: 129, timeout_seconds: 120 } })).toBe(false);
     expect(validGitAdvancedSpec({ protocol_version: "git-advanced.v1", operation: "hunk_stage",
       paths: ["folder/.Git/config"] })).toBe(false);
+    expect(validGitAdvancedSpec({ protocol_version: "git-advanced.v1", operation: "hunk_stage",
+      paths: ["folder/ .git. /config"] })).toBe(false);
     expect(validGitAdvancedSpec({ protocol_version: "git-advanced.v1", operation: "stash_drop",
       stash_oid: oid, restore_index: true })).toBe(false);
     expect(validGitAdvancedSpec({ protocol_version: "git-advanced.v1", operation: "worktree_create",
       worktree_name: "Review", branch: "review/topic", commit: oid })).toBe(false);
+  });
+
+  it("keeps spaced Git paths distinct in input and evidence", () => {
+    const paths = ["notes.txt", " notes.txt", "notes.txt ", "dir / file,name.txt "];
+    expect(validGitAdvancedSpec({ protocol_version: "git-advanced.v1", operation: "hunk_stage", paths }))
+      .toBe(true);
+    const withPaths = projection();
+    withPaths.stashes = [{ oid, base_commit: oid, index_commit: oid, subject: "Fixture",
+      files: paths.map((path) => ({ path, change: "index", destructive: false })) }] as typeof withPaths.stashes;
+    expect(isGitAdvancedProjection(withPaths, "run-1")).toBe(true);
   });
 });

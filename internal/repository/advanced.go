@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -299,6 +300,11 @@ func (e *AdvancedExecutor) ReviewAdvanced(ctx context.Context, root string,
 		return gitadvanced.Preview{}, apperror.Wrap(apperror.CodeInvalidArgument,
 			"Git advanced request is invalid", err)
 	}
+	for _, path := range spec.Paths {
+		if err := checkNativeGitPath(path); err != nil {
+			return gitadvanced.Preview{}, err
+		}
+	}
 	binding, err := e.CaptureAdvancedBinding(ctx, root)
 	if err != nil {
 		return gitadvanced.Preview{}, err
@@ -316,6 +322,11 @@ func (e *AdvancedExecutor) ReviewAdvanced(ctx context.Context, root string,
 	preview.Conflict, err = e.captureConflictState(ctx, root)
 	if err != nil {
 		return gitadvanced.Preview{}, err
+	}
+	for _, file := range preview.Conflict.Files {
+		if err := checkNativeGitPath(file.Path); err != nil {
+			return gitadvanced.Preview{}, err
+		}
 	}
 	preview.BlockedReasons = append(preview.BlockedReasons,
 		advancedPolicyBlocks(spec, binding, preview.Conflict)...)
@@ -408,6 +419,10 @@ func (e *AdvancedExecutor) ExecuteAdvanced(ctx context.Context, root string,
 		return receipt, e.advancedFailure(&receipt, gitadvanced.FailureStalePreview,
 			"hunk execution requires explicit identities selected from a discovery preview")
 	}
+	if !slices.Equal(preview.Hunks, current.Hunks) || !slices.Equal(preview.Files, current.Files) {
+		return receipt, e.advancedFailure(&receipt, gitadvanced.FailureStalePreview,
+			"Git hunk or file evidence changed after review")
+	}
 	operationCtx, err := advancedDispatchContext(ctx, preview, guards)
 	if err != nil {
 		return receipt, e.advancedFailure(&receipt, gitadvanced.FailureStalePreview, err.Error())
@@ -485,6 +500,9 @@ func (e *AdvancedExecutor) advancedFailure(receipt *gitadvanced.Receipt,
 func (e *AdvancedExecutor) git(ctx context.Context, root string, stdin []byte,
 	args ...string,
 ) (string, string, int, error) {
+	if err := rootfs.CheckExternalDirectory(root); err != nil {
+		return "", "", 0, err
+	}
 	duration := e.maxDuration
 	if duration <= 0 {
 		duration = MaxAdvancedGitDuration
@@ -562,11 +580,18 @@ func (e *AdvancedExecutor) requiredPathOutput(ctx context.Context, root string,
 		return "", fmt.Errorf("Git metadata lookup failed: %w: %s", err,
 			strings.TrimSpace(stderr))
 	}
-	value := strings.TrimSpace(stdout)
-	if value == "" || strings.ContainsRune(value, 0) {
+	value := trimGitLineEnding(stdout)
+	if !filepath.IsAbs(value) || !utf8.ValidString(value) || strings.ContainsFunc(value, unicode.IsControl) {
 		return "", errors.New("Git metadata lookup returned an invalid path")
 	}
 	return value, nil
+}
+
+func trimGitLineEnding(value string) string {
+	if line, ok := strings.CutSuffix(value, "\n"); ok {
+		return strings.TrimSuffix(line, "\r")
+	}
+	return value
 }
 
 func (e *AdvancedExecutor) captureWorktreeDigest(ctx context.Context, root,
@@ -615,19 +640,21 @@ func (e *AdvancedExecutor) captureWorktreeDigest(ctx context.Context, root,
 }
 
 func canonicalManagedWorktreeRoot(root string, enabled bool) (string, error) {
-	root = strings.TrimSpace(root)
 	if root == "" {
 		if enabled {
 			return "", errors.New("enabled Git advanced capability requires a managed worktree root")
 		}
 		return "disabled", nil
 	}
-	abs, err := filepath.Abs(root)
-	if err != nil || strings.ContainsRune(root, 0) {
+	abs, err := rootfs.ExactAbsolutePath(root)
+	if err != nil || !utf8.ValidString(root) || strings.ContainsFunc(root, unicode.IsControl) {
 		return "", errors.New("managed worktree root is invalid")
 	}
 	if !enabled {
 		return filepath.Clean(abs), nil
+	}
+	if err := rootfs.CheckExternalDirectory(abs); err != nil {
+		return "", err
 	}
 	if err := os.MkdirAll(abs, 0o700); err != nil {
 		return "", fmt.Errorf("create managed worktree root: %w", err)
@@ -644,11 +671,13 @@ func canonicalManagedWorktreeRoot(root string, enabled bool) (string, error) {
 }
 
 func canonicalGitMetadataPath(value string) (string, error) {
-	abs, err := filepath.Abs(strings.TrimSpace(value))
-	if err != nil || strings.ContainsRune(value, 0) {
+	if !filepath.IsAbs(value) || !utf8.ValidString(value) || strings.ContainsFunc(value, unicode.IsControl) {
 		return "", errors.New("Git metadata path is invalid")
 	}
-	resolved, err := filepath.EvalSymlinks(abs)
+	if err := rootfs.CheckExternalDirectory(value); err != nil {
+		return "", err
+	}
+	resolved, err := rootfs.EvalExactSymlinks(value)
 	if err != nil {
 		return "", fmt.Errorf("resolve Git metadata path: %w", err)
 	}
@@ -748,7 +777,8 @@ func digestGitSequenceState(gitDir string) (string, error) {
 }
 
 func readBoundedWorktreeFile(root, relative string, remaining int) ([]byte, error) {
-	if remaining < 0 || !validWorktreeCapturePath(relative) {
+	if remaining < 0 || !gitadvanced.ValidRelativePath(relative) ||
+		!filepath.IsLocal(filepath.FromSlash(relative)) {
 		return nil, errors.New("worktree content exceeds safe capture bounds")
 	}
 	openedRoot, err := rootfs.OpenExactRoot(root)
@@ -759,13 +789,19 @@ func readBoundedWorktreeFile(root, relative string, remaining int) ([]byte, erro
 	name := filepath.FromSlash(relative)
 	for parent := filepath.Dir(name); parent != "."; parent = filepath.Dir(parent) {
 		info, err := openedRoot.Lstat(parent)
-		if err != nil || !info.IsDir() || isReparsePoint(info) {
-			return nil, errors.New("untracked worktree entry traverses a link or reparse point")
+		if err != nil {
+			return nil, fmt.Errorf("inspect worktree path parent: %w", err)
+		}
+		if !info.IsDir() || isReparsePoint(info) {
+			return nil, errors.New("worktree entry traverses a link or reparse point")
 		}
 	}
 	info, err := openedRoot.Lstat(name)
-	if err != nil || !info.Mode().IsRegular() || isReparsePoint(info) || info.Size() > int64(remaining) {
-		return nil, errors.New("untracked worktree entry is not a bounded regular file")
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || isReparsePoint(info) || info.Size() > int64(remaining) {
+		return nil, errors.New("worktree entry is not a bounded regular file")
 	}
 	file, err := openedRoot.OpenReadOnly(name)
 	if err != nil {
@@ -774,7 +810,7 @@ func readBoundedWorktreeFile(root, relative string, remaining int) ([]byte, erro
 	defer file.Close()
 	before, err := file.Stat()
 	if err != nil || !before.Mode().IsRegular() || !os.SameFile(info, before) {
-		return nil, errors.New("untracked worktree entry changed while opening it")
+		return nil, errors.New("worktree entry changed while opening it")
 	}
 	data, err := io.ReadAll(io.LimitReader(file, int64(remaining)+1))
 	if err != nil {
@@ -783,72 +819,9 @@ func readBoundedWorktreeFile(root, relative string, remaining int) ([]byte, erro
 	after, err := file.Stat()
 	if err != nil || len(data) > remaining || int64(len(data)) != before.Size() ||
 		before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
-		return nil, errors.New("untracked worktree entry changed or exceeded its capture bound")
+		return nil, errors.New("worktree entry changed or exceeded its capture bound")
 	}
 	return data, nil
-}
-
-func validateAdvancedPathParent(root, parent string) error {
-	root, parent = filepath.Clean(root), filepath.Clean(parent)
-	relative, err := filepath.Rel(root, parent)
-	if err != nil || relative == ".." || strings.HasPrefix(relative,
-		".."+string(filepath.Separator)) {
-		return errors.New("path parent is outside the repository root")
-	}
-	if relative == "." {
-		return nil
-	}
-	current := root
-	for _, component := range strings.Split(relative, string(filepath.Separator)) {
-		current = filepath.Join(current, component)
-		info, statErr := os.Lstat(current)
-		if statErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("path parent contains a link or reparse point")
-		}
-		resolved, resolveErr := filepath.EvalSymlinks(current)
-		if resolveErr != nil || !sameFilesystemPath(current, resolved) ||
-			!pathInsideRoot(root, resolved) {
-			return errors.New("path parent contains a redirected component")
-		}
-	}
-	return nil
-}
-
-func safeGitRelativePath(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || filepath.IsAbs(value) ||
-		strings.ContainsRune(value, 0) || strings.ContainsAny(value, "\\:") ||
-		value != filepath.ToSlash(filepath.Clean(value)) || value == "." || value == ".." ||
-		strings.HasPrefix(value, "../") {
-		return false
-	}
-	for _, current := range value {
-		if current < 0x20 || current == 0x7f {
-			return false
-		}
-	}
-	for _, component := range strings.Split(value, "/") {
-		if component == "" || component != strings.TrimSpace(component) ||
-			strings.EqualFold(component, ".git") {
-			return false
-		}
-	}
-	return true
-}
-
-// Git reports literal untracked names. This read never passes the path back
-// to Git, so it can preserve whitespace and open the exact file itself.
-func validWorktreeCapturePath(value string) bool {
-	if value == "" || value == "." || !utf8.ValidString(value) || strings.ContainsFunc(value, unicode.IsControl) ||
-		strings.ContainsAny(value, "\\:") || !filepath.IsLocal(filepath.FromSlash(value)) ||
-		value != filepath.ToSlash(filepath.Clean(value)) {
-		return false
-	}
-	for _, component := range strings.Split(value, "/") {
-		if strings.EqualFold(strings.TrimRight(component, " ."), ".git") {
-			return false
-		}
-	}
-	return true
 }
 
 func pathInsideRoot(root, value string) bool {

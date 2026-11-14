@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -44,9 +43,7 @@ func (e *AdvancedExecutor) previewHunks(ctx context.Context, root string,
 		return nil, nil, fmt.Errorf("render Git hunks: %w: %s", err,
 			strings.TrimSpace(stderr))
 	}
-	if len(stdout) > gitadvanced.MaxPreviewPatchBytes ||
-		strings.Contains(stdout, "GIT binary patch") || strings.Contains(stdout, "Binary files ") ||
-		strings.Contains(stdout, "diff --cc ") || strings.Contains(stdout, "diff --combined ") {
+	if len(stdout) > gitadvanced.MaxPreviewPatchBytes || unsupportedGitDiff(stdout) {
 		return nil, nil, errors.New("binary, combined, or oversized Git hunks are not supported")
 	}
 	parsed, err := parseAdvancedUnifiedDiff(stdout)
@@ -65,6 +62,9 @@ func (e *AdvancedExecutor) previewHunks(ctx context.Context, root string,
 	selectedByPath := make(map[string][]parsedAdvancedHunk)
 	hunks := make([]gitadvanced.Hunk, 0, len(parsed))
 	for _, item := range parsed {
+		if err := checkNativeGitPath(item.path); err != nil {
+			return nil, nil, err
+		}
 		identity, ok := identities[item.path]
 		if !ok {
 			identity, err = e.captureAdvancedFileIdentity(ctx, root, item.path)
@@ -126,6 +126,16 @@ func (e *AdvancedExecutor) previewHunks(ctx context.Context, root string,
 	return hunks, files, nil
 }
 
+func unsupportedGitDiff(patch string) bool {
+	for line := range strings.SplitSeq(patch, "\n") {
+		if line == "GIT binary patch" || strings.HasPrefix(line, "Binary files ") ||
+			strings.HasPrefix(line, "diff --cc ") || strings.HasPrefix(line, "diff --combined ") {
+			return true
+		}
+	}
+	return false
+}
+
 func parseAdvancedUnifiedDiff(value string) ([]parsedAdvancedHunk, error) {
 	if value == "" {
 		return []parsedAdvancedHunk{}, nil
@@ -137,27 +147,40 @@ func parseAdvancedUnifiedDiff(value string) ([]parsedAdvancedHunk, error) {
 		line := strings.TrimSuffix(lines[index], "\n")
 		line = strings.TrimSuffix(line, "\r")
 		if strings.HasPrefix(line, "diff --git ") {
-			currentPath, currentHeader = "", lines[index]
+			start := index
+			currentPath = ""
+			var oldPath, newPath string
+			var oldSeen, newSeen bool
 			index++
 			for index < len(lines) {
 				candidate := strings.TrimSuffix(strings.TrimSuffix(lines[index], "\n"), "\r")
 				if strings.HasPrefix(candidate, "diff --git ") || strings.HasPrefix(candidate, "@@ ") {
 					break
 				}
-				currentHeader += lines[index]
-				if strings.HasPrefix(candidate, "+++ b/") {
-					currentPath = strings.TrimPrefix(candidate, "+++ b/")
-				} else if candidate == "+++ /dev/null" && currentPath == "" {
-					for _, headerLine := range strings.Split(currentHeader, "\n") {
-						if strings.HasPrefix(headerLine, "--- a/") {
-							currentPath = strings.TrimPrefix(headerLine, "--- a/")
-						}
+				if name, found := strings.CutPrefix(candidate, "--- "); found {
+					var valid bool
+					oldPath, valid = advancedDiffPath(name, "a/")
+					if !valid || oldSeen {
+						return nil, errors.New("Git diff contains an unsupported or unsafe old path")
 					}
+					oldSeen = true
+				} else if name, found := strings.CutPrefix(candidate, "+++ "); found {
+					var valid bool
+					newPath, valid = advancedDiffPath(name, "b/")
+					if !valid || newSeen {
+						return nil, errors.New("Git diff contains an unsupported or unsafe new path")
+					}
+					newSeen = true
 				}
 				index++
 			}
-			if !safeGitRelativePath(currentPath) || strings.HasPrefix(currentPath, "\"") {
-				return nil, errors.New("Git diff contains an unsupported or unsafe path")
+			currentHeader = strings.Join(lines[start:index], "")
+			if oldSeen != newSeen || (oldPath != "" && newPath != "" && oldPath != newPath) {
+				return nil, errors.New("Git diff file headers disagree")
+			}
+			currentPath = newPath
+			if currentPath == "" {
+				currentPath = oldPath
 			}
 			continue
 		}
@@ -201,6 +224,24 @@ func parseAdvancedUnifiedDiff(value string) ([]parsedAdvancedHunk, error) {
 	return out, nil
 }
 
+func advancedDiffPath(value, prefix string) (string, bool) {
+	// Git adds a tab delimiter to unquoted names with spaces. The spaces
+	// before it, including any at the end of the filename, are significant.
+	value = strings.TrimSuffix(value, "\t")
+	if value == "/dev/null" {
+		return "", true
+	}
+	if strings.HasPrefix(value, "\"") {
+		decoded, err := strconv.Unquote(value)
+		if err != nil {
+			return "", false
+		}
+		value = decoded
+	}
+	path, ok := strings.CutPrefix(value, prefix)
+	return path, ok && gitadvanced.ValidRelativePath(path)
+}
+
 func hunkRangeCount(value string) int {
 	if value == "" {
 		return 1
@@ -222,7 +263,7 @@ type advancedFileIdentity struct {
 func (e *AdvancedExecutor) captureAdvancedFileIdentity(ctx context.Context,
 	root, path string,
 ) (advancedFileIdentity, error) {
-	if !safeGitRelativePath(path) {
+	if !gitadvanced.ValidRelativePath(path) {
 		return advancedFileIdentity{}, errors.New("Git hunk path is unsafe")
 	}
 	baseMode, baseBlob, baseContent, err := e.readGitTreeFile(ctx, root, "HEAD", path)
@@ -241,22 +282,9 @@ func (e *AdvancedExecutor) captureAdvancedFileIdentity(ctx context.Context,
 			return advancedFileIdentity{}, errors.New("Git hunk has an unsupported file mode")
 		}
 	}
-	worktree := []byte(nil)
-	full := filepath.Join(root, filepath.FromSlash(path))
-	if info, statErr := os.Lstat(full); statErr == nil {
-		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
-			info.Size() > MaxAdvancedTrackedBytes {
-			return advancedFileIdentity{}, errors.New("Git hunk worktree target is not a bounded regular file")
-		}
-		if parentErr := validateAdvancedPathParent(root, filepath.Dir(full)); parentErr != nil {
-			return advancedFileIdentity{}, errors.New("Git hunk worktree target traverses a link or reparse point")
-		}
-		worktree, err = os.ReadFile(full)
-		if err != nil {
-			return advancedFileIdentity{}, err
-		}
-	} else if !errors.Is(statErr, os.ErrNotExist) {
-		return advancedFileIdentity{}, statErr
+	worktree, err := readBoundedWorktreeFile(root, path, MaxAdvancedTrackedBytes)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return advancedFileIdentity{}, err
 	}
 	return advancedFileIdentity{baseMode: baseMode, baseBlob: baseBlob,
 		indexMode: indexMode, indexBlob: indexBlob,
@@ -445,10 +473,11 @@ func selectedHunkPatch(hunks []gitadvanced.Hunk) ([]byte, error) {
 		if !gitadvanced.ValidDigest(hunk.ID) || digestBytes([]byte(hunk.Patch)) != hunk.PatchSHA256 {
 			return nil, errors.New("Git hunk patch evidence is invalid")
 		}
-		marker := strings.Index(hunk.Patch, "@@ ")
+		marker := strings.Index(hunk.Patch, "\n@@ ")
 		if marker < 0 {
 			return nil, errors.New("Git hunk patch has no range header")
 		}
+		marker++ // Keep the file header's final newline.
 		header, body := hunk.Patch[:marker], hunk.Patch[marker:]
 		value, ok := groups[hunk.Path]
 		if !ok {

@@ -8,7 +8,7 @@ import type {
   GitAdvancedReviewResultView,
   GitAdvancedSpecView,
 } from "../api/types";
-import { formatDate, shortID } from "../lib/format";
+import { formatDate, formatWorkspacePathLabel, shortID } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { EmptyState, ErrorState, KeyValue, LoadingState, StatusBadge } from "./common";
 
@@ -16,10 +16,6 @@ const objectIDPattern = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 
 function exactObjects(value: string): string[] {
   return value.split(/[\s,]+/u).map((item) => item.trim()).filter(Boolean);
-}
-
-function exactPaths(value: string): string[] {
-  return value.split(/[\r\n,]+/u).map((item) => item.trim()).filter(Boolean);
 }
 
 function operationKey(): string {
@@ -121,6 +117,10 @@ export function GitAdvancedPanel({ client, runID, onOpenApprovals,
   const sequence = projection?.sequence;
   const canMutate = Boolean(projection?.authority.executable) && !pending;
   const selectedSet = useMemo(() => new Set(selectedHunks), [selectedHunks]);
+  const paths = hunkPaths.split(/\r?\n/u).filter(Boolean);
+  const hunkSpec = createSpec(hunkOperation, paths.length > 0 ? { paths } : {});
+  const discovered = review?.preview.operation === hunkOperation &&
+    JSON.stringify(review.preview.spec.paths ?? []) === JSON.stringify(paths) ? review.preview : null;
 
   const reviewSpec = (spec: GitAdvancedSpecView) => {
     setReview(null);
@@ -176,7 +176,7 @@ export function GitAdvancedPanel({ client, runID, onOpenApprovals,
     {projection.conflict.active && <section className="git-advanced-conflicts">
       <h3><AlertTriangle aria-hidden="true" size={16} />{t("冲突状态", "Conflict state")}</h3>
       {projection.conflict.files.map((file) => <article key={file.path}>
-        <strong>{file.path}</strong>
+        <strong>{formatWorkspacePathLabel(file.path)}</strong>
         <small>base {file.base_oid ?? "—"}</small><small>ours {file.ours_oid ?? "—"}</small>
         <small>theirs {file.theirs_oid ?? "—"}</small>
       </article>)}
@@ -190,26 +190,24 @@ export function GitAdvancedPanel({ client, runID, onOpenApprovals,
           <option value="hunk_stage">stage</option><option value="hunk_unstage">unstage</option>
           <option value="hunk_revert">revert</option>
         </select>
-        <input aria-label={t("限定路径", "Restricted paths")} onChange={(event) => setHunkPaths(event.target.value)}
+        <textarea aria-label={t("限定路径", "Restricted paths")} onChange={(event) => setHunkPaths(event.target.value)}
           placeholder={t("可选：每行一个仓库相对路径", "Optional: one repository-relative path per line")}
-          value={hunkPaths} />
-        <button disabled={!canMutate} onClick={() => discover.mutate(createSpec(hunkOperation,
-          exactPaths(hunkPaths).length ? { paths: exactPaths(hunkPaths) } : {}))} type="button">
+          rows={2} value={hunkPaths} />
+        <button disabled={!canMutate} onClick={() => discover.mutate(hunkSpec)} type="button">
           {t("查看可选差异块", "Inspect available hunks")}
         </button>
       </div>
-      {review?.preview.operation === hunkOperation && review.preview.hunks.length > 0 &&
+      {discovered && discovered.hunks.length > 0 &&
         <div className="git-advanced-hunks">
-          {review.preview.hunks.map((hunk) => <label key={hunk.id}>
+          {discovered.hunks.map((hunk) => <label key={hunk.id}>
             <input checked={selectedSet.has(hunk.id)} onChange={() => setSelectedHunks((current) =>
               current.includes(hunk.id) ? current.filter((id) => id !== hunk.id) : [...current, hunk.id])}
               type="checkbox" />
-            <span>{hunk.path} · -{hunk.old_start},+{hunk.new_start}</span>
+            <span>{formatWorkspacePathLabel(hunk.path)} · -{hunk.old_start},+{hunk.new_start}</span>
             <pre>{hunk.patch}</pre>
           </label>)}
           <button disabled={!canMutate || selectedHunks.length === 0} onClick={() => reviewSpec(
-            createSpec(hunkOperation, { hunk_ids: selectedHunks,
-              ...(exactPaths(hunkPaths).length ? { paths: exactPaths(hunkPaths) } : {}) }))} type="button">
+            { ...hunkSpec, hunk_ids: selectedHunks })} type="button">
             {t("请求所选 hunk 审批", "Request approval for selected hunks")}
           </button>
         </div>}
@@ -234,7 +232,7 @@ export function GitAdvancedPanel({ client, runID, onOpenApprovals,
           <strong>{stash.subject || t("无主题", "No subject")}</strong><code>{stash.oid}</code>
           <small>base {stash.base_commit}</small><small>index {stash.index_commit}</small>
           {stash.untracked_commit && <small>untracked {stash.untracked_commit}</small>}
-          <ul>{stash.files.map((file) => <li key={`${file.change}:${file.path}`}>{file.change}: {file.path}</li>)}</ul>
+          <ul>{stash.files.map((file) => <li key={`${file.change}:${file.path}`}>{file.change}: {formatWorkspacePathLabel(file.path)}</li>)}</ul>
           <div className="git-advanced-actions">
             {(["stash_apply", "stash_pop", "stash_drop"] as const).map((operation) =>
               <button disabled={!canMutate} key={operation} onClick={() => reviewSpec(createSpec(operation,
@@ -395,7 +393,7 @@ function PreviewEvidence({ preview, compact = false }: {
     </ul>}
     {!compact && <>
       {preview.files.length > 0 && <ul>{preview.files.map((file) =>
-        <li key={`${file.change}:${file.path}`}>{file.destructive ? "⚠ " : ""}{file.change}: {file.path}</li>)}</ul>}
+        <li key={`${file.change}:${file.path}`}>{file.destructive ? "⚠ " : ""}{file.change}: {formatWorkspacePathLabel(file.path)}</li>)}</ul>}
       {preview.hunks.map((hunk) => <pre key={hunk.id}>{hunk.patch}</pre>)}
       <small>{t("恢复", "Recovery")}: {preview.recovery.required ?
         `${preview.recovery.checkpoint_level ?? "checkpoint"} / ${preview.recovery.restore_action ?? "restore"}` :

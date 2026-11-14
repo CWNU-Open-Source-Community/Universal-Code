@@ -3,8 +3,6 @@ package repository
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -248,6 +246,9 @@ func (e *MutationExecutor) Execute(ctx context.Context, root string, spec Mutati
 }
 
 func (e *MutationExecutor) runGit(ctx context.Context, root string, spec MutationSpec) (string, string, int, error) {
+	if err := rootfs.CheckExternalDirectory(root); err != nil {
+		return "", "", 0, err
+	}
 	args, err := e.argvFor(root, spec)
 	if err != nil {
 		return "", "", 0, err
@@ -362,16 +363,14 @@ func normalizeMutationPaths(paths []string) ([]string, error) {
 	}
 	normalized := make([]string, 0, len(paths))
 	for _, value := range paths {
-		if value == "" || len(value) > MaxPathRunes || strings.ContainsRune(value, 0) || !utf8.ValidString(value) {
+		if value == "" || len(value) > MaxPathRunes {
 			return nil, errors.New("mutation path is invalid")
 		}
-		if strings.HasPrefix(value, "-") || strings.Contains(value, "..") ||
-			filepath.IsAbs(value) || strings.Contains(value, "\\") {
+		if strings.HasPrefix(value, "-") {
 			return nil, fmt.Errorf("mutation path %q escapes the typed contract", value)
 		}
-		clean := filepath.ToSlash(filepath.Clean(value))
-		if clean != value {
-			return nil, fmt.Errorf("mutation path %q is not normalized", value)
+		if err := checkNativeGitPath(value); err != nil {
+			return nil, apperror.New(apperror.CodeInvalidArgument, err.Error())
 		}
 		normalized = append(normalized, value)
 	}
@@ -395,7 +394,10 @@ func bindingCurrent(left, right MutationBinding) bool {
 }
 
 func (e *MutationExecutor) gitOutput(ctx context.Context, root string, args ...string) (string, error) {
-	full := append([]string{"-C", root, "--no-optional-locks"}, args...)
+	if err := rootfs.CheckExternalDirectory(root); err != nil {
+		return "", err
+	}
+	full := append([]string{"-C", root, "--no-optional-locks", "--literal-pathspecs"}, args...)
 	command := repositoryCommandContext(ctx, e.gitPath, full...)
 	command.Env = hardenedGitEnvironment()
 	command.Dir = root
@@ -408,36 +410,6 @@ func (e *MutationExecutor) gitOutput(ctx context.Context, root string, args ...s
 			strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
-}
-
-// untrackedContentHash folds bounded content digests of untracked files into
-// the binding so edits to not-yet-tracked files also invalidate stale reviews.
-func (e *MutationExecutor) untrackedContentHash(ctx context.Context, root string) string {
-	listing, err := e.gitOutput(ctx, root, "ls-files", "--others", "--exclude-standard")
-	if err != nil {
-		return ""
-	}
-	hash := sha256.New()
-	count := 0
-	for _, line := range strings.Split(listing, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.ContainsRune(line, 0) {
-			continue
-		}
-		if count >= MaxChangeItems {
-			hash.Write([]byte("truncated"))
-			break
-		}
-		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(line)))
-		if err != nil {
-			hash.Write([]byte(line + ":unreadable"))
-		} else {
-			digest := sha256.Sum256(raw)
-			hash.Write([]byte(line + ":" + hex.EncodeToString(digest[:])))
-		}
-		count++
-	}
-	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func mustStatus(e *MutationExecutor, ctx context.Context, root string) string {

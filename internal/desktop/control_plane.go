@@ -270,7 +270,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		return nil, apperror.New(apperror.CodeInvalidArgument,
 			"desktop GitHub review control requires operator approval permission control")
 	}
-	if strings.TrimSpace(config.GitManagedWorktreeRoot) != "" &&
+	if config.GitManagedWorktreeRoot != "" &&
 		!config.GitAdvancedControlEnabled && !config.GitHubReviewControlEnabled {
 		return nil, apperror.New(apperror.CodeInvalidArgument,
 			"desktop managed Git worktree root requires Git advanced or GitHub review control")
@@ -515,7 +515,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	var gitAdvanced *application.GitAdvancedService
 	var githubReview *application.GitHubReviewService
 	if config.GitAdvancedControlEnabled || config.GitHubReviewControlEnabled {
-		managedRoot := strings.TrimSpace(config.GitManagedWorktreeRoot)
+		managedRoot := config.GitManagedWorktreeRoot
 		if managedRoot == "" {
 			managedRoot = filepath.Join(home, "worktrees")
 		}

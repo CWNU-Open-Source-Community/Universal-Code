@@ -502,18 +502,17 @@ func verifyWorktreeCommonDirectory(ctx context.Context, gitPath, source,
 		command := exec.CommandContext(ctx, gitPath, "-C", canonical,
 			"--no-optional-locks", "rev-parse", "--path-format=absolute", "--git-common-dir")
 		command.Env, command.Dir = hardenedGitEnvironment(), canonical
-		var stdout, stderr boundedBuffer
+		stdout := advancedBoundedBuffer{max: MaxGitOutputBytes}
+		var stderr boundedBuffer
 		command.Stdout, command.Stderr = &stdout, &stderr
 		if err := command.Run(); err != nil {
 			return "", fmt.Errorf("inspect Git common directory: %w: %s", err,
 				strings.TrimSpace(stderr.String()))
 		}
-		common := strings.TrimSpace(stdout.String())
-		common, err = filepath.EvalSymlinks(common)
-		if err != nil {
-			return "", fmt.Errorf("resolve Git common directory: %w", err)
+		if stdout.truncated {
+			return "", errors.New("Git common directory exceeded its output bound")
 		}
-		return filepath.Clean(common), nil
+		return canonicalGitMetadataPath(trimGitLineEnding(stdout.String()))
 	}
 	sourceCommon, err := read(source)
 	if err != nil {
