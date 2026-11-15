@@ -125,7 +125,9 @@ describe("Unified daily permissions and advanced restrictions", () => {
     expect(within(environment).getByRole("button", { name: /预览/u })).toHaveAttribute("aria-pressed", "true");
     expect(within(environment).getByRole("button", { name: /Docker Engine/u })).toBeInTheDocument();
     expect(await screen.findByRole("switch", { name: "允许联网" })).toHaveAttribute("aria-checked", "false");
-    expect(screen.queryByRole("switch", { name: "完整 CDP 控制" })).not.toBeInTheDocument();
+    const cdp = screen.getByRole("switch", { name: "完整 CDP 控制" });
+    expect(cdp).toHaveAttribute("aria-checked", "false");
+    expect(cdp).toBeDisabled();
     expect(fixture.providerSearchReadiness).toHaveBeenCalledWith("thread-a", expect.any(AbortSignal));
     expect(fixture.setRunWebAccess).not.toHaveBeenCalled(); expect(fixture.putControl).not.toHaveBeenCalled();
     expect(fixture.changeThreadExecutionPermission).not.toHaveBeenCalled();
