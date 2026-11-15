@@ -20,6 +20,15 @@ import (
 
 const ThreadChangeUndoVersion = "thread_change_undo.v1"
 
+// threadUndoFinishBudget bounds the post-claim undo tail: the after-capture
+// walk and the after-checkpoint persistence share one budget, and every
+// terminal transaction write carries a fresh budget of the same length
+// starting when the write begins — a large workspace can consume the finish
+// budget on capture alone, and spending the expired remainder on the
+// terminal update would strand the durable "applying" claim (the fence only
+// clears at startup), defeating the interrupted-outcome landing.
+var threadUndoFinishBudget = 30 * time.Second
+
 type ThreadChangeUndoRequest struct {
 	Version       string `json:"version"`
 	SourceEventID string `json:"source_event_id"`
@@ -273,7 +282,7 @@ func (s *ThreadChangeUndoService) Undo(ctx context.Context, threadID string, req
 	}
 	_, applyErr := workspacecheckpoint.ApplyRestore(ctx, files.Workspace.RootPath, before, target, observed)
 	// Complete against a context that survives a disconnected HTTP caller.
-	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), threadUndoFinishBudget)
 	defer cancel()
 	after, captureErr := workspacecheckpoint.Capture(finishCtx, workspacecheckpoint.CaptureRequest{ID: idgen.New("thread-undo-after"), RunID: run.ID, MissionID: mission.ID, SessionID: run.SessionID,
 		WorkspaceID: files.Workspace.ID, WorkspaceRoot: files.Workspace.RootPath, Trigger: workspacecheckpoint.TriggerRewindResult, Phase: workspacecheckpoint.PhaseAfter,
@@ -292,7 +301,9 @@ func (s *ThreadChangeUndoService) Undo(ctx context.Context, threadID string, req
 		t.ErrorCode = "restore_failed"
 		t.UpdatedAt = time.Now().UTC()
 		t.CompletedAt = &t.UpdatedAt
-		if _, _, updateErr := s.store.UpdateWorkspaceCheckpointTransaction(finishCtx, t); updateErr != nil {
+		terminalCtx, terminalCancel := context.WithTimeout(context.WithoutCancel(ctx), threadUndoFinishBudget)
+		defer terminalCancel()
+		if _, _, updateErr := s.store.UpdateWorkspaceCheckpointTransaction(terminalCtx, t); updateErr != nil {
 			return errors.Join(cause, updateErr)
 		}
 		return cause
@@ -324,7 +335,9 @@ func (s *ThreadChangeUndoService) Undo(ctx context.Context, threadID string, req
 	}
 	t.UpdatedAt = time.Now().UTC()
 	t.CompletedAt = &t.UpdatedAt
-	if _, _, err = s.store.UpdateWorkspaceCheckpointTransaction(finishCtx, t); err != nil {
+	terminalCtx, terminalCancel := context.WithTimeout(context.WithoutCancel(ctx), threadUndoFinishBudget)
+	defer terminalCancel()
+	if _, _, err = s.store.UpdateWorkspaceCheckpointTransaction(terminalCtx, t); err != nil {
 		return r, apperror.Normalize(err)
 	}
 	return r, nil
