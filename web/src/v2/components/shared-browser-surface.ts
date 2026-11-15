@@ -25,10 +25,8 @@ export function sharedBrowserOccluded(surface: HTMLElement): boolean {
 }
 
 // DOM supplies geometry only. The host attaches the actual browser view here.
-export function useSharedBrowserSurface(state: SharedBrowserState | null, onError: (error: unknown) => void, showNative = true) {
+export function useSharedBrowserSurface(state: SharedBrowserState | null, onResult: (error: string) => void, showNative = true) {
   const ref = useRef<HTMLDivElement>(null);
-  const errorRef = useRef(onError);
-  errorRef.current = onError;
   useEffect(() => {
     const surface = ref.current;
     if (!surface || !state?.active_tab_id) return;
@@ -37,16 +35,24 @@ export function useSharedBrowserSurface(state: SharedBrowserState | null, onErro
     owners.set(session_id, owner);
     let frame = 0;
     let signature = "";
+    let latestRevision = 0;
     let disposed = false;
     let followUntil = 0;
     const send = (visible: boolean, bounds: { x: number; y: number; width: number; height: number }) => {
       const device_scale_factor = window.devicePixelRatio || 1;
       const next = JSON.stringify([visible, bounds, device_scale_factor]);
       if (signature === next) return;
-      signature = next;
       if (owners.get(session_id) !== owner) return;
-      void setSharedBrowserSurface({ session_id, tab_id, bounds, device_scale_factor, visible, layout_revision: nextSharedBrowserLayoutRevision() })
-        .catch((error) => { if (!disposed) errorRef.current(error); });
+      signature = next;
+      const revision = nextSharedBrowserLayoutRevision();
+      latestRevision = revision;
+      void setSharedBrowserSurface({ session_id, tab_id, bounds, device_scale_factor, visible, layout_revision: revision })
+        .then(() => { if (!disposed && latestRevision === revision) onResult(""); })
+        .catch((error) => {
+          if (disposed || latestRevision !== revision) return;
+          signature = "";
+          onResult(error instanceof Error ? error.message : String(error));
+        });
     };
     const update = () => {
       frame = 0;
@@ -86,6 +92,6 @@ export function useSharedBrowserSurface(state: SharedBrowserState | null, onErro
       send(false, { x: 0, y: 0, width: 0, height: 0 });
       if (owners.get(session_id) === owner) owners.delete(session_id);
     };
-  }, [state?.session_id, state?.active_tab_id, state?.state, showNative]);
+  }, [state?.session_id, state?.active_tab_id, state?.state, showNative, onResult]);
   return ref;
 }

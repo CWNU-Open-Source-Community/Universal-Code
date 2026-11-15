@@ -43,15 +43,15 @@ function statusCopy({ runID, mode, permission, loading, failed, controlEnabled,
   if (!controlEnabled || !fullCDPEnabled) return t("当前运行时未提供完整 CDP 控制。", "This runtime does not provide full CDP control.");
   if (loading) return t("正在读取当前执行的浏览器权限…", "Loading browser permissions for this run…");
   if (failed || !permission) return t("无法读取当前执行的浏览器权限。", "Could not load browser permissions for this run.");
+  if (!executionRuntimeAvailable) {
+    return t("先重新确认并激活当前任务的完全访问权限。", "Reconfirm and activate Full access for this task first.");
+  }
   if (permission.mode === "full_debug") {
     return permission.runtime_gate_available
       ? sessionControlEnabled
         ? t("浏览器控制已开启，可为当前任务打开、查看和关闭独立浏览器。", "Browser control is enabled. Open, inspect and close a separate browser for this task.")
         : t("浏览器控制权限已开启，当前服务尚未提供独立浏览器。请连接支持托管浏览器的服务后使用预览。", "Browser control is permitted, but this service has no managed browser. Connect to a service with managed browser support to use the preview.")
       : t("已选择，但当前运行时尚未授权。", "Selected, but not authorized by this runtime yet.");
-  }
-  if (!executionRuntimeAvailable) {
-    return t("先重新确认并激活当前任务的完全访问权限。", "Reconfirm and activate Full access for this task first.");
   }
   return t("当前关闭；内置隔离浏览器仍可导航、读取 DOM 和截图，重新开启需确认高风险控制。", "Currently off. The isolated browser can still navigate, read the DOM and take screenshots. Re-enabling requires confirmation of high-risk controls.");
 }

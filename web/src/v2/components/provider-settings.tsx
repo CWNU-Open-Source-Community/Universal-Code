@@ -820,7 +820,13 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
         definitionFingerprint(existing) === definitionFingerprint(definition)) {
         // An upsert increments the binding revision and invalidates its Harness.
         // Closing an unchanged editor must preserve the verified saved binding.
-        await finishSavedProvider(existing);
+        const { data } = await definitions.refetch({ throwOnError: true });
+        const saved = data?.providers.find((provider) => provider.id === definition.id);
+        if (!saved || saved.revision !== definition.revision || definitionFingerprint(saved) !== definitionFingerprint(definition)) {
+          setError(t("供应商配置已更改或删除，请重新打开后再保存。", "The provider changed or was deleted. Reopen it before saving."));
+          return;
+        }
+        await finishSavedProvider(saved);
         return;
       }
       const setCredential = () => client.changeProviderCredential(definition.id, {

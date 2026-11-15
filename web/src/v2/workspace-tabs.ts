@@ -789,7 +789,7 @@ export function workspaceCollapseAriaLabel(kind: WorkspaceTab["kind"], t: Locale
     case "terminal":
       return t("收起终端", "Collapse terminal");
     case "browser":
-      return t("浏览器", "Browser");
+      return t("收起浏览器", "Collapse browser");
     case "preview":
       return t("收起应用预览", "Close app preview");
     case "review":

@@ -38,6 +38,9 @@ export function V2ApprovalModeControl({ mode, fullActivation, fullUnavailableRea
   const blocked = pending || disabled;
   const selected = choices.find((choice) => choice.mode === mode)!;
   const SelectedIcon = selected.icon;
+  const triggerLabel = selected.label + (mode === "full" ? selectionOnly
+    ? fullActivation !== "active" ? t(" · 待确认", " · confirmation needed") : ""
+    : ` · ${activationLabels[fullActivation]}` : "");
   const coldFull = mode === "full" && fullActivation === "inactive";
   const unavailable = fullUnavailableReason?.trim() ||
     t("完全访问需要当前运行环境提供支持，请查看服务的权限配置。", "Full access requires runtime support. Check the service's permission configuration.");
@@ -141,15 +144,14 @@ export function V2ApprovalModeControl({ mode, fullActivation, fullUnavailableRea
     {variant === "menu" ? <>
       <button aria-controls={open ? id : undefined} aria-expanded={open} aria-haspopup="menu"
         className={`v2-composer-chip${mode === "full" ? " is-risk" : ""}`}
-        title={`${selected.label}${mode === "full" && !selectionOnly ? ` · ${activationLabels[fullActivation]}` : ""}`}
+        title={triggerLabel}
         onClick={() => { focusLastRef.current = false; setOpen((value) => !value); }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault(); focusLastRef.current = event.key === "ArrowUp"; setOpen(true);
           }
         }} ref={triggerRef} type="button">
-        <SelectedIcon aria-hidden="true" size={14} /><span className="v2-composer-permission-label">{selected.label}
-        {mode === "full" && !selectionOnly ? ` · ${activationLabels[fullActivation]}` : ""}</span>
+        <SelectedIcon aria-hidden="true" size={14} /><span className="v2-composer-permission-label">{triggerLabel}</span>
         <ChevronDown aria-hidden="true" size={13} />
       </button>
       {open && <div aria-label={t("选择执行权限", "Choose execution permissions")} className="v2-permission-popover" id={id}

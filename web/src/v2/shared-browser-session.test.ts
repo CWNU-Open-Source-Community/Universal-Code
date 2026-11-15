@@ -29,4 +29,14 @@ describe("draft browser handoff", () => {
     expect(open).not.toHaveBeenCalled();
     expect(draftSharedBrowserAdoption("before-turn", "unrelated-thread")).toBeUndefined();
   });
+  it("clears a failed adoption so the first turn can retry without the failed browser", async () => {
+    const generation = useConnectionStore.getState().connectionGeneration;
+    rememberDraftSharedBrowser({ workspace_id: "failed-adoption", session_id: "failed-session" } as SharedBrowserState);
+    open.mockRejectedValueOnce(new Error("native adoption failed"));
+    await expect(adoptDraftSharedBrowser("failed-adoption", "created-thread", "created-run", generation)).rejects.toThrow("native adoption failed");
+    expect(draftSharedBrowserAdoption("failed-adoption", "created-thread")).toBeUndefined();
+    open.mockClear();
+    await adoptDraftSharedBrowser("failed-adoption", "created-thread", "created-run", generation);
+    expect(open).not.toHaveBeenCalled();
+  });
 });

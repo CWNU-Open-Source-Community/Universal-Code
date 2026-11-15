@@ -1,6 +1,6 @@
 import { useLocale } from "../lib/locale";
 import { localUIMessage } from "../lib/local-ui-message";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { canonicalExactNetworkTarget, canonicalWebAccessSettings } from "../api/client";
 import type { APIClient } from "../api/client";
@@ -19,6 +19,7 @@ import { validMCPReferences, type MCPDraftReference } from "../api/mcp-reference
 import type { ExecutionApprovalMode } from "./components/approval-mode-contract";
 import { V2ConfirmDialog } from "./components/dialog";
 import { applyCreationApproval } from "./creation-approval";
+import { useConnectionStore } from "../state/connection";
 
 export interface CreationIntent {
   version: "v2_creation_recovery.v1";
@@ -31,6 +32,7 @@ export interface CreationIntent {
   mcpReferences?: MCPDraftReference[];
   projectSkills?: ProjectSkillChoice;
   approvalMode?: ExecutionApprovalMode;
+  approvalRevision?: number;
   submittedDraft: string;
   draftVersion?: V2DraftVersion;
   createdAt: string;
@@ -79,7 +81,7 @@ function validIntent(value: unknown): value is CreationIntent {
   if (Array.isArray(value.mcpReferences) && value.mcpReferences.length) expectedGoal = "MCP 内容";
   if (Array.isArray(value.images) && value.images.length) expectedGoal = "图片对话";
   if (typeof value.content === "string" && value.content) expectedGoal = value.content;
-  if (Object.keys(value).some((key) => !["version", "operationID", "request", "content", "files", "images", "attachments", "mcpReferences", "projectSkills", "approvalMode", "submittedDraft", "draftVersion", "createdAt"].includes(key)) || value.version !== "v2_creation_recovery.v1" ||
+  if (Object.keys(value).some((key) => !["version", "operationID", "request", "content", "files", "images", "attachments", "mcpReferences", "projectSkills", "approvalMode", "approvalRevision", "submittedDraft", "draftVersion", "createdAt"].includes(key)) || value.version !== "v2_creation_recovery.v1" ||
     !identity(value.operationID) || value.operationID.length > 128 || !validRequest(value.request) ||
     typeof value.content !== "string" || new TextEncoder().encode(value.content).byteLength > 16384 ||
     (!text(value.content) && !(Array.isArray(value.images) && value.images.length > 0) &&
@@ -90,6 +92,7 @@ function validIntent(value: unknown): value is CreationIntent {
     (value.mcpReferences !== undefined && !validMCPReferences(value.mcpReferences)) ||
     (value.projectSkills !== undefined && !validProjectSkillChoice(value.projectSkills)) ||
     (value.approvalMode !== undefined && !["ask", "auto", "full"].includes(String(value.approvalMode))) ||
+    (value.approvalRevision !== undefined && (value.approvalMode === undefined || !Number.isSafeInteger(value.approvalRevision) || Number(value.approvalRevision) < 1)) ||
     (value.draftVersion !== undefined && !validV2DraftVersion(value.draftVersion, value.request.workspace_id)) ||
     typeof value.submittedDraft !== "string" || value.submittedDraft.trim() !== value.content.trim() ||
     typeof value.createdAt !== "string" || !Number.isFinite(Date.parse(value.createdAt))) return false;
@@ -166,14 +169,11 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
   const flightKey = JSON.stringify([client.baseURL, workspaceID]);
   const observedFlightRevision = useSyncExternalStore(subscribeFlights, () => flightRevision);
   const pending = creationFlights.has(flightKey);
-  const context = useRef({ client, workspaceID, generation: 0, mounted: true });
-  if (context.current.client !== client || context.current.workspaceID !== workspaceID) {
+  const context = useRef({ client, workspaceID, generation: 0, mounted: false });
+  useLayoutEffect(() => {
     context.current = { client, workspaceID, generation: context.current.generation + 1, mounted: true };
-  }
-  useEffect(() => {
-    context.current.mounted = true;
     return () => { context.current.mounted = false; context.current.generation++; };
-  }, []);
+  }, [client, workspaceID]);
 
   const loadIntents = (): CreationIntent[] => {
     if (!store) throw new V2PersistenceError(t("当前连接不支持可靠保存创建请求，请先完成连接。", "This connection cannot reliably save creation requests. Complete the connection first."));
@@ -266,7 +266,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
       request, content, files, ...(images?.length ? { images } : {}), ...(attachments?.length ? { attachments } : {}), submittedDraft,
       ...(mcpReferences?.length ? { mcpReferences } : {}),
       ...(projectSkills?.refs.length ? { projectSkills } : {}),
-      ...(approvalMode !== undefined ? { approvalMode } : {}),
+      ...(approvalMode !== undefined ? { approvalMode, approvalRevision: 1 } : {}),
       ...(draftVersion !== undefined ? { draftVersion } : {}), createdAt: new Date().toISOString() };
     if (!validIntent(candidate) || request.workspace_id !== workspaceID) throw invalid();
     const matched = saved.find((intent) => canonical(intentBody(intent)) === canonical(intentBody(candidate)));
@@ -274,7 +274,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
       // Changing approval choices must not create another conversation after a
       // lost creation response. The backend creation body/key stays the same.
       if (approvalMode === undefined || matched.approvalMode === approvalMode) return matched;
-      const updated = { ...matched, approvalMode };
+      const updated = { ...matched, approvalMode, approvalRevision: (matched.approvalRevision ?? 1) + 1 };
       store!.write(creationKey(updated), updated);
       verifiedThreads.current.delete(updated.operationID);
       setIntents((current) => current.map((item) => item.operationID === updated.operationID ? updated : item));
@@ -301,7 +301,8 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
         requireSaved(saved);
       }
       requireSaved(saved);
-      await applyCreationApproval(client, thread.id, saved.approvalMode, confirmFull);
+      await applyCreationApproval(client, thread.id, `thread-creation-approval-${saved.operationID}-${saved.approvalRevision ?? 1}`,
+        saved.approvalMode, confirmFull);
       requireSaved(saved);
       verifiedThreads.current.set(saved.operationID, thread);
       setObservations((current) => ({ ...current, [saved.operationID]: { thread, message: t("已找到原对话；首条消息将沿用原请求标识。", "The original conversation was found. Its first message will use the original request identity.") } }));
@@ -318,6 +319,7 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
   const recover = async (intent: CreationIntent, confirmFull = false) => {
     if (recovering.current || creationFlights.has(flightKey) || busy) return;
     const generation = context.current.generation;
+    const connectionGeneration = useConnectionStore.getState().connectionGeneration;
     recovering.current = true;
     setRecoveringID(intent.operationID);
     setError("");
@@ -327,6 +329,9 @@ export function useV2CreationRecovery(client: APIClient, workspaceID: string,
       const thread = intent.approvalMode === undefined && !intent.projectSkills?.refs.length && inspected
         ? inspected : await resolve(intent, confirmFull);
       const input = handoff(intent, thread);
+      // The old store retains the handoff even when a newer connection is now
+      // active. Its callback must not consume that connection's draft browser.
+      if (useConnectionStore.getState().connectionGeneration !== connectionGeneration || context.current.client !== client) return;
       onRecovered(thread, intent.submittedDraft, intent.files, input,
         context.current.mounted && context.current.generation === generation);
     } catch (failure) {

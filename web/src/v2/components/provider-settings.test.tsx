@@ -192,6 +192,18 @@ async function fillRequiredProvider(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("V2 custom Provider settings", () => {
+  it("keeps the editor open when an unchanged provider was deleted elsewhere", async () => {
+    const controls = createClient([provider()]);
+    const user = userEvent.setup();
+    renderSettings(controls.client);
+    await user.click(await screen.findByRole("button", { name: /Acme AI/u }));
+    vi.mocked(controls.client.providerDefinitions).mockResolvedValueOnce({
+      version: "provider_definition_collection.v1", revision: 8, providers: [],
+    });
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("供应商配置已更改或删除，请重新打开后再保存。")).toBeVisible();
+    expect(controls.upsertProviderDefinition).not.toHaveBeenCalled();
+  });
   it("keeps a qualified exact provider/model usable after an unchanged Save, but invalidates a real edit", async () => {
     const definition = provider({ id: "official-deepseek", display_name: "DeepSeek", default_model: "deepseek-v4-flash",
       models: ["deepseek-v4-flash"], endpoint_url: "https://api.deepseek.com/chat/completions" });

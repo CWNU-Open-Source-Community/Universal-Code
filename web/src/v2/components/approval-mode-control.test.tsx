@@ -322,6 +322,7 @@ describe.each(["menu", "settings"] as const)("V2ApprovalModeControl pre-creation
     const user = userEvent.setup();
     const initial = props({ variant, selectionOnly: true, mode: "full", fullActivation: "inactive" });
     const view = render(<V2ApprovalModeControl {...initial} />);
+    if (variant === "menu") expect(screen.getByRole("button", { expanded: false })).toHaveTextContent("完全访问权限 · 待确认");
     await open(user);
     const confirmationRole = variant === "menu" ? "menuitem" : "button";
     await user.click(screen.getByRole(confirmationRole, { name: "确认完全访问权限" }));

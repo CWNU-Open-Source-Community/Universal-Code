@@ -314,7 +314,7 @@ const NarrativeTaskRow = memo(function NarrativeTaskRow({ client, group, threadI
     setExpansion({ state: group.task.state, finishedAt: group.task.finishedAt,
       location: locatedMessageID, found, open: expanded });
   }
-  const open = expanded ?? !(group.task.state === "completed" && finalReply);
+  const open = expanded ?? !(group.task.state === "completed" && group.hasFinalReply);
   const duration = terminal ? taskDurationLabel(group.task, t) : undefined;
   const firstProcess = group.entries.findIndex((entry) => entry.kind !== "user");
   const inputs = firstProcess < 0 ? group.entries : group.entries.slice(0, firstProcess);
@@ -339,9 +339,9 @@ const NarrativeTaskRow = memo(function NarrativeTaskRow({ client, group, threadI
     })}</ol>
     {finalReply && <ol className="v2-task-final"><NarrativeRow client={client} entry={finalReply}
       threadID={threadID} presentation="final" {...actions} /></ol>}
-    {terminal && group.task.changeSourceEventID && typeof client.threadChanges === "function" &&
+    {terminal && group.lastSegment && group.task.changeSourceEventID && typeof client.threadChanges === "function" &&
       <V2TurnChanges client={client} threadID={threadID} runID={group.task.runId} sourceEventID={group.task.changeSourceEventID} />}
-    {terminal && (showActions && footerText ? <AssistantMessageActions text={footerText}
+    {terminal && group.lastSegment && (showActions && footerText ? <AssistantMessageActions text={footerText}
       createdAt={group.task.finishedAt ?? lastSavedReply?.createdAt ?? ""}
       branchSourceID={finalReply?.kind === "assistant" ? finalReply.branchSourceID : lastSavedReply?.branchSourceID}
       onBranch={actions.onBranch} onCompose={actions.onCompose} />

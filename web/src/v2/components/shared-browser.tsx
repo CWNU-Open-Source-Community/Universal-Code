@@ -29,6 +29,8 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
   const panelID = useId();
   const [state, setState] = useState<SharedBrowserState | null>(null);
   const [error, setError] = useState("");
+  const [pollError, setPollError] = useState("");
+  const [surfaceError, setSurfaceError] = useState("");
   const [pending, setPending] = useState(false);
   const [retry, setRetry] = useState(0);
   const [address, setAddress] = useState("");
@@ -68,12 +70,12 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
     const activeGeneration = ++generation.current;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    current.current = null; setState(null); setError(""); setPending(false);
+    current.current = null; setState(null); setError(""); setPollError(""); setSurfaceError(""); setPending(false);
     const scope: SharedBrowserOpenRequest = { workspace_id: workspaceID, ...(threadID ? { thread_id: threadID } : {}), ...(runID ? { run_id: runID } : {}),
       adopt_session_id: draftSharedBrowserAdoption(workspaceID, threadID) };
     const refresh = async (sessionID: string) => {
-      try { const next = await getSharedBrowser(sessionID); if (!disposed) accept(next); }
-      catch (error) { if (!disposed) reportError(error); }
+      try { const next = await getSharedBrowser(sessionID); if (!disposed) { accept(next); setPollError(""); } }
+      catch (error) { if (!disposed) setPollError(error instanceof Error ? error.message : String(error)); }
       if (!disposed) timer = setTimeout(() => void refresh(sessionID), 450);
     };
     void openSharedBrowser(scope).then((next) => {
@@ -87,7 +89,8 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
   }, [workspaceID, threadID, runID, retry, accept, reportError]);
   const activeTab = state?.tabs.find((tab) => tab.tab_id === state.active_tab_id);
   const isStartPage = !activeTab || activeTab.url === "about:blank";
-  const surfaceRef = useSharedBrowserSurface(state, reportError, active && !isStartPage);
+  const surfaceRef = useSharedBrowserSurface(state, setSurfaceError, active && !isStartPage);
+  const visibleError = error || surfaceError || pollError;
   const tabDOMID = (tabID: string) => `${panelID}-tab-${encodeURIComponent(tabID)}`;
   useEffect(() => {
     if (document.activeElement !== addressRef.current) setAddress(activeTab?.url === "about:blank" ? "" : activeTab?.url ?? "");
@@ -154,7 +157,7 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
         aria-label={state?.fullscreen ? t("退出全屏", "Exit fullscreen") : t("全屏浏览器", "Fullscreen browser")}
         onClick={() => void command(state?.fullscreen ? "exit_fullscreen" : "enter_fullscreen")}>{state?.fullscreen ? <Shrink size={17} aria-hidden="true" /> : <Expand size={17} aria-hidden="true" />}</button>
     </div>
-    {error && <div className="v2-browser-error" role="alert">{error}<button type="button" onClick={() => current.current ? void getSharedBrowser(current.current.session_id).then(accept).catch(reportError) : setRetry((value) => value + 1)}>{t("重试", "Retry")}</button></div>}
+    {visibleError && <div className="v2-browser-error" role="alert">{visibleError}<button type="button" onClick={() => setRetry((value) => value + 1)}>{t("重试", "Retry")}</button></div>}
     <div className={`v2-browser-native-surface${isStartPage ? " is-start-page" : ""}`} ref={surfaceRef} role="region" aria-label={t("网页内容", "Web page content")}>
       {!state && !error && <span role="status">{t("正在打开浏览器…", "Opening browser…")}</span>}
       {state?.state === "failed" && <span role="alert">{state.error || t("浏览器启动失败。", "Browser failed to start.")}</span>}

@@ -5,6 +5,7 @@ import type { WorkspaceView } from "../../api/types";
 import { useLocale } from "../../lib/locale";
 import { v2QueryKeys } from "../query-keys";
 import { V2BrowserNetworkSettings } from "./browser-network-control";
+import { V2BrowserCDPControl } from "./browser-cdp-control";
 import { V2CommandServiceSettings } from "./command-service-settings";
 import { V2ExecutionSettings } from "./execution-settings";
 import { V2RunNetworkAuthorityControl } from "./run-network-authority-control";
@@ -55,6 +56,11 @@ function AdvancedPermissionSettings({ client, threadID, workspaces, draftWorkspa
               onConfirmationOpenChange={onConfirmationOpenChange} />}
       </section>
       <V2BrowserNetworkSettings client={client} threadID={threadID} draftWorkspaceID={draftWorkspaceID} />
+      {permission.data && <V2BrowserCDPControl key={runID} client={client} runID={runID}
+        permissionMode={permission.data.current_run_mode ?? null}
+        executionRuntimeAvailable={permission.data.current_run_synchronized &&
+          permission.data.execution_permission.full_activation === "active" &&
+          permission.data.execution_permission.runtime_gate_available} />}
       <V2CommandServiceSettings client={client} threadID={threadID} />
       <section className="v2-settings-section"><V2RuntimeCapabilityControl /></section>
     </>}

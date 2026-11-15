@@ -24,7 +24,9 @@ export function ResourceNotice({ trigger, message, error, onClose }: {
     };
     const outside = (event: PointerEvent) => { if (!element.current?.contains(event.target as Node)) dismiss(); };
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); dismiss(); trigger.focus(); }
+      if (event.key === "Escape" && (trigger.contains(document.activeElement) || element.current?.contains(document.activeElement))) {
+        event.preventDefault(); event.stopPropagation(); dismiss(); trigger.focus();
+      }
     };
     place();
     document.addEventListener("pointerdown", outside, true);

@@ -36,6 +36,19 @@ function setup(rows = entries(), locatedMessageID?: string) {
   return {...view,threadChanges,rerenderRows:(next: NarrativeEntry[], target?: string)=>view.rerender(tree(next,target))};
 }
 describe("user task narrative",()=>{
+  it("keeps a later input ahead of the earlier task's final answer and single delivery card", async () => {
+    const rows = entries();
+    rows.splice(-1, 0, { id: "next-input", kind: "user", text: "Another request", createdAt: "", provisional: false,
+      task: { id: "next-task", inputMessageID: "next-input", runId: task.runId, state: "running" } });
+    setup(rows);
+    const input = screen.getByText("Another request");
+    const final = screen.getByText("The page is updated and verified.");
+    const card = await screen.findByRole("region", { name: "Changes in this turn" });
+    expect(input.compareDocumentPosition(final) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(final.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("Checking the implementation.")).not.toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Copy response" })).toHaveLength(1);
+  });
   it("shows collapsed work, final answer, file changes and one footer in that order",async()=>{
     const view=setup();
     const toggle=screen.getByRole("button",{name:"Worked for 30m 29s"});

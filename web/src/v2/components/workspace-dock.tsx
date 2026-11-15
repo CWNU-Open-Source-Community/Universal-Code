@@ -629,6 +629,10 @@ export function V2WorkspaceDock({
                   const open = () => focusWorkspaceSingletonTab(threadID, "browser");
                   if (activeTab.kind === "file") leaveFileEdit(open); else open();
                 }}><Globe aria-hidden="true" size={15} /><span>{t("浏览器", "Browser")}</span></button>}
+                {hasBrowserTab && <button role="menuitem" type="button" onClick={() => {
+                  setAddMenuOpen(false);
+                  handleCloseTab(state.tabs.find((tab) => tab.kind === "browser")!);
+                }}><X aria-hidden="true" size={15} /><span>{t("关闭浏览器面板", "Close browser panel")}</span></button>}
                 <button
                   onClick={() => {
                     setAddMenuOpen(false);

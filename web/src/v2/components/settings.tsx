@@ -91,7 +91,7 @@ function ConnectionsSettings({ client, threadID, sourceRunID, onSelect, onOpenGi
       </section>
       <section aria-labelledby="connection-task-environment"><h2 id="connection-task-environment">{t("运行设置", "Runtime settings")}</h2>
         <button onClick={() => onSelect("environment")} type="button"><span><strong>{t("执行环境设置", "Execution environment settings")}</strong><small>{t("检测 Local、Docker Engine 与官方 sbx，保存启用选项和固定镜像。", "Detect Local, Docker Engine, and official sbx; save enabled options and pinned images.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
-        <button onClick={() => onSelect("permissions")} type="button"><span><strong>{t("任务权限", "Task permissions")}</strong><small>{threadID ? t("选择操作确认方式。", "Choose how operations are approved.") : t("打开任务后可调整它的操作权限。", "Open a task to adjust its permissions.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
+        <button onClick={() => onSelect("permissions")} type="button"><span><strong>{t("任务权限", "Task permissions")}</strong><small>{threadID ? t("管理操作审批、联网和浏览器权限。", "Manage approvals, network access, and browser permissions.") : t("打开任务后可调整它的操作权限。", "Open a task to adjust its permissions.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
         <button onClick={() => onSelect("about")} type="button"><span><strong>{t("应用连接与诊断", "App connection & diagnostics")}</strong><small>{t("查看版本和连接状态，处理连接问题。", "View version and connection status and troubleshoot connection issues.")}</small></span><ArrowRight aria-hidden="true" size={16} /></button>
       </section>
     </nav>

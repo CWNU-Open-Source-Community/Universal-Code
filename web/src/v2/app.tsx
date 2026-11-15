@@ -1,4 +1,4 @@
-import { lazy, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { QueryClient, QueryClientProvider, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Brain, Folder, SlidersHorizontal } from "lucide-react";
 import type { APIClient } from "../api/client";
@@ -50,7 +50,7 @@ import { useChatShortcuts } from "./chat-preferences";
 import { V2DraftBrowserWorkspace } from "./components/draft-browser-workspace";
 import { adoptDraftSharedBrowser, bindDraftSharedBrowser } from "./shared-browser-session";
 
-type CreationAttempt = Map<string, string>;
+type CreationAttempt = Map<string, { operationID: string; approvalMode?: ExecutionApprovalMode; approvalRevision: number }>;
 type NewThreadOptions = { networkMode: V2NetworkMode; allowedTargets: string[];
   modelRoute: { provider: string; model: string } | null };
 import "./styles.css";
@@ -65,7 +65,7 @@ const V2SessionDetailsPage = lazy(() => import("./components/session-details-pag
 const V2AutomationsPage = lazy(() => import("./components/automations-page").then((module) => ({ default: module.V2AutomationsPage })));
 
 function NewConversation({ client, workspaces, workspaceID, projectID, workspaceNotice, onWorkspaceChange, onCreated,
-  onTurnSuccess, onManageModels, onOpenTaskConfiguration, onOpenWebSettings, phase, onPhaseChange, budget, configurationValid, webAccessValid, projectSkills,
+  onTurnSuccess, onManageModels, onOpenTaskConfiguration, onOpenWebSettings, onBrowserAdoptionFailed, phase, onPhaseChange, budget, configurationValid, webAccessValid, projectSkills,
   draft: legacyDraft, onDraftChange: legacyDraftChange, creationAttemptRef, options, onOptionsChange, moreProjects, onImported }: {
   client: APIClient;
   workspaces: WorkspaceView[];
@@ -79,6 +79,7 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
   onManageModels: (prepareForDraft?: boolean) => void;
   onOpenTaskConfiguration: () => void;
   onOpenWebSettings: () => void;
+  onBrowserAdoptionFailed: (threadID: string) => void;
   phase: V2WorkPhase;
   onPhaseChange: (phase: V2WorkPhase) => void;
   budget?: TaskBudgetSettings;
@@ -99,18 +100,19 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
   const activeRef = useRef(true);
   const workspaceRef = useRef(workspaceID);
   const creationRequestRef = useRef(0);
-  if (workspaceRef.current !== workspaceID) {
-    workspaceRef.current = workspaceID;
-    creationRequestRef.current += 1;
-  }
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (workspaceRef.current !== workspaceID) {
+      workspaceRef.current = workspaceID;
+      creationRequestRef.current += 1;
+    }
     activeRef.current = true;
     return () => { activeRef.current = false; };
-  }, []);
+  }, [workspaceID]);
   const managedDraft = useV2DraftDocument(workspaceID);
   const draft = managedDraft?.state.snapshot.text ?? legacyDraft;
   const onDraftChange = managedDraft?.changeText ?? legacyDraftChange;
-  const [applyingApproval, setApplyingApproval] = useState(false);
+  const [approvalRequest, setApprovalRequest] = useState<{ id: number; workspaceID: string } | null>(null);
+  const applyingApproval = approvalRequest?.workspaceID === workspaceID;
   const creationRecovery = useV2CreationRecovery(client, workspaceID, (thread, originalDraft, files, input, shouldOpen) => {
     registerV2RecoveredTurn(queryClient, input);
     bindDraftSharedBrowser(workspaceID, thread.id);
@@ -137,9 +139,15 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
     const creationRequest = ++creationRequestRef.current;
     // Leaving this page, changing projects, or starting another request ends
     // this request's right to navigate, but not its original input handoff.
-    const requestIsCurrent = () => activeRef.current &&
+    const requestIsCurrent = () => activeRef.current && useConnectionStore.getState().connectionGeneration === browserGeneration &&
       workspaceRef.current === creationWorkspaceID && creationRequestRef.current === creationRequest;
-    setApplyingApproval(true);
+    setApprovalRequest({ id: creationRequest, workspaceID: creationWorkspaceID });
+    const attachBrowser = async (thread: ThreadView) => {
+      try { await adoptDraftSharedBrowser(creationWorkspaceID, thread.id, thread.last_run_id, browserGeneration); }
+      catch {
+        if (useConnectionStore.getState().connectionGeneration === browserGeneration) onBrowserAdoptionFailed(thread.id);
+      }
+    };
     try {
       try {
         const catalog = await client.availableModelRoutes();
@@ -183,7 +191,7 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
           }
           const intent = creationRecovery.prepare(request, content, files, submittedDraft, images, draftVersion, attachments, projectSkills, mcpReferences, selectedApprovalMode);
           const thread = await creationRecovery.resolve(intent, selectedApproval?.mode === "full" && selectedApproval.confirmed);
-          await adoptDraftSharedBrowser(creationWorkspaceID, thread.id, thread.last_run_id, browserGeneration);
+          await attachBrowser(thread);
           const input = creationRecovery.handoff(intent, thread);
           const submission = turn.mutateAsync(input);
           onCreated(thread, submittedDraft, files, images, input.draftVersion, attachments, requestIsCurrent(), mcpReferences);
@@ -193,8 +201,12 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
           if (!input.draftVersion) onTurnSuccess(thread.id, submittedDraft);
         } else {
           const fingerprint = JSON.stringify([request, files, images, fileAttachmentIdentities(attachments), projectSkills, mcpReferenceIdentities(mcpReferences)]);
-          const operationID = creationAttemptRef.current.get(fingerprint) ?? globalThis.crypto.randomUUID();
-          creationAttemptRef.current.set(fingerprint, operationID);
+          const previousAttempt = creationAttemptRef.current.get(fingerprint);
+          const attempt = previousAttempt ? { ...previousAttempt, approvalMode: selectedApprovalMode,
+            approvalRevision: previousAttempt.approvalRevision + (previousAttempt.approvalMode === selectedApprovalMode ? 0 : 1) }
+            : { operationID: globalThis.crypto.randomUUID(), approvalMode: selectedApprovalMode, approvalRevision: 1 };
+          const { operationID, approvalRevision } = attempt;
+          creationAttemptRef.current.set(fingerprint, attempt);
           const result = await client.createThread(request, `v2-thread-create-${operationID}`);
           if (projectSkills?.refs.length) {
             try { await submitSkillChoice(client, result.thread.last_run_id, projectSkills, operationID); }
@@ -203,8 +215,9 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
               throw new Error(`${t(`对话 ${result.thread.id} 已保存，技能选择失败，尚未发送首条消息。`, `Conversation ${result.thread.id} was saved, but skill selection failed and the first message has not been sent.`)}${error instanceof Error ? error.message : t("请重试。", "Please try again.")}`);
             }
           }
-          await applyCreationApproval(client, result.thread.id, selectedApprovalMode, selectedApproval?.mode === "full" && selectedApproval.confirmed);
-          await adoptDraftSharedBrowser(creationWorkspaceID, result.thread.id, result.thread.last_run_id, browserGeneration);
+          await applyCreationApproval(client, result.thread.id, `thread-creation-approval-${operationID}-${approvalRevision}`,
+            selectedApprovalMode, selectedApproval?.mode === "full" && selectedApproval.confirmed);
+          await attachBrowser(result.thread);
           const submission = turn.mutateAsync({ threadID: result.thread.id, workspaceID, content,
             ...(files.length ? { files } : {}),
             ...(images.length ? { images } : {}),
@@ -225,7 +238,7 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
         return v2ComposerNotSubmitted;
       }
       if (!requestIsCurrent()) return v2ComposerNotSubmitted;
-    } finally { setApplyingApproval(false); }
+    } finally { setApprovalRequest((current) => current?.id === creationRequest ? null : current); }
   };
   return <V2DraftBrowserWorkspace workspaceID={workspaceID} tools={[
     { id: "task-configuration", label: t("任务配置", "Task configuration"), icon: <SlidersHorizontal size={20} aria-hidden="true" />, onOpen: onOpenTaskConfiguration },
@@ -381,6 +394,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const [importedWorkspaces, setImportedWorkspaces] = useState<WorkspaceView[]>([]);
   const [editingProject, setEditingProject] = useState<WorkspaceView | null>(null);
   const [backgroundCreations, setBackgroundCreations] = useState<ThreadView[]>([]);
+  const connectionGeneration = useConnectionStore((state) => state.connectionGeneration);
+  const [browserAdoptionFailure, setBrowserAdoptionFailure] = useState<{ threadID: string; generation: number } | null>(null);
   const [drafts, setDrafts] = useV2Drafts();
   useEffect(() => {
     if (projectID || !localWorkspace.workspaceID || !drafts["new:"]) return;
@@ -780,6 +795,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             budget={draftTaskConfiguration.budget} configurationValid={draftTaskConfiguration.valid} projectSkills={draftTaskConfiguration.projectSkills}
             onOpenTaskConfiguration={() => setSettingsSection("task-configuration")}
             onOpenWebSettings={() => setSettingsSection("configuration")}
+            onBrowserAdoptionFailed={(threadID) => setBrowserAdoptionFailure({ threadID,
+              generation: useConnectionStore.getState().connectionGeneration })}
             onCreated={(thread, submittedDraft, files, images = [], version, attachments = [], shouldOpen = true, mcpReferences = []) => {
               const source = `new:${thread.workspace_id}`;
               const target = `thread:${thread.id}`;
@@ -871,6 +888,10 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             threadID={selectedThreadID} workspaces={workspaces} />}
       </div>
     </V2SidebarLayout>
+    {browserAdoptionFailure?.generation === connectionGeneration && <div className="v2-toast" role="alert">
+      {t("草稿浏览器未能附加到对话。可在工作区重新打开浏览器。", "The draft browser could not be attached to the conversation. Reopen the browser in the workspace.")}
+      <button type="button" onClick={() => setBrowserAdoptionFailure(null)}>{t("关闭", "Dismiss")}</button>
+    </div>}
     {backgroundCreations.length > 0 && <div className="v2-toast" role="status">
       {backgroundCreations.map((thread) => <div key={thread.id}>
         {t("对话已创建：", "Conversation created: ")}{thread.title}

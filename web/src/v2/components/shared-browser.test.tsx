@@ -33,6 +33,21 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("native shared-browser controls", () => {
+  it("resends the same geometry after a failed native update", async () => {
+    rpc.surface.mockRejectedValueOnce(new Error("surface unavailable"));
+    mount();
+    await waitFor(() => expect(rpc.surface).toHaveBeenCalled());
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(rpc.surface.mock.calls.filter(([request]) => request.visible).length).toBeGreaterThan(1));
+    expect(rpc.surface.mock.calls[1][0].bounds).toEqual(rpc.surface.mock.calls[0][0].bounds);
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+  it("clears a polling failure when the next refresh succeeds", async () => {
+    rpc.get.mockRejectedValueOnce(new Error("poll unavailable"));
+    mount();
+    expect(await screen.findByRole("alert")).toHaveTextContent("poll unavailable");
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
   it("opens without a Run, uses native commands, and does not gate user controls on Agent ownership", async () => {
     const view = mount();
     const address = await screen.findByRole("textbox", { name: "浏览器地址" });
@@ -216,5 +231,9 @@ describe("native shared-browser controls", () => {
     expect(nativeTab).toHaveFocus();
     expect(nativeTab).toHaveAttribute("aria-selected", "true");
     expect(rpc.open).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "新建或切换工作区标签" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "关闭浏览器面板" }));
+    expect(screen.queryByRole("tab", { name: "Example" })).toBeNull();
+    expect(await screen.findByText("真实记录面板")).toBeVisible();
   });
 });

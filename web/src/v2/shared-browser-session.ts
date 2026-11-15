@@ -30,8 +30,16 @@ export async function adoptDraftSharedBrowser(workspaceID: string, threadID: str
   if (useConnectionStore.getState().connectionGeneration !== expectedGeneration) return;
   bindDraftSharedBrowser(workspaceID, threadID, expectedGeneration);
   const sessionID = draftSharedBrowserAdoption(workspaceID, threadID);
-  if (sessionID) await openSharedBrowser({ workspace_id: workspaceID, thread_id: threadID,
-    ...(runID ? { run_id: runID } : {}), adopt_session_id: sessionID });
+  if (sessionID) {
+    const adoptionKey = key(workspaceID, threadID);
+    try {
+      await openSharedBrowser({ workspace_id: workspaceID, thread_id: threadID,
+        ...(runID ? { run_id: runID } : {}), adopt_session_id: sessionID });
+    } catch (error) {
+      if (adoptions.get(adoptionKey) === sessionID) adoptions.delete(adoptionKey);
+      throw error;
+    }
+  }
 }
 
 export function draftSharedBrowserAdoption(workspaceID: string, threadID?: string): string | undefined {

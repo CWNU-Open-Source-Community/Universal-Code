@@ -86,6 +86,8 @@ describe("V2BrowserCDPControl", () => {
     await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
     expect(toggle).toBeEnabled();
     expect(screen.getByRole("button", { name: "启动会话" })).toBeDisabled();
+    expect(screen.getByText("先重新确认并激活当前任务的完全访问权限。")).toBeVisible();
+    expect(screen.queryByText(/可为当前任务打开、查看和关闭独立浏览器/u)).not.toBeInTheDocument();
     expect(controls.openFullCDPSession).not.toHaveBeenCalled();
   });
 
