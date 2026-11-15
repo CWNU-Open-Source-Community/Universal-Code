@@ -115,7 +115,7 @@ type sharedBrowserNativeObserver struct {
 
 func observeSharedBrowserNativePage(t *testing.T, ctx context.Context, page desktopbrowser.Page) *sharedBrowserNativeObserver {
 	t.Helper()
-	connection, err := page.OpenCDP(ctx, desktopbrowser.CDPOptions{Dispatch: func(ctx context.Context, send func() error) error {
+	connection, err := page.OpenCDP(ctx, desktopbrowser.CDPOptions{Methods: []string{"Runtime.evaluate"}, Dispatch: func(ctx context.Context, send func() error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -214,7 +214,7 @@ func TestSharedBrowserNativeServiceAndAgentShareAuthenticatedPage(t *testing.T) 
 			fmt.Fprint(w, `<!doctype html><title>Signed out</title><p>Login required</p>`)
 			return
 		}
-		fmt.Fprint(w, `<!doctype html><title>Authenticated shared page</title><h1>Signed in as shared-user</h1><button id="agent" onclick="document.getElementById('agent-count').textContent=String(++window.agentClicks)">Agent increment</button><span id="agent-count">0</span><button id="operator" onclick="document.getElementById('operator-count').textContent=String(++window.operatorClicks)">Operator increment</button><span id="operator-count">0</span><script>window.agentClicks=0;window.operatorClicks=0;window.inputLog=[];for(const k of ['mousedown','mouseup','click'])window.addEventListener(k,e=>window.inputLog.push([k,e.clientX,e.clientY,e.target.id]));window.addEventListener('message',e=>window.popupMessage=e.data)</script>`)
+		fmt.Fprint(w, `<!doctype html><title>Authenticated shared page</title><style>html{overflow-y:scroll}body{min-height:1800px}</style><h1>Signed in as shared-user</h1><button id="agent" onclick="document.getElementById('agent-count').textContent=String(++window.agentClicks)">Agent increment</button><span id="agent-count">0</span><button id="operator" onclick="document.getElementById('operator-count').textContent=String(++window.operatorClicks)">Operator increment</button><span id="operator-count">0</span><script>window.agentClicks=0;window.operatorClicks=0;window.inputLog=[];for(const k of ['mousedown','mouseup','click'])window.addEventListener(k,e=>window.inputLog.push([k,e.clientX,e.clientY,e.target.id]));window.addEventListener('message',e=>window.popupMessage=e.data)</script>`)
 	}))
 	defer server.Close()
 	options := SharedBrowserOptions{HomePath: home, CreateHost: func(ctx context.Context, profile string, onEvent func(desktopbrowser.Event)) (*desktopbrowser.Host, error) {
@@ -325,6 +325,16 @@ func TestSharedBrowserNativeServiceAndAgentShareAuthenticatedPage(t *testing.T) 
 	if snapshot.CanonicalURL != server.URL+"/protected" || !strings.Contains(snapshot.Text, "Signed in as shared-user") {
 		t.Fatalf("agent did not see real authenticated page: %+v", snapshot)
 	}
+	if snapshot.Layout == nil {
+		t.Fatal("native snapshot omitted viewport")
+	}
+	if interaction, err := agent.MovePointer(ctx, browserruntime.AgentBrowserPoint{X: 10, Y: 10, DocumentEpoch: snapshot.DocumentEpoch, Viewport: snapshot.Layout.Viewport}); err != nil || !interaction.Dispatched {
+		t.Fatalf("snapshot viewport point with a page scrollbar=%+v err=%v", interaction, err)
+	}
+	snapshot, err = agent.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var button browserruntime.AgentBrowserElement
 	for _, element := range snapshot.Elements {
 		if element.Name == "Agent increment" {
@@ -365,7 +375,7 @@ func TestSharedBrowserNativeServiceAndAgentShareAuthenticatedPage(t *testing.T) 
 	if inputEnabled == 0 {
 		t.Fatal("agent attachment disabled native user input")
 	}
-	if state := get(draftID); state.ControlOwner != "agent" || state.RunID != run.ID {
+	if state := get(draftID); state.ControlOwner != "agent" || state.RunID != run.ID || state.AgentTabID != originalID {
 		t.Fatalf("agent lease lost durable shared-page scope: %+v", state)
 	}
 	if got := observer.evaluate(`window.loginWindow=window.open('/popup','login-popup');String(!!window.loginWindow)`); got != "true" {
@@ -373,6 +383,9 @@ func TestSharedBrowserNativeServiceAndAgentShareAuthenticatedPage(t *testing.T) 
 	}
 	waitSharedBrowserNative(t, ctx, "service popup registration", func() bool { state := get(draftID); return len(state.Tabs) == 2 && state.ActiveTabID != originalID })
 	view = get(draftID)
+	if view.AgentTabID != originalID {
+		t.Fatalf("popup changed advertised Agent target: %+v", view)
+	}
 	popupID := view.ActiveTabID
 	popupPage, ok := session.host.Tab(popupID)
 	if !ok {
@@ -382,7 +395,16 @@ func TestSharedBrowserNativeServiceAndAgentShareAuthenticatedPage(t *testing.T) 
 	if popupPage.ProfileID() != profileID {
 		t.Fatal("login popup left the authenticated native profile")
 	}
+	if attached.Lease.Check(ctx) != nil {
+		t.Fatal("popup selection revoked stable Agent target")
+	}
+	if _, err := service.Command(ctx, SharedBrowserCommandRequest{SessionID: draftID, Command: "new_tab", URL: "javascript:bad", OperationKey: "invalid-new-tab"}); err == nil || attached.Lease.Check(ctx) != nil {
+		t.Fatalf("invalid new_tab changed attachment: %v", err)
+	}
 	command(draftID, "select_tab", originalID, "")
+	if err := service.detachDifferentTarget(ctx, session, ""); err != nil || attached.Lease.Check(ctx) != nil {
+		t.Fatalf("handoff to existing target changed attachment: %v", err)
+	}
 	created := command(draftID, "new_tab", "", server.URL+"/protected")
 	secondID := created.ActiveTabID
 	second, ok := session.host.Tab(secondID)
@@ -410,7 +432,35 @@ func TestSharedBrowserNativeServiceAndAgentShareAuthenticatedPage(t *testing.T) 
 	backgroundCtx, backgroundCancel := context.WithTimeout(ctx, 3*time.Second)
 	waitSharedBrowserNative(t, backgroundCtx, "agent click reaches its background stable tab", func() bool { return observer.evaluate(`document.getElementById('agent-count').textContent`) == "2" })
 	backgroundCancel()
+	if attached.Lease.Check(ctx) != nil {
+		t.Fatal("new_tab revoked stable Agent target")
+	}
+	if err := service.detachDifferentTarget(ctx, session, originalID); err == nil || attached.Lease.Check(ctx) != nil {
+		t.Fatalf("stale explicit handoff changed working attachment: %v", err)
+	}
+	if err := service.detachDifferentTarget(ctx, session, secondID); err != nil || attached.Lease.Check(ctx) == nil {
+		t.Fatalf("explicit handoff retained hidden target: %v", err)
+	}
+	if _, err := agent.Snapshot(ctx); err == nil {
+		t.Fatal("retired attachment observed hidden tab after handoff")
+	}
+	handoffCtx := context.WithValue(ctx, sharedBrowserHandoffTargetKey{}, secondID)
+	if state := get(draftID); state.AgentTabID != "" {
+		t.Fatalf("detached target still advertised: %+v", state)
+	}
+	nextPage, err := service.attachPage(handoffCtx, request)
+	if err != nil || nextPage.PageID != secondID {
+		t.Fatalf("handoff successor=%+v err=%v", nextPage, err)
+	}
+	if state := get(draftID); state.AgentTabID != secondID {
+		t.Fatalf("successor target projection=%+v", state)
+	}
+	t.Cleanup(func() { _ = nextPage.Connection.Close() })
 	command(draftID, "close_tab", secondID, "")
+	if nextPage.Lease.Check(ctx) == nil {
+		t.Fatal("closing attached target left Agent lease live")
+	}
+
 	if !second.State().Closed {
 		t.Fatal("close_tab did not dispose native controller")
 	}
@@ -445,6 +495,20 @@ func TestSharedBrowserNativeServiceAndAgentShareAuthenticatedPage(t *testing.T) 
 	}
 	command(draftID, "navigate", originalID, server.URL+"/protected")
 	waitSharedBrowserNative(t, ctx, "manual page retains login after agent detach", func() bool { return page.State().Title == "Authenticated shared page" && !page.State().Loading })
+	command(draftID, "close_tab", originalID, "")
+	if state := get(draftID); state.ActiveTabID != "" || len(state.Tabs) != 0 {
+		t.Fatalf("last tab close=%+v", state)
+	}
+	emptyPage, err := service.attachPage(ctx, request)
+	if err != nil || emptyPage.PageID == "" || emptyPage.PageID != get(draftID).ActiveTabID {
+		t.Fatalf("empty session attachment=%+v err=%v", emptyPage, err)
+	}
+	if err := emptyPage.Connection.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := emptyPage.Lease.Release(ctx); err != nil {
+		t.Fatal(err)
+	}
 	newDraft, err := bridge.OpenSharedBrowser(SharedBrowserOpenRequest{ProtocolVersion: SharedBrowserProtocolVersion, WorkspaceID: workspaceID})
 	if err != nil {
 		t.Fatal(err)
@@ -488,4 +552,33 @@ func TestSharedBrowserNativeServiceAndAgentShareAuthenticatedPage(t *testing.T) 
 		t.Fatal("integration probe unexpectedly exposed a foreground-capable parent window")
 	}
 	t.Log("real hidden WebView2 + desktop bridge/service + durable Run: authenticated page identity, agent snapshot/click, concurrent operator document, popup/opener/history, tab lifecycle and profile adoption passed; no model called")
+}
+
+func TestSharedBrowserNativeCanceledOpenClosesPartialHost(t *testing.T) {
+	if os.Getenv("UC_NATIVE_BROWSER_PROBE") != "1" {
+		t.Skip("set UC_NATIVE_BROWSER_PROBE=1 for hidden installed-WebView2 integration")
+	}
+	ui := startSharedBrowserNativeUI(t)
+	service, workspaceID, _ := newSharedBrowserStoreTest(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var host *desktopbrowser.Host
+	service.options.CreateHost = func(ctx context.Context, profile string, events func(desktopbrowser.Event)) (*desktopbrowser.Host, error) {
+		var err error
+		host, err = desktopbrowser.NewHost(ctx, desktopbrowser.HostOptions{ParentHWND: ui.hwnd, Dispatcher: ui.dispatcher, UserDataDir: profile, OnEvent: events})
+		cancel()
+		return host, err
+	}
+	if _, err := service.Open(ctx, SharedBrowserOpenRequest{WorkspaceID: workspaceID}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled initial tab=%v", err)
+	}
+	if host == nil {
+		t.Fatal("host never reached partial-open state")
+	}
+	if _, err := host.CreateTab(t.Context(), desktopbrowser.TabOptions{}); !errors.Is(err, desktopbrowser.ErrClosed) {
+		t.Fatalf("canceled open left native host alive: %v", err)
+	}
+	if len(service.sessions) != 0 {
+		t.Fatal("partial host was published")
+	}
 }

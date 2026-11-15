@@ -50,8 +50,10 @@ func (s *AgentBrowserService) ExecuteAgentBrowserAction(ctx context.Context, sco
 	if slot == nil {
 		return toolgateway.BrowserActionExecutionResult{}, agentBrowserUnavailable("browser session is unavailable")
 	}
-	slot.action.Lock()
-	defer slot.action.Unlock()
+	if err := slot.lockAction(ctx); err != nil {
+		return toolgateway.BrowserActionExecutionResult{}, err
+	}
+	defer slot.unlockAction()
 	if e = s.check(ctx, a); e != nil {
 		return toolgateway.BrowserActionExecutionResult{}, e
 	}

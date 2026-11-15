@@ -191,7 +191,7 @@ func TestNativeBrowserProbe(t *testing.T) {
 	if err = page.SetSurface(ctx, Bounds{X: 10, Y: 40, Width: 800, Height: 600}, true); err != nil {
 		t.Fatal(err)
 	}
-	connection, err := page.OpenCDP(ctx, CDPOptions{Events: []string{"Page.frameNavigated", "Page.lifecycleEvent", "DOM.documentUpdated"}, Dispatch: func(ctx context.Context, send func() error) error { return send() }})
+	connection, err := page.OpenCDP(ctx, CDPOptions{Methods: []string{"Runtime.evaluate", "Runtime.enable", "Input.dispatchMouseEvent"}, Events: []string{"Page.frameNavigated", "Page.lifecycleEvent", "DOM.documentUpdated"}, Dispatch: func(ctx context.Context, send func() error) error { return send() }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,11 +305,14 @@ func TestNativeBrowserProbe(t *testing.T) {
 	if enabled == 0 {
 		t.Fatal("agent lease disabled native human input")
 	}
-	leaseConnection, err := page.OpenCDP(ctx, CDPOptions{Dispatch: lease.Dispatch})
+	leaseConnection, err := page.OpenCDP(ctx, CDPOptions{Methods: []string{"Runtime.evaluate", "Runtime.enable", "Input.dispatchMouseEvent"}, Dispatch: lease.Dispatch})
 	if err != nil {
 		t.Fatal(err)
 	}
 	blocked, unblock := make(chan struct{}), make(chan struct{})
+	var unblockOnce sync.Once
+	releaseDispatcher := func() { unblockOnce.Do(func() { close(unblock) }) }
+	defer releaseDispatcher()
 	if err = ui.dispatcher.Post(func() { close(blocked); <-unblock }); err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +327,7 @@ func TestNativeBrowserProbe(t *testing.T) {
 		return len(ui.dispatcher.queue) > 0
 	})
 	lease.Cancel()
-	close(unblock)
+	releaseDispatcher()
 	if err = <-writeDone; err == nil {
 		t.Fatal("revoked queued CDP write was dispatched")
 	}
@@ -431,7 +434,7 @@ func TestNativeLoginPopupPreservesOpenerAndPolicy(t *testing.T) {
 	if err = page.SetSurface(ctx, Bounds{Width: 800, Height: 600}, true); err != nil {
 		t.Fatal(err)
 	}
-	connection, err := page.OpenCDP(ctx, CDPOptions{Dispatch: func(ctx context.Context, send func() error) error { return send() }})
+	connection, err := page.OpenCDP(ctx, CDPOptions{Methods: []string{"Runtime.evaluate", "Runtime.enable", "Input.dispatchMouseEvent"}, Dispatch: func(ctx context.Context, send func() error) error { return send() }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +550,7 @@ func TestNativeNetworkDispatchContextFencesQueuedRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitProbe(t, ctx, func() bool { return page.State().Title == "Queue source" })
-	connection, err := page.OpenCDP(ctx, CDPOptions{Dispatch: func(ctx context.Context, send func() error) error { return send() }})
+	connection, err := page.OpenCDP(ctx, CDPOptions{Methods: []string{"Runtime.evaluate", "Runtime.enable", "Input.dispatchMouseEvent"}, Dispatch: func(ctx context.Context, send func() error) error { return send() }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,6 +588,9 @@ func TestNativeNetworkDispatchContextFencesQueuedRequest(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	blocked, unblock := make(chan struct{}), make(chan struct{})
+	var unblockOnce sync.Once
+	releaseDispatcher := func() { unblockOnce.Do(func() { close(unblock) }) }
+	defer releaseDispatcher()
 	if err = ui.dispatcher.Post(func() { close(blocked); <-unblock }); err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +602,7 @@ func TestNativeNetworkDispatchContextFencesQueuedRequest(t *testing.T) {
 		return len(ui.dispatcher.queue) > 0
 	})
 	cancelOp()
-	close(unblock)
+	releaseDispatcher()
 	select {
 	case err = <-sendResult:
 		if !errors.Is(err, context.Canceled) {
@@ -642,4 +648,107 @@ func TestNativeNetworkDispatchContextFencesQueuedRequest(t *testing.T) {
 	waitProbe(t, ctx, func() bool { return writes.Load() == 1 })
 	close(reviewReturn)
 	t.Log("hidden native HTTP dispatch completed before review returned; cancelled queued dispatch never reached server")
+}
+
+func TestNativePageCDPRejectsMethodsOutsideConnectionAllowlist(t *testing.T) {
+	c := &pageConnection{page: &nativePage{id: "page"}, methods: map[string]bool{"Page.getFrameTree": true}}
+	for _, method := range []string{"Network.getAllCookies", "Storage.getCookies", "Storage.clearDataForOrigin", "Network.clearBrowserCookies", "Runtime.evaluate", "Target.createTarget", "Browser.close"} {
+		if err := c.WriteJSON(map[string]any{"id": 1, "method": method, "sessionId": "page"}); err == nil || !strings.Contains(err.Error(), "unavailable on a native page connection") {
+			t.Fatalf("%s escaped allowlist: %v", method, err)
+		}
+	}
+}
+
+func TestNativeTabLimitAppliesBeforeControllerCreation(t *testing.T) {
+	ui := startProbeUI(t)
+	host := &Host{options: HostOptions{Dispatcher: ui.dispatcher}, env: &comObject{}, tabs: map[string]*nativePage{}}
+	for i := 0; i < MaxTabs; i++ {
+		host.tabs[fmt.Sprint(i)] = &nativePage{}
+	}
+	if _, err := host.CreateTab(t.Context(), TabOptions{}); err == nil || !strings.Contains(err.Error(), "tab limit") {
+		t.Fatalf("popup-style creation exceeded tab limit: %v", err)
+	}
+	if _, err := host.CreateTab(t.Context(), TabOptions{ID: "manual", URL: "about:blank"}); err == nil || !strings.Contains(err.Error(), "tab limit") {
+		t.Fatalf("manual creation exceeded tab limit: %v", err)
+	}
+}
+
+func TestDispatcherCloseSettlesQueuedInvoke(t *testing.T) {
+	ui := startProbeUI(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var dispatcher *Dispatcher
+	if err := ui.dispatcher.Invoke(ctx, func() error { var err error; dispatcher, err = NewDispatcher(); return err }); err != nil {
+		t.Fatal(err)
+	}
+	started, unblock := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(unblock) }) }
+	defer release()
+	closed := make(chan error, 1)
+	if err := dispatcher.Post(func() { close(started); <-unblock; closed <- dispatcher.Close() }); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	var rawRan atomic.Bool
+	if err := dispatcher.Post(func() { rawRan.Store(true) }); err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	go func() {
+		result <- dispatcher.Invoke(context.Background(), func() error { t.Error("queued operation executed after Close"); return nil })
+	}()
+	waitProbe(t, ctx, func() bool { dispatcher.mu.Lock(); defer dispatcher.mu.Unlock(); return len(dispatcher.queue) > 0 })
+	release()
+	select {
+	case err := <-result:
+		if !errors.Is(err, ErrClosed) {
+			t.Fatalf("queued Invoke=%v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("queued Invoke stranded after Close")
+	}
+	if err := <-closed; err != nil {
+		t.Fatal(err)
+	}
+	if rawRan.Load() {
+		t.Fatal("raw Post callback ran after dispatcher closed")
+	}
+}
+
+func TestNativePageCDPContextCancelsQueuedWrite(t *testing.T) {
+	ui := startProbeUI(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	page := &nativePage{host: &Host{options: HostOptions{Dispatcher: ui.dispatcher}}, id: "page"}
+	c := &pageConnection{page: page, methods: map[string]bool{"Input.dispatchMouseEvent": true}}
+	blocked, unblock := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(unblock) }) }
+	defer release()
+	if err := ui.dispatcher.Post(func() { close(blocked); <-unblock }); err != nil {
+		t.Fatal(err)
+	}
+	<-blocked
+	op, cancelOp := context.WithCancel(ctx)
+	defer cancelOp()
+	result := make(chan error, 1)
+	go func() {
+		result <- c.WriteJSONContext(op, map[string]any{"id": 1, "sessionId": "page", "method": "Input.dispatchMouseEvent", "params": map[string]any{"type": "mousePressed"}})
+	}()
+	waitProbe(t, ctx, func() bool {
+		ui.dispatcher.mu.Lock()
+		defer ui.dispatcher.mu.Unlock()
+		return len(ui.dispatcher.queue) > 0
+	})
+	cancelOp()
+	release()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("queued document input=%v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("queued input ignored cancellation")
+	}
 }

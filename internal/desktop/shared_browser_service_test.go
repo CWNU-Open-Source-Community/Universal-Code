@@ -129,3 +129,27 @@ func TestSharedBrowserBridgeRejectsUnsupportedProtocolBeforeHost(t *testing.T) {
 		t.Fatal("unknown native protocol accepted")
 	}
 }
+
+func TestSharedBrowserSessionCommandsWorkAfterLastTabCloses(t *testing.T) {
+	s, workspaceID, _ := newSharedBrowserStoreTest(t)
+	session := &sharedBrowserSession{state: SharedBrowserState{SessionID: "empty-session", WorkspaceID: workspaceID, Fullscreen: true}, receipts: map[string]SharedBrowserCommandRequest{}}
+	s.sessions[session.state.SessionID] = session
+	called := false
+	s.options.SetFullscreen = func(_ context.Context, fullscreen bool) error {
+		called = true
+		if fullscreen {
+			t.Fatal("exit entered fullscreen")
+		}
+		return nil
+	}
+	view, err := s.Command(t.Context(), SharedBrowserCommandRequest{SessionID: session.state.SessionID, OperationKey: "exit-empty-fullscreen", Command: "exit_fullscreen"})
+	if err != nil || view.Fullscreen || !called {
+		t.Fatalf("tabless fullscreen exit=%+v called=%t err=%v", view, called, err)
+	}
+	if _, err := s.Command(t.Context(), SharedBrowserCommandRequest{SessionID: session.state.SessionID, OperationKey: "reload-empty", Command: "reload"}); err == nil {
+		t.Fatal("page command accepted missing tab")
+	}
+	if _, err := s.Command(t.Context(), SharedBrowserCommandRequest{SessionID: session.state.SessionID, OperationKey: "take-empty", Command: "take_control"}); err != nil {
+		t.Fatalf("tabless takeover: %v", err)
+	}
+}

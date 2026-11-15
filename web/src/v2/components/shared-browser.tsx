@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, Expand, Globe, History, LoaderCircle, Plus, RefreshCw, Shrink, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot, Expand, Globe, History, LoaderCircle, Plus, RefreshCw, Shrink, X } from "lucide-react";
 import { commandSharedBrowser, getSharedBrowser, openSharedBrowser,
   sharedBrowserNavigationURL, type SharedBrowserCommand, type SharedBrowserOpenRequest, type SharedBrowserState } from "../../lib/desktop-shared-browser";
 import { useLocale } from "../../lib/locale";
@@ -116,11 +116,13 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
     {state?.tabs.map((tab) => {
       const selected = active && tab.tab_id === state.active_tab_id;
       const title = tab.url === "about:blank" ? t("新标签页", "New tab") : tab.title || tab.url;
+      const attached = tab.tab_id === state.agent_tab_id;
       return <div className="v2-workspace-tab-item v2-browser-tab" data-active={selected} key={tab.tab_id}>
         <button type="button" className="v2-workspace-tab-trigger" role="tab" data-native-tab-id={tab.tab_id} id={tabDOMID(tab.tab_id)} aria-controls={panelID}
-          aria-selected={selected} tabIndex={selected ? 0 : -1} disabled={!canEdit} title={title}
+          aria-selected={selected} tabIndex={selected ? 0 : -1} disabled={!canEdit} title={attached ? t(`Agent 正在使用 · ${title}`, `Used by Agent · ${title}`) : title}
+          aria-description={attached ? t("Agent 正在使用", "Used by Agent") : undefined}
           onClick={() => { onActivate?.(); if (tab.tab_id !== state.active_tab_id) void command("select_tab", { tab_id: tab.tab_id }); }} onKeyDown={sharedWorkspaceTabKey}>
-          {tab.loading ? <LoaderCircle size={14} aria-hidden="true" className="v2-browser-spinner" /> : <Globe size={14} aria-hidden="true" />}
+          {tab.loading ? <LoaderCircle size={14} aria-hidden="true" className="v2-browser-spinner" /> : attached ? <Bot size={14} aria-hidden="true" /> : <Globe size={14} aria-hidden="true" />}
           <span className="v2-workspace-tab-title">{title}</span>
         </button><button type="button" className="v2-workspace-tab-close" disabled={!canEdit} aria-label={t(`关闭 ${title}`, `Close ${title}`)}
           onClick={() => void command("close_tab", { tab_id: tab.tab_id })}><X size={13} aria-hidden="true" /></button>
@@ -153,6 +155,9 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
       }}><input aria-label={t("浏览器地址", "Browser address")} placeholder={t("输入网址", "Enter a URL")} autoComplete="off" spellCheck={false} disabled={!canEdit}
         ref={addressRef} value={address} onChange={(event) => setAddress(event.target.value)} onFocus={(event) => event.target.select()}
         onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setAddress(isStartPage ? "" : activeTab?.url ?? ""); event.currentTarget.blur(); } }} /></form>
+      {activeTab && state?.run_id && state.agent_tab_id !== activeTab.tab_id && <button type="button" className="v2-browser-icon" disabled={!canEdit}
+        aria-label={t("将当前标签页交给 Agent", "Give current tab to Agent")} title={t("将当前标签页交给 Agent", "Give current tab to Agent")}
+        onClick={() => void command("release_control", { tab_id: activeTab.tab_id })}><Bot size={17} aria-hidden="true" /></button>}
       <button type="button" className="v2-browser-icon" disabled={!state || pending || state.state !== "ready"}
         aria-label={state?.fullscreen ? t("退出全屏", "Exit fullscreen") : t("全屏浏览器", "Fullscreen browser")}
         onClick={() => void command(state?.fullscreen ? "exit_fullscreen" : "enter_fullscreen")}>{state?.fullscreen ? <Shrink size={17} aria-hidden="true" /> : <Expand size={17} aria-hidden="true" />}</button>

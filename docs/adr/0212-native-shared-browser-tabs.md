@@ -12,8 +12,9 @@ use the same container. A hidden native surface keeps its document and login.
 
 External pages have neither the Wails bridge nor the application's API tokens.
 Each chat owns a browser profile, separate from the application's renderer and
-the user's regular browser. Tabs in a chat share cookies. A draft browser is
-explicitly adopted by the newly created chat before its first turn is submitted.
+the user's regular browser. Tabs in a chat share cookies. A new chat attempts
+to adopt its draft browser before sending the first turn. If adoption fails,
+the message is still submitted and the user can reopen the browser in the chat.
 The profile index migration is atomic and retries do not consume a later draft.
 Recent pages on the new-tab screen are a bounded, session-local list of successful
 native navigations; no sample visits or recommendations are manufactured.
@@ -27,7 +28,10 @@ mouse input or keyboard focus.
 
 Operator input stays enabled during Agent work. Clicking, typing, or changing
 the displayed tab does not cancel the Agent. An attachment retains its stable
-target tab when the operator views another tab. Navigation and resizing invalidate
+target tab when the operator views another tab. The tab strip identifies the
+Agent's tab. The toolbar can explicitly hand the displayed tab to the Agent;
+the request names that tab so a concurrent switch cannot substitute another.
+Navigation and resizing invalidate
 old references/coordinates so a stale action must observe the current document.
 Closing the target page or revoking Run authority invalidates its Agent lease.
 Releasing that lease preserves the user-owned page and profile; its cleanup

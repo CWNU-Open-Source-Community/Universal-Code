@@ -99,6 +99,7 @@ func newDownloadReleaseTestService(t *testing.T, runtime *downloadReleaseTestRun
 	}
 	service := NewAgentBrowserService(store, AgentBrowserOptions{})
 	service.slots["run-download-release"] = &agentBrowserSlot{
+		action:    make(chan struct{}, 1),
 		runtime:   runtime,
 		authority: toolgateway.AgentBrowserCallAuthority{RunID: "run-download-release", WorkspaceID: "ws-download-release", SessionID: "session-download-release"},
 	}

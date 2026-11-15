@@ -49,6 +49,7 @@ type attachedTestConnection struct {
 	once               sync.Once
 	methods            []string
 	mouse              []map[string]any
+	onViewport         func()
 	hoverChangesTarget bool
 	screenshotError    bool
 	url                string
@@ -112,6 +113,15 @@ func (c *attachedTestConnection) WriteJSON(value any) error {
 	case "DOM.resolveNode":
 		result = map[string]any{"object": map[string]any{"objectId": "button"}}
 	case "Runtime.callFunctionOn":
+		var params struct{ FunctionDeclaration string }
+		_ = json.Unmarshal(in.Params, &params)
+		if params.FunctionDeclaration == agentBrowserViewportFunction {
+			if c.onViewport != nil {
+				c.onViewport()
+			}
+			result = map[string]any{"result": map[string]any{"value": map[string]any{"width": 800, "height": 600}}}
+			break
+		}
 		result = map[string]any{"result": map[string]any{"value": agentBrowserNode{Connected: true, Visible: true, Hit: !hoverChanged, Signature: "button-signature", X: 40, Y: 30}}}
 	case "DOM.getDocument":
 		result = map[string]any{"root": map[string]any{"backendNodeId": 1}}
@@ -502,5 +512,86 @@ func TestAttachedBrowserDOMClickPositionsPointerAndRechecksAfterHover(t *testing
 				t.Fatalf("changed hovered target error=%v", err)
 			}
 		})
+	}
+}
+
+func TestAttachedPointerRejectsNavigationDuringPressViewportRead(t *testing.T) {
+	req, page, wire, _, _ := attachedFixture(t)
+	r, err := AttachAgentBrowser(t.Context(), req, page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close(context.Background())
+	reads := 0
+	wire.onViewport = func() {
+		reads++
+		if reads == 2 {
+			r.onEvent(cdpWireMessage{SessionID: wire.session, Method: "Page.navigatedWithinDocument", Params: json.RawMessage(`{"frameId":"frame","url":"https://example.com/new"}`)})
+		}
+	}
+	_, err = r.ClickPoint(t.Context(), AgentBrowserPoint{X: 40, Y: 30, DocumentEpoch: r.Status().DocumentEpoch, Viewport: AgentBrowserViewport{Width: 800, Height: 600}})
+	if !errors.Is(err, ErrAgentBrowserStaleReference) {
+		t.Fatalf("navigation during viewport read=%v", err)
+	}
+	wire.mu.Lock()
+	defer wire.mu.Unlock()
+	if len(wire.mouse) != 1 || wire.mouse[0]["type"] != "mouseMoved" {
+		t.Fatalf("stale press reached new document: %+v", wire.mouse)
+	}
+}
+
+type queuedAttachedPointerConnection struct {
+	*attachedTestConnection
+	queued chan struct{}
+}
+
+func (c *queuedAttachedPointerConnection) WriteJSONContext(ctx context.Context, value any) error {
+	b, _ := json.Marshal(value)
+	var request struct {
+		Method string
+		Params struct{ Type string }
+	}
+	_ = json.Unmarshal(b, &request)
+	if request.Method == "Input.dispatchMouseEvent" && request.Params.Type == "mousePressed" {
+		close(c.queued)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return c.WriteJSON(value)
+}
+func TestAttachedPointerNavigationCancelsQueuedNativePress(t *testing.T) {
+	req, page, wire, _, _ := attachedFixture(t)
+	queued := &queuedAttachedPointerConnection{attachedTestConnection: wire, queued: make(chan struct{})}
+	page.Connection = queued
+	r, err := AttachAgentBrowser(t.Context(), req, page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close(context.Background())
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := r.ClickPoint(ctx, AgentBrowserPoint{X: 40, Y: 30, DocumentEpoch: r.Status().DocumentEpoch, Viewport: AgentBrowserViewport{Width: 800, Height: 600}})
+		result <- err
+	}()
+	select {
+	case <-queued.queued:
+	case <-ctx.Done():
+		t.Fatal("native press was not queued")
+	}
+	r.onEvent(cdpWireMessage{SessionID: wire.session, Method: "Page.navigatedWithinDocument", Params: json.RawMessage(`{"frameId":"frame","url":"https://example.com/new"}`)})
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("queued native press=%v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("navigation did not invalidate queued input")
+	}
+	wire.mu.Lock()
+	defer wire.mu.Unlock()
+	if len(wire.mouse) != 1 || wire.mouse[0]["type"] != "mouseMoved" {
+		t.Fatalf("queued press dispatched after navigation: %+v", wire.mouse)
 	}
 }

@@ -143,6 +143,9 @@ func (h *Host) CreateTab(ctx context.Context, options TabOptions) (Page, error) 
 		if _, exists := h.tabs[page.id]; exists {
 			return errors.New("native browser tab ID already exists")
 		}
+		if len(h.tabs) >= MaxTabs {
+			return errors.New("native browser tab limit reached")
+		}
 		class := windows.StringToUTF16Ptr("STATIC")
 		// A background tab still needs a usable layout before its first surface
 		// is shown. Its actual dock bounds replace this viewport when displayed.
@@ -491,6 +494,9 @@ func (p *nativePage) closeOnUI() {
 		p.container = 0
 	}
 	p.host.mu.Lock()
+	if p.host.lease != nil && p.host.lease.pageID == p.id {
+		p.host.lease.Cancel()
+	}
 	delete(p.host.tabs, p.id)
 	p.host.mu.Unlock()
 	p.host.emit(Event{Kind: "closed", State: p.State()})
@@ -559,11 +565,17 @@ func (p *nativePage) installEvents() error {
 			return 0
 		}},
 		{coreProcessFailed, "{79E0AEA4-990B-42D9-AA1D-0FCC2E5BC7F1}", func(_ uintptr, args unsafe.Pointer) uintptr {
+			kind := int32(-1)
+			if args != nil {
+				_ = comCall((*comObject)(args), 3, uintptr(unsafe.Pointer(&kind)))
+			}
 			p.mu.Lock()
 			p.state.Error = "browser process failed"
 			p.mu.Unlock()
 			p.host.emit(Event{Kind: "state", State: p.State()})
-			_ = p.host.options.Dispatcher.Post(func() { p.closeOnUI() })
+			if kind == 0 || kind == 1 {
+				_ = p.host.options.Dispatcher.Post(func() { p.closeOnUI() })
+			}
 			return 0
 		}},
 	}

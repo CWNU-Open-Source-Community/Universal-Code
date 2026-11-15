@@ -218,6 +218,29 @@ func newAgentBrowserFixture(t *testing.T) (*AgentBrowserService, *agentBrowserTe
 	turn := domain.SupervisorTurn{Run: base.run, Mission: base.mission, Mode: st.mode, Agent: st.root, Checkpoint: st.checkpoint}
 	return service, st, r, supervisor, turn
 }
+func TestAgentBrowserCloseDeadlineWhileActionStalls(t *testing.T) {
+	service, st, _, _, _ := newAgentBrowserFixture(t)
+	auth, err := service.authority(t.Context(), st.base.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot := service.sessions[auth.BrowserSessionID]
+	if err := slot.lockAction(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancel()
+	_, err = service.Close(ctx, auth.RunID, auth.BrowserSessionID)
+	slot.unlockAction()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("close behind a busy action: %v", err)
+	}
+	view, err := service.Close(t.Context(), auth.RunID, auth.BrowserSessionID)
+	if err != nil || view.State != "closed" {
+		t.Fatalf("retry close: %+v, %v", view, err)
+	}
+}
+
 func agentBrowserFixtureCall(t *testing.T, s *AgentBrowserService, st *agentBrowserTestStore, name toolgateway.ToolName, payload string) domain.SupervisorToolCall {
 	t.Helper()
 	a, e := s.authority(t.Context(), st.base.run.ID)

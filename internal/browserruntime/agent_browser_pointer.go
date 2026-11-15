@@ -14,17 +14,43 @@ type AgentBrowserPoint struct {
 }
 
 func (r *AgentBrowserRuntime) currentViewport(ctx context.Context) (AgentBrowserViewport, error) {
-	var metrics struct {
-		CSSLayoutViewport struct{ ClientWidth, ClientHeight float64 }
-	}
-	if err := r.call(ctx, "Page.getLayoutMetrics", map[string]any{}, &metrics); err != nil {
+	world, err := r.world(ctx)
+	if err != nil {
 		return AgentBrowserViewport{}, err
 	}
-	w, h := metrics.CSSLayoutViewport.ClientWidth, metrics.CSSLayoutViewport.ClientHeight
+	var metrics struct {
+		Result struct {
+			Value struct{ Width, Height float64 }
+		}
+	}
+	if err := r.call(ctx, "Runtime.callFunctionOn", map[string]any{"executionContextId": world, "functionDeclaration": agentBrowserViewportFunction, "returnByValue": true}, &metrics); err != nil {
+		return AgentBrowserViewport{}, err
+	}
+	w, h := metrics.Result.Value.Width, metrics.Result.Value.Height
 	if math.IsNaN(w) || math.IsNaN(h) || math.IsInf(w, 0) || math.IsInf(h, 0) || w < 1 || h < 1 || w > 16384 || h > 16384 {
 		return AgentBrowserViewport{}, ErrBrowserRuntimeBoundary
 	}
 	return AgentBrowserViewport{Width: int(math.Round(w)), Height: int(math.Round(h))}, nil
+}
+
+const agentBrowserViewportFunction = `function(){return {width:innerWidth,height:innerHeight}}`
+
+func (r *AgentBrowserRuntime) inputAtEpoch(ctx context.Context, epoch uint64, params any) error {
+	r.mu.Lock()
+	if r.epoch != epoch {
+		r.mu.Unlock()
+		return ErrAgentBrowserStaleReference
+	}
+	op, cancel := context.WithCancel(ctx)
+	r.epochCancel = cancel
+	r.mu.Unlock()
+	defer func() {
+		cancel()
+		r.mu.Lock()
+		r.epochCancel = nil
+		r.mu.Unlock()
+	}()
+	return r.input(op, "Input.dispatchMouseEvent", params)
 }
 
 func (r *AgentBrowserRuntime) pointer(ctx context.Context, p AgentBrowserPoint, click bool) (AgentBrowserInteraction, error) {
@@ -53,7 +79,7 @@ func (r *AgentBrowserRuntime) pointer(ctx context.Context, p AgentBrowserPoint, 
 	if err = r.check(op, p.DocumentEpoch); err != nil {
 		return AgentBrowserInteraction{}, err
 	}
-	if err = r.input(op, "Input.dispatchMouseEvent", map[string]any{"type": "mouseMoved", "x": p.X, "y": p.Y}); err != nil {
+	if err = r.inputAtEpoch(op, p.DocumentEpoch, map[string]any{"type": "mouseMoved", "x": p.X, "y": p.Y}); err != nil {
 		return AgentBrowserInteraction{}, err
 	}
 	if !click {
@@ -70,7 +96,10 @@ func (r *AgentBrowserRuntime) pointer(ctx context.Context, p AgentBrowserPoint, 
 			}
 			return AgentBrowserInteraction{}, r.unknown(err)
 		}
-		if err = r.input(op, "Input.dispatchMouseEvent", map[string]any{"type": kind, "x": p.X, "y": p.Y, "button": "left", "clickCount": 1}); err != nil {
+		if err = r.check(op, p.DocumentEpoch); err != nil {
+			return AgentBrowserInteraction{}, r.unknown(err)
+		}
+		if err = r.inputAtEpoch(op, p.DocumentEpoch, map[string]any{"type": kind, "x": p.X, "y": p.Y, "button": "left", "clickCount": 1}); err != nil {
 			return AgentBrowserInteraction{}, err
 		}
 	}

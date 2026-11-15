@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -37,13 +38,14 @@ func (l *sharedTestLease) Release(context.Context) error {
 }
 
 type sharedTestWire struct {
-	lease    *sharedTestLease
-	messages chan []byte
-	closed   chan struct{}
-	once     sync.Once
-	mu       sync.Mutex
-	methods  []string
-	session  string
+	lease      *sharedTestLease
+	messages   chan []byte
+	closed     chan struct{}
+	once       sync.Once
+	mu         sync.Mutex
+	methods    []string
+	mouseTypes []string
+	session    string
 }
 
 func (w *sharedTestWire) ReadJSON(out any) error {
@@ -65,6 +67,7 @@ func (w *sharedTestWire) WriteJSON(v any) error {
 	var m struct {
 		ID                int64
 		SessionID, Method string
+		Params            json.RawMessage
 	}
 	if e = json.Unmarshal(raw, &m); e != nil {
 		return e
@@ -74,6 +77,11 @@ func (w *sharedTestWire) WriteJSON(v any) error {
 	}
 	w.mu.Lock()
 	w.methods = append(w.methods, m.Method)
+	if m.Method == "Input.dispatchMouseEvent" {
+		var params struct{ Type string }
+		_ = json.Unmarshal(m.Params, &params)
+		w.mouseTypes = append(w.mouseTypes, params.Type)
+	}
 	w.mu.Unlock()
 	result := any(map[string]any{})
 	switch m.Method {
@@ -88,6 +96,12 @@ func (w *sharedTestWire) WriteJSON(v any) error {
 	case "DOM.resolveNode":
 		result = map[string]any{"object": map[string]any{"objectId": "document"}}
 	case "Runtime.callFunctionOn":
+		var params struct{ FunctionDeclaration string }
+		_ = json.Unmarshal(m.Params, &params)
+		if params.FunctionDeclaration == `function(){return {width:innerWidth,height:innerHeight}}` {
+			result = map[string]any{"result": map[string]any{"value": map[string]any{"width": 800, "height": 600}}}
+			break
+		}
 		result = map[string]any{"result": map[string]any{"value": map[string]any{"title": "Signed-in account", "text": "Existing signed-in page", "ready": "complete"}}}
 	case "Accessibility.getFullAXTree":
 		result = map[string]any{"nodes": []any{}}
@@ -203,11 +217,25 @@ func TestSharedBrowserCoordinatesUseAuthorizedDurableNativeSession(t *testing.T)
 		t.Fatal(err)
 	}
 	for _, name := range []toolgateway.ToolName{toolgateway.BrowserMoveTool, toolgateway.BrowserClickTool} {
+		wire := (*wires)[0]
+		wire.mu.Lock()
+		wire.mouseTypes = nil
+		wire.mu.Unlock()
 		payload := fmt.Sprintf(`{"version":%q,"point":{"x":30,"y":40,"document_epoch":%d,"viewport":{"width":800,"height":600}}}`, string(name)+".v2", view.DocumentEpoch)
 		call := agentBrowserFixtureCall(t, service, st, name, payload)
 		waiting, err := runAgentBrowserFixtureCall(t, supervisor, turn, call)
 		if err != nil || waiting || st.calls[call.CallID].Status != domain.SupervisorToolCompleted {
 			t.Fatalf("native point %s: call=%+v waiting=%t err=%v", name, st.calls[call.CallID], waiting, err)
+		}
+		wire.mu.Lock()
+		got := strings.Join(wire.mouseTypes, ",")
+		wire.mu.Unlock()
+		want := "mouseMoved"
+		if name == toolgateway.BrowserClickTool {
+			want = "mouseMoved,mousePressed,mouseReleased"
+		}
+		if got != want {
+			t.Fatalf("%s mouse sequence=%s want=%s", name, got, want)
 		}
 	}
 	wire := (*wires)[0]

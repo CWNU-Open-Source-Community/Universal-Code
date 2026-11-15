@@ -24,6 +24,10 @@ type HostOptions struct {
 
 type TabOptions struct{ ID, URL string }
 
+// MaxTabs matches the shared-browser renderer's state contract. CreateTab also
+// enforces it for popup controllers while their creation is still pending.
+const MaxTabs = 100
+
 // Bounds are physical pixels in the parent window's client area. The desktop
 // bridge converts renderer CSS pixels using the current monitor's DPI.
 type Bounds struct{ X, Y, Width, Height int32 }
@@ -53,6 +57,8 @@ type Event struct {
 
 type CDPOptions struct {
 	Events []string
+	// Methods is the exact page-scoped allowlist for this connection.
+	Methods []string
 	// Dispatch runs on the UI thread immediately before the COM call. The
 	// application's lease must hold its control lock across the supplied call,
 	// so cancellation cannot race with a queued native mutation.

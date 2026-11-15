@@ -36,6 +36,7 @@ type AgentBrowserRuntime struct {
 	loaded                                    string
 	loading                                   bool
 	epoch                                     uint64
+	epochCancel                               context.CancelFunc
 	refs                                      map[string]agentBrowserRef
 	scope                                     *AgentBrowserOriginScope
 	screencast                                *agentBrowserScreencastPump
@@ -124,6 +125,10 @@ func (r *AgentBrowserRuntime) call(ctx context.Context, method string, params an
 }
 
 func (r *AgentBrowserRuntime) invalidateLocked() {
+	if r.epochCancel != nil {
+		r.epochCancel()
+		r.epochCancel = nil
+	}
 	r.epoch++
 	r.refs = map[string]agentBrowserRef{}
 }

@@ -14,6 +14,7 @@ type sharedBrowserLease struct {
 	session            *sharedBrowserSession
 	runID              string
 	authoritySessionID string
+	tabID              string
 }
 
 func (l *sharedBrowserLease) Release(ctx context.Context) error {
@@ -76,22 +77,31 @@ func (s *SharedBrowserService) attachPage(ctx context.Context, request browserru
 	if err != nil {
 		return browserruntime.AgentBrowserAttachedPage{}, err
 	}
+	session.binding.Lock()
+	defer session.binding.Unlock()
 	session.mu.Lock()
 	page, ok := session.host.Tab(session.state.ActiveTabID)
-	session.mu.Unlock()
+	if expected, _ := ctx.Value(sharedBrowserHandoffTargetKey{}).(string); expected != "" && (session.state.ActiveTabID != expected || !ok) {
+		session.mu.Unlock()
+		return browserruntime.AgentBrowserAttachedPage{}, errors.New("displayed browser tab changed before Agent handoff")
+	}
 	if !ok {
-		return browserruntime.AgentBrowserAttachedPage{}, errors.New("shared browser has no active tab")
+		page, err = session.createTabLocked(ctx, "about:blank")
+		if err != nil {
+			session.mu.Unlock()
+			return browserruntime.AgentBrowserAttachedPage{}, err
+		}
 	}
 	nativeLease, err := session.host.AcquireControl(ctx, page.ID())
 	if err != nil {
+		session.mu.Unlock()
 		return browserruntime.AgentBrowserAttachedPage{}, err
 	}
-	lease = &sharedBrowserLease{ControlLease: nativeLease, session: session, runID: request.Authority.RunID, authoritySessionID: request.Authority.SessionID}
-	session.mu.Lock()
+	lease = &sharedBrowserLease{ControlLease: nativeLease, session: session, runID: request.Authority.RunID, authoritySessionID: request.Authority.SessionID, tabID: page.ID()}
 	session.agentLease = lease
 	session.state.ControlOwner = "agent"
 	session.mu.Unlock()
-	connection, err = page.OpenCDP(ctx, desktopbrowser.CDPOptions{Dispatch: lease.Dispatch, Events: browserruntime.AgentBrowserAttachedEvents()})
+	connection, err = page.OpenCDP(ctx, desktopbrowser.CDPOptions{Dispatch: lease.Dispatch, Events: browserruntime.AgentBrowserAttachedEvents(), Methods: browserruntime.AgentBrowserAttachedMethods()})
 	if err != nil {
 		return browserruntime.AgentBrowserAttachedPage{}, err
 	}

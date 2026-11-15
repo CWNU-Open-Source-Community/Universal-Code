@@ -51,6 +51,7 @@ type SharedBrowserState struct {
 	ControlOwner    string                      `json:"control_owner"`
 	Fullscreen      bool                        `json:"fullscreen"`
 	ActiveTabID     string                      `json:"active_tab_id"`
+	AgentTabID      string                      `json:"agent_tab_id,omitempty"`
 	Tabs            []SharedBrowserTab          `json:"tabs"`
 	History         []SharedBrowserHistoryEntry `json:"history,omitempty"`
 	Error           string                      `json:"error,omitempty"`

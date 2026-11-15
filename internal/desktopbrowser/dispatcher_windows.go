@@ -52,8 +52,13 @@ type Dispatcher struct {
 	hwnd   uintptr
 	thread uint32
 	mu     sync.Mutex
-	queue  []func()
+	queue  []dispatcherTask
 	closed bool
+}
+
+type dispatcherTask struct {
+	run    func()
+	cancel func()
 }
 
 func NewDispatcher() (*Dispatcher, error) {
@@ -86,7 +91,11 @@ func NewDispatcher() (*Dispatcher, error) {
 func (d *Dispatcher) ThreadID() uint32 { return d.thread }
 
 func (d *Dispatcher) Post(fn func()) error {
-	if d == nil || fn == nil {
+	return d.post(dispatcherTask{run: fn})
+}
+
+func (d *Dispatcher) post(task dispatcherTask) error {
+	if d == nil || task.run == nil {
 		return errors.New("invalid UI dispatcher task")
 	}
 	d.mu.Lock()
@@ -94,7 +103,7 @@ func (d *Dispatcher) Post(fn func()) error {
 	if d.closed {
 		return ErrClosed
 	}
-	d.queue = append(d.queue, fn)
+	d.queue = append(d.queue, task)
 	ok, _, err := postMessage.Call(d.hwnd, dispatchMessage, 0, 0)
 	if ok == 0 {
 		d.queue = d.queue[:len(d.queue)-1]
@@ -120,13 +129,20 @@ func (d *Dispatcher) Invoke(ctx context.Context, fn func() error) error {
 		return fn()
 	}
 	result := make(chan error, 1)
-	if err := d.Post(func() {
+	if err := d.post(dispatcherTask{run: func() {
 		if err := ctx.Err(); err != nil {
 			result <- err
 		} else {
-			result <- fn()
+			d.mu.Lock()
+			closed := d.closed
+			d.mu.Unlock()
+			if closed {
+				result <- ErrClosed
+			} else {
+				result <- fn()
+			}
 		}
-	}); err != nil {
+	}, cancel: func() { result <- ErrClosed }}); err != nil {
 		return err
 	}
 	select {
@@ -145,9 +161,16 @@ func (d *Dispatcher) Close() error {
 	return d.Invoke(context.Background(), func() error {
 		d.mu.Lock()
 		d.closed = true
+		remaining := d.queue
+		d.queue = nil
 		d.mu.Unlock()
 		dispatchers.Delete(d.hwnd)
 		destroyWindow.Call(d.hwnd)
+		for _, task := range remaining {
+			if task.cancel != nil {
+				task.cancel()
+			}
+		}
 		ole32.NewProc("CoUninitialize").Call()
 		return nil
 	})
@@ -162,7 +185,14 @@ func dispatcherWindowProc(hwnd uintptr, message uint32, wparam, lparam uintptr) 
 			d.queue = nil
 			d.mu.Unlock()
 			for _, task := range tasks {
-				task()
+				d.mu.Lock()
+				closed := d.closed
+				d.mu.Unlock()
+				if !closed {
+					task.run()
+				} else if task.cancel != nil {
+					task.cancel()
+				}
 			}
 		}
 		return 0

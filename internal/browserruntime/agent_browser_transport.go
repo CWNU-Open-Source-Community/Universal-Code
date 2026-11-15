@@ -87,6 +87,27 @@ var agentBrowserCDPMethods = map[string]bool{
 	"Page.startScreencast": true, "Page.stopScreencast": true, "Page.screencastFrameAck": true,
 }
 
+// AgentBrowserAttachedMethods is the page-only allowlist installed by the
+// native endpoint. Process-wide methods never enter an attached connection.
+func AgentBrowserAttachedMethods() []string {
+	methods := make([]string, 0, len(agentBrowserCDPMethods))
+	for method, page := range agentBrowserCDPMethods {
+		if page {
+			methods = append(methods, method)
+		}
+	}
+	return methods
+}
+
+func (c *agentBrowserCDP) write(ctx context.Context, value any) error {
+	if connection, ok := c.conn.(interface {
+		WriteJSONContext(context.Context, any) error
+	}); ok {
+		return connection.WriteJSONContext(ctx, value)
+	}
+	return c.conn.WriteJSON(value)
+}
+
 // send writes under the document invalidation fence. Its returned waiter must
 // run after releasing that fence so the reader can process events and replies.
 func (c *agentBrowserCDP) send(ctx context.Context, session, method string, params any) (func() error, error) {
@@ -110,7 +131,7 @@ func (c *agentBrowserCDP) send(ctx context.Context, session, method string, para
 		return nil, err
 	}
 	_ = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	err := c.conn.WriteJSON(map[string]any{"id": id, "sessionId": session, "method": method, "params": params})
+	err := c.write(ctx, map[string]any{"id": id, "sessionId": session, "method": method, "params": params})
 	if err != nil {
 		c.close()
 		remove()
@@ -165,7 +186,7 @@ func (c *agentBrowserCDP) call(ctx context.Context, session, method string, para
 		deadline = d
 	}
 	_ = c.conn.SetWriteDeadline(deadline)
-	err := c.conn.WriteJSON(struct {
+	err := c.write(ctx, struct {
 		ID        int64  `json:"id"`
 		SessionID string `json:"sessionId,omitempty"`
 		Method    string `json:"method"`

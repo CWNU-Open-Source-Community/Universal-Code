@@ -33,6 +33,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("native shared-browser controls", () => {
+  it("hands off the displayed tab only when explicitly requested", async () => {
+    const tabs = [...initial.tabs, { ...initial.tabs[0], tab_id: "tab-two", title: "Second" }];
+    const shared = { ...initial, tabs, run_id: "run-ui", agent_tab_id: initial.active_tab_id, active_tab_id: "tab-two" };
+    rpc.open.mockResolvedValue(shared);
+    rpc.get.mockResolvedValue(shared);
+    rpc.command.mockResolvedValue({ ...shared, revision: 2, agent_tab_id: "tab-two" });
+    mount();
+    expect(await screen.findByRole("tab", { name: "Example" })).toHaveAccessibleDescription("Agent 正在使用");
+    expect(rpc.command).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "将当前标签页交给 Agent" }));
+    expect(rpc.command).toHaveBeenCalledWith(initial.session_id, "release_control", { tab_id: "tab-two" });
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Second" })).toHaveAccessibleDescription("Agent 正在使用"));
+  });
   it("resends the same geometry after a failed native update", async () => {
     rpc.surface.mockRejectedValueOnce(new Error("surface unavailable"));
     mount();

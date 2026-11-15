@@ -44,8 +44,10 @@ func (s *AgentBrowserService) AttachSharedPage(ctx context.Context, runID string
 	if slot == nil {
 		return AgentBrowserView{}, agentBrowserUnavailable("browser session is unavailable")
 	}
-	slot.action.Lock()
-	defer slot.action.Unlock()
+	if err := slot.lockAction(ctx); err != nil {
+		return AgentBrowserView{}, err
+	}
+	defer slot.unlockAction()
 	if err = s.check(ctx, a); err != nil {
 		return AgentBrowserView{}, err
 	}

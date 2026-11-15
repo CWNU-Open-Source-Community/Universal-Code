@@ -32,6 +32,7 @@ type pageConnection struct {
 	wake          chan struct{}
 	done          chan struct{}
 	subscriptions []cdpSubscription
+	methods       map[string]bool
 }
 type cdpRequest struct {
 	ID        int64           `json:"id"`
@@ -45,6 +46,13 @@ func (p *nativePage) OpenCDP(ctx context.Context, options CDPOptions) (JSONConne
 		return nil, errors.New("page CDP requires an atomic control-lease dispatcher")
 	}
 	c := &pageConnection{page: p, options: options, wake: make(chan struct{}, 1), done: make(chan struct{})}
+	c.methods = make(map[string]bool, len(options.Methods))
+	for _, method := range options.Methods {
+		if !validEventName(method) || strings.HasPrefix(method, "Target.") || strings.HasPrefix(method, "Browser.") {
+			return nil, errors.New("invalid native page CDP method")
+		}
+		c.methods[method] = true
+	}
 	err := p.withUI(ctx, func() error {
 		seen := map[string]bool{}
 		for _, name := range options.Events {
@@ -138,6 +146,11 @@ func (c *pageConnection) SetWriteDeadline(deadline time.Time) error {
 	return nil
 }
 func (c *pageConnection) WriteJSON(value any) error {
+	return c.WriteJSONContext(context.Background(), value)
+}
+
+// WriteJSONContext carries document invalidation through the native UI queue.
+func (c *pageConnection) WriteJSONContext(ctx context.Context, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -157,7 +170,7 @@ func (c *pageConnection) WriteJSON(value any) error {
 	}
 	// Browser/Target mutations would escape the exact controller and affect
 	// sibling pages or the browser process. This is a page endpoint only.
-	if strings.HasPrefix(request.Method, "Target.") || strings.HasPrefix(request.Method, "Browser.") {
+	if !c.methods[request.Method] || strings.HasPrefix(request.Method, "Target.") || strings.HasPrefix(request.Method, "Browser.") {
 		return fmt.Errorf("%s is unavailable on a native page connection", request.Method)
 	}
 	if len(request.Params) == 0 {
@@ -169,7 +182,6 @@ func (c *pageConnection) WriteJSON(value any) error {
 	if closed {
 		return ErrClosed
 	}
-	ctx := context.Background()
 	var cancel context.CancelFunc
 	if !deadline.IsZero() {
 		ctx, cancel = context.WithDeadline(ctx, deadline)

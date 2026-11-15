@@ -98,7 +98,7 @@ type agentBrowserSnapshotTargetResolver interface {
 }
 
 type agentBrowserSlot struct {
-	action    sync.Mutex
+	action    chan struct{}
 	authority toolgateway.AgentBrowserCallAuthority
 	// This is a private process-local activation for the runtime contract. The
 	// durable authority still records the actual (possibly zero) live generation.
@@ -130,6 +130,18 @@ type AgentBrowserService struct {
 	launch    func(context.Context, browserruntime.AgentBrowserStartRequest) (agentBrowserRuntime, error)
 	available bool
 }
+
+// A cancelled close must be able to stop waiting for an in-flight action.
+func (slot *agentBrowserSlot) lockAction(ctx context.Context) error {
+	select {
+	case slot.action <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (slot *agentBrowserSlot) unlockAction() { <-slot.action }
 
 func NewAgentBrowserService(st AgentBrowserStore, options AgentBrowserOptions) *AgentBrowserService {
 	if filepath.IsAbs(options.HomePath) {
@@ -263,7 +275,7 @@ func (s *AgentBrowserService) authorityLocked(a toolgateway.AgentBrowserCallAuth
 		if s.options.SharedPage != nil && a.Role == domain.AgentRoleRoot {
 			headless = false
 		}
-		slot = &agentBrowserSlot{authority: a, activation: s.sequence, consumed: map[string]bool{}, view: AgentBrowserView{Version: "agent_browser_status.v1", RunID: runID, SessionID: a.BrowserSessionID, Generation: a.SessionGeneration, State: "idle", Product: s.options.Product, Headless: headless, UpdatedAt: time.Now().UTC()}}
+		slot = &agentBrowserSlot{action: make(chan struct{}, 1), authority: a, activation: s.sequence, consumed: map[string]bool{}, view: AgentBrowserView{Version: "agent_browser_status.v1", RunID: runID, SessionID: a.BrowserSessionID, Generation: a.SessionGeneration, State: "idle", Product: s.options.Product, Headless: headless, UpdatedAt: time.Now().UTC()}}
 		s.slots[key] = slot
 		s.sessions[a.BrowserSessionID] = slot
 	}
@@ -447,8 +459,10 @@ func (s *AgentBrowserService) Close(ctx context.Context, runID, sessionID string
 	if r != nil {
 		r.Cancel()
 	}
-	slot.action.Lock()
-	defer slot.action.Unlock()
+	if err := slot.lockAction(ctx); err != nil {
+		return AgentBrowserView{}, err
+	}
+	defer slot.unlockAction()
 	s.mu.Lock()
 	r = slot.runtime
 	launchAttempted := slot.launchAttempted

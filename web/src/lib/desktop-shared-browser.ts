@@ -12,7 +12,7 @@ export interface SharedBrowserTab {
 export interface SharedBrowserState extends SharedBrowserScope {
   protocol_version: typeof sharedBrowserProtocol;
   session_id: string; revision: number; state: "starting" | "ready" | "closed" | "failed";
-  control_owner: "user" | "agent"; fullscreen: boolean; active_tab_id: string;
+  control_owner: "user" | "agent"; fullscreen: boolean; active_tab_id: string; agent_tab_id?: string;
   tabs: SharedBrowserTab[]; error?: string;
   history?: Array<{ url: string; title: string; visited_at: string }>;
 }
@@ -74,7 +74,8 @@ export function parseSharedBrowserState(value: unknown, expected: Partial<Shared
     typeof entry.title !== "string" || typeof entry.visited_at !== "string" || !Number.isFinite(Date.parse(entry.visited_at))))) {
     throw new Error("Invalid shared browser history");
   }
-  if ((value.tabs.length > 0 && !seen.has(value.active_tab_id)) || (value.tabs.length === 0 && value.active_tab_id !== "") ||
+  if ((value.agent_tab_id !== undefined && (value.control_owner !== "agent" || !id(value.agent_tab_id) || !seen.has(value.agent_tab_id))) ||
+    (value.tabs.length > 0 && !seen.has(value.active_tab_id)) || (value.tabs.length === 0 && value.active_tab_id !== "") ||
     Object.entries(expected).some(([key, entry]) => entry !== undefined && (value[key] ?? "") !== entry)) {
     throw new Error("Shared browser scope mismatch");
   }

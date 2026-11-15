@@ -5,6 +5,7 @@ package desktopbrowser
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -339,7 +340,11 @@ func requestBody(request *comObject) ([]byte, bool) {
 		return nil, false
 	}
 	defer clone.release()
-	if err := comCall(clone, 5, 0, 0, 0); err != nil {
+	seekArgs := []uintptr{0, 0, 0} // LARGE_INTEGER, STREAM_SEEK_SET, NULL
+	if runtime.GOARCH == "386" {
+		seekArgs = []uintptr{0, 0, 0, 0} // LARGE_INTEGER low/high, origin, NULL
+	}
+	if err := comCall(clone, 5, seekArgs...); err != nil {
 		return nil, false
 	}
 	const limit = 1 << 20

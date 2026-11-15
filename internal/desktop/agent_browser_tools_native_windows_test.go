@@ -420,12 +420,10 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 					artifactPath = shot.Artifact
 					images := 0
 					hasPixelNote := false
+					pixelNote := fmt.Sprintf(`"pixels_supplied":%t`, vision == llm.VisionSupported)
 					for _, message := range req.Messages {
 						images += len(message.Images)
-						hasPixelNote = hasPixelNote || strings.Contains(message.Content, `"pixels_supplied":true`)
-						if vision == llm.VisionUnsupported && strings.Contains(message.Content, `"pixels_supplied":false`) {
-							hasPixelNote = true
-						}
+						hasPixelNote = hasPixelNote || strings.Contains(message.Content, pixelNote)
 					}
 					if (vision == llm.VisionSupported && images != 1) || (vision == llm.VisionUnsupported && images != 0) || !hasPixelNote {
 						return nil, fmt.Errorf("model screenshot delivery vision=%s images=%d note=%t", vision, images, hasPixelNote)
@@ -505,6 +503,9 @@ func TestAgentToolsPreviewWorkspaceInNativeSharedBrowser(t *testing.T) {
 			if vision == llm.VisionSupported {
 				for _, message := range provider.requests[screenshotRequestIndex].Messages {
 					for _, image := range message.Images {
+						if !bytes.Equal(image.Data, pixels) {
+							t.Fatal("model image differs from the saved native screenshot")
+						}
 						decoded, err := png.Decode(bytes.NewReader(image.Data))
 						if err != nil {
 							t.Fatal(err)

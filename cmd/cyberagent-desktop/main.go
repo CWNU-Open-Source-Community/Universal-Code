@@ -952,8 +952,15 @@ func runDesktop(config desktopOptions) error {
 				go func() {
 					closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
-					if err := browser.Close(closeCtx); err != nil {
-						fmt.Fprintln(os.Stderr, "browser shutdown:", err)
+					result := make(chan error, 1)
+					go func() { result <- browser.Close(closeCtx) }()
+					select {
+					case err := <-result:
+						if err != nil {
+							fmt.Fprintln(os.Stderr, "browser shutdown:", err)
+						}
+					case <-closeCtx.Done():
+						fmt.Fprintln(os.Stderr, "browser shutdown:", closeCtx.Err())
 					}
 					browserClosed.Store(true)
 					runtime.Quit(ctx)

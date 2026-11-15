@@ -31,6 +31,7 @@ type SharedBrowserOptions struct {
 
 type sharedBrowserSession struct {
 	action         sync.Mutex
+	binding        sync.Mutex
 	mu             sync.Mutex
 	state          SharedBrowserState
 	host           *desktopbrowser.Host
@@ -225,8 +226,9 @@ func (s *SharedBrowserService) Open(ctx context.Context, request SharedBrowserOp
 	session.host = host
 	page, err := host.CreateTab(ctx, desktopbrowser.TabOptions{ID: idgen.New("tab"), URL: "about:blank"})
 	if err != nil {
-		_ = host.Close(ctx)
-		return SharedBrowserState{}, err
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return SharedBrowserState{}, errors.Join(err, host.Close(cleanupCtx))
 	}
 	session.pages = []desktopbrowser.Page{page}
 	session.state.ActiveTabID = page.ID()
@@ -253,12 +255,16 @@ func (s *SharedBrowserService) project(session *sharedBrowserSession) SharedBrow
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	view := session.state
+	view.AgentTabID = ""
 	view.History = append([]SharedBrowserHistoryEntry(nil), session.state.History...)
 	view.Tabs = make([]SharedBrowserTab, 0, len(session.pages))
 	for _, page := range session.pages {
 		p := page.State()
 		if !p.Closed {
 			view.Tabs = append(view.Tabs, SharedBrowserTab{TabID: p.ID, URL: p.URL, Title: p.Title, Loading: p.Loading, CanGoBack: p.CanGoBack, CanGoForward: p.CanGoForward})
+			if session.agentLease != nil && session.agentLease.tabID == p.ID {
+				view.AgentTabID = p.ID
+			}
 		}
 	}
 	view.Revision = 0
@@ -302,6 +308,25 @@ func (s *SharedBrowserService) detach(ctx context.Context, session *sharedBrowse
 	return lease.Release(ctx)
 }
 
+type sharedBrowserHandoffTargetKey struct{}
+
+func (s *SharedBrowserService) detachDifferentTarget(ctx context.Context, session *sharedBrowserSession, expectedTabID string) error {
+	session.binding.Lock()
+	defer session.binding.Unlock()
+	session.mu.Lock()
+	if expectedTabID != "" && expectedTabID != session.state.ActiveTabID {
+		session.mu.Unlock()
+		return apperror.New(apperror.CodeFailedPrecondition, "displayed browser tab changed before Agent handoff")
+	}
+	lease := session.agentLease
+	rebind := lease != nil && lease.tabID != session.state.ActiveTabID
+	session.mu.Unlock()
+	if rebind {
+		return s.detach(ctx, session)
+	}
+	return nil
+}
+
 func sharedBrowserURL(raw string) (string, error) {
 	if raw == "about:blank" {
 		return raw, nil
@@ -311,6 +336,18 @@ func sharedBrowserURL(raw string) (string, error) {
 		return "", apperror.New(apperror.CodeInvalidArgument, "browser URL must use HTTP or HTTPS")
 	}
 	return u.String(), nil
+}
+
+// The caller holds session.mu and session.binding, which serialize attachment
+// with changes to the displayed tab.
+func (session *sharedBrowserSession) createTabLocked(ctx context.Context, destination string) (desktopbrowser.Page, error) {
+	page, err := session.host.CreateTab(ctx, desktopbrowser.TabOptions{ID: idgen.New("tab"), URL: destination})
+	if err != nil {
+		return nil, err
+	}
+	session.pages = append(session.pages, page)
+	session.state.ActiveTabID = page.ID()
+	return page, nil
 }
 
 func (s *SharedBrowserService) Command(ctx context.Context, request SharedBrowserCommandRequest) (SharedBrowserState, error) {
@@ -329,44 +366,55 @@ func (s *SharedBrowserService) Command(ctx context.Context, request SharedBrowse
 		}
 		return s.project(session), nil
 	}
+	if request.Command == "new_tab" || request.Command == "select_tab" || request.Command == "close_tab" {
+		session.binding.Lock()
+		defer session.binding.Unlock()
+	}
 	session.mu.Lock()
 	tabID := request.TabID
 	if tabID == "" {
 		tabID = session.state.ActiveTabID
 	}
-	page, found := session.host.Tab(tabID)
-	runID := session.state.RunID
-	session.mu.Unlock()
-	if !found && request.Command != "new_tab" {
-		return SharedBrowserState{}, apperror.New(apperror.CodeNotFound, "browser tab was not found")
+	var page desktopbrowser.Page
+	found := false
+	if session.host != nil {
+		page, found = session.host.Tab(tabID)
 	}
+	runID := session.state.RunID
+	lease := session.agentLease
+	session.mu.Unlock()
 	switch request.Command {
 	case "take_control":
 		if err = s.detach(ctx, session); err != nil {
 			return SharedBrowserState{}, err
 		}
-	case "new_tab", "select_tab", "close_tab", "navigate", "back", "forward", "reload", "stop", "focus", "release_control", "enter_fullscreen", "exit_fullscreen":
+	case "select_tab", "close_tab", "navigate", "back", "forward", "reload", "stop", "focus":
+		if !found {
+			return SharedBrowserState{}, apperror.New(apperror.CodeNotFound, "browser tab was not found")
+		}
+	case "new_tab", "release_control", "enter_fullscreen", "exit_fullscreen":
 	default:
 		return SharedBrowserState{}, apperror.New(apperror.CodeInvalidArgument, "unsupported browser command")
 	}
+	destination := "about:blank"
+	if request.Command == "new_tab" && request.URL != "" {
+		destination, err = sharedBrowserURL(request.URL)
+		if err != nil {
+			return SharedBrowserState{}, err
+		}
+	}
+	if request.Command == "close_tab" && lease != nil && lease.tabID == tabID {
+		if err = s.detach(ctx, session); err != nil {
+			return SharedBrowserState{}, err
+		}
+	}
 	switch request.Command {
 	case "new_tab":
-		destination := "about:blank"
-		if request.URL != "" {
-			destination, err = sharedBrowserURL(request.URL)
-		}
-		if err == nil {
-			var created desktopbrowser.Page
-			created, err = session.host.CreateTab(ctx, desktopbrowser.TabOptions{ID: idgen.New("tab"), URL: destination})
-			if err == nil {
-				session.mu.Lock()
-				session.pages = append(session.pages, created)
-				session.state.ActiveTabID = created.ID()
-				session.mu.Unlock()
-				if page != nil {
-					err = page.SetSurface(ctx, desktopbrowser.Bounds{}, false)
-				}
-			}
+		session.mu.Lock()
+		_, err = session.createTabLocked(ctx, destination)
+		session.mu.Unlock()
+		if err == nil && page != nil {
+			err = page.SetSurface(ctx, desktopbrowser.Bounds{}, false)
 		}
 	case "select_tab":
 		session.mu.Lock()
@@ -377,9 +425,9 @@ func (s *SharedBrowserService) Command(ctx context.Context, request SharedBrowse
 			err = previous.SetSurface(ctx, desktopbrowser.Bounds{}, false)
 		}
 	case "close_tab":
+		session.mu.Lock()
 		err = page.Close(ctx)
 		if err == nil {
-			session.mu.Lock()
 			pages := session.pages[:0]
 			for _, p := range session.pages {
 				if p.ID() != tabID {
@@ -393,8 +441,8 @@ func (s *SharedBrowserService) Command(ctx context.Context, request SharedBrowse
 					session.state.ActiveTabID = pages[len(pages)-1].ID()
 				}
 			}
-			session.mu.Unlock()
 		}
+		session.mu.Unlock()
 	case "navigate":
 		var destination string
 		destination, err = sharedBrowserURL(request.URL)
@@ -415,7 +463,13 @@ func (s *SharedBrowserService) Command(ctx context.Context, request SharedBrowse
 		if s.agent == nil || runID == "" {
 			err = apperror.New(apperror.CodeFailedPrecondition, "no active Agent task")
 		} else {
-			_, err = s.agent.AttachSharedPage(ctx, runID)
+			// Ordinary tab changes preserve the stable Agent target (ADR 0212).
+			// An explicit handoff instead selects the currently displayed page.
+			err = s.detachDifferentTarget(ctx, session, request.TabID)
+			if err == nil {
+				attachCtx := context.WithValue(ctx, sharedBrowserHandoffTargetKey{}, request.TabID)
+				_, err = s.agent.AttachSharedPage(attachCtx, runID)
+			}
 		}
 	case "enter_fullscreen", "exit_fullscreen":
 		if s.options.SetFullscreen == nil {

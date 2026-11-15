@@ -52,7 +52,7 @@ func TestHiddenNativeScreenshotRestoresSurfaceAndConnection(t *testing.T) {
 	})
 	open := func() *pageConnection {
 		t.Helper()
-		connection, err := page.OpenCDP(ctx, CDPOptions{Dispatch: func(ctx context.Context, send func() error) error {
+		connection, err := page.OpenCDP(ctx, CDPOptions{Methods: []string{"Runtime.evaluate", "Page.captureScreenshot"}, Dispatch: func(ctx context.Context, send func() error) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
