@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"strings"
@@ -21,7 +22,7 @@ type workspaceImageProjectionStore struct {
 	AgentRunnerStore
 	metadata domain.WorkspaceImage
 	pixels   []byte
-	saveKey  string
+	saveKeys map[string]bool
 }
 
 const otherSavedWorkspaceImageID = "image-from-another-call"
@@ -39,7 +40,7 @@ func (s *workspaceImageProjectionStore) GetWorkspaceImage(_ context.Context, wor
 }
 
 func (s *workspaceImageProjectionStore) GetWorkspaceImageByOperationKey(_ context.Context, workspaceID, key string) (domain.WorkspaceImage, bool, error) {
-	if workspaceID != s.metadata.WorkspaceID || key != s.saveKey {
+	if workspaceID != s.metadata.WorkspaceID || !s.saveKeys[key] {
 		return domain.WorkspaceImage{}, false, nil
 	}
 	return s.metadata, true, nil
@@ -95,7 +96,86 @@ func workspaceImageProjectionFixture(t *testing.T) (*AgentRunner, domain.Supervi
 		t.Fatal(err)
 	}
 	key := workspaceImageSaveKey(call.RunID, call.CallID, supervisorWorkspaceImageOperationKey(call), json.RawMessage(call.PayloadJSON))
-	return &AgentRunner{store: &workspaceImageProjectionStore{metadata: metadata, pixels: encoded.Bytes(), saveKey: key}}, turn, call
+	return &AgentRunner{store: &workspaceImageProjectionStore{metadata: metadata, pixels: encoded.Bytes(), saveKeys: map[string]bool{key: true}}}, turn, call
+}
+
+func TestSupervisorWorkspaceImagesBoundsVisualHistoryAcrossRounds(t *testing.T) {
+	for _, existingImage := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing_image_%t", existingImage), func(t *testing.T) {
+			runner, turn, original := workspaceImageProjectionFixture(t)
+			st := runner.store.(*workspaceImageProjectionStore)
+			// PNG readers accept bytes after IEND; padding makes each valid image
+			// reach the byte bound without making a large decoded bitmap.
+			st.pixels = append(st.pixels, make([]byte, llm.MaxImageBytes-len(st.pixels))...)
+			metadata, err := imageattachment.Validate(st.pixels, st.metadata.MIMEType, st.metadata.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			metadata.ID, metadata.WorkspaceID = st.metadata.ID, st.metadata.WorkspaceID
+			st.metadata = metadata
+			var envelope supervisorToolResultEnvelope
+			var output workspaceImageResult
+			_ = json.Unmarshal([]byte(original.ResultJSON), &envelope)
+			_ = json.Unmarshal([]byte(envelope.Stdout), &output)
+			output.Image = metadata
+			encoded, _ := json.Marshal(output)
+			envelope.Stdout = string(encoded)
+			encoded, _ = json.Marshal(envelope)
+			original.ResultJSON = string(encoded)
+			rounds := []domain.SupervisorToolRound{{}, {}}
+			for i := range rounds {
+				rounds[i] = domain.SupervisorToolRound{RunID: original.RunID, Turn: original.Turn,
+					AttemptID: original.AttemptID, Round: i + 1, ModelAttempt: original.ModelAttempt,
+					CreatedAt: original.CreatedAt, CompletedAt: original.CompletedAt}
+			}
+			for i := range 5 {
+				call := original
+				call.CallID = fmt.Sprintf("image-call-%d", i)
+				round := i / 3
+				call.Round, call.Position = round+1, i%3+1
+				st.saveKeys[workspaceImageSaveKey(call.RunID, call.CallID, supervisorWorkspaceImageOperationKey(call), json.RawMessage(call.PayloadJSON))] = true
+				rounds[round].Calls = append(rounds[round].Calls, call)
+			}
+			request := llm.ChatRequest{Messages: []llm.Message{{Role: "user", Content: "inspect images"}}}
+			wantToolImages := 4
+			if existingImage {
+				request.Messages[0].Images = []llm.ImagePart{{MediaType: metadata.MIMEType, Data: st.pixels, SHA256: metadata.SHA256, Width: metadata.Width, Height: metadata.Height}}
+				wantToolImages--
+			}
+			request, err = supervisorRequestWithToolRounds(request, rounds)
+			if err != nil {
+				t.Fatal(err)
+			}
+			projected, err := runner.supervisorWorkspaceImages(t.Context(), turn, request, rounds, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			totalBytes, toolImages, suppliedNotes, omittedNotes := 0, 0, 0, 0
+			for i, message := range projected.Messages {
+				if err := llm.ValidateMessageImages(message); err != nil {
+					t.Fatal(err)
+				}
+				for _, part := range message.Images {
+					totalBytes += len(part.Data)
+				}
+				if len(message.ToolResults) == 0 {
+					continue
+				}
+				toolImages += len(message.Images)
+				suppliedNotes += strings.Count(message.Content, `"pixels_supplied":true`)
+				omittedNotes += strings.Count(message.Content, `"pixels_supplied":false`)
+				if len(message.ToolResults) != len(request.Messages[i].ToolResults) || len(request.Messages[i].Images) != 0 || request.Messages[i].Content != "" {
+					t.Fatal("tool results or original request mutated")
+				}
+			}
+			if totalBytes != llm.MaxRequestImageBytes || toolImages != wantToolImages || suppliedNotes != wantToolImages || omittedNotes != 5-wantToolImages {
+				t.Fatalf("visual coverage: bytes=%d images=%d supplied=%d omitted=%d", totalBytes, toolImages, suppliedNotes, omittedNotes)
+			}
+			if !strings.Contains(projected.Messages[2].Content, `"source_ref":"image-call-0"`) || !strings.Contains(projected.Messages[2].Content, "omitted") || len(projected.Messages[4].Images) != 2 {
+				t.Fatal("newest pixels and identified omission missing")
+			}
+		})
+	}
 }
 
 func TestSupervisorWorkspaceImagesEnforcesExactCallAndOwner(t *testing.T) {

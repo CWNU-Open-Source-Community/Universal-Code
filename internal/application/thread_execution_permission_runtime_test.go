@@ -8,11 +8,13 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
+	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/store"
+	"cyberagent-workbench/internal/toolgateway"
 )
 
 func TestThreadFullReactivationAppliesAtRunningIdleBoundary(t *testing.T) {
@@ -162,6 +164,18 @@ func TestDeferredSameFullConfirmationBindsNextExplicitInputWithoutRevokingBusyRu
 	if err != nil {
 		t.Fatal(err)
 	}
+	checker := policy.NewDefaultChecker()
+	gateway := toolgateway.New(st, checker)
+	outcome, err := gateway.Invoke(t.Context(), toolgateway.ToolCall{Name: toolgateway.ShellTool,
+		Arguments: map[string]string{"command": "echo review"}, RunID: run.ID, SessionID: run.SessionID,
+		WorkspaceID: "ws-tool-boundary", RequestedBy: "test_operator"})
+	if err != nil || outcome.Proposal == nil {
+		t.Fatalf("request tool approval: %+v, %v", outcome, err)
+	}
+	record, err := st.GetApprovalByProposal(t.Context(), outcome.Proposal.ID)
+	if err != nil || record.Status != approval.StatusPending {
+		t.Fatalf("pending approval: %+v, %v", record, err)
+	}
 	if err := run.Transition(domain.RunWaitingApproval, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
@@ -198,6 +212,13 @@ func TestDeferredSameFullConfirmationBindsNextExplicitInputWithoutRevokingBusyRu
 	}
 	if _, _, err := st.ReleaseRunExecutionLease(t.Context(), lease.Lease); err != nil {
 		t.Fatal(err)
+	}
+	decision, err := application.NewApprovalControlService(st, gateway, checker).Decide(t.Context(), application.DecideApprovalControlRequest{
+		Version: application.ApprovalControlProtocolVersion, RunID: run.ID, ApprovalID: record.ID, Action: application.ApprovalControlApproveOnce,
+		OperationKey: "resolve-before-full-successor", ReviewedBy: "test_operator",
+	})
+	if err != nil || decision.Approval.Status != approval.StatusApproved {
+		t.Fatalf("resolve tool approval: %+v, %v", decision, err)
 	}
 	if _, err := application.NewRunService(st).Resume(t.Context(), run.ID); err != nil {
 		t.Fatal(err)

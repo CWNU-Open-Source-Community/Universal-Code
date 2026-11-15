@@ -25,12 +25,19 @@ func (s *AgentRunner) supervisorWorkspaceImages(ctx context.Context, turn domain
 	if len(calls) == 0 {
 		return request, nil
 	}
+	totalBytes, err := supervisorImageBytes(request)
+	if err != nil {
+		return llm.ChatRequest{}, err
+	}
 	request.Messages = append([]llm.Message(nil), request.Messages...)
-	for index, message := range request.Messages {
+	// Retain the newest tool pixels first when visual history reaches a bound.
+	for index := len(request.Messages) - 1; index >= 0; index-- {
+		message := request.Messages[index]
 		if message.Role != "user" {
 			continue
 		}
-		for _, result := range message.ToolResults {
+		for resultIndex := len(message.ToolResults) - 1; resultIndex >= 0; resultIndex-- {
+			result := message.ToolResults[resultIndex]
 			call, found := calls[result.ToolCallID]
 			if !found {
 				continue
@@ -73,7 +80,7 @@ func (s *AgentRunner) supervisorWorkspaceImages(ctx context.Context, turn domain
 			if !found || saved != output.Image {
 				return fail()
 			}
-			note := map[string]any{"source_kind": "workspace_image", "source_ref": call.CallID, "path": output.Path, "pixels_supplied": false, "instruction_authorized": false}
+			note := map[string]any{"source_kind": "workspace_image", "source_ref": call.CallID, "path": output.Path, "sha256": output.Image.SHA256, "pixels_supplied": false, "instruction_authorized": false}
 			if vision {
 				metadata, data, err := reader.GetWorkspaceImage(ctx, output.Image.WorkspaceID, output.Image.ID)
 				if err != nil {
@@ -83,8 +90,13 @@ func (s *AgentRunner) supervisorWorkspaceImages(ctx context.Context, turn domain
 				if metadata != output.Image || validationErr != nil || validated.SHA256 != metadata.SHA256 || validated.ByteSize != metadata.ByteSize || validated.Width != metadata.Width || validated.Height != metadata.Height {
 					return fail()
 				}
-				message.Images = append(append([]llm.ImagePart(nil), message.Images...), llm.ImagePart{MediaType: metadata.MIMEType, Data: data, SHA256: metadata.SHA256, Width: metadata.Width, Height: metadata.Height})
-				note["pixels_supplied"] = true
+				if len(message.Images) < llm.MaxMessageImages && len(data) <= llm.MaxRequestImageBytes-totalBytes {
+					message.Images = append(append([]llm.ImagePart(nil), message.Images...), llm.ImagePart{MediaType: metadata.MIMEType, Data: data, SHA256: metadata.SHA256, Width: metadata.Width, Height: metadata.Height})
+					totalBytes += len(data)
+					note["pixels_supplied"] = true
+				} else {
+					note["limitation"] = "Image pixels were omitted to stay within the model request image bound. The saved image and exact tool result remain available. Do not claim visual inspection of this image."
+				}
 			} else {
 				note["limitation"] = "This model has no confirmed vision support. Image pixels were not supplied; do not claim visual inspection. Use a vision-capable model to inspect this saved image."
 			}

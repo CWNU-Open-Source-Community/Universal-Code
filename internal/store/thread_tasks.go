@@ -48,7 +48,8 @@ type threadTaskQuery interface {
 func loadThreadTaskIndex(ctx context.Context, q threadTaskQuery, threadID, runID string) (*threadTaskIndex, error) {
 	index := &threadTaskIndex{tasks: map[string]*threadTaskSpan{}, attempts: map[string]string{}, inputs: map[string]string{}}
 	rows, err := q.QueryContext(ctx, `SELECT started.sequence,started.subject_id,started.created_at,
-		message.id,COALESCE(message.session_message_id,0)
+		message.id,COALESCE(message.session_message_id,0),
+		EXISTS(SELECT 1 FROM thread_peer_messages peer WHERE peer.steering_message_id=message.id)
 		FROM thread_runs binding JOIN run_events started ON started.run_id=binding.run_id
 		LEFT JOIN operator_steering_deliveries delivery ON delivery.run_id=started.run_id
 			AND delivery.attempt_id=started.subject_id AND delivery.turn=json_extract(started.payload_json,'$.turn')
@@ -58,7 +59,6 @@ func loadThreadTaskIndex(ctx context.Context, q threadTaskQuery, threadID, runID
 		JOIN operator_steering_messages message ON message.id=COALESCE(delivery.message_id,approval_item.message_id)
 			AND message.run_id=binding.run_id AND message.session_id=binding.session_id AND message.delivery_mode='next_turn'
 		WHERE binding.thread_id=? AND binding.run_id=? AND started.type=? AND started.source='run_supervisor'
-		AND NOT EXISTS(SELECT 1 FROM thread_peer_messages peer WHERE peer.steering_message_id=message.id)
 		ORDER BY started.sequence`, threadID, runID, events.AgentTurnStartedEvent)
 	if err != nil {
 		return nil, err
@@ -71,10 +71,14 @@ func loadThreadTaskIndex(ctx context.Context, q threadTaskQuery, threadID, runID
 	for rows.Next() {
 		var sequence, inputRowID int64
 		var attempt, created, input string
-		if err = rows.Scan(&sequence, &attempt, &created, &input, &inputRowID); err != nil {
+		var peer bool
+		if err = rows.Scan(&sequence, &attempt, &created, &input, &inputRowID, &peer); err != nil {
 			break
 		}
-		if old, exists := index.attempts[attempt]; exists && old != input {
+		if peer {
+			// Peer turns close the preceding task's span without creating a task.
+			index.attempts[attempt] = ""
+		} else if old, exists := index.attempts[attempt]; exists && old != input {
 			// An ambiguous historical binding cannot identify a product task.
 			index.attempts[attempt] = ""
 		} else {

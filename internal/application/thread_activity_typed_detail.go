@@ -994,12 +994,18 @@ func projectThreadActivityBrowser(call domain.SupervisorToolCall,
 	if err != nil {
 		return ThreadActivityBrowserDetail{}, err
 	}
-	var input toolgateway.BrowserActionPayload
+	var input struct {
+		toolgateway.BrowserActionPayload
+		Point *toolgateway.AgentBrowserPoint `json:"point"`
+	}
 	_ = json.Unmarshal(canonical, &input)
 	detail := ThreadActivityBrowserDetail{Operation: facts.Operation, Action: string(name),
 		URL: safeThreadActivityURL(input.URL), Selector: safeThreadActivityFactValue(input.Selector),
 		ArtifactBytes: int64(safeThreadActivityCount(envelope.Metadata["artifact_bytes"])),
 		Summary:       "浏览器操作已完成", Boundary: boundary}
+	if input.Point != nil {
+		detail.Summary = fmt.Sprintf("%s · (%g, %g)", facts.Operation, input.Point.X, input.Point.Y)
+	}
 	if name == toolgateway.BrowserTypeTool {
 		detail.InputLength = utf8.RuneCountInString(input.Value)
 	}

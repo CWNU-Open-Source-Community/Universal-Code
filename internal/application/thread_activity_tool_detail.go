@@ -243,9 +243,15 @@ func projectThreadActivityInput(value *ThreadActivityToolFacts, name toolgateway
 		if err != nil {
 			return err
 		}
-		var input toolgateway.BrowserActionPayload
+		var input struct {
+			toolgateway.BrowserActionPayload
+			Point *toolgateway.AgentBrowserPoint `json:"point"`
+		}
 		_ = json.Unmarshal(canonical, &input)
 		value.Target = safeThreadActivityURL(input.URL)
+		if input.Point != nil {
+			value.Target = fmt.Sprintf("(%g, %g)", input.Point.X, input.Point.Y)
+		}
 		appendThreadActivityFact(&value.Parameters, "selector", "选择器", input.Selector)
 		if name == toolgateway.BrowserTypeTool {
 			appendThreadActivityFact(&value.Parameters, "input", "输入内容",

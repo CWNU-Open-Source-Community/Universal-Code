@@ -112,6 +112,25 @@ func TestCommandRuntimeDefaultShellPublishedSchemaAndNormalization(t *testing.T)
 	}
 }
 
+func TestCommandRuntimeZeroArgumentProcessRoundTrip(t *testing.T) {
+	adapter := commandruntimeadapter.HostUnsandboxed(strings.Repeat("a", 64))
+	payload := json.RawMessage(`{"version":"command-runtime.v2","action":"start","commands":[{"version":"command-runtime.v2","profile":"process","executable":"/usr/bin/true","arguments":[],"working_directory":".","environment":[],"stdin_policy":"closed","close_initial_stdin":true,"timeout_milliseconds":1000,"output":{"inline_bytes":4096,"artifact_bytes":4096},"network":"disabled","credentials":"none","purpose":"test"}]}`)
+	canonical, err := NormalizeCommandRuntimePayloadForAdapter(payload, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(canonical, []byte(`"arguments":[]`)) {
+		t.Fatalf("zero argv omitted: %s", canonical)
+	}
+	input, second, err := normalizeCommandRuntimePayload(canonical)
+	if err != nil || !bytes.Equal(canonical, second) {
+		t.Fatalf("canonical process did not round-trip: %s %v", second, err)
+	}
+	if _, err := runner.NormalizeCommandRuntimeIntent(input.Commands[0]); err != nil {
+		t.Fatalf("canonical process intent rejected: %v", err)
+	}
+}
+
 func intPointer(value int) *int { return &value }
 
 func TestCommandRuntimeDefaultShellDoesNotSelectHostForGuest(t *testing.T) {

@@ -51,7 +51,7 @@ func (s *SQLiteStore) ListThreadReplyFileEditEvents(ctx context.Context,
 			break
 		}
 	}
-	if !taskBound && source.Type != events.SessionMessageEvent {
+	if !taskBound && (source.Type != events.SessionMessageEvent || index.ownerAt(source.Sequence) != "") {
 		return events.Event{}, nil, sql.ErrNoRows
 	}
 	if !taskBound {

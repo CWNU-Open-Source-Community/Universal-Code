@@ -214,6 +214,28 @@ func TestProjectThreadActivityTypedRevertConflictRequiresReview(t *testing.T) {
 	}
 }
 
+func TestProjectThreadActivityBrowserPointDestination(t *testing.T) {
+	for _, name := range []toolgateway.ToolName{toolgateway.BrowserMoveTool, toolgateway.BrowserClickTool} {
+		t.Run(string(name), func(t *testing.T) {
+			payload, err := json.Marshal(toolgateway.AgentBrowserPayload{Version: string(name) + ".v2",
+				Point: &toolgateway.AgentBrowserPoint{X: 125.5, Y: 340, DocumentEpoch: 7,
+					Viewport: toolgateway.AgentBrowserViewport{Width: 800, Height: 600}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			call := threadActivityFactsCall(name, payload, nil, "")
+			facts, found, err := ProjectThreadActivityToolFacts(call)
+			if err != nil || !found || facts.Target != "(125.5, 340)" {
+				t.Fatalf("point missing from activity target: %+v %v", facts, err)
+			}
+			detail, found, err := ProjectThreadActivityTypedDetail(call)
+			if err != nil || !found || detail.Browser == nil || !strings.Contains(detail.Browser.Summary, "(125.5, 340)") {
+				t.Fatalf("point missing from typed browser detail: %+v %v", detail, err)
+			}
+		})
+	}
+}
+
 func TestProjectThreadActivityTypedOtherBranches(t *testing.T) {
 	readPayload, _ := json.Marshal(toolgateway.WorkspaceReadPayload{
 		Version: toolgateway.AgentCodeRegistryVersion, Path: "src/main.go", StartLine: 5,

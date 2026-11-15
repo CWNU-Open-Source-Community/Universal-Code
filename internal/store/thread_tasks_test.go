@@ -187,6 +187,29 @@ func TestThreadTasksGroupToolSegmentsAndPageOutsideInput(t *testing.T) {
 	cp := beginThreadTask(t, st, lease, input)
 	firstEdit := applyThreadTaskEdit(t, st, run, "first.txt")
 	cp = completeThreadTaskSegment(t, st, cp, true)
+	var boundaryReply string
+	if err := st.db.QueryRowContext(t.Context(), `SELECT event_id FROM run_events WHERE run_id=?
+		AND type='session.message_created' AND json_extract(payload_json,'$.role')='assistant'
+		ORDER BY sequence DESC LIMIT 1`, run.ID).Scan(&boundaryReply); err != nil {
+		t.Fatal(err)
+	}
+	requireBoundaryRejected := func() {
+		t.Helper()
+		if _, _, err := st.ListThreadReplyFileEditEvents(t.Context(), domain.InitialThreadID(run.ID), boundaryReply, 100); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("internal yield accepted as change source: %v", err)
+		}
+		tx, err := st.db.BeginTx(t.Context(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = requireThreadChangeUndoJournalTx(t.Context(), tx, workspacecheckpoint.Transaction{
+			RunID: run.ID, TriggerReceiptID: workspacecheckpoint.ThreadUndoReceiptPrefix + boundaryReply})
+		_ = tx.Rollback()
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("internal yield accepted for undo journal: %v", err)
+		}
+	}
+	requireBoundaryRejected()
 	index := taskIndexForTest(t, st, run)
 	if got := index.tasks[input].task; got.State != "running" || got.FinalMessageID != "" || got.ChangeSourceEventID != "" {
 		t.Fatalf("internal yield ended task: %+v", got)
@@ -197,6 +220,7 @@ func TestThreadTasksGroupToolSegmentsAndPageOutsideInput(t *testing.T) {
 		t.Fatalf("unconfirmed handoff ended task: %+v", got)
 	}
 	endThreadTask(t, st, op, lease, false, 1)
+	requireBoundaryRejected()
 	index = taskIndexForTest(t, st, run)
 	span := index.tasks[input]
 	if span.task.State != "completed" || span.task.FinalMessageID == "" || span.task.FinalMessageID != span.task.ChangeSourceEventID || len(index.attempts) != 2 {
@@ -250,6 +274,45 @@ func TestThreadTasksGroupToolSegmentsAndPageOutsideInput(t *testing.T) {
 	}
 	if !foundFinal || !foundInput {
 		t.Fatalf("paged records missing final=%t input=%t", foundFinal, foundInput)
+	}
+}
+
+func TestThreadTasksPeerTurnClosesPreviousOwner(t *testing.T) {
+	st, run := newThreadTaskTest(t)
+	input := queueThreadTask(t, st, run, "before-peer")
+	_, source, err := newMigrationFixtureRunService(t, st).Create(t.Context(), application.CreateRunRequest{
+		Goal: "Peer source", Profile: "code", Interactive: true, WorkspaceID: "thread-task-workspace",
+		Budget: domain.Budget{MaxTurns: 20, MaxToolCalls: 100},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err = application.NewRunService(st).Start(t.Context(), source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, sourceCP := peerStoreSource(t, st, source)
+	peer, err := st.EnqueueThreadPeerMessage(t.Context(), peerStoreRequest(source, run, sourceCP,
+		"Share the existing result", "thread-task-peer-boundary"), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, lease := prepareThreadTask(t, st, run, 2)
+	cp := beginThreadTask(t, st, lease, input)
+	userEdit := applyThreadTaskEdit(t, st, run, "user-task.txt")
+	completeThreadTaskSegment(t, st, cp, false)
+	cp = beginThreadTask(t, st, lease, peer.Message.SteeringMessageID)
+	applyThreadTaskEdit(t, st, run, "peer-task.txt")
+	completeThreadTaskSegment(t, st, cp, false)
+	endThreadTask(t, st, op, lease, false, 2)
+	index := taskIndexForTest(t, st, run)
+	if len(index.tasks) != 1 || index.attempts[cp.AttemptID] != "" || index.starts[len(index.starts)-1].input != "" {
+		t.Fatalf("peer turn did not retain an unowned boundary: %+v", index)
+	}
+	task := index.tasks[input].task
+	_, edits, err := st.ListThreadReplyFileEditEvents(t.Context(), domain.InitialThreadID(run.ID), task.ChangeSourceEventID, 100)
+	if err != nil || len(edits) != 1 || edits[0].SubjectID != userEdit {
+		t.Fatalf("peer edit entered user task: %+v %v", edits, err)
 	}
 }
 
