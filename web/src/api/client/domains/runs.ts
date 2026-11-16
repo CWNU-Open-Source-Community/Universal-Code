@@ -1,6 +1,6 @@
 import { consumeSSE } from "../../sse";
 import { normalizedTaskBudget } from "../../task-configuration";
-import { APIRequestError } from "../protocol";
+import { APIRequestError, StreamProtocolError } from "../protocol";
 import {
   normalizeRequestedNetworkAuthority,
   normalizeRequestedWebAccess,
@@ -234,9 +234,15 @@ export class RunsClient {
       if (message.event !== "run.event") {
         return;
       }
-      const frame = parseStreamFrame(JSON.parse(message.data) as unknown, runID);
+      let frame: RunEventStreamView;
+      try {
+        frame = parseStreamFrame(JSON.parse(message.data) as unknown, runID);
+      } catch (cause) {
+        if (cause instanceof StreamProtocolError) throw cause;
+        throw new StreamProtocolError("SSE frame payload is not valid JSON", { cause: cause as Error });
+      }
       if (message.id === "" || message.id !== frame.cursor) {
-        throw new Error("SSE id does not match the frame cursor");
+        throw new StreamProtocolError("SSE id does not match the frame cursor");
       }
       options.onFrame(frame);
     });

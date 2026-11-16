@@ -1,3 +1,5 @@
+import { StreamProtocolError } from "./client/protocol";
+
 export interface SSEMessage {
   data: string;
   event: string;
@@ -47,7 +49,7 @@ export async function consumeSSE(
 
     eventBytes += new TextEncoder().encode(line).byteLength;
     if (eventBytes > maxEventBytes) {
-      throw new Error("SSE event exceeded the configured client limit");
+      throw new StreamProtocolError("SSE event exceeded the configured client limit");
     }
     if (field === "data") {
       dataLines.push(value);
@@ -72,7 +74,7 @@ export async function consumeSSE(
         newline = buffer.indexOf("\n");
       }
       if (new TextEncoder().encode(buffer).byteLength > maxEventBytes) {
-        throw new Error("SSE line exceeded the configured client limit");
+        throw new StreamProtocolError("SSE line exceeded the configured client limit");
       }
     }
     buffer += decoder.decode();

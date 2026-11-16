@@ -291,6 +291,7 @@ import type {
 export type { QueryValue } from "./client/protocol";
 export type { ClientCapabilities } from "./client/capabilities";
 export { APIRequestError } from "./client/protocol";
+export { StreamProtocolError } from "./client/protocol";
 export { clientCapabilitiesFromRuntime } from "./client/capabilities";
 export { parseSkillPackageInventory } from "./client/responses/skills";
 export { parseSkillPackageRemoval } from "./client/responses/skills";
