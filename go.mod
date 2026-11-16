@@ -17,16 +17,16 @@ require (
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/tetratelabs/wazero v1.12.0
-	github.com/tidwall/jsonc v0.3.3
+	github.com/tidwall/jsonc v0.3.4
 	github.com/wailsapp/go-webview2 v1.0.23
 	github.com/wailsapp/wails/v2 v2.17.1
 	github.com/yosida95/uritemplate/v3 v3.0.2
-	golang.org/x/image v0.47.0
-	golang.org/x/mod v0.42.0
+	golang.org/x/image v0.48.0
+	golang.org/x/mod v0.43.0
 	golang.org/x/net v0.62.0
-	golang.org/x/oauth2 v0.37.0
-	golang.org/x/sys v0.49.0
-	golang.org/x/text v0.43.0
+	golang.org/x/oauth2 v0.38.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/text v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -85,7 +85,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
