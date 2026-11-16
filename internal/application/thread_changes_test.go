@@ -168,18 +168,26 @@ func TestThreadChangesHandleMovesDeletesRedactionAndExternalGaps(t *testing.T) {
 }
 
 func TestThreadChangesKeepRunHistorySeparate(t *testing.T) {
-	st, first, registry := newThreadModelSettingsFixture(t)
-	workspace, err := st.GetWorkspaceInfo(t.Context(), "workspace-model-settings")
-	if err != nil {
+	root := t.TempDir()
+	st, first := threadReviewFixture(t, root)
+	threadID := domain.InitialThreadID(first.ID)
+	applyThreadChange(t, st, first, root, "run.txt", "create", "", "first\n")
+	firstReply := saveThreadChangeReply(t, st, first, "first reply")
+	if _, err := application.NewRunService(st).Cancel(t.Context(), first.ID); err != nil {
 		t.Fatal(err)
 	}
-	applyThreadChange(t, st, first, workspace.RootPath, "run.txt", "create", "", "first\n")
-	firstReply := saveThreadChangeReply(t, st, first, "first reply")
-	second := executeThreadModelSettingsSwitch(t, st, first, registry).Submission.Run
-	applyThreadChange(t, st, second, workspace.RootPath, "run.txt", "replace", "", "second\n")
+	// Keep both replies historical: an executed task requires its exact final
+	// receipt, so a manually inserted assistant row cannot stand in for one.
+	submission, err := application.NewThreadService(st).Submit(t.Context(), application.SubmitThreadMessageRequest{
+		Version: domain.ThreadMessageProtocolVersion, ThreadID: threadID, Content: "Continue in a new Run.",
+		OperationKey: "thread-changes-next-run", RequestedBy: "operator"})
+	if err != nil || !submission.SuccessorCreated || submission.PredecessorRunID != first.ID {
+		t.Fatalf("successor was not created: %+v %v", submission, err)
+	}
+	second := submission.Run
+	applyThreadChange(t, st, second, root, "run.txt", "replace", "", "second\n")
 	secondReply := saveThreadChangeReply(t, st, second, "second reply")
 	service := application.NewThreadChangeService(st)
-	threadID := domain.InitialThreadID(first.ID)
 	old, err := service.Summary(t.Context(), threadID, firstReply.EventID)
 	if err != nil || old.RunID != first.ID || old.FileCount != 1 || old.Additions != 1 || old.Deletions != 0 {
 		t.Fatalf("old Run was lost: %+v %v", old, err)

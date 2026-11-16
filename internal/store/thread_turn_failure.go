@@ -90,7 +90,7 @@ func getThreadTurnFailure(ctx context.Context, q interface {
 		return value, false, apperror.New(apperror.CodeFailedPrecondition, "Thread failed turn no longer matches its exact consumed message")
 	}
 	if value.FailureStage != "" {
-		stage, err := recordedThreadContextFailureStage(ctx, q, value.HandoffOperationID)
+		stage, err := recordedThreadHandoffFailureStage(ctx, q, value.HandoffOperationID)
 		if err == nil && stage == "" {
 			stage, err = recordedThreadModelFailureStage(ctx, q, runID, value.AttemptID)
 		}
@@ -258,7 +258,10 @@ func (s *SQLiteStore) EndFailedThreadTurn(ctx context.Context, threadID, runID, 
 		value.FailureStage = domain.ThreadFailureContextWindowExceeded
 	}
 	if value.ErrorCode == string(apperror.CodeFailedPrecondition) {
-		value.FailureStage, err = recordedThreadModelFailureStage(ctx, tx, runID, checkpoint.AttemptID)
+		value.FailureStage, err = recordedThreadHandoffFailureStage(ctx, tx, handoffID)
+		if err == nil && value.FailureStage == "" {
+			value.FailureStage, err = recordedThreadModelFailureStage(ctx, tx, runID, checkpoint.AttemptID)
+		}
 		if err != nil {
 			return empty, false, err
 		}

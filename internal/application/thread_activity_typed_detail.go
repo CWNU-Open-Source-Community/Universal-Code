@@ -529,6 +529,10 @@ func projectThreadActivityFileRead(call domain.SupervisorToolCall,
 		_ = json.Unmarshal(canonical, &input)
 		detail.Path, detail.StartLine, detail.EndLine = safeThreadActivityPath(input.Path),
 			input.StartLine, input.EndLine
+	case "workspace_view_image":
+		var input struct{ Path string }
+		_ = json.Unmarshal(canonical, &input)
+		detail.Path = safeThreadActivityPath(input.Path)
 	case toolgateway.WorkspaceGlobTool:
 		var input toolgateway.WorkspaceGlobPayload
 		_ = json.Unmarshal(canonical, &input)
@@ -541,6 +545,9 @@ func projectThreadActivityFileRead(call domain.SupervisorToolCall,
 	}
 	detail.Summary = threadActivityResultSummary(detail.ResultCount, detail.Truncated,
 		"文件读取已完成")
+	if name == "workspace_view_image" {
+		detail.Summary = threadActivityResultSummary(detail.ResultCount, detail.Truncated, "图片查看已完成")
+	}
 	return detail, nil
 }
 
@@ -987,12 +994,18 @@ func projectThreadActivityBrowser(call domain.SupervisorToolCall,
 	if err != nil {
 		return ThreadActivityBrowserDetail{}, err
 	}
-	var input toolgateway.BrowserActionPayload
+	var input struct {
+		toolgateway.BrowserActionPayload
+		Point *toolgateway.AgentBrowserPoint `json:"point"`
+	}
 	_ = json.Unmarshal(canonical, &input)
 	detail := ThreadActivityBrowserDetail{Operation: facts.Operation, Action: string(name),
 		URL: safeThreadActivityURL(input.URL), Selector: safeThreadActivityFactValue(input.Selector),
 		ArtifactBytes: int64(safeThreadActivityCount(envelope.Metadata["artifact_bytes"])),
 		Summary:       "浏览器操作已完成", Boundary: boundary}
+	if input.Point != nil {
+		detail.Summary = fmt.Sprintf("%s · (%g, %g)", facts.Operation, input.Point.X, input.Point.Y)
+	}
 	if name == toolgateway.BrowserTypeTool {
 		detail.InputLength = utf8.RuneCountInString(input.Value)
 	}

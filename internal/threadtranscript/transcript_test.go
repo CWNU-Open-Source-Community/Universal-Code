@@ -273,6 +273,7 @@ func TestClassifyToolUsesExactCurrentToolRegistryNames(t *testing.T) {
 		"code_references":             TypeSearch,
 		"web_search":                  TypeSearch,
 		"workspace_read":              TypeRead,
+		"workspace_view_image":        TypeRead,
 		"web_fetch":                   TypeRead,
 		"web_citation":                TypeRead,
 		"github_review_evidence_read": TypeRead,

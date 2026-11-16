@@ -9,6 +9,7 @@ import { APIRequestError, APIClient } from "../../api/client";
 import type { ThreadDetailView, ThreadTranscriptItemView, WorkspaceView } from "../../api/types";
 import { V2Conversation } from "./conversation";
 import { v2FileReferenceKey, type V2FileReference } from "./file-context";
+import { fullPermissionNotReadyMessage } from "../../lib/local-ui-message";
 
 vi.mock("../../hooks/use-run-event-stream", () => ({ useRunEventStream: () => ({ error: null, frames: [] }) }));
 vi.mock("../../hooks/use-public-model-stream", () => ({ usePublicModelStream: () => ({ error: null, snapshot: null, status: "waiting" }) }));
@@ -65,6 +66,19 @@ function failureItem(sourceRef: string, sequence: number, detail: string): Threa
     status: "failed", durable: true, provisional: false, verifiable: true,
     instruction_authorized: false, created_at: "2026-09-10T12:00:00Z" };
 }
+
+it("shows the Full recovery instruction through the existing durable failure notice", async () => {
+  let transcript: ThreadTranscriptItemView[] = [];
+  const submit = vi.fn().mockImplementationOnce(() => {
+    transcript = [failureItem("full-input", 42, fullPermissionNotReadyMessage)];
+    throw new APIRequestError(fullPermissionNotReadyMessage, "FAILED_PRECONDITION", 412, "full-permission-response", undefined, undefined, true,
+      { thread_id: "thread-a", run_id: "run-thread-a", message_id: "full-input", event_sequence: 42 });
+  });
+  renderRecovery(submit, { getPage: vi.fn().mockImplementation(() => Promise.resolve({ items: transcript, page: { limit: 100 }, requestID: "full-permission-transcript" })) });
+  await submitOriginal(userEvent.setup());
+  await waitFor(() => expect(screen.getAllByText(fullPermissionNotReadyMessage)).toHaveLength(1));
+  expect(screen.queryByText(/本轮执行未完成/)).not.toBeInTheDocument();
+});
 
 it("shows the exact approval failure once while retaining another identical historical failure", async () => {
   const detail = "审批已保存，后续执行因模型没有返回有效答复而结束。";

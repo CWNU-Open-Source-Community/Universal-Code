@@ -140,6 +140,7 @@ func (c SupervisorToolCall) Validate() error {
 		c.ToolName != "mcp_tool_search" &&
 		!isWebEvidenceSupervisorTool(c.ToolName) &&
 		c.ToolName != "workspace_list" && c.ToolName != "workspace_read" &&
+		c.ToolName != "workspace_view_image" &&
 		c.ToolName != "workspace_glob" && c.ToolName != "workspace_grep" &&
 		c.ToolName != "workspace_change" && c.ToolName != "workspace_apply" &&
 		c.ToolName != "workspace_delete" &&
@@ -204,7 +205,7 @@ func isRiskEscalationSupervisorTool(name string, payload string) bool {
 
 func isAgentCodeSupervisorTool(name string) bool {
 	switch name {
-	case "workspace_list", "workspace_read", "workspace_glob", "workspace_grep",
+	case "workspace_list", "workspace_read", "workspace_view_image", "workspace_glob", "workspace_grep",
 		"workspace_change", "workspace_apply", "workspace_delete",
 		"github_review_evidence_list", "github_review_evidence_read":
 		return true
@@ -232,7 +233,7 @@ func isWebEvidenceSupervisorTool(name string) bool {
 func isBrowserActionSupervisorTool(name string) bool {
 	switch name {
 	case "browser_status", "browser_navigate", "browser_snapshot",
-		"browser_click", "browser_type", "browser_screenshot", "browser_scroll", "browser_key", "browser_upload":
+		"browser_click", "browser_type", "browser_screenshot", "browser_scroll", "browser_key", "browser_upload", "browser_move":
 		return true
 	default:
 		return false

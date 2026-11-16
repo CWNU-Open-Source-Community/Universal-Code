@@ -126,6 +126,11 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 	var value any
 	var metadata = map[string]string{"workspace_id": scope.WorkspaceID}
 	switch name {
+	case toolgateway.WorkspaceViewImageTool:
+		value, err = e.viewWorkspaceImage(ctx, scope, payload, pathPolicy)
+		if err != nil {
+			return toolgateway.AgentCodeExecutionResult{}, err
+		}
 	case toolgateway.WorkspaceListTool, toolgateway.WorkspaceReadTool,
 		toolgateway.WorkspaceGlobTool, toolgateway.WorkspaceGrepTool:
 		value, metadata, err = executeWorkspaceReadTool(scope.WorkspaceRoot,

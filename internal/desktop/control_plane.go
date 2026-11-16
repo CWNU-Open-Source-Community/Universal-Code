@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +65,7 @@ type ControlPlane struct {
 	uiEvidence                     *application.UIEvidenceService
 	fullCDPSessions                *application.FullCDPProductionService
 	agentBrowser                   *application.AgentBrowserService
+	sharedBrowser                  *SharedBrowserService
 	commandRuntimeManager          *runner.CommandRuntimeManager
 	commandRuntimeSet              *application.CommandRuntimeSet
 	commandRuntimeAdapterInstalled bool
@@ -190,6 +192,7 @@ type ControlPlaneConfig struct {
 	CredentialStore                    credential.Store
 	OnWakeWorkerError                  func(error)
 	OnScheduledJobWorkerError          func(error)
+	SharedBrowser                      *SharedBrowserOptions
 }
 
 func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
@@ -358,6 +361,12 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	stateStore, err := store.Open(config.DatabasePath)
 	if err != nil {
 		return nil, err
+	}
+	if runtime.GOOS == "windows" && config.RunExecutionEnabled {
+		if err := stateStore.EnableDesktopBrowserDefaults(context.Background()); err != nil {
+			_ = stateStore.Close()
+			return nil, apperror.Wrap(apperror.CodeUnavailable, "desktop browser defaults startup reconciliation failed", err)
+		}
 	}
 	if !config.RunExecutionEnabled {
 		// No browser service will be created to invalidate the previous process'
@@ -708,11 +717,25 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 	// It uses a separate profile and service from the operator's Full CDP session.
 	var agentBrowser *application.AgentBrowserService
 	var agentBrowserController httpapi.AgentBrowserController
+	var sharedBrowser *SharedBrowserService
+	if config.SharedBrowser != nil {
+		sharedBrowser, err = newSharedBrowserService(stateStore, *config.SharedBrowser)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if config.RunExecutionEnabled {
-		agentBrowser = application.NewAgentBrowserService(stateStore, application.AgentBrowserOptions{
+		agentBrowserOptions := application.AgentBrowserOptions{
 			HomePath: home, Capabilities: config.ExecutionPermissionCapabilities,
 			Headless:        !application.BrowserHeadedFromEnvironment(),
-			SessionLifetime: application.BrowserSessionLifetimeFromEnvironment(), ServiceReadiness: commandRuntime})
+			SessionLifetime: application.BrowserSessionLifetimeFromEnvironment(), ServiceReadiness: commandRuntime}
+		if sharedBrowser != nil {
+			agentBrowserOptions.SharedPage = sharedBrowser.attachPage
+		}
+		agentBrowser = application.NewAgentBrowserService(stateStore, agentBrowserOptions)
+		if sharedBrowser != nil {
+			sharedBrowser.agent = agentBrowser
+		}
 		runtimeDependencies.AgentBrowser = agentBrowser
 		agentBrowserController = agentBrowser
 	}
@@ -902,6 +925,9 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		stateStore, lifecycleControl, executionControl,
 		config.ExecutionPermissionCapabilities).WithModelRouteRegistry(models).
 		WithLifecycleHooks(hookEngine)
+	if runtime.GOOS == "windows" && config.RunExecutionEnabled {
+		threadTurnControl.WithDefaultCommandRuntime(commandRuntime)
+	}
 	var threadPeerMessages *application.ThreadPeerMessageService
 	if config.RunExecutionEnabled && config.ModelControlEnabled && config.ControlToken != "" {
 		threadPeerMessages = application.NewThreadPeerMessageService(stateStore, threadTurnControl)
@@ -1085,6 +1111,7 @@ func OpenControlPlane(config ControlPlaneConfig) (*ControlPlane, error) {
 		uiEvidence:                     uiEvidence,
 		fullCDPSessions:                fullCDPSessions,
 		agentBrowser:                   agentBrowser,
+		sharedBrowser:                  sharedBrowser,
 		commandRuntimeManager:          commandManager,
 		commandRuntimeSet:              commandSet,
 		sbxBackend:                     config.SBXBackend,
@@ -1472,6 +1499,11 @@ func (c *ControlPlane) Close() error {
 		if c.agentBrowser != nil {
 			shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), 35*time.Second)
 			c.closeErr = errors.Join(c.closeErr, c.agentBrowser.Shutdown(shutdownContext))
+			shutdownCancel()
+		}
+		if c.sharedBrowser != nil {
+			shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			c.closeErr = errors.Join(c.closeErr, c.sharedBrowser.Close(shutdownContext))
 			shutdownCancel()
 		}
 		if fullCDPShutdown != nil {

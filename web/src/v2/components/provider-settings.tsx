@@ -480,7 +480,8 @@ function definitionFingerprint(definition: ProviderDefinitionView): string {
     native_web_search_capability: definition.native_web_search_capability,
     enabled: definition.enabled,
     advanced_config: definition.advanced_config,
-  });
+  }, (_key, value: unknown) => isRecord(value)
+    ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value);
 }
 
 function harnessStatusLabel(t: LocaleText, status: string): string {
@@ -695,6 +696,13 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
     }
   };
 
+  const refreshModelRoutes = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["models", "availability"] }),
+    queryClient.invalidateQueries({ queryKey: ["v2", "models", "available-routes"] }),
+    queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "v2" &&
+      query.queryKey[1] === "thread" && query.queryKey.at(-1) === "model-route" }),
+  ]);
+
   const verifyHarness = async () => {
     if (!draft?.existing || harnessOperationRef.current) return;
     harnessOperationRef.current = true;
@@ -722,10 +730,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
       });
       if (!mountedRef.current || operationVersion !== harnessOperationVersionRef.current) return;
       setQualification(qualificationResult);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["models", "availability"] }),
-        queryClient.invalidateQueries({ queryKey: ["v2", "models", "available-routes"] }),
-      ]);
+      await refreshModelRoutes();
     } catch (reason) {
       if (!mountedRef.current || operationVersion !== harnessOperationVersionRef.current) return;
       setHarnessError(reason instanceof Error ? reason.message : t("Harness 验证失败。请检查供应商配置与网络权限。", "Harness verification failed. Check provider configuration and network permissions."));
@@ -760,10 +765,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
         setHarnessError(t(`模型检查未通过：${harnessFailureLabel(t, result.failure_reason)}。配置和草稿都已保留；修正配置后保存，或直接重试检查。`, `Model check failed: ${harnessFailureLabel(t, result.failure_reason)}. Configuration and draft are preserved. Fix and save the configuration, or retry the check.`));
         return;
       }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["models", "availability"] }),
-        queryClient.invalidateQueries({ queryKey: ["v2", "models", "available-routes"] }),
-      ]);
+      await refreshModelRoutes();
       if (!mountedRef.current || operationVersion !== harnessOperationVersionRef.current) return;
       const catalog = await client.availableModelRoutes();
       if (!mountedRef.current || operationVersion !== harnessOperationVersionRef.current) return;
@@ -786,6 +788,21 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
     }
   };
 
+  const finishSavedProvider = async (saved: ProviderDefinitionView) => {
+    invalidateDiscovery();
+    setNotice(t(`已保存 ${saved.display_name}`, `Saved ${saved.display_name}`));
+    onSaved?.(saved);
+    if (prepareForDraft) {
+      setPreparedDefinition(saved);
+      setDraft(draftFromDefinition(saved));
+      await prepareSavedProvider(saved);
+      return;
+    }
+    setDraft(null);
+    if (onExit) { onExit(); return; }
+    requestAnimationFrame(() => returnFocusRef.current?.focus());
+  };
+
   const persist = async (definition: ProviderDefinitionView, oneTimeSecret = "") => {
     if (!definitions.data) {
       setError(t("供应商定义尚未加载完成。", "Provider definitions are still loading."));
@@ -798,6 +815,20 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
     setBusy(true);
     setError("");
     try {
+      const existing = definitions.data.providers.find((provider) => provider.id === definition.id);
+      if (!oneTimeSecret && existing?.revision === definition.revision &&
+        definitionFingerprint(existing) === definitionFingerprint(definition)) {
+        // An upsert increments the binding revision and invalidates its Harness.
+        // Closing an unchanged editor must preserve the verified saved binding.
+        const { data } = await definitions.refetch({ throwOnError: true });
+        const saved = data?.providers.find((provider) => provider.id === definition.id);
+        if (!saved || saved.revision !== definition.revision || definitionFingerprint(saved) !== definitionFingerprint(definition)) {
+          setError(t("供应商配置已更改或删除，请重新打开后再保存。", "The provider changed or was deleted. Reopen it before saving."));
+          return;
+        }
+        await finishSavedProvider(saved);
+        return;
+      }
       const setCredential = () => client.changeProviderCredential(definition.id, {
         version: "provider_credential.v1" as const, action: "set" as const, confirm: true,
         secret: oneTimeSecret,
@@ -832,26 +863,10 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
         result.collection);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: credentialQueryKey }),
-        queryClient.invalidateQueries({ queryKey: ["models", "availability"] }),
-        queryClient.invalidateQueries({ queryKey: ["v2", "models", "available-routes"] }),
-        queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "v2" && query.queryKey[1] === "thread" && query.queryKey[3] === "model-route" }),
+        refreshModelRoutes(),
       ]);
       const saved = result.definition ?? definition;
-      invalidateDiscovery();
-      setNotice(t(`已保存 ${definition.display_name}`, `Saved ${definition.display_name}`));
-      onSaved?.(saved);
-      if (prepareForDraft) {
-        setPreparedDefinition(saved);
-        setDraft(draftFromDefinition(saved));
-        await prepareSavedProvider(saved);
-        return;
-      }
-      setDraft(null);
-      if (onExit) {
-        onExit();
-        return;
-      }
-      requestAnimationFrame(() => returnFocusRef.current?.focus());
+      await finishSavedProvider(saved);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("保存供应商失败。", "Could not save provider."));
     } finally {
@@ -1100,7 +1115,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
       <p>{quickSetup ? t("填入 API Key，确认模型并保存，然后完成下方模型检查。自建服务可展开高级设置。", "Enter the API key, confirm the model and save, then check the model below. Expand advanced settings for self-hosted services.")
         : t("填写服务地址和模型；密钥将单独保存到系统凭据管理器。", "Enter the endpoint and models. Keys are saved separately in system credentials.")}</p></div></div>
     <form className="v2-provider-form" onSubmit={(event) => { event.preventDefault(); save(); }}>
-      <fieldset className="v2-provider-operation-lock" disabled={harnessBusy}>
+      <fieldset className="v2-provider-operation-lock" disabled={busy || harnessBusy}>
       {quickSetup && <section className="v2-settings-card v2-provider-fields v2-provider-quick" aria-labelledby="provider-quick-title">
         <header><div><h2 id="provider-quick-title">{draft.displayName}</h2>
           <p>{t("提供商已选定；其他连接参数使用当前配置。", "Provider selected. Other connection parameters use the current configuration.")}</p></div>

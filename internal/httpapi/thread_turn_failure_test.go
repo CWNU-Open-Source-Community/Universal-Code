@@ -49,3 +49,21 @@ func TestThreadTurnFailureHTTPOnlyMarksDurablyClosedTurn(t *testing.T) {
 		t.Fatalf("sealed failure identity not carried through HTTP: %d %s", response.Code, response.Body.String())
 	}
 }
+
+func TestThreadFullPermissionRecoveryHTTPPreservesSafeUserAction(t *testing.T) {
+	fixture := newAPIFixture(t)
+	message := "Full 权限在当前应用中尚未就绪。请在聊天权限中重新确认 Full，或切换为 Ask / Auto 后重试。"
+	controller := &threadTurnControllerStub{err: &application.ThreadTurnFailedError{Cause: apperror.New(apperror.CodeFailedPrecondition, message)}}
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, ControlToken: testControlToken, RunCreationEnabled: true, SessionMessageEnabled: true, RunLifecycleEnabled: true, RunExecutionEnabled: true, RunLifecycleController: application.NewRunLifecycleControlService(fixture.store), RunExecutionController: runExecutionControllerFake{}, ThreadTurnController: controller})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := performSessionMessageRequest(t, api, http.MethodPost, ThreadCollectionPath+"/"+domain.InitialThreadID(fixture.run.ID)+"/turns", testControlToken, "full-permission-http-key", "application/json", strings.NewReader(`{"version":"thread_message_submission.v1","content":"read a file"}`))
+	var envelope errorEnvelope
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusPreconditionFailed || envelope.Error.Message != message || envelope.Error.TurnFailed == nil || !*envelope.Error.TurnFailed {
+		t.Fatalf("HTTP lost Full recovery instruction: %d %s", response.Code, response.Body.String())
+	}
+}

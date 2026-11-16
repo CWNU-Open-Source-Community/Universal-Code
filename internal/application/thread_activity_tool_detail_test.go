@@ -13,6 +13,7 @@ import (
 func TestThreadActivityToolKindCoversPublicNonCommandTools(t *testing.T) {
 	tests := map[toolgateway.ToolName]string{
 		toolgateway.WorkspaceListTool: "file_read", toolgateway.WorkspaceReadTool: "file_read",
+		"workspace_view_image":        "file_read",
 		toolgateway.WorkspaceGlobTool: "file_read", toolgateway.WorkspaceGrepTool: "file_read",
 		toolgateway.WorkspaceChangeTool: "file_edit", toolgateway.WorkspaceApplyTool: "file_edit",
 		toolgateway.WorkspaceDeleteTool: "file_edit", toolgateway.WebSearchTool: "web_search",
@@ -26,7 +27,7 @@ func TestThreadActivityToolKindCoversPublicNonCommandTools(t *testing.T) {
 		toolgateway.GitHubEvidenceListTool: "verification", toolgateway.GitHubEvidenceReadTool: "verification",
 		toolgateway.BrowserNavigateTool: "browser", toolgateway.BrowserSnapshotTool: "browser",
 		toolgateway.BrowserClickTool: "browser", toolgateway.BrowserTypeTool: "browser",
-		toolgateway.BrowserScreenshotTool: "browser",
+		toolgateway.BrowserScreenshotTool: "browser", toolgateway.BrowserMoveTool: "browser",
 	}
 	for name, want := range tests {
 		if got := threadActivityToolKind(name); got != want || threadActivityToolLabel(name) == "" {
@@ -190,4 +191,16 @@ func factValue(fields []ThreadActivityFactField, name string) string {
 		}
 	}
 	return ""
+}
+
+func TestThreadActivityPointerMovementUsesBrowserDetail(t *testing.T) {
+	payload := []byte(`{"version":"browser_move.v2","point":{"x":40,"y":30,"document_epoch":2,"viewport":{"width":800,"height":600}}}`)
+	call := threadActivityFactsCall(toolgateway.BrowserMoveTool, payload, map[string]string{}, `{"dispatched":true}`)
+	detail, found, err := ProjectThreadActivityTypedDetail(call)
+	if err != nil || !found || detail.Kind != "browser" || detail.Browser == nil || detail.Browser.Action != string(toolgateway.BrowserMoveTool) || detail.Browser.Operation != "移动页面指针" {
+		t.Fatalf("pointer detail=%+v found=%t err=%v", detail, found, err)
+	}
+	if !SupportsThreadActivityDetail(string(toolgateway.BrowserMoveTool)) {
+		t.Fatal("pointer detail is not registered")
+	}
 }

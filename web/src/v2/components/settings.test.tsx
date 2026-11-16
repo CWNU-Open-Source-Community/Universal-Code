@@ -39,7 +39,7 @@ it("routes connection and environment tasks directly without inspecting or chang
     onOpenTask={onOpenTask} /></QueryClientProvider>);
   const nav = screen.getByRole("navigation", { name: "连接与环境设置" });
   const user = userEvent.setup();
-  for (const label of ["模型连接", "任务预算与项目配置", "扩展与代码智能", "执行环境设置", "任务权限与执行环境", "应用连接与诊断"]) {
+  for (const label of ["模型连接", "任务预算与项目配置", "扩展与代码智能", "执行环境设置", "任务权限", "应用连接与诊断"]) {
     await user.click(within(nav).getByRole("button", { name: new RegExp(label) }));
   }
   expect(onSelectSection.mock.calls).toEqual([["models"], ["task-configuration"], ["extensions"], ["environment"], ["permissions"], ["about"]]);
@@ -300,7 +300,7 @@ describe("V2 model provider catalog", () => {
 });
 
 describe("V2 permission settings hierarchy", () => {
-  it("keeps Debug visible but leaves task permissions unavailable without a selected Thread", () => {
+  it("keeps daily permissions separate from advanced environment and network settings", async () => {
     window.localStorage.setItem("prayu.locale.v1", "zh-CN");
     const getThreadExecutionPermission = vi.fn();
     const get = vi.fn();
@@ -314,12 +314,17 @@ describe("V2 permission settings hierarchy", () => {
         section="permissions" threadID="" workspaces={[]} />
     </QueryClientProvider></LocaleProvider>);
 
-    expect(screen.getByRole("heading", { name: "调试运行时" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务权限" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "调试运行时" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "浏览器" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "当前任务执行环境" })).not.toBeInTheDocument();
+    expect(get).not.toHaveBeenCalled();
+    await userEvent.setup().click(screen.getByText("高级设置", { selector: "summary" }));
+    expect(await screen.findByRole("heading", { name: "调试运行时" })).toBeVisible();
     const headings = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
-    expect(headings.indexOf("浏览器")).toBe(headings.indexOf("任务权限") + 1);
+    expect(headings.indexOf("当前任务执行环境")).toBe(headings.indexOf("任务权限") + 1);
+    expect(headings.indexOf("浏览器")).toBe(headings.indexOf("网页与搜索限制") + 1);
     expect(headings.indexOf("开发服务")).toBe(headings.indexOf("浏览器") + 1);
-    expect(headings.indexOf("当前任务执行环境")).toBe(headings.indexOf("开发服务") + 1);
     expect(screen.getByText("先从侧栏打开一个对话。")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /启用完全访问/u })).not.toBeInTheDocument();
     const debugGroup = screen.getByRole("group", { name: "调试运行时能力" });

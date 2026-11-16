@@ -118,8 +118,12 @@ func (s *SQLiteStore) TransitionRunExecutionProfile(ctx context.Context,
 			apperror.CodeFailedPrecondition,
 			"Run execution profile cannot change while an execution lease is active")
 	}
+	if err := requireThreadLifecycleRunQuiescentTx(ctx, tx, run.ID, snapshot.CreatedAt); err != nil {
+		return domain.RunExecutionProfileSnapshot{}, false, err
+	}
 	if snapshot.MissionID != run.MissionID || snapshot.MissionID != mission.ID ||
-		snapshot.Revision != current.Revision+1 || snapshot.Profile == current.Profile ||
+		snapshot.Revision != current.Revision+1 ||
+		(snapshot.Profile == current.Profile && !(current.IsDefaultPreview() && snapshot.Profile == domain.RunExecutionProfilePreview)) ||
 		snapshot.ProtocolVersion != current.ProtocolVersion ||
 		snapshot.PolicyVersion != current.PolicyVersion ||
 		snapshot.CreatedAt.Before(current.CreatedAt) {
@@ -271,7 +275,9 @@ func validateRunExecutionProfileChangedEvent(event events.Event,
 		return errors.New("run execution profile event contains trailing data")
 	}
 	if payload.Protocol != snapshot.ProtocolVersion || payload.Revision != snapshot.Revision ||
-		!payload.From.Valid() || payload.From == snapshot.Profile || payload.To != snapshot.Profile ||
+		!payload.From.Valid() ||
+		(payload.From == snapshot.Profile && !(snapshot.Profile == domain.RunExecutionProfilePreview && snapshot.Revision == 2)) ||
+		payload.To != snapshot.Profile ||
 		payload.Backend != snapshot.Backend || payload.ApprovalPolicy != snapshot.ApprovalPolicy ||
 		payload.FilesystemScope != snapshot.FilesystemScope ||
 		payload.NetworkScope != snapshot.NetworkScope || payload.RiskTier != snapshot.RiskTier ||

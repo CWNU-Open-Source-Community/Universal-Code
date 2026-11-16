@@ -45,8 +45,7 @@ func TestSupervisorContextCandidateDoesNotHoldConnectionOrWriterReservation(t *t
 		t.Fatal(err)
 	}
 	defer db.Close()
-	other := *st
-	other.db = db
+	other := &SQLiteStore{db: db}
 	called := false
 	result, err := st.CompactSupervisorContextWithStrategy(context.Background(), turn.Checkpoint, 2,
 		supervisorCandidateRanker(func(ctx context.Context, records []contextmgr.SummaryRecord) ([]int, error) {

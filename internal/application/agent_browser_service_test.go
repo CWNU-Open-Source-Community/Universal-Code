@@ -218,6 +218,29 @@ func newAgentBrowserFixture(t *testing.T) (*AgentBrowserService, *agentBrowserTe
 	turn := domain.SupervisorTurn{Run: base.run, Mission: base.mission, Mode: st.mode, Agent: st.root, Checkpoint: st.checkpoint}
 	return service, st, r, supervisor, turn
 }
+func TestAgentBrowserCloseDeadlineWhileActionStalls(t *testing.T) {
+	service, st, _, _, _ := newAgentBrowserFixture(t)
+	auth, err := service.authority(t.Context(), st.base.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot := service.sessions[auth.BrowserSessionID]
+	if err := slot.lockAction(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancel()
+	_, err = service.Close(ctx, auth.RunID, auth.BrowserSessionID)
+	slot.unlockAction()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("close behind a busy action: %v", err)
+	}
+	view, err := service.Close(t.Context(), auth.RunID, auth.BrowserSessionID)
+	if err != nil || view.State != "closed" {
+		t.Fatalf("retry close: %+v, %v", view, err)
+	}
+}
+
 func agentBrowserFixtureCall(t *testing.T, s *AgentBrowserService, st *agentBrowserTestStore, name toolgateway.ToolName, payload string) domain.SupervisorToolCall {
 	t.Helper()
 	a, e := s.authority(t.Context(), st.base.run.ID)
@@ -256,7 +279,7 @@ func TestAgentBrowserFirstNavigationAdvertisedDurableAndNeverRepeated(t *testing
 			}
 		}
 	}
-	if len(seen) != 9 {
+	if len(seen) != 10 || !seen["browser_move"] {
 		t.Fatalf("tools %v", seen)
 	}
 	prepared, e := prepareSupervisorToolCalls([]llm.ToolCall{{ID: "model-1", Name: "browser_navigate", Arguments: json.RawMessage(`{"version":"browser_navigate.v2","url":"https://example.org/#dynamic"}`)}}, turn.Run.ID, 1, 1, turn.Mode.Surface, turn.Mode.Phase, st.base.executionPermission.Mode, false, false, options)
@@ -760,14 +783,28 @@ func TestAgentBrowserScopedAskRunAdvertisesDeclaredOrigins(t *testing.T) {
 	}
 	options := supervisorToolOptions{BrowserActions: supervisorBrowserActionTools{Capabilities: toolgateway.BrowserActionCapabilities{ProtocolVersion: toolgateway.AgentBrowserAuthorityVersion, Available: true, Generation: a.Generation}, Authority: auth}}
 	specs := supervisorStructuredToolSpecs(turn.Mode.Surface, turn.Mode.Phase, st.base.executionPermission.Mode, false, false, options)
-	seen := 0
+	browserTools := map[toolgateway.ToolName]llm.ToolSpec{}
 	for _, spec := range specs {
 		if strings.HasPrefix(spec.Name, "browser_") {
-			seen++
+			browserTools[toolgateway.ToolName(spec.Name)] = spec
 		}
 	}
-	if seen != 9 {
-		t.Fatalf("scoped ask run must advertise the nine browser tools: %d", seen)
+	wantBrowserTools := []toolgateway.ToolName{
+		toolgateway.BrowserStatusTool, toolgateway.BrowserNavigateTool,
+		toolgateway.BrowserSnapshotTool, toolgateway.BrowserScreenshotTool,
+		toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool,
+		toolgateway.BrowserScrollTool, toolgateway.BrowserKeyTool,
+		toolgateway.BrowserUploadTool, toolgateway.BrowserMoveTool,
+	}
+	if len(browserTools) != len(wantBrowserTools) {
+		t.Fatalf("scoped ask browser tools: got=%v want=%v", browserTools, wantBrowserTools)
+	}
+	for _, name := range wantBrowserTools {
+		spec, found := browserTools[name]
+		definition, defined := toolgateway.AgentBrowserToolDefinition(name)
+		if !found || !defined || !bytes.Equal(spec.Parameters, definition.InputSchema) {
+			t.Fatalf("scoped ask run omitted the Agent browser contract for %s: %+v", name, spec)
+		}
 	}
 	call := agentBrowserFixtureCall(t, service, st, toolgateway.BrowserNavigateTool, `{"version":"browser_navigate.v2","url":"https://example.org/form"}`)
 	if _, e = runAgentBrowserFixtureCall(t, supervisor, turn, call); e != nil {

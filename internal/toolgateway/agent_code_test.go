@@ -18,8 +18,8 @@ func TestAgentCodeCapabilityMatrix(t *testing.T) {
 		ModeRevision: 1, PermissionRevision: 1}
 
 	plan := AgentCodeCapabilities(base)
-	if availableAgentCodeCount(plan) != 6 {
-		t.Fatalf("Code/Plan must expose exactly six bounded read tools: %#v", plan)
+	if availableAgentCodeCount(plan) != 7 {
+		t.Fatalf("Code/Plan must expose exactly seven bounded read tools: %#v", plan)
 	}
 	for _, tool := range plan.Tools {
 		if tool.ReadOnly != tool.Available {
@@ -37,7 +37,7 @@ func TestAgentCodeCapabilityMatrix(t *testing.T) {
 
 	reviewScope := deliverScope
 	reviewScope.Profile = domain.ProfileReview
-	if availableAgentCodeCount(AgentCodeCapabilities(reviewScope)) != 6 {
+	if availableAgentCodeCount(AgentCodeCapabilities(reviewScope)) != 7 {
 		t.Fatal("Review profile received workspace mutation tools")
 	}
 	cyberScope := deliverScope

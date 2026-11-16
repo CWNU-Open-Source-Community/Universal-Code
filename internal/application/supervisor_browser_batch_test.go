@@ -22,6 +22,8 @@ func browserBatchCall(index int, name toolgateway.ToolName) llm.ToolCall {
 		if name == toolgateway.BrowserTypeTool {
 			p.Value, p.Mode = "public text", "replace"
 		}
+	case toolgateway.BrowserMoveTool:
+		p.Point = &toolgateway.AgentBrowserPoint{X: float64(index * 20), Y: 30, DocumentEpoch: 1, Viewport: toolgateway.AgentBrowserViewport{Width: 800, Height: 600}}
 	case toolgateway.BrowserKeyTool:
 		p.Key = "Enter"
 	case toolgateway.BrowserScrollTool:
@@ -39,9 +41,9 @@ func browserBatchCall(index int, name toolgateway.ToolName) llm.ToolCall {
 func TestSupervisorBrowserBatchRejectsUnresolvedRefDependencyBeforeEffects(t *testing.T) {
 	for _, prefix := range []toolgateway.ToolName{toolgateway.BrowserNavigateTool, toolgateway.BrowserSnapshotTool,
 		toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool, toolgateway.BrowserKeyTool, toolgateway.BrowserScrollTool,
-		toolgateway.BrowserUploadTool} {
+		toolgateway.BrowserUploadTool, toolgateway.BrowserMoveTool} {
 		for _, last := range []toolgateway.ToolName{toolgateway.BrowserClickTool, toolgateway.BrowserTypeTool,
-			toolgateway.BrowserUploadTool} {
+			toolgateway.BrowserUploadTool, toolgateway.BrowserMoveTool} {
 			t.Run(string(prefix)+"-then-"+string(last), func(t *testing.T) {
 				_, st, runtime, supervisor, turn := newAgentBrowserFixture(t)
 				caps, auth, err := supervisor.supervisorBrowserActionCapabilities(t.Context(), turn, st.base.executionPermission)

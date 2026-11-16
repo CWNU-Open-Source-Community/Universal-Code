@@ -37,8 +37,8 @@ it.each(["not_received", "received"])("does not POST or declare %s settled", asy
   expect(fetcher.mock.calls[0][1].method).toBe("GET");
 });
 
-it("returns the exact sealed failure without calling the retry endpoint", async () => {
-  const value = { ...completed, state: "failed", error_code: "turn_failed", failure_stage: "empty_model_response",
+it.each(["empty_model_response","full_permission_not_ready"])("returns the exact sealed %s failure without calling the retry endpoint", async (stage) => {
+  const value = { ...completed, state: "failed", error_code: "turn_failed", failure_stage: stage,
     turn_failure: { thread_id: "thread-1", run_id: "run-original", message_id: "message-1", event_sequence: 42 } };
   const fetcher = respond(value);
   await expect(inspectV2TurnRequest(client(), { threadID: "thread-1", operationKey: key })).resolves.toEqual(value);

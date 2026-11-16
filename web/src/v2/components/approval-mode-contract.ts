@@ -17,6 +17,8 @@ export interface ApprovalModeControlProps {
   disabled?: boolean;
   error?: string;
   variant?: "menu" | "settings";
+  // A pre-creation choice has no running Thread whose activation can be shown.
+  selectionOnly?: boolean;
   // A user action only. Never call on mount, history load, or prop changes.
   // Full selection/reactivation must follow explicit confirmation in the UI.
   onRequestChange: (request: ApprovalModeSelectionRequest) => void;

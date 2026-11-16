@@ -13,6 +13,8 @@ import { V2Workbench } from "./app";
 import * as desktopBridge from "../lib/desktop-bridge";
 import { v2FileReferenceKey } from "./components/file-context";
 import { useFileEditLeaveEntry } from "../components/file-edit-drafts";
+import * as desktopSharedBrowser from "../lib/desktop-shared-browser";
+import { draftSharedBrowserAdoption, rememberDraftSharedBrowser } from "./shared-browser-session";
 
 function render(ui: ReactElement) {
   return renderComponent(<LocaleProvider>{ui}</LocaleProvider>);
@@ -831,6 +833,65 @@ describe("V2Workbench model navigation", () => {
 });
 
 describe("V2Workbench first turn", () => {
+  it.each([false, true])("submits the first turn and reports browser adoption failure with recovery=%s", async (durable) => {
+    window.history.replaceState({}, "", "#/new");
+    if (durable) useConnectionStore.getState().setHealth({ status: "ok", api_version: "api.v1",
+      app_version: "fixture", schema_version: 157, data_store_id: `ds1_${"d".repeat(64)}` });
+    const openSharedBrowser = vi.spyOn(desktopSharedBrowser, "openSharedBrowser").mockRejectedValue(new Error("native adoption failed"));
+    const client = { baseURL: "/api/v1", hasThreadControl: true,
+      getPage: vi.fn(async (path: string) => ({ items: path === "/workspaces" ? [workspace] : [], page: { limit: 100 }, requestID: path })),
+      availableModelRoutes: readyModelCatalog(), createThread: vi.fn().mockResolvedValue({ thread: createdThread }),
+      submitThreadTurn: vi.fn().mockResolvedValue({ accepted: true }),
+      inspectThreadCreationRequest: vi.fn().mockResolvedValue({ kind: "creation", workspace_id: workspace.id, state: "not_received", settled: false }),
+    } as unknown as APIClient;
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
+      <V2Workbench client={client} /></QueryClientProvider>);
+    const input = await screen.findByRole("textbox", { name: "开始新对话" });
+    rememberDraftSharedBrowser({ workspace_id: workspace.id, session_id: `failed-draft-${durable}` } as desktopSharedBrowser.SharedBrowserState);
+    const user = userEvent.setup();
+    await user.type(input, "浏览器失败仍发送消息");
+    await user.click(screen.getByRole("button", { name: "发送消息" }));
+    expect(await screen.findByTestId("v2-conversation")).toHaveTextContent(createdThread.id);
+    expect(openSharedBrowser).toHaveBeenCalledOnce();
+    expect(client.submitThreadTurn).toHaveBeenCalledOnce();
+    expect(draftSharedBrowserAdoption(workspace.id, createdThread.id)).toBeUndefined();
+    expect(screen.getByRole("alert")).toHaveTextContent("草稿浏览器未能附加到对话");
+  });
+
+  it("keeps the newer workspace's approval choice disabled until its creation request completes", async () => {
+    window.history.replaceState({}, "", "#/new");
+    const otherWorkspace = { ...workspace, id: "pending-approval-workspace", name: "Pending approval workspace" };
+    const first = deferred<Awaited<ReturnType<APIClient["createThread"]>>>();
+    const second = deferred<Awaited<ReturnType<APIClient["createThread"]>>>();
+    const createThread = vi.fn().mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
+    const client = { hasThreadControl: true, hasExecutionPermissionControl: true,
+      getPage: vi.fn(async (path: string) => ({ items: path === "/workspaces" ? [workspace, otherWorkspace] : [], page: { limit: 100 }, requestID: path })),
+      availableModelRoutes: readyModelCatalog(), createThread,
+      changeThreadExecutionPermission: vi.fn().mockResolvedValue({ execution_permission: { approval_mode: "ask", full_activation: "inactive" } }),
+      submitThreadTurn: vi.fn().mockResolvedValue({ accepted: true }),
+    } as unknown as APIClient;
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
+      <V2Workbench client={client} /></QueryClientProvider>);
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "workspace A");
+    await user.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() => expect(createThread).toHaveBeenCalledOnce());
+    await user.selectOptions(screen.getByRole("combobox", { name: "选择工作区" }), otherWorkspace.id);
+    expect(screen.getByRole("button", { name: "请求批准" })).toBeEnabled();
+    await user.type(screen.getByRole("textbox", { name: "开始新对话" }), "workspace B");
+    await user.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() => expect(createThread).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "请求批准" }).closest(".v2-permission-control")).toHaveAttribute("aria-busy", "true");
+    await user.click(screen.getByRole("button", { name: "请求批准" }));
+    expect(screen.getByRole("menuitemradio", { name: "帮我批准" })).toBeDisabled();
+    await act(async () => first.resolve({ thread: createdThread } as Awaited<ReturnType<APIClient["createThread"]>>));
+    expect(screen.getByRole("menuitemradio", { name: "帮我批准" })).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole("menuitemradio", { name: "帮我批准" }), { key: "Escape" });
+    await act(async () => second.reject(new Error("B creation failed")));
+    expect(screen.getByRole("button", { name: "请求批准" }).closest(".v2-permission-control")).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByRole("alert")).toHaveTextContent("B creation failed");
+  });
+
 
   it.each([
     { outcome: "an empty catalog", result: { ...selectableModelCatalog(), routes: [] } },
@@ -1409,6 +1470,39 @@ describe("V2Workbench first turn", () => {
     expect(submitThreadTurn).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["auto", "full"] as const)("applies %s before submitting the first message from the new conversation composer", async (mode) => {
+    window.history.replaceState({}, "", "#/new");
+    const activation = deferred<any>();
+    const changeThreadExecutionPermission = vi.fn(() => activation.promise);
+    const client = {
+      hasThreadControl: true, hasExecutionPermissionControl: true,
+      getPage: vi.fn(async (path: string) => ({ items: path === "/workspaces" ? [workspace] : [], page: { limit: 100 }, requestID: path })),
+      availableModelRoutes: readyModelCatalog(),
+      createThread: vi.fn().mockResolvedValue({ thread: createdThread }),
+      submitThreadTurn: vi.fn().mockResolvedValue({ accepted: true }),
+      changeThreadExecutionPermission,
+    } as unknown as APIClient;
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
+      <V2Workbench client={client} /></QueryClientProvider>);
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "直接运行并预览页面");
+    await user.click(screen.getByRole("button", { name: "请求批准" }));
+    await user.click(screen.getByRole("menuitemradio", { name: mode === "full" ? "完全访问权限" : "帮我批准" }));
+    if (mode === "full") {
+      const dialog = screen.getByRole("dialog", { name: "确认完全访问权限？" });
+      await user.click(within(dialog).getByRole("button", { name: "确认" }));
+    }
+    expect(changeThreadExecutionPermission).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() => expect(changeThreadExecutionPermission).toHaveBeenCalledTimes(1));
+    expect(changeThreadExecutionPermission).toHaveBeenCalledWith(createdThread.id, {
+      mode, confirm_full: mode === "full", reason: "New conversation approval preference selection",
+    }, expect.any(String));
+    expect(client.submitThreadTurn).not.toHaveBeenCalled();
+    await act(async () => activation.resolve({ execution_permission: { approval_mode: mode, full_activation: mode === "full" ? "active" : "inactive" } }));
+    await waitFor(() => expect(client.submitThreadTurn).toHaveBeenCalledTimes(1));
+  });
+
   it("keeps each project's unknown creation key when another project's response arrives late", async () => {
     const otherWorkspace = { ...workspace, id: "workspace-second-create", name: "Second project" };
     const otherThread = { ...createdThread, id: "thread-second-create", workspace_id: otherWorkspace.id };
@@ -1646,7 +1740,7 @@ it("switches the new conversation and shell language without changing user proje
   expect(screen.getByRole("button", { name: "Task budget and project configuration" })).toHaveTextContent("Task configuration");
   expect(screen.getByRole("button", { name: "Connect project" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Plan mode" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Rule-based search" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Rule-based search" })).not.toBeInTheDocument();
   expect(input).toHaveAttribute("placeholder", "Enter a task or question…");
   expect(input).toHaveValue("保持这段新对话需求");
   const group = screen.getByRole("region", { name: "Project 我的新对话项目" });

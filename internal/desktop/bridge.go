@@ -99,6 +99,7 @@ type ConnectionBootstrap struct {
 	ProjectlessWorkspacesEnabled       bool   `json:"projectless_workspaces_enabled"`
 	RendererPathInputSupported         bool   `json:"renderer_path_input_supported"`
 	RiskProfileRestartEnabled          bool   `json:"risk_profile_restart_enabled"`
+	SharedBrowserEnabled               bool   `json:"shared_browser_enabled"`
 }
 
 type SkillPackageDialogStatus string
@@ -250,6 +251,7 @@ type DesktopBridgeConfig struct {
 	RiskProfileRestarter               DesktopRiskProfileRestarter
 	VerificationSettingsStore          application.DesktopVerificationSettingsStore
 	VerificationSettingsConfirmer      DesktopVerificationSettingsConfirmer
+	SharedBrowser                      SharedBrowserController
 }
 
 // DesktopBridge is the complete renderer binding surface for D0-A. Keep this
@@ -281,6 +283,7 @@ type DesktopBridge struct {
 	verificationSettings      application.DesktopVerificationSettingsStore
 	verificationConfirmer     DesktopVerificationSettingsConfirmer
 	bootstrap                 ConnectionBootstrap
+	sharedBrowser             SharedBrowserController
 	dialogActive              atomic.Bool
 	workspaceOpenActive       atomic.Bool
 	riskRestartActive         atomic.Bool
@@ -465,9 +468,11 @@ func NewDesktopBridge(config DesktopBridgeConfig) (*DesktopBridge, error) {
 		riskProfileRestarter:     config.RiskProfileRestarter,
 		verificationSettings:     config.VerificationSettingsStore,
 		verificationConfirmer:    config.VerificationSettingsConfirmer,
+		sharedBrowser:            config.SharedBrowser,
 		bootstrap: ConnectionBootstrap{
-			ProtocolVersion: ConnectionBootstrapProtocolVersion,
-			APIBaseURL:      DesktopAPIBasePath, APIVersion: apiVersion, AppVersion: appVersion,
+			ProtocolVersion:      ConnectionBootstrapProtocolVersion,
+			SharedBrowserEnabled: config.SharedBrowser != nil,
+			APIBaseURL:           DesktopAPIBasePath, APIVersion: apiVersion, AppVersion: appVersion,
 			UIDigest: config.UIDigest, ReadToken: config.ReadToken, ControlToken: config.ControlToken,
 			ControlEnabled:                     config.RunControlEnabled,
 			ExecutionPermissionControlEnabled:  config.ExecutionPermissionControlEnabled,

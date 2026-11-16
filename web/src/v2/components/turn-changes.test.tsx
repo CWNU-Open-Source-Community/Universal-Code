@@ -32,7 +32,9 @@ function show(get: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={queryClient}>
     <V2Narrative client={client} threadID="thread-1" entries={[{ id: "first-reply", branchSourceID: "last-reply", changeSourceID: "first-reply",
-      kind: "assistant", runId: "run-1", text: "Implemented the changes.", createdAt: "", provisional: false }]} />
+      kind: "assistant", runId: "run-1", text: "Implemented the changes.", createdAt: "", provisional: false,
+      task: { id: "input-1", inputMessageID: "input-1", runId: "run-1", state: "completed",
+        finalMessageID: "first-reply", changeSourceEventID: "first-reply" } }]} />
   </QueryClientProvider>);
 }
 

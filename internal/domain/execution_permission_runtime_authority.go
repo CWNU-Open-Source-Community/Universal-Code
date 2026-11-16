@@ -131,6 +131,32 @@ func (a *ExecutionPermissionRuntimeAuthority) ActivateThreadFullAccess(
 	return grant, nil
 }
 
+// ActivateThreadFullPreference records an explicit confirmation for a future
+// Run without changing an executing Run's immutable permission or live grant.
+// BindThreadRun consumes this preference only at the existing successor boundary.
+func (a *ExecutionPermissionRuntimeAuthority) ActivateThreadFullPreference(
+	thread ThreadExecutionPermissionSnapshot,
+) (ExecutionPermissionRuntimeGrant, error) {
+	if a == nil {
+		return ExecutionPermissionRuntimeGrant{}, errors.New("execution permission runtime authority is required")
+	}
+	if err := thread.Validate(); err != nil {
+		return ExecutionPermissionRuntimeGrant{}, err
+	}
+	if thread.Mode != RunExecutionPermissionFull || !thread.OperatorConfirmed {
+		return ExecutionPermissionRuntimeGrant{}, errors.New("runtime activation requires a confirmed Full Access Thread snapshot")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	generation := a.nextGenerationLocked()
+	a.threads[thread.ThreadID] = executionPermissionThreadGrant{
+		Generation: generation, SnapshotID: thread.ID, SnapshotRevision: thread.Revision,
+	}
+	return ExecutionPermissionRuntimeGrant{Generation: generation,
+		ThreadID: thread.ThreadID, ThreadPermissionSnapshotID: thread.ID,
+		ThreadPermissionRevision: thread.Revision}, nil
+}
+
 // ActivateRunFullAccess supports the lower-level Run permission endpoint. It
 // does not create a Thread grant and therefore cannot flow into successor Runs.
 func (a *ExecutionPermissionRuntimeAuthority) ActivateRunFullAccess(

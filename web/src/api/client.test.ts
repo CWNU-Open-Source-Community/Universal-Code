@@ -793,7 +793,7 @@ describe("APIClient", () => {
     await expect(new APIClient("read-secret").runCapabilityReadiness("run-1")).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
   });
 
-  it("accepts the current Go paused Plan response with three permissions and an installed LPAC adapter without a Run grant", async () => {
+  it("accepts the current Go paused Plan response with an installed LPAC adapter that is not selected for this Run", async () => {
     const envelope = capabilityReadinessEnvelope();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(envelope), {
       status: 200, headers: { "Content-Type": "application/json" },
@@ -803,7 +803,9 @@ describe("APIClient", () => {
     expect(result).toEqual(envelope.data);
     expect(result.permissions.map((option) => option.value)).toEqual(["ask", "auto", "full"]);
     expect(result.command_runtime).toMatchObject({ adapter_installed: true, adapter_ready: true,
-      adapter_kind: "sandboxed_workspace", backend: "local_windows_lpac", current_run_granted: false });
+      current_run_granted: false });
+    expect(result.command_runtime).not.toHaveProperty("adapter_kind");
+    expect(result.command_runtime).not.toHaveProperty("backend");
     expect(result.capability_grant).toBe(false);
   });
 
@@ -842,7 +844,8 @@ describe("APIClient", () => {
     for (const patch of [{ adapter_kind: undefined }, { backend: undefined }, { adapter_kind: "unknown_adapter" },
       { adapter_kind: ["sandboxed_workspace"] }, { backend: "b".repeat(257) }, { adapter_kind: "" }, { backend: "" }]) {
       const envelope = capabilityReadinessEnvelope();
-      const data = { ...envelope.data, command_runtime: { ...envelope.data.command_runtime, ...patch } };
+      const data = { ...envelope.data, command_runtime: { ...envelope.data.command_runtime,
+        adapter_kind: "sandboxed_workspace", backend: "local_windows_lpac", ...patch } };
       fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ...envelope, data }), {
         status: 200, headers: { "Content-Type": "application/json" },
       }));
@@ -969,8 +972,6 @@ describe("APIClient", () => {
     }],
     ["granted adapter without identity", (data: ReturnType<typeof capabilityReadinessData>) => {
       data.command_runtime.current_run_granted = true;
-      delete (data.command_runtime as Partial<typeof data.command_runtime>).adapter_kind;
-      delete (data.command_runtime as Partial<typeof data.command_runtime>).backend;
     }],
     ["private extension", (data: ReturnType<typeof capabilityReadinessData>) => {
       (data.permissions[0] as Record<string, unknown>).root_path = "C:\\private";

@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { startTransition, Suspense, useState } from "react";
 import type { RenderOptions } from "@testing-library/react";
 import { LocaleProvider } from "../lib/locale";
 import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
@@ -10,6 +11,7 @@ import type { CreationIntent } from "./recovery-creation";
 import { V2RecoveryProvider, useV2RecoveryStore } from "./recovery-storage";
 import type { V2RecoveryStore } from "./recovery-storage";
 import { recoveryTurnKey } from "./recovery-session";
+import { useConnectionStore } from "../state/connection";
 import type { MCPDraftReference } from "../api/mcp-references";
 
 const workspaceID = "workspace-recovery";
@@ -27,6 +29,9 @@ function fixture() {
   return { baseURL: "/api/v1", inspectThreadCreationRequest: vi.fn().mockResolvedValue(absent),
     get: vi.fn().mockResolvedValue({ thread }), createThread: vi.fn().mockResolvedValue({ thread }),
     selectProjectSkills: vi.fn().mockResolvedValue(undefined),
+    changeThreadExecutionPermission: vi.fn().mockImplementation(async (_id, body) => ({
+      execution_permission: { approval_mode: body.mode, full_activation: body.mode === "full" ? "active" : "inactive" },
+    })),
     submitThreadTurn: vi.fn(), executeRun: vi.fn() };
 }
 function mount(client: ReturnType<typeof fixture>, selectedWorkspace = workspaceID, onRecovered = vi.fn()) {
@@ -50,6 +55,180 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("first-message creation recovery", () => {
+  const prepareApproval = (view: ReturnType<typeof mount>, mode: "ask" | "auto" | "full") => {
+    let intent!: CreationIntent;
+    act(() => { intent = view.helper().prepare(request, request.goal, files, request.goal, [], undefined, [], undefined, [], mode); });
+    return intent;
+  };
+
+  it("applies the selected permission before handing off the first input, requiring live Full confirmation", async () => {
+    const client = fixture();
+    const view = mount(client);
+    const intent = prepareApproval(view, "full");
+    await act(async () => { await expect(view.helper().resolve(intent)).rejects.toThrow("确认完全访问"); });
+    expect(client.createThread).not.toHaveBeenCalled();
+    expect(client.changeThreadExecutionPermission).not.toHaveBeenCalled();
+    let resolved!: ThreadView;
+    await act(async () => { resolved = await view.helper().resolve(intent, true); });
+    expect(client.changeThreadExecutionPermission).toHaveBeenCalledWith(thread.id, {
+      mode: "full", confirm_full: true, reason: "New conversation approval preference selection",
+    }, expect.any(String));
+    expect(client.createThread.mock.invocationCallOrder[0]).toBeLessThan(client.changeThreadExecutionPermission.mock.invocationCallOrder[0]);
+    act(() => { view.helper().handoff(intent, resolved); });
+    expect(view.store().entries("creation:")).toHaveLength(0);
+    expect(view.store().entries("turn:")).toHaveLength(1);
+  });
+
+  it("keeps the draft and creation key when permission activation fails, without handing off a turn", async () => {
+    const client = fixture();
+    client.changeThreadExecutionPermission.mockRejectedValueOnce(new Error("activation unavailable"));
+    const view = mount(client);
+    const intent = prepareApproval(view, "full");
+    await act(async () => { await expect(view.helper().resolve(intent, true)).rejects.toThrow("activation unavailable"); });
+    expect(() => view.helper().handoff(intent, thread)).toThrow();
+    expect(view.store().read(`creation:${intent.operationID}`, null)).toEqual(intent);
+    expect(view.store().entries("turn:")).toHaveLength(0);
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    const retry = prepareApproval(view, "auto");
+    expect(retry.operationID).toBe(intent.operationID);
+    await act(async () => { await view.helper().resolve(retry); });
+    expect(client.createThread).toHaveBeenCalledTimes(1);
+    expect(client.changeThreadExecutionPermission).toHaveBeenLastCalledWith(thread.id, {
+      mode: "auto", confirm_full: false, reason: "New conversation approval preference selection",
+    }, expect.any(String));
+    expect(client.changeThreadExecutionPermission.mock.calls[0]![2]).not.toBe(client.changeThreadExecutionPermission.mock.calls[1]![2]);
+  });
+
+  it("reuses a saved approval revision after its response is lost and the page remounts", async () => {
+    const client = fixture();
+    client.changeThreadExecutionPermission.mockRejectedValueOnce(new Error("permission response lost"));
+    const original = mount(client);
+    const intent = prepareApproval(original, "auto");
+    await act(async () => { await expect(original.helper().resolve(intent)).rejects.toThrow("permission response lost"); });
+    const operationKey = client.changeThreadExecutionPermission.mock.calls[0]![2];
+    original.unmount();
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    const restored = mount(client);
+    fireEvent.click(await screen.findByRole("button", { name: "打开原对话" }));
+    await waitFor(() => expect(restored.onRecovered).toHaveBeenCalledOnce());
+    expect(client.changeThreadExecutionPermission.mock.calls[1]![2]).toBe(operationKey);
+    expect(client.createThread).toHaveBeenCalledOnce();
+  });
+
+  it("journals a late recovered turn without calling into a newer connection", async () => {
+    const client = fixture();
+    let activate!: (value: any) => void;
+    client.changeThreadExecutionPermission.mockImplementation(() => new Promise((resolve) => { activate = resolve; }));
+    const view = mount(client);
+    const intent = prepareApproval(view, "auto");
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开原对话" }));
+    await waitFor(() => expect(client.changeThreadExecutionPermission).toHaveBeenCalledOnce());
+    const generation = useConnectionStore.getState().connectionGeneration;
+    view.unmount();
+    useConnectionStore.setState({ connectionGeneration: generation + 1 });
+    try {
+      await act(async () => activate({ execution_permission: { approval_mode: "auto", full_activation: "inactive" } }));
+      expect(view.onRecovered).not.toHaveBeenCalled();
+      expect(view.store().entries("creation:")).toHaveLength(0);
+      expect(view.store().entries("turn:")).toEqual([[`turn:v2-thread-create-turn-${intent.operationID}`, expect.objectContaining({ threadID: thread.id })]]);
+    } finally { useConnectionStore.setState({ connectionGeneration: generation }); }
+  });
+
+  it("lets the committed recovery open its conversation while a different-client render is suspended", async () => {
+    const client = fixture();
+    const nextClient = fixture();
+    const onRecovered = vi.fn();
+    let helper!: ReturnType<typeof useV2CreationRecovery>;
+    let changeClient!: () => void;
+    let activate!: (value: any) => void;
+    client.changeThreadExecutionPermission.mockImplementation(() => new Promise((resolve) => { activate = resolve; }));
+    const suspended = new Promise<never>(() => {});
+    const attemptedRender = vi.fn();
+    function Probe({ selected }: { selected: ReturnType<typeof fixture> }) {
+      const recovery = useV2CreationRecovery(selected as unknown as APIClient, workspaceID, onRecovered);
+      if (selected === nextClient) { attemptedRender(); throw suspended; }
+      helper = recovery;
+      return recovery.notice;
+    }
+    function Host() {
+      const [selected, setSelected] = useState(client);
+      changeClient = () => startTransition(() => setSelected(nextClient));
+      return <Suspense fallback="Loading connection"><Probe selected={selected} /></Suspense>;
+    }
+    render(<V2RecoveryProvider client={client} scopeID="creation-db"><Host /></V2RecoveryProvider>);
+    act(() => { helper.prepare(request, request.goal, files, request.goal, [], undefined, [], undefined, [], "auto"); });
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开原对话" }));
+    await waitFor(() => expect(client.changeThreadExecutionPermission).toHaveBeenCalledOnce());
+    await act(async () => changeClient());
+    expect(attemptedRender).toHaveBeenCalled();
+    expect(screen.queryByText("Loading connection")).not.toBeInTheDocument();
+    await act(async () => activate({ execution_permission: { approval_mode: "auto", full_activation: "inactive" } }));
+    expect(onRecovered).toHaveBeenCalledWith(thread, request.goal, files, expect.objectContaining({ threadID: thread.id }), true);
+  });
+
+  it("does not restore Full authorization from the creation journal or from read-only inspection", async () => {
+    const client = fixture();
+    const original = mount(client);
+    const intent = prepareApproval(original, "full");
+    await act(async () => { await original.helper().resolve(intent, true); });
+    original.unmount();
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    client.changeThreadExecutionPermission.mockClear();
+    const restored = mount(client);
+    const open = await screen.findByRole("button", { name: "打开原对话" });
+    expect(client.changeThreadExecutionPermission).not.toHaveBeenCalled();
+    expect(() => restored.helper().handoff(intent, thread)).toThrow();
+    fireEvent.click(open);
+    expect(await screen.findByRole("dialog", { name: "启用完全访问权限？" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(client.changeThreadExecutionPermission).not.toHaveBeenCalled();
+    expect(restored.onRecovered).not.toHaveBeenCalled();
+    fireEvent.click(open);
+    fireEvent.click(screen.getByRole("button", { name: "确认并继续" }));
+    await waitFor(() => expect(restored.onRecovered).toHaveBeenCalledTimes(1));
+    expect(client.changeThreadExecutionPermission).toHaveBeenCalledTimes(1);
+    expect(client.createThread).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not hand off a first turn when Full is saved but not activated", async () => {
+    const client = fixture();
+    client.changeThreadExecutionPermission.mockResolvedValueOnce({ execution_permission: { approval_mode: "full", full_activation: "inactive" } });
+    const view = mount(client);
+    const intent = prepareApproval(view, "full");
+    await act(async () => { await expect(view.helper().resolve(intent, true)).rejects.toThrow("权限尚未生效"); });
+    expect(() => view.helper().handoff(intent, thread)).toThrow();
+    expect(view.store().entries("turn:")).toHaveLength(0);
+  });
+
+  it("serializes permission submission and preserves the original handoff after leaving the page", async () => {
+    const client = fixture();
+    let activate!: (value: any) => void;
+    client.changeThreadExecutionPermission.mockImplementation(() => new Promise((resolve) => { activate = resolve; }));
+    const view = mount(client);
+    const intent = prepareApproval(view, "auto");
+    client.inspectThreadCreationRequest.mockResolvedValue(found);
+    fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开原对话" }));
+    await waitFor(() => expect(client.changeThreadExecutionPermission).toHaveBeenCalledTimes(1));
+    expect(() => view.helper().prepare(request, request.goal, files, request.goal, [], undefined, [], undefined, [], "ask")).toThrow("正在提交");
+    await expect(view.helper().resolve(intent)).rejects.toThrow("正在提交");
+    expect(client.changeThreadExecutionPermission).toHaveBeenCalledTimes(1);
+    view.unmount();
+    const remounted = mount(client);
+    await screen.findByRole("button", { name: "打开原对话" });
+    expect(screen.getByRole("button", { name: "打开原对话" })).toBeDisabled();
+    expect(() => remounted.helper().prepare(request, request.goal, files, request.goal, [], undefined, [], undefined, [], "ask")).toThrow("正在提交");
+    await expect(remounted.helper().resolve(intent)).rejects.toThrow("正在提交");
+    await act(async () => activate({ execution_permission: { approval_mode: "auto", full_activation: "inactive" } }));
+    expect(view.onRecovered).toHaveBeenCalledWith(thread, request.goal, files, expect.objectContaining({ threadID: thread.id }), false);
+    expect(remounted.helper().pending).toBe(false);
+    expect(screen.queryByRole("button", { name: "打开原对话" })).not.toBeInTheDocument();
+  });
+
   it("leaves a handled current image error to its action row while preserving other scopes and the creation guard", async () => {
     const client = fixture();
     const view = mount(client);
@@ -261,7 +440,7 @@ describe("first-message creation recovery", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开原对话" }));
     expect(second.onRecovered).toHaveBeenCalledWith(expect.objectContaining({ id: thread.id }), `  ${request.goal}  `, files,
       expect.objectContaining({ threadID: thread.id, content: request.goal, draft: `  ${request.goal}  `,
-        operationKey: `v2-thread-create-turn-${intent.operationID}`, createdAt: intent.createdAt }));
+        operationKey: `v2-thread-create-turn-${intent.operationID}`, createdAt: intent.createdAt }), true);
     const input = second.onRecovered.mock.calls[0][3];
     expect(second.store().read(recoveryTurnKey(input), null)).toEqual(input);
     expect(input.content).toBe(request.goal);

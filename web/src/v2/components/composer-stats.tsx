@@ -48,8 +48,8 @@ export function V2ComposerStats({ statistics }: { statistics?: Statistics }) {
   const percent = context ? Math.min(100, Math.round(context.input_tokens / context.window_tokens * 100)) : undefined;
   const format = (value: number) => value.toLocaleString(locale);
   const activityTitle = t(
-    `本对话主代理：${stats.turns} 轮，${stats.steps} 个模型步骤。${speedLabel === undefined ? "暂无生成速度记录。" : `平均生成速度 ${speedLabel} tok/s。`}速度为已计时调用的输出 Token ÷ 生成时长，不含首 Token 等待与工具执行。`,
-    `Main agent in this conversation: ${stats.turns} turns, ${stats.steps} model steps. ${speedLabel === undefined ? "Generation speed is unavailable." : `Average generation speed: ${speedLabel} tok/s.`} Speed is output tokens / measured generation time, excluding time to first token and tool execution.`,
+    `本对话累计 ${stats.turns} 次用户输入，主代理执行 ${stats.steps} 个模型步骤；同一步的重试和协议纠正合并计数。${speedLabel === undefined ? "暂无生成速度记录。" : `平均生成速度 ${speedLabel} tok/s。`}速度为已计时调用的输出 Token ÷ 生成时长，不含首 Token 等待与工具执行。`,
+    `Conversation totals: ${stats.turns} user inputs, ${stats.steps} main-agent model steps; retries and protocol corrections within a step count once. ${speedLabel === undefined ? "Generation speed is unavailable." : `Average generation speed: ${speedLabel} tok/s.`} Speed is output tokens / measured generation time, excluding time to first token and tool execution.`,
   );
   const usageTitle = t(
     `本对话主代理累计输入 ${format(stats.input_tokens)} Token（含缓存），输出 ${format(stats.output_tokens)} Token。${cacheKnown ? `缓存命中 ${cacheLabel}。缓存命中率 = 缓存读取 Token ÷ 输入 Token。` : `${stats.cache_reported_calls} / ${stats.usage_calls} 次调用提供了缓存明细，暂不计算命中率。`}`,
@@ -68,7 +68,7 @@ export function V2ComposerStats({ statistics }: { statistics?: Statistics }) {
       aria-expanded={expanded === "activity"} aria-describedby={expanded === "activity" ? descriptionID : undefined}
       onClick={() => setExpanded(expanded === "activity" ? null : "activity")}>
       <Gauge size={14} strokeWidth={1.5} aria-hidden="true" />
-      <span>{t(`${format(stats.turns)} 轮 ${format(stats.steps)} 步`, `${format(stats.turns)} turns ${format(stats.steps)} steps`)}</span>
+      <span>{t(`${format(stats.turns)} 次输入 · ${format(stats.steps)} 步`, `${format(stats.turns)} inputs · ${format(stats.steps)} steps`)}</span>
       {speedLabel !== undefined && <span className="v2-composer-stat-detail"><span aria-hidden="true">·</span><span>{speedLabel} tok/s</span></span>}
     </button>}
     {stats.total_tokens > 0 && <button type="button" className="v2-composer-stat" title={usageTitle}

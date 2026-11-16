@@ -599,7 +599,7 @@ func TestRunCommandExecuteIsConfirmedAuditedAndExactlyOnce(t *testing.T) {
 			replayed, stderr, code)
 	}
 	if _, stderr, code := execute("run", "command-execute", runID,
-		"git-status", "--operation-key", "controlled-execute-0001",
+		"go-version", "--timeout", "2s", "--operation-key", "controlled-execute-0001",
 		"--confirm-execution"); code == 0 ||
 		!strings.Contains(stderr, "another request") {
 		t.Fatalf("conflict stderr=%q code=%d", stderr, code)

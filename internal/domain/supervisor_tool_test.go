@@ -93,6 +93,7 @@ func TestSupervisorToolCallAcceptsEveryDurableToolName(t *testing.T) {
 		"browser_click",
 		"browser_type",
 		"browser_screenshot",
+		"browser_move",
 	} {
 		t.Run(toolName, func(t *testing.T) {
 			call := SupervisorToolCall{
@@ -168,5 +169,16 @@ func TestSupervisorGitHubEvidenceCallsAreDurableAndAuthorityBound(t *testing.T) 
 				t.Fatalf("authority-bound GitHub evidence call was rejected: %v", err)
 			}
 		})
+	}
+}
+
+func TestSupervisorBrowserMoveRequiresDurableAuthority(t *testing.T) {
+	call := SupervisorToolCall{RunID: "run-browser", Turn: 1, AttemptID: "attempt-browser", Round: 1, Position: 1, ModelAttempt: 1, CallID: "move", ToolName: "browser_move", PayloadJSON: `{"version":"browser_move.v2","point":{"x":40,"y":30,"document_epoch":1,"viewport":{"width":800,"height":600}}}`, Status: SupervisorToolPending, CreatedAt: time.Now().UTC()}
+	if err := call.Validate(); err == nil {
+		t.Fatal("browser move without durable authority was accepted")
+	}
+	call.AuthorityJSON = `{}`
+	if err := call.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }

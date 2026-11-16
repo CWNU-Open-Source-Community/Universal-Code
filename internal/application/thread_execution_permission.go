@@ -277,13 +277,6 @@ func (s *ThreadExecutionPermissionService) activateFullAccess(ctx context.Contex
 		return apperror.New(apperror.CodeFailedPrecondition,
 			"dynamic Full Access runtime authority is unavailable")
 	}
-	if result.CurrentRunID != "" &&
-		result.CurrentRunEffect == domain.ThreadExecutionPermissionDeferred {
-		// The current Run deliberately retains its previous snapshot and live
-		// fence. Full Access becomes eligible only when a successor Run
-		// materializes the Thread preference.
-		return nil
-	}
 	currentThreadPermission, err := s.store.GetThreadExecutionPermission(
 		ctx, result.Permission.ThreadID)
 	if err != nil {
@@ -294,6 +287,20 @@ func (s *ThreadExecutionPermissionService) activateFullAccess(ctx context.Contex
 		currentThreadPermission.Mode != result.Permission.Mode {
 		// Never let replaying an older Full operation recreate a live Thread
 		// grant after a newer durable downgrade.
+		return nil
+	}
+	if result.CurrentRunID != "" &&
+		result.CurrentRunEffect == domain.ThreadExecutionPermissionDeferred {
+		// Keep the current Run's permission and fences unchanged. The explicit
+		// confirmation must still authorize the future Thread preference, or a
+		// successor could materialize Full but never bind a live runtime grant.
+		if s.capabilities.RuntimeAuthority.AllowsThreadFullAccess(currentThreadPermission, nil) {
+			return nil
+		}
+		if _, err := s.capabilities.RuntimeAuthority.ActivateThreadFullPreference(currentThreadPermission); err != nil {
+			return apperror.Wrap(apperror.CodeFailedPrecondition,
+				"dynamic Thread Full Access preference could not be activated", err)
+		}
 		return nil
 	}
 	threadRecord, err := s.store.GetThread(ctx, result.Permission.ThreadID)

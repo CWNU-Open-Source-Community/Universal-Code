@@ -49,6 +49,7 @@ func TestAgentRunnerRetiredWebAuthorityRecovery(t *testing.T) {
 				textResponse(rootActionResponse(domain.RootActionContinue, "stored search replayed", "", "")),
 			}}
 			supervisor := newToolLoopSupervisor(historical, model).
+				WithExecutionPermissionCapabilities(webSupervisorTestCapabilities(t, state, run.ID)).
 				WithWebEvidence(webevidence.NewService(state, search, &applicationWebFetchBackend{})).
 				WithWebFetchAuthorizationScheduler(true)
 			result, err := supervisor.Step(t.Context(), run.ID)
@@ -81,6 +82,27 @@ func TestAgentRunnerRetiredWebAuthorityRecovery(t *testing.T) {
 			}
 		})
 	}
+}
+
+func webSupervisorTestCapabilities(t *testing.T, state *store.SQLiteStore, runID string) domain.ExecutionPermissionRuntimeCapabilities {
+	t.Helper()
+	capabilities := domain.ExecutionPermissionRuntimeCapabilities{
+		OperatorApprovalEnabled: true, DangerFullAccessEnabled: true,
+		RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority(),
+	}
+	t.Cleanup(func() { capabilities.RuntimeAuthority.RevokeRun(runID) })
+	permission, err := state.GetRunExecutionPermission(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Root model turns require a current Full activation; Web evidence still
+	// derives its own network authority rather than inheriting this host grant.
+	if permission.Mode == domain.RunExecutionPermissionFull {
+		if _, err := capabilities.RuntimeAuthority.ActivateRunFullAccess(permission); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return capabilities
 }
 
 // Rewrite only this test's SQLite record after a current writer creates it.
@@ -215,14 +237,19 @@ func TestAgentRunnerWebSearchAcrossModesWithoutShellNetwork(t *testing.T) {
 					web.WithSearchProviderResolver(webModeHostedResolver{provider: search})
 				}
 				model := &scriptedToolProvider{}
-				supervisor := newToolLoopSupervisor(state, model).WithWebEvidence(web).WithWebFetchAuthorizationScheduler(true)
+				capabilities := webSupervisorTestCapabilities(t, state, run.ID)
+				supervisor := newToolLoopSupervisor(state, model).WithExecutionPermissionCapabilities(capabilities).
+					WithWebEvidence(web).WithWebFetchAuthorizationScheduler(true)
 				modes := []domain.RunExecutionPermissionMode{mode}
 				if mode == domain.RunExecutionPermissionFull {
-					// A native Full grant was revoked by setWebTestPermission.
-					// Downgrading then starts fresh ordinary web calls.
+					// Revoke the Supervisor's native grant when downgrading;
+					// fresh ordinary Web calls must still work in Auto and Ask.
 					modes = append(modes, domain.RunExecutionPermissionAuto, domain.RunExecutionPermissionAsk)
 				}
 				for index, current := range modes {
+					if current != domain.RunExecutionPermissionFull {
+						capabilities.RuntimeAuthority.RevokeRun(run.ID)
+					}
 					setWebTestPermission(t, state, run.ID, current)
 					searchPayload, _ := json.Marshal(toolgateway.WebSearchPayload{
 						Version: "web_search.v1", Query: "public documentation " + string(current), Limit: 1,

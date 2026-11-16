@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Check, Cpu, LoaderCircle, Route, ShieldCheck } from "lucide-react";
+import { Activity, Check, LoaderCircle, Route, ShieldCheck } from "lucide-react";
 import type { APIClient } from "../api/client";
 import type { ModelHarnessQualificationView, ProviderDiagnosticView } from "../api/types";
 import { ErrorState, LoadingState, StatusBadge } from "./common";
@@ -97,100 +97,6 @@ export function ModelAvailabilitySettings({ client }: { client: APIClient }) {
           {query.isError && <ErrorState error={query.error} />}
           {query.data && (
             <>
-              <>
-              <section className="model-availability-section">
-                <h3><Cpu aria-hidden="true" size={14} />{t("提供商", "Provider")}</h3>
-                <div className="model-provider-list">
-                  {query.data.providers.flatMap((provider) =>
-                    (provider.models.length > 0 ? provider.models : [""]).map((model) => {
-                    const harness = provider.harnesses.find((candidate) => candidate.model === model);
-                    const modelReference = `${provider.name}/${model}`;
-                    return <div className="model-provider-row" key={modelReference}>
-                      <div><strong>{provider.display_name}</strong><small>{provider.kind}</small></div>
-                      <span>{model || t("未配置模型", "No configured model")}</span>
-                      <span>{harness
-                        ? `${harness.transport_protocol} · JSON ${harness.json_strategy}`
-                        : provider.credential_source === "chatgpt_oauth" ? t("ChatGPT 账户", "ChatGPT account") : provider.credential_source}</span>
-                      <StatusBadge status={provider.status} />
-                      {harness && <StatusBadge status={harness.qualification_status} />}
-                      {harness?.latest_qualification_status &&
-                        <span title={t("最近一次诊断状态", "Latest diagnostic qualification")}>
-                          {qualificationStatusLabel(harness.latest_qualification_status)}
-                        </span>}
-                      {client.hasModelControl &&
-                        (provider.status === "available" ||
-                          provider.status === "not_configured") &&
-                        model && (
-                          <>
-                            <button aria-label={t(`诊断 ${modelReference}`, `Diagnose ${modelReference}`)} className="icon-button"
-                              disabled={diagnosticMutation.isPending ||
-                                qualificationMutation.isPending}
-                              onClick={() => diagnosticMutation.mutate({ provider: provider.name,
-                                model })}
-                              title={t("运行单次连接诊断", "Run one-call connectivity diagnostic")} type="button">
-                              {diagnosticMutation.isPending &&
-                                diagnosticMutation.variables?.provider === provider.name &&
-                                diagnosticMutation.variables.model === model
-                                ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
-                                : <Activity aria-hidden="true" size={15} />}
-                            </button>
-                            <button aria-label={t(`验证 ${modelReference} Harness`, `Qualify ${modelReference} Harness`)}
-                              className="icon-button"
-                              disabled={diagnosticMutation.isPending ||
-                                qualificationMutation.isPending || harness?.root_eligible === true}
-                              onClick={() => qualificationMutation.mutate({
-                                provider: provider.name, model,
-                              })}
-                              title={t("运行两次调用的 Harness 合成验证", "Run two-call synthetic Harness qualification")} type="button">
-                              {qualificationMutation.isPending &&
-                                qualificationMutation.variables?.provider === provider.name &&
-                                qualificationMutation.variables.model === model
-                                ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
-                                : <ShieldCheck aria-hidden="true" size={15} />}
-                            </button>
-                          </>
-                        )}
-                    </div>;
-                  }))}
-                </div>
-                {diagnostic && <div className="model-diagnostic-result" role="status">
-                  <span>{diagnostic.provider}/{diagnostic.model}</span>
-                  <StatusBadge status={diagnostic.status} />
-                  {diagnostic.qualification_status &&
-                    <span title={t("端点资格状态", "Endpoint qualification status")}>
-                      {qualificationStatusLabel(diagnostic.qualification_status)}
-                    </span>}
-                  <span>{diagnostic.failure_reason !== "none"
-                    ? failureReasonLabel(diagnostic.failure_reason)
-                    : diagnostic.outcome === "success"
-                    ? t("成功", "success")
-                    : diagnostic.outcome === "invalid_response"
-                      ? t("响应格式不兼容", "invalid response")
-                      : diagnostic.outcome}</span>
-                  <span>{diagnostic.duration_ms} ms</span>
-                </div>}
-                {diagnosticMutation.isError && <div className="inline-warning" role="alert">
-                  {diagnosticMutation.error instanceof Error
-                    ? diagnosticMutation.error.message : t("Provider 诊断失败", "Provider diagnostic failed")}
-                </div>}
-                {qualification && <div className="model-diagnostic-result" role="status">
-                  <span>{qualification.provider}/{qualification.model}</span>
-                  <StatusBadge status={qualification.status} />
-                  <span>{qualification.harness.transport_protocol}</span>
-                  {qualification.qualification_status &&
-                    <span title={t("端点资格状态", "Endpoint qualification status")}>
-                      {qualificationStatusLabel(qualification.qualification_status)}
-                    </span>}
-                  {qualification.failure_reason !== "none" &&
-                    <span>{failureReasonLabel(qualification.failure_reason)}</span>}
-                  <span>{qualification.model_calls} {t("次模型调用", "model calls")}</span>
-                </div>}
-                {qualificationMutation.isError && <div className="inline-warning" role="alert">
-                  {qualificationMutation.error instanceof Error
-                    ? qualificationMutation.error.message : t("模型 Harness 验证失败", "Model Harness qualification failed")}
-                </div>}
-              </section>
-              </>
               <section className="model-availability-section">
                 <h3><Route aria-hidden="true" size={14} />{t("新对话默认模型", "Default model for new conversations")}</h3>
                 <div className="model-route-list">
@@ -228,6 +134,100 @@ export function ModelAvailabilitySettings({ client }: { client: APIClient }) {
                 {routeMutation.error instanceof Error
                   ? routeMutation.error.message : t("模型路由选择失败", "Model route selection failed")}
               </div>}
+              <details className="model-optional-prices">
+                <summary>{t("逐模型诊断", "Per-model diagnostics")}</summary>
+                <section className="model-availability-section">
+                  <div className="model-provider-list">
+                    {query.data.providers.flatMap((provider) =>
+                      (provider.models.length > 0 ? provider.models : [""]).map((model) => {
+                      const harness = provider.harnesses.find((candidate) => candidate.model === model);
+                      const modelReference = `${provider.name}/${model}`;
+                      return <div className="model-provider-row" key={modelReference}>
+                        <div><strong>{provider.display_name}</strong><small>{provider.kind}</small></div>
+                        <span>{model || t("未配置模型", "No configured model")}</span>
+                        <span>{harness
+                          ? `${harness.transport_protocol} · JSON ${harness.json_strategy}`
+                          : provider.credential_source === "chatgpt_oauth" ? t("ChatGPT 账户", "ChatGPT account") : provider.credential_source}</span>
+                        <StatusBadge status={provider.status} />
+                        {harness && <StatusBadge status={harness.qualification_status} />}
+                        {harness?.latest_qualification_status &&
+                          <span title={t("最近一次诊断状态", "Latest diagnostic qualification")}>
+                            {qualificationStatusLabel(harness.latest_qualification_status)}
+                          </span>}
+                        {client.hasModelControl &&
+                          (provider.status === "available" ||
+                            provider.status === "not_configured") &&
+                          model && (
+                            <>
+                              <button aria-label={t(`诊断 ${modelReference}`, `Diagnose ${modelReference}`)} className="icon-button"
+                                disabled={diagnosticMutation.isPending ||
+                                  qualificationMutation.isPending}
+                                onClick={() => diagnosticMutation.mutate({ provider: provider.name,
+                                  model })}
+                                title={t("运行单次连接诊断", "Run one-call connectivity diagnostic")} type="button">
+                                {diagnosticMutation.isPending &&
+                                  diagnosticMutation.variables?.provider === provider.name &&
+                                  diagnosticMutation.variables.model === model
+                                  ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
+                                  : <Activity aria-hidden="true" size={15} />}
+                              </button>
+                              <button aria-label={t(`验证 ${modelReference} Harness`, `Qualify ${modelReference} Harness`)}
+                                className="icon-button"
+                                disabled={diagnosticMutation.isPending ||
+                                  qualificationMutation.isPending || harness?.root_eligible === true}
+                                onClick={() => qualificationMutation.mutate({
+                                  provider: provider.name, model,
+                                })}
+                                title={t("运行两次调用的 Harness 合成验证", "Run two-call synthetic Harness qualification")} type="button">
+                                {qualificationMutation.isPending &&
+                                  qualificationMutation.variables?.provider === provider.name &&
+                                  qualificationMutation.variables.model === model
+                                  ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
+                                  : <ShieldCheck aria-hidden="true" size={15} />}
+                              </button>
+                            </>
+                          )}
+                      </div>;
+                    }))}
+                  </div>
+                  {diagnostic && <div className="model-diagnostic-result" role="status">
+                    <span>{diagnostic.provider}/{diagnostic.model}</span>
+                    <StatusBadge status={diagnostic.status} />
+                    {diagnostic.qualification_status &&
+                      <span title={t("端点资格状态", "Endpoint qualification status")}>
+                        {qualificationStatusLabel(diagnostic.qualification_status)}
+                      </span>}
+                    <span>{diagnostic.failure_reason !== "none"
+                      ? failureReasonLabel(diagnostic.failure_reason)
+                      : diagnostic.outcome === "success"
+                      ? t("成功", "success")
+                      : diagnostic.outcome === "invalid_response"
+                        ? t("响应格式不兼容", "invalid response")
+                        : diagnostic.outcome}</span>
+                    <span>{diagnostic.duration_ms} ms</span>
+                  </div>}
+                  {diagnosticMutation.isError && <div className="inline-warning" role="alert">
+                    {diagnosticMutation.error instanceof Error
+                      ? diagnosticMutation.error.message : t("Provider 诊断失败", "Provider diagnostic failed")}
+                  </div>}
+                  {qualification && <div className="model-diagnostic-result" role="status">
+                    <span>{qualification.provider}/{qualification.model}</span>
+                    <StatusBadge status={qualification.status} />
+                    <span>{qualification.harness.transport_protocol}</span>
+                    {qualification.qualification_status &&
+                      <span title={t("端点资格状态", "Endpoint qualification status")}>
+                        {qualificationStatusLabel(qualification.qualification_status)}
+                      </span>}
+                    {qualification.failure_reason !== "none" &&
+                      <span>{failureReasonLabel(qualification.failure_reason)}</span>}
+                    <span>{qualification.model_calls} {t("次模型调用", "model calls")}</span>
+                  </div>}
+                  {qualificationMutation.isError && <div className="inline-warning" role="alert">
+                    {qualificationMutation.error instanceof Error
+                      ? qualificationMutation.error.message : t("模型 Harness 验证失败", "Model Harness qualification failed")}
+                  </div>}
+                </section>
+              </details>
               <details className="model-optional-prices">
                 <summary>{t("费用上限所用价格（可选）", "Pricing for spending limits (optional)")}</summary>
                 <PriceSnapshotsSection client={client} />
