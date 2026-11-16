@@ -407,6 +407,11 @@ func TestExecOutputLastMessagePreservesAnExistingFilesMode(t *testing.T) {
 	if err := os.WriteFile(target, []byte("previous reply"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// WriteFile applies the caller's umask on create; pin the mode so the
+	// preservation assertion is independent of it.
+	if err := os.Chmod(target, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	var out bytes.Buffer
 	a.out = &out
