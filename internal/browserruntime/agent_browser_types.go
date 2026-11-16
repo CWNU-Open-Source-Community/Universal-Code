@@ -10,9 +10,10 @@ import (
 const AgentBrowserProtocolVersion = "agent-browser-runtime.v1"
 
 var (
-	ErrAgentBrowserStaleReference = errors.New("browser reference is stale; obtain a new snapshot")
-	ErrAgentBrowserClosed         = errors.New("agent browser session is closed")
-	ErrAgentBrowserTargetChanged  = errors.New("browser target changed or is obscured; obtain a new snapshot")
+	ErrAgentBrowserStaleReference        = errors.New("browser reference is stale; obtain a new snapshot")
+	ErrAgentBrowserClosed                = errors.New("agent browser session is closed")
+	ErrAgentBrowserTargetChanged         = errors.New("browser target changed or is obscured; obtain a new snapshot")
+	ErrAgentBrowserScreenshotUnavailable = errors.New("browser screenshot is unavailable; show the browser tab and retry, or use browser_snapshot for DOM inspection")
 )
 
 // AgentBrowserAuthority is supplied by the trusted application composition root,
@@ -130,17 +131,21 @@ type AgentBrowserInteraction struct {
 }
 
 type AgentBrowserScreenshot struct {
-	SessionID     string    `json:"session_id"`
-	CanonicalURL  string    `json:"canonical_url"`
-	DocumentEpoch uint64    `json:"document_epoch"`
-	MediaType     string    `json:"media_type"`
-	SHA256        string    `json:"sha256"`
-	Bytes         int       `json:"bytes"`
-	PNG           []byte    `json:"-"`
-	CompletedAt   time.Time `json:"completed_at"`
+	Viewport      *AgentBrowserViewport `json:"viewport,omitempty"`
+	ImageWidth    int                   `json:"image_width,omitempty"`
+	ImageHeight   int                   `json:"image_height,omitempty"`
+	SessionID     string                `json:"session_id"`
+	CanonicalURL  string                `json:"canonical_url"`
+	DocumentEpoch uint64                `json:"document_epoch"`
+	MediaType     string                `json:"media_type"`
+	SHA256        string                `json:"sha256"`
+	Bytes         int                   `json:"bytes"`
+	PNG           []byte                `json:"-"`
+	CompletedAt   time.Time             `json:"completed_at"`
 }
 
 type AgentBrowserCleanup struct {
+	AgentDetached        bool   `json:"agent_detached,omitempty"`
 	SessionID            string `json:"session_id"`
 	TreeReaped           bool   `json:"tree_reaped"`
 	ProfileRemoved       bool   `json:"profile_removed"`
@@ -172,6 +177,15 @@ func (c AgentBrowserCleanup) ProcessesStopped() bool {
 	default:
 		return false
 	}
+}
+
+// Complete distinguishes releasing a borrowed page from destroying an owned
+// browser. A detached native page deliberately retains its process and profile.
+func (c AgentBrowserCleanup) Complete() bool {
+	if c.AgentDetached {
+		return !c.CleanupPending && !c.TreeReaped && !c.ProfileRemoved && c.ProcessScope == "" && !c.ProcessScopeVerified
+	}
+	return !c.CleanupPending && c.ProcessesStopped() && c.ProfileRemoved
 }
 
 type agentBrowserOwnedProcess interface {

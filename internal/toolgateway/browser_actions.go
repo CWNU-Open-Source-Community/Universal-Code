@@ -67,7 +67,7 @@ func IsBrowserActionTool(name ToolName) bool {
 	switch name {
 	case BrowserStatusTool, BrowserNavigateTool, BrowserSnapshotTool,
 		BrowserClickTool, BrowserTypeTool, BrowserScreenshotTool, BrowserScrollTool, BrowserKeyTool,
-		BrowserUploadTool:
+		BrowserUploadTool, BrowserMoveTool:
 		return true
 	default:
 		return false
@@ -84,7 +84,7 @@ func BrowserActionToolDefinitions() []ToolDefinition {
 }
 
 func BrowserActionToolDefinition(name ToolName) (ToolDefinition, bool) {
-	if name == BrowserScrollTool || name == BrowserKeyTool {
+	if name == BrowserScrollTool || name == BrowserKeyTool || name == BrowserMoveTool {
 		return AgentBrowserToolDefinition(name)
 	}
 	for _, definition := range browserActionDefinitions {

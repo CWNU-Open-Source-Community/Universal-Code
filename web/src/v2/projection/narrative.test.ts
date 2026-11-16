@@ -1,6 +1,7 @@
 import type { PublicModelStreamSnapshot, ThreadTranscriptItemView } from "../../api/types";
-import { prepareThreadNarrative, projectLiveThreadNarrative, projectThreadNarrative, type ThreadTranscriptActivityItem } from "./narrative";
+import { mergePendingNarrative, prepareThreadNarrative, projectLiveThreadNarrative, projectThreadNarrative, type NarrativeEntry, type ThreadTranscriptActivityItem } from "./narrative";
 import { peerMessageFixture } from "../../test/thread-peer-message";
+import { fullPermissionNotReadyMessage } from "../../lib/local-ui-message";
 
 function item(overrides: Partial<ThreadTranscriptActivityItem>): ThreadTranscriptActivityItem {
   return {
@@ -25,6 +26,12 @@ function item(overrides: Partial<ThreadTranscriptActivityItem>): ThreadTranscrip
   };
 }
 
+it("keeps the fixed Full permission recovery notice localized in the actual narrative", () => {
+  const transcript = [item({ source: "harness", kind: "harness_status", stage: "blocked", status: "failed", title: "Full 权限尚未就绪", detail: fullPermissionNotReadyMessage, source_ref: "full-input" })];
+  expect(projectThreadNarrative(transcript).find((entry) => entry.kind === "notice")).toMatchObject({ text: fullPermissionNotReadyMessage });
+  expect(projectThreadNarrative(transcript, undefined, (_zh, en) => en).find((entry) => entry.kind === "notice")).toMatchObject({ text: expect.stringContaining("Reconfirm Full in the chat permissions") });
+});
+
 function snapshot(overrides: Partial<PublicModelStreamSnapshot> = {}): PublicModelStreamSnapshot {
   return {
     version: "public_model_stream.v1",
@@ -40,6 +47,49 @@ function snapshot(overrides: Partial<PublicModelStreamSnapshot> = {}): PublicMod
     ...overrides,
   };
 }
+
+it("keeps an existing stream before an input sent later as the same stream grows", () => {
+  const transcript = [
+    item({ id: "earlier", canonical_id: "earlier", detail: "Earlier task record", created_at: "2026-11-12T10:25:00Z" }),
+    item({ id: "follow-up", canonical_id: "follow-up", source: "operator", kind: "operator_input",
+      detail: "Next request", status: "committed", created_at: "2026-11-12T10:26:43.129Z", sequence: 2 }),
+  ];
+  const prepared = prepareThreadNarrative(transcript);
+  for (const updatedAt of ["2026-11-12T10:26:42Z", "2026-11-12T10:27:19Z"]) {
+    const current = snapshot({ text: "Work already in progress", updated_at: updatedAt });
+    current.call.started_at = "2026-11-12T10:26:40Z";
+    const entries = projectLiveThreadNarrative(prepared, { runId: "run-1", snapshot: current, status: "live" });
+    expect(entries.map((entry) => entry.kind === "assistant" || entry.kind === "user" ? entry.text : entry.kind))
+      .toEqual(["Earlier task record", "Work already in progress", "Next request"]);
+  }
+});
+
+it("inserts pending inputs before same-time work while retaining saved row order and identities", () => {
+  const createdAt = "2026-11-12T10:26:43.129Z";
+  const saved = projectThreadNarrative([
+    item({ id: "progress", canonical_id: "progress", detail: "New task progress", created_at: createdAt }),
+    item({ id: "read", canonical_id: "read", source: "harness", kind: "tool_call", activity_type: "read",
+      tool_name: "workspace_read", sequence: 2, created_at: createdAt }),
+  ]);
+  const pending: NarrativeEntry = { id: "pending-1", kind: "user", text: "Main input", createdAt, provisional: true };
+  const merged = mergePendingNarrative(saved, [pending, { ...pending, id: "pending-2", text: "Next input" }]);
+  expect(merged.map((entry) => entry.id)).toEqual(["pending-1", "pending-2", ...saved.map((entry) => entry.id)]);
+  expect(merged[2]).toBe(saved[0]);
+  expect(merged[3]).toBe(saved[1]);
+  expect(mergePendingNarrative(saved, [])).toBe(saved);
+});
+
+it("groups saved and live workspace image observations as reads with a localized title", () => {
+  const durable = projectThreadNarrative([item({ source: "harness", kind: "tool_call",
+    activity_type: "read", tool_name: "workspace_view_image", title: "工具执行已完成" })]);
+  expect(durable[0]).toMatchObject({ kind: "activity", activity: "read", items: [{ title: "查看图片" }] });
+
+  const live = projectThreadNarrative([], { runId: "run-1", status: "live", snapshot: snapshot({
+    text: "", items: [{ id: "image-live", response_id: "image-response", type: "tool_call",
+      status: "receiving_arguments", tool_name: "workspace_view_image", provisional: true, durable: false }],
+  }) });
+  expect(live[0]).toMatchObject({ kind: "activity", activity: "read", items: [{ title: "查看图片", provisional: true }] });
+});
 
 it("branches only from saved, delivered user inputs", () => {
   for (const status of ["committed", "pending", "cancelled"]) {
@@ -682,4 +732,48 @@ it("attributes to the actual producing model when multiple model attempts share 
   const singleModelProjected = projectThreadNarrative(singleModelTranscript);
   expect(singleModelProjected.find((entry) => entry.kind === "assistant" && entry.id === "reply-single"))
     .toMatchObject({ model: "google / gemini" });
+});
+
+
+describe("durable user-task boundaries", () => {
+  const task = { id: "operator-input-1", input_message_id: "operator-input-1", state: "completed" as const,
+    started_at: "2026-08-29T00:00:00Z", finished_at: "2026-08-29T00:30:29Z",
+    final_message_id: "final-event", change_source_event_id: "final-event" };
+  it("retains one task across internal attempts and separates the exact final reply from adjacent progress", () => {
+    const entries = projectThreadNarrative([
+      item({ id:"input-event", canonical_id:task.id, source_ref:task.id, source:"operator", kind:"operator_input", task, status:"committed" }),
+      item({ id:"progress-1", task, attempt_id:"attempt-1", status:"completed", sequence:2, detail:"First progress" }),
+      item({ id:"progress-2", task, attempt_id:"attempt-2", status:"completed", sequence:3, detail:"Second progress" }),
+      item({ id:"final-event", task, attempt_id:"attempt-4", status:"completed", sequence:4, detail:"Final answer" }),
+    ]);
+    expect(entries).toHaveLength(3);
+    expect(entries[0]).toMatchObject({kind:"user",task:{id:task.id,state:"completed"}});
+    expect(entries[1]).toMatchObject({kind:"assistant",text:"First progress\n\nSecond progress",task:{id:task.id}});
+    expect(entries[2]).toMatchObject({kind:"assistant",id:"final-event",text:"Final answer",task:{finalMessageID:"final-event"}});
+  });
+  it("does not merge different tasks merely because they use the same Run", () => {
+    const second = {...task,id:"operator-input-2",input_message_id:"operator-input-2",final_message_id:"second-final"};
+    const entries=projectThreadNarrative([item({id:"final-event",task,detail:"First answer"}),
+      item({id:"second-final",task:second,sequence:2,detail:"Different input answer"})]);
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry)=>entry.task?.id)).toEqual([task.id,second.id]);
+  });
+  it("does not infer a task from model completion or the word final", () => {
+    expect(projectThreadNarrative([item({status:"completed",detail:"This is the final answer"})])[0].task).toBeUndefined();
+  });
+  it("keeps an internal model completion running until a reliable task ending arrives", () => {
+    const running={...task,state:"running" as const,finished_at:undefined,final_message_id:undefined,change_source_event_id:undefined};
+    expect(projectThreadNarrative([item({task:running,status:"completed"})])[0].task?.state).toBe("running");
+  });
+  it("binds live output only to the same Run's single active task and rejects an old stream", () => {
+    const running={...task,state:"running" as const,started_at:"2026-08-29T00:00:00Z",finished_at:undefined,final_message_id:undefined};
+    const prepared=prepareThreadNarrative([item({id:"input",source:"operator",kind:"operator_input",task:running})]);
+    const current=projectLiveThreadNarrative(prepared,{runId:"run-1",status:"live",snapshot:snapshot()});
+    expect(current.at(-1)?.task?.id).toBe(task.id);
+    const newer={...running,id:"operator-input-2",input_message_id:"operator-input-2",started_at:"2026-08-29T00:01:00Z"};
+    const next=prepareThreadNarrative([item({id:"new-input",source:"operator",kind:"operator_input",task:newer})]);
+    expect(projectLiveThreadNarrative(next,{runId:"run-1",status:"live",snapshot:snapshot()}).at(-1)?.task).toBeUndefined();
+    const ambiguous=prepareThreadNarrative([item({id:"a",task:running}),item({id:"b",task:newer})]);
+    expect(projectLiveThreadNarrative(ambiguous,{runId:"run-1",status:"live",snapshot:snapshot()}).at(-1)?.task).toBeUndefined();
+  });
 });

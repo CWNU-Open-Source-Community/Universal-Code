@@ -131,6 +131,19 @@ type CommandRuntimeSpec struct {
 	Purpose             string                         `json:"purpose"`
 }
 
+// A process requires an explicit argv even when it has no arguments. Keep
+// existing serialization unchanged for shells and nonempty process argv.
+func (s CommandRuntimeSpec) MarshalJSON() ([]byte, error) {
+	type wire CommandRuntimeSpec
+	if s.Profile == CommandRuntimeProcess && s.Arguments != nil && len(s.Arguments) == 0 {
+		return json.Marshal(struct {
+			wire
+			Arguments []string `json:"arguments"`
+		}{wire: wire(s), Arguments: s.Arguments})
+	}
+	return json.Marshal(wire(s))
+}
+
 // CommandRuntimeResolvedSpec is the canonical launch contract. The absolute
 // cwd and environment values remain process-local; the executable digest and
 // canonical argv make the exact launch reviewable and auditable.

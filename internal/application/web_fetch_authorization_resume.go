@@ -60,6 +60,15 @@ func (s *RunExecutionHandoffService) ResumeWebFetchAuthorization(ctx context.Con
 	if err != nil || !resumable {
 		return LifecycleResult{}, !resumable, err
 	}
+	// A cold Full selection must leave this exact pending tool batch resumable.
+	// Recording a failed handoff here would try to seal an unsettled tool turn.
+	permission, err := s.store.GetRunExecutionPermission(ctx, runID)
+	if err == nil {
+		err = requireSupervisorPermissionReady(s.supervisor.executionCapabilities, permission)
+	}
+	if err != nil {
+		return LifecycleResult{}, false, apperror.Normalize(err)
+	}
 	var execution LifecycleResult
 	var continuation domain.RunExecutionHandoff
 	if recorder, ok := s.store.(webFetchAuthorizationFailureStore); ok {

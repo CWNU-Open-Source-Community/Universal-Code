@@ -6227,7 +6227,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'plan_delivery_propose', 'controlled_command_propose',
 			'one_shot_command_propose', 'host_command_propose',
 			'sandbox_docker_run_propose', 'skill_candidate_propose', 'debug_terminal',
-			'workspace_list', 'workspace_read', 'workspace_glob', 'workspace_grep',
+			'workspace_list', 'workspace_read', 'workspace_view_image', 'workspace_glob', 'workspace_grep',
 			'workspace_change', 'workspace_apply', 'workspace_delete', 'command_runtime', 'run_tests',
 			'mcp_tool_call', 'mcp_tool_search', 'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'run_tests', 'web_search', 'source_search', 'web_fetch', 'web_citation',
 			'code_workspace_symbols', 'code_document_symbols', 'code_definition',
@@ -6235,8 +6235,8 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
 			'code_type_hierarchy',
 			'browser_status', 'browser_navigate', 'browser_snapshot',
-			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload')),
-		CHECK((tool_name IN ('host_command_propose', 'mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_glob',
+			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload', 'browser_move')),
+		CHECK((tool_name IN ('host_command_propose', 'mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_view_image', 'workspace_glob',
 			'workspace_grep', 'workspace_change', 'workspace_apply', 'workspace_delete',
 			'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'run_tests', 'web_search', 'source_search', 'web_fetch', 'web_citation',
 			'code_workspace_symbols', 'code_document_symbols', 'code_definition',
@@ -6244,9 +6244,9 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
 			'code_type_hierarchy',
 			'browser_status', 'browser_navigate', 'browser_snapshot',
-			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload')
+			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload', 'browser_move')
 			AND length(authority_json) BETWEEN 2 AND 4096 AND json_valid(authority_json) = 1)
-			OR (tool_name NOT IN ('mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_glob',
+			OR (tool_name NOT IN ('mcp_tool_call', 'mcp_tool_search', 'workspace_list', 'workspace_read', 'workspace_view_image', 'workspace_glob',
 				'workspace_grep', 'workspace_change', 'workspace_apply', 'workspace_delete',
 				'github_review_evidence_list', 'github_review_evidence_read', 'command_runtime', 'run_tests', 'web_search', 'source_search', 'web_fetch', 'web_citation',
 			'code_workspace_symbols', 'code_document_symbols', 'code_definition',
@@ -6254,7 +6254,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 			'code_signature_help', 'code_diagnostics', 'code_call_hierarchy',
 			'code_type_hierarchy',
 			'browser_status', 'browser_navigate', 'browser_snapshot',
-			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload')
+			'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_key', 'browser_upload', 'browser_move')
 				AND authority_json = '')),
 		CHECK(status IN ('pending', 'completed', 'denied', 'failed')),
 		CHECK((status = 'pending' AND result_json = '' AND error_code = '' AND completed_at IS NULL)
@@ -19865,7 +19865,29 @@ CREATE TRIGGER trg_run_execution_permission_snapshot_insert
 										AND NEW.mode NOT IN ('full_access', 'debug','full')))
 									AND run.status NOT IN ('completed', 'failed', 'cancelled'))
 								OR
-								(run.status IN ('created', 'paused') AND NOT EXISTS (
+								((run.status IN ('created', 'paused') OR (
+									run.status = 'running' AND previous.mode = 'full' AND NEW.mode = 'full'
+									AND NOT EXISTS (
+										SELECT 1 FROM agent_nodes agent WHERE agent.run_id = NEW.run_id
+											AND (agent.status = 'running' OR agent.active_attempt_id <> '')
+									)
+									AND NOT EXISTS (
+										SELECT 1 FROM run_supervisor_checkpoints checkpoint
+										WHERE checkpoint.run_id = NEW.run_id AND checkpoint.phase = 'turn_started'
+									)
+									AND NOT EXISTS (
+										SELECT 1 FROM operator_steering_deliveries delivery
+										WHERE delivery.run_id = NEW.run_id AND delivery.status = 'prepared'
+									)
+									AND NOT EXISTS (
+										SELECT 1 FROM command_runtime_jobs job WHERE job.run_id = NEW.run_id
+											AND job.state IN ('prepared', 'running', 'stopping')
+									)
+									AND NOT EXISTS (
+										SELECT 1 FROM terminal_sessions terminal WHERE terminal.run_id = NEW.run_id
+											AND terminal.state IN ('starting', 'running')
+									)
+								)) AND NOT EXISTS (
 									SELECT 1 FROM run_execution_leases lease
 									WHERE lease.run_id = NEW.run_id
 										AND lease.status = 'active'
@@ -19933,7 +19955,7 @@ CREATE TRIGGER trg_run_execution_profile_snapshot_insert
 						WHERE previous.run_id = NEW.run_id
 							AND previous.revision = NEW.revision - 1
 							AND previous.protocol_version = NEW.protocol_version
-							AND previous.profile != NEW.profile
+							AND (previous.profile != NEW.profile OR (previous.revision = 1 AND previous.profile = 'preview' AND NEW.profile = 'preview'))
 							AND previous.policy_version = NEW.policy_version
 							AND julianday(NEW.created_at) >= julianday(previous.created_at)
 					))

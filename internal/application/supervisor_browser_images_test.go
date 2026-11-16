@@ -11,6 +11,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/imageattachment"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/toolgateway"
@@ -107,6 +108,13 @@ func TestSupervisorBrowserImagesKeepExactNativePairAndVisionBoundary(t *testing.
 			if !strings.Contains(message.Content, `"instruction_authorized":false`) || !strings.Contains(message.Content, call.CallID) {
 				t.Fatalf("source missing %s", message.Content)
 			}
+			wantPixelNote := `"pixels_supplied":false`
+			if support == llm.VisionSupported {
+				wantPixelNote = `"pixels_supplied":true`
+			}
+			if !strings.Contains(message.Content, wantPixelNote) {
+				t.Fatalf("incorrect pixel coverage note: %s", message.Content)
+			}
 			if support == llm.VisionSupported {
 				if len(message.Images) != 1 || llm.ValidateMessageImages(message) != nil || message.Images[0].Width != 2 || message.Images[0].Height != 3 || llm.EstimateImageTokens(message.Images[0]) <= 0 {
 					t.Fatal("actual image/budget missing")
@@ -124,6 +132,36 @@ func TestSupervisorBrowserImagesKeepExactNativePairAndVisionBoundary(t *testing.
 	other.Round = 2
 	if supervisorBrowserScreenshotOperationKey(call) == supervisorBrowserScreenshotOperationKey(other) {
 		t.Fatal("distinct same-turn screenshot calls alias")
+	}
+}
+
+func TestSupervisorBrowserImagesHonorsExistingRequestImageBudget(t *testing.T) {
+	service, st, checkpoint, _ := newScreenshotEvidenceFixture(t, false)
+	workspaceRunner, _, _ := workspaceImageProjectionFixture(t)
+	imageStore := workspaceRunner.store.(*workspaceImageProjectionStore)
+	data := append(imageStore.pixels, make([]byte, llm.MaxImageBytes-len(imageStore.pixels))...)
+	metadata, err := imageattachment.Validate(data, "image/png", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	part := llm.ImagePart{MediaType: metadata.MIMEType, Data: data, SHA256: metadata.SHA256, Width: metadata.Width, Height: metadata.Height}
+	request, err := supervisorRequestWithToolRounds(llm.ChatRequest{Messages: []llm.Message{{Role: "user",
+		Images: []llm.ImagePart{part, part, part, part}}}}, st.rounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := llm.ModelRef{Provider: "screenshot-vision", Model: "vision-test"}
+	router := llm.NewRouter(ref)
+	router.RegisterProvider(screenshotVisionProvider{state: llm.VisionSupported})
+	runner := &AgentRunner{router: router, browserActions: service}
+	projected, err := runner.supervisorBrowserImages(t.Context(), checkpoint, ref, request, st.rounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := projected.Messages[2]
+	if len(result.Images) != 0 || !strings.Contains(result.Content, `"pixels_supplied":false`) ||
+		!strings.Contains(result.Content, "request image bound") || result.ToolResults[0] != request.Messages[2].ToolResults[0] {
+		t.Fatalf("over-budget screenshot was not explicitly omitted: %+v", result)
 	}
 }
 

@@ -119,6 +119,21 @@ describe("desktop native bridge", () => {
     delete window.go;
   });
 
+  it("requires the native shared-browser capability and all four RPCs", async () => {
+    const rpc = { OpenSharedBrowser: vi.fn(), GetSharedBrowser: vi.fn(), SharedBrowserCommand: vi.fn(), SetSharedBrowserSurface: vi.fn() };
+    installBridge(rpc);
+    const module = await import("./desktop-bridge");
+    await module.loadDesktopBootstrap();
+    expect(module.desktopSharedBrowserEnabled()).toBe(false);
+    vi.resetModules();
+    installBridge({ ...rpc, Bootstrap: vi.fn().mockResolvedValue({ ...bootstrap, shared_browser_enabled: true }) });
+    const enabled = await import("./desktop-bridge");
+    await enabled.loadDesktopBootstrap();
+    expect(enabled.desktopSharedBrowserEnabled()).toBe(true);
+    delete window.go!.desktop!.DesktopBridge!.SetSharedBrowserSurface;
+    expect(enabled.desktopSharedBrowserEnabled()).toBe(false);
+  });
+
   it("uses only the public message from native errors", async () => {
     const { desktopErrorMessage } = await import("./desktop-bridge");
     const message = "File actions support files up to 5 MiB";
@@ -1160,7 +1175,7 @@ function verificationView(enabled = false) {
     batch_validation: { installed: false, blocked_by: ["startup_gate_closed"], remediation: ["enable_and_restart"] } };
 }
 
-function installBridge(overrides: Partial<{
+function installBridge(overrides: Partial<import("./desktop-shared-browser").SharedBrowserBridge & {
   GetVerificationSettings: () => Promise<unknown>;
   ConfirmVerificationSettings: (request: unknown) => Promise<unknown>;
   RestartWithVerificationSettings: (request: unknown) => Promise<unknown>;

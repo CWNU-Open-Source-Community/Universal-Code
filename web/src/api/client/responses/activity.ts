@@ -22,6 +22,7 @@ export const threadActivityKinds = ["command", "web_search", "web_fetch", "file_
   "verification", "mcp", "browser"];
 
 export const threadActivityToolNames = ["command_runtime", "workspace_list", "workspace_read",
+  "workspace_view_image",
   "workspace_glob", "workspace_grep", "workspace_change", "workspace_apply", "workspace_delete",
   "web_search", "web_fetch", "web_citation", "mcp_tool_search", "mcp_tool_call", "code_workspace_symbols",
   "code_document_symbols", "code_definition", "code_references", "code_implementation",
@@ -273,7 +274,7 @@ export function expectedThreadActivityKind(tool: string): string {
   if (tool === "command_runtime") return "command";
   if (tool === "web_search") return "web_search";
   if (tool === "web_fetch" || tool === "web_citation") return "web_fetch";
-  if (["workspace_list", "workspace_read", "workspace_glob", "workspace_grep"].includes(tool)) return "file_read";
+  if (["workspace_list", "workspace_read", "workspace_view_image", "workspace_glob", "workspace_grep"].includes(tool)) return "file_read";
   if (["workspace_change", "workspace_apply", "workspace_delete"].includes(tool)) return "file_edit";
   if (tool === "mcp_tool_call" || tool === "mcp_tool_search") return "mcp";
   if (tool.startsWith("browser_")) return "browser";

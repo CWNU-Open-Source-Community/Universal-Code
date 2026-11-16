@@ -34,6 +34,7 @@ function openAIHarness(model: string) {
 
 describe("ModelAvailabilitySettings", () => {
   it("renders redacted provider and route status without configuration secrets", async () => {
+    const user = userEvent.setup();
     const client = { modelAvailability: vi.fn().mockResolvedValue({
       protocol_version: "model_availability.v2", generation: 1,
       providers: [{ name: "mock", kind: "local", status: "available", models: ["mock-code"],
@@ -46,8 +47,10 @@ describe("ModelAvailabilitySettings", () => {
     const { container } = render(<QueryClientProvider client={queryClient}>
       <ModelAvailabilitySettings client={client} />
     </QueryClientProvider>);
-    expect(await screen.findByText("mock-code")).toBeInTheDocument();
-    expect(screen.getByText("Default")).toBeInTheDocument();
+    expect(await screen.findByText("Default")).toBeVisible();
+    expect(screen.getByText("mock-code")).not.toBeVisible();
+    await user.click(screen.getByText("Per-model diagnostics"));
+    expect(screen.getByText("mock-code")).toBeVisible();
     expect(container.textContent).not.toContain("api_key");
     expect(container.textContent).not.toContain("base_url");
   });
@@ -82,7 +85,8 @@ describe("ModelAvailabilitySettings", () => {
     render(<QueryClientProvider client={queryClient}>
       <ModelAvailabilitySettings client={client} />
     </QueryClientProvider>);
-    expect(await screen.findByRole("button", { name: "Diagnose mock/mock-code" })).toBeInTheDocument();
+    await user.click(await screen.findByText("Per-model diagnostics"));
+    expect(screen.getByRole("button", { name: "Diagnose mock/mock-code" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Diagnose mock/mock-fast" }));
     await waitFor(() => expect(diagnoseProvider).toHaveBeenCalledWith({
       version: "provider_diagnostic.v1", provider: "mock", model: "mock-fast",
@@ -126,7 +130,8 @@ describe("ModelAvailabilitySettings", () => {
     render(<QueryClientProvider client={queryClient}>
       <ModelAvailabilitySettings client={client} />
     </QueryClientProvider>);
-    expect(await screen.findByRole("button", { name: "Qualify mimo/model-primary Harness" }))
+    await user.click(await screen.findByText("Per-model diagnostics"));
+    expect(screen.getByRole("button", { name: "Qualify mimo/model-primary Harness" }))
       .toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Qualify mimo/model-secondary Harness" }));
     await waitFor(() => expect(qualifyModelHarness).toHaveBeenCalledWith({
@@ -163,7 +168,8 @@ describe("ModelAvailabilitySettings", () => {
     render(<QueryClientProvider client={queryClient}>
       <ModelAvailabilitySettings client={client} />
     </QueryClientProvider>);
-    expect(await screen.findByText("openai_chat_completions · JSON native")).toBeInTheDocument();
+    await user.click(await screen.findByText("Per-model diagnostics"));
+    expect(screen.getByText("openai_chat_completions · JSON native")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Diagnose openai/gpt-4.1-mini" }));
     expect(await screen.findByText("authentication failed")).toBeInTheDocument();
   });
@@ -203,7 +209,8 @@ describe("ModelAvailabilitySettings", () => {
     render(<QueryClientProvider client={queryClient}>
       <ModelAvailabilitySettings client={client} />
     </QueryClientProvider>);
-    await user.click(await screen.findByRole("button", {
+    await user.click(await screen.findByText("Per-model diagnostics"));
+    await user.click(screen.getByRole("button", {
       name: "Diagnose openai/gpt-4.1-mini",
     }));
     expect((await screen.findAllByText("not configured")).length).toBe(2);

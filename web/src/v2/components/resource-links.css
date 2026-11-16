@@ -12,6 +12,9 @@
 .v2-resource-menu button.has-divider { border-top: 1px solid var(--v2-border, #ddd); border-radius: 0 0 7px 7px; margin-top: 5px; padding-top: 13px; }
 .v2-resource-menu-icon { display: inline-flex; width: 18px; height: 18px; flex: none; color: var(--v2-muted, #777); }
 .v2-resource-menu-icon svg { width: 18px; height: 18px; }
+.v2-resource-notice { display: flex; align-items: flex-start; gap: 12px; width: min(360px, calc(100vw - 16px)); padding: 12px; }
+.v2-resource-notice > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.v2-resource-notice > button { flex: none; width: auto; padding: 3px; }
 .v2-link-preview { width: min(380px, calc(100vw - 24px)); max-height: min(520px, calc(100vh - 24px)); overflow-y: auto; border-radius: 15px; }
 .v2-link-preview header { display: flex; align-items: center; gap: 8px; padding: 13px 16px; border-bottom: 1px solid var(--v2-border, #ddd); color: var(--v2-muted, #777); }
 .v2-link-preview header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }

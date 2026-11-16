@@ -1,8 +1,11 @@
 import type { LocaleText } from "./locale";
 
+export const fullPermissionNotReadyMessage = "Full 权限在当前应用中尚未就绪。请在聊天权限中重新确认 Full，或切换为 Ask / Auto 后重试。";
+
 // Local recovery records retain their original messages. Translate these known
 // interface messages only when displayed; unfamiliar server errors remain intact.
 const messages: Record<string, string> = {
+  [fullPermissionNotReadyMessage]: "Full permission is not ready in this app process. Reconfirm Full in the chat permissions, or switch to Ask / Auto, then retry.",
   "原创建请求无法可靠核对；已保留原记录，未创建或发送新消息。": "The original creation request could not be checked reliably. Its record is preserved; no new conversation or message was created.",
   "当前连接尚未提供数据存储身份，草稿仅保留在本窗口。": "This connection has no storage identity. Drafts are kept only in this window.",
   "无法读取本机恢复数据；原记录保持不变，当前编辑可能仅保留在本窗口。": "Could not read local recovery data. Original records are unchanged; current edits may exist only in this window.",

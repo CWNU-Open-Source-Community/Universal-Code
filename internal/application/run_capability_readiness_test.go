@@ -10,6 +10,7 @@ import (
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/runworktree"
 	"cyberagent-workbench/internal/store"
 )
 
@@ -81,6 +82,40 @@ func TestRunCapabilityReadinessProjectsStableFailureReasons(t *testing.T) {
 		preset.Selectable || preset.RuntimeAvailable || preset.Selected {
 		t.Fatalf("Standard Code preset did not fail closed: %#v", preset)
 	}
+}
+
+func TestRunCapabilityReadinessLocalHostDoesNotRequireLPACOrInteractionTrust(t *testing.T) {
+	ctx, state, run := newCapabilityReadinessRun(t, "code")
+	runtime := application.CapabilityReadinessRuntime{RunControlEnabled: true, RunExecutionEnabled: true, ExecutionPermissionControlEnabled: true,
+		ExecutionPermissionCapabilities: domain.ExecutionPermissionRuntimeCapabilities{OperatorApprovalEnabled: true, DangerFullAccessEnabled: true,
+			RuntimeAuthority: domain.NewExecutionPermissionRuntimeAuthority()},
+		CommandRuntimeAdapters: []commandruntimeadapter.Identity{commandruntimeadapter.HostUnsandboxed("host-default-readiness")}}
+	projection, err := application.NewRunCapabilityReadinessService(state, runtime).Project(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := readinessOption(t, projection.Profiles, "local")
+	if !local.RuntimeAvailable || !local.Selectable || len(local.BlockedBy) != 0 {
+		t.Fatalf("installed ordinary host execution was mislabeled as unavailable LPAC: %+v", local)
+	}
+	// Controlled/Debug interaction remains a separate sandbox/trust contract.
+	controlled := readinessOption(t, projection.Interactions, "controlled")
+	if controlled.RuntimeAvailable || !hasReadinessBlocker(controlled, application.CapabilityBlockerSandboxUnproven) {
+		t.Fatalf("host command readiness granted controlled sandbox interaction: %+v", controlled)
+	}
+	owned, err := application.NewRunCapabilityReadinessService(readinessUnprovenOwnedStore{state}, runtime).Project(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readinessOption(t, owned.Profiles, "local").RuntimeAvailable {
+		t.Fatal("owned workspace without sandbox proof fell back to an installed host adapter")
+	}
+}
+
+type readinessUnprovenOwnedStore struct{ *store.SQLiteStore }
+
+func (readinessUnprovenOwnedStore) GetRunFileDrydock(_ context.Context, runID string) (runworktree.Workspace, bool, error) {
+	return runworktree.Workspace{ID: "unproven-readiness-owner", RunID: runID, State: runworktree.StateReady}, true, nil
 }
 
 func TestRunCapabilityReadinessDistinguishesRunningPausedAndActiveLease(t *testing.T) {

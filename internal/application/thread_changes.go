@@ -63,7 +63,7 @@ func NewThreadChangeService(store ThreadChangeStore) *ThreadChangeService {
 	return &ThreadChangeService{store: store}
 }
 
-// Summary only observes persisted FileEdit applications before one exact reply.
+// Summary only observes persisted FileEdit applications for one exact ending.
 // It never reads the current filesystem or attributes shell/user writes to AI.
 func (s *ThreadChangeService) Summary(ctx context.Context, threadID, sourceEventID string) (ThreadChangeSummary, error) {
 	if !validControlIdentity(threadID) || !validControlIdentity(sourceEventID) {
@@ -78,15 +78,24 @@ func (s *ThreadChangeService) Summary(ctx context.Context, threadID, sourceEvent
 		SourceKind string `json:"source_kind"`
 		SessionID  string `json:"session_id"`
 	}
-	if source.EventID != sourceEventID || source.Type != events.SessionMessageEvent || source.Source != "session_store" ||
-		json.Unmarshal([]byte(source.PayloadJSON), &reply) != nil || reply.Role != "assistant" || reply.SourceKind != session.SourceModelResponse {
+	validSource := false
+	if source.Type == events.SessionMessageEvent && source.Source == "session_store" {
+		validSource = json.Unmarshal([]byte(source.PayloadJSON), &reply) == nil && reply.Role == "assistant" && reply.SourceKind == session.SourceModelResponse
+	} else if source.Type == events.RunExecutionHandoffCompletedEvent && source.Source == "run_execution_handoff" {
+		var ending struct {
+			Status    string `json:"status"`
+			ErrorCode string `json:"error_code"`
+		}
+		validSource = json.Unmarshal([]byte(source.PayloadJSON), &ending) == nil && ending.Status == "failed" && ending.ErrorCode != ""
+	}
+	if source.EventID != sourceEventID || !validSource {
 		return ThreadChangeSummary{}, threadChangeBindingError()
 	}
 	run, err := s.store.GetRun(ctx, source.RunID)
 	if err != nil {
 		return ThreadChangeSummary{}, apperror.Normalize(err)
 	}
-	if run.ID != source.RunID || run.SessionID != reply.SessionID || run.MissionID != source.MissionID {
+	if run.ID != source.RunID || (source.Type == events.SessionMessageEvent && run.SessionID != reply.SessionID) || run.MissionID != source.MissionID {
 		return ThreadChangeSummary{}, threadChangeBindingError()
 	}
 	result := ThreadChangeSummary{Version: ThreadChangeSummaryVersion, ThreadID: threadID,

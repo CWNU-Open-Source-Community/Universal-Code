@@ -132,7 +132,7 @@ func (s *SQLiteStore) TransitionThreadExecutionPermission(ctx context.Context,
 				"Thread execution permission changed concurrently or attempted to change immutable policy")
 	}
 	operation, err = applyThreadExecutionPermissionToCurrentRunTx(
-		ctx, tx, threadRecord, snapshot, operation)
+		ctx, tx, threadRecord, current, snapshot, operation)
 	if err != nil {
 		return domain.ThreadExecutionPermissionSnapshot{},
 			domain.ThreadExecutionPermissionOperation{}, false, err
@@ -195,7 +195,7 @@ func (s *SQLiteStore) TransitionThreadExecutionPermission(ctx context.Context,
 }
 
 func applyThreadExecutionPermissionToCurrentRunTx(ctx context.Context, tx *sql.Tx,
-	threadRecord domain.Thread, preference domain.ThreadExecutionPermissionSnapshot,
+	threadRecord domain.Thread, previous, preference domain.ThreadExecutionPermissionSnapshot,
 	operation domain.ThreadExecutionPermissionOperation,
 ) (domain.ThreadExecutionPermissionOperation, error) {
 	if threadRecord.ActiveRunID == "" {
@@ -227,6 +227,13 @@ func applyThreadExecutionPermissionToCurrentRunTx(ctx context.Context, tx *sql.T
 		}
 		return operation, nil
 	}
+	// An interactive Run stays "running" between replies. Explicitly
+	// reconfirming its existing Full policy must be able to rotate the cold
+	// process grant at that idle boundary; it is not a deferred policy upgrade.
+	fullReconfirmation := run.Status == domain.RunRunning &&
+		previous.Mode == domain.RunExecutionPermissionFull &&
+		preference.Mode == domain.RunExecutionPermissionFull &&
+		runPermissionMatchesThreadPreference(current, preference)
 	immediateDowngrade := threadPermissionTransitionRevokesHighRisk(
 		current.Mode, preference.Mode)
 	if immediateDowngrade {
@@ -234,9 +241,9 @@ func applyThreadExecutionPermissionToCurrentRunTx(ctx context.Context, tx *sql.T
 			ctx, tx, run, preference.CreatedAt); err != nil {
 			return domain.ThreadExecutionPermissionOperation{}, err
 		}
-	} else if run.Status == domain.RunPreparing ||
+	} else if !fullReconfirmation && (run.Status == domain.RunPreparing ||
 		run.Status == domain.RunRunning ||
-		run.Status == domain.RunWaitingApproval {
+		run.Status == domain.RunWaitingApproval) {
 		// A Thread preference is allowed to move ahead of an executing or
 		// approval-blocked Run, but it must not rewrite that Run's immutable
 		// execution contract. The current snapshot remains exact and the new
@@ -259,7 +266,7 @@ func applyThreadExecutionPermissionToCurrentRunTx(ctx context.Context, tx *sql.T
 				apperror.CodeFailedPrecondition,
 				"Thread permission cannot raise the current Run while an execution lease is active; wait for the current step to finish and retry")
 		}
-		if run.Status != domain.RunCreated && run.Status != domain.RunPaused {
+		if run.Status != domain.RunCreated && run.Status != domain.RunPaused && !fullReconfirmation {
 			return domain.ThreadExecutionPermissionOperation{}, apperror.New(
 				apperror.CodeFailedPrecondition,
 				fmt.Sprintf("Thread permission escalation cannot change the current Run while it is %s", run.Status))

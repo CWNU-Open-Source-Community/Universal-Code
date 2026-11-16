@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	MaxMessageImages  = 4
-	MaxImageBytes     = imageattachment.MaxBytes
-	MaxImageDimension = imageattachment.MaxDimension
-	MaxImagePixels    = imageattachment.MaxPixels
+	MaxMessageImages     = 4
+	MaxImageBytes        = imageattachment.MaxBytes
+	MaxRequestImageBytes = MaxMessageImages * MaxImageBytes
+	MaxImageDimension    = imageattachment.MaxDimension
+	MaxImagePixels       = imageattachment.MaxPixels
 )
 
 // ImagePart holds already-admitted image bytes, never a host path or remote
@@ -112,7 +113,7 @@ func validateRequestImages(provider Provider, model string, messages []Message) 
 		}
 	}
 	// Bound the complete request, including images from earlier messages.
-	if totalBytes > MaxMessageImages*MaxImageBytes {
+	if totalBytes > MaxRequestImageBytes {
 		return errors.New("request image bytes exceed the supported bound")
 	}
 	return nil

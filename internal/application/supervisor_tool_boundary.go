@@ -20,9 +20,10 @@ type supervisorToolBoundaryStore interface {
 }
 
 func supervisorToolBoundaryRequest(request llm.ChatRequest) llm.ChatRequest {
+	availability := supervisorToolBoundaryAvailability(request.Tools)
 	request.Tools = nil
 	request.Messages = append(append([]llm.Message(nil), request.Messages...), llm.Message{Role: "user",
-		Content: "The Harness has completed the four tool rounds available in this internal segment. No tools are offered for this response. This is a scheduling boundary, not a task failure or task completion. Return continue if the same accepted user task needs more work; the Harness can continue it in another segment within its existing budget. Return finish only if that task is actually complete, or wait only for real external input or approval. Do not claim a new user request or repeat completed actions.\n" + rootLifecycleBoundaryContinueFormat + "\n" + rootProtocolRepairOutputInstruction})
+		Content: "The Harness has completed the four tool rounds available in this internal segment. No tools are offered for this response. This is a scheduling boundary, not a task failure or task completion." + availability + " Return continue if the same accepted user task needs more work; the Harness can continue it in another segment within its existing budget. Return finish only if that task is actually complete, or wait only for real external input or approval. Do not claim a new user request or repeat completed actions.\n" + rootLifecycleBoundaryContinueFormat + "\n" + rootProtocolRepairOutputInstruction})
 	return request
 }
 

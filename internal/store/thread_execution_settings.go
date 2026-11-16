@@ -47,7 +47,8 @@ func materializeThreadExecutionSettingsTx(ctx context.Context, tx *sql.Tx,
 	if err != nil {
 		return nil, err
 	}
-	if profile.Profile != previousProfile.Profile {
+	if profile.Profile != previousProfile.Profile ||
+		(profile.IsDefaultPreview() && previousProfile.Profile == domain.RunExecutionProfilePreview && !previousProfile.IsDefaultPreview()) {
 		profile, err = profile.Next(idgen.New("run-exec-profile"), previousProfile.Profile,
 			"thread_continuation", "Continue the selected project backend; execution requires current authority", candidate.CreatedAt)
 		if err != nil {

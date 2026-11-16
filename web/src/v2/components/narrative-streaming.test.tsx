@@ -9,6 +9,8 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const client = {} as APIClient;
 const assistant = (text: string, provisional = true): NarrativeEntry => ({
   id: "reply", kind: "assistant", text, createdAt: "", provisional, runId: "run-1",
+  task: { id: "input-1", inputMessageID: "input-1", runId: "run-1", state: provisional ? "running" : "completed",
+    finalMessageID: provisional ? undefined : "reply" },
 });
 
 it("highlights explicit languages without interpreting code as HTML or changing copied text", async () => {

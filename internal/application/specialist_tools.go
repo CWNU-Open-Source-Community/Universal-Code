@@ -432,6 +432,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 		if err := r.requirePinnedProjectInstructionToolOrigins(ctx, run, ref, rounds); err != nil {
 			return r.failAttempt(ctx, result, ref, err)
 		}
+		var currentCatalogue workerToolCatalogue
 		if child.Worker != nil {
 			waiting, err := r.resolveWorkerTools(ctx, result, run, mission, child, attempt, rounds, executor, gateway)
 			if err != nil {
@@ -449,6 +450,7 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 			if err != nil {
 				return r.failAttempt(ctx, result, ref, err)
 			}
+			currentCatalogue = catalogue
 			request.Tools = r.batchWorkerCatalogue(catalogue, child).specs()
 			definition := toolgateway.SpecialistResultReadDefinition()
 			request.Tools = append(request.Tools, llm.ToolSpec{Name: string(definition.Name), Description: definition.Description, Parameters: definition.InputSchema})
@@ -539,6 +541,12 @@ func (r *SubagentRunner) stepNativeTools(ctx context.Context, result *Specialist
 		}
 		response := call.Response
 		if len(response.ToolCalls) > 0 {
+			if child.Worker != nil {
+				response.ToolCalls, err = currentCatalogue.normalizeCommandCalls(response.ToolCalls)
+				if err != nil {
+					return r.failNativeResponse(ctx, result, ref, call.Attempt, response.Usage, err)
+				}
+			}
 			decision := r.checker.CheckText("specialist_assistant_response", response.Text)
 			eventCtx, cancel := specialistEventContext(ctx)
 			charged, recordErr := executor.store.RecordSpecialistToolModelCompleted(eventCtx, ref, call.Attempt, *response, input, decision)

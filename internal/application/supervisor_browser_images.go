@@ -201,13 +201,19 @@ func (s *AgentRunner) supervisorBrowserImages(ctx context.Context, checkpoint do
 	if len(calls) == 0 {
 		return request, nil
 	}
+	totalBytes, err := supervisorImageBytes(request)
+	if err != nil {
+		return llm.ChatRequest{}, err
+	}
 	request.Messages = append([]llm.Message(nil), request.Messages...)
 	vision := s.router.DescribeVision(ref)
-	for index, message := range request.Messages {
+	for index := len(request.Messages) - 1; index >= 0; index-- {
+		message := request.Messages[index]
 		if message.Role != "user" || len(message.ToolResults) == 0 {
 			continue
 		}
-		for _, result := range message.ToolResults {
+		for resultIndex := len(message.ToolResults) - 1; resultIndex >= 0; resultIndex-- {
+			result := message.ToolResults[resultIndex]
 			call, ok := calls[result.ToolCallID]
 			if !ok {
 				continue
@@ -233,8 +239,14 @@ func (s *AgentRunner) supervisorBrowserImages(ctx context.Context, checkpoint do
 				if err != nil {
 					return llm.ChatRequest{}, err
 				}
-				message.Images = append(append([]llm.ImagePart(nil), message.Images...), value.Image)
-				note["pixels_supplied"], note["sha256"], note["canonical_url"] = true, value.Image.SHA256, value.CanonicalURL
+				note["sha256"], note["canonical_url"] = value.Image.SHA256, value.CanonicalURL
+				if len(message.Images) < llm.MaxMessageImages && len(value.Image.Data) <= llm.MaxRequestImageBytes-totalBytes {
+					message.Images = append(append([]llm.ImagePart(nil), message.Images...), value.Image)
+					totalBytes += len(value.Image.Data)
+					note["pixels_supplied"] = true
+				} else {
+					note["limitation"] = "Image pixels were omitted to stay within the model request image bound. The saved screenshot and exact tool result remain available. Do not claim visual inspection of this image."
+				}
 			} else {
 				note["limitation"] = "Image pixels were not supplied because this model's vision support is not established. Do not claim visual inspection; use the recorded page text or a supported model."
 			}

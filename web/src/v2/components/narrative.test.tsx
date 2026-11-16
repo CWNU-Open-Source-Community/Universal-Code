@@ -8,6 +8,12 @@ import { V2Narrative } from "./narrative";
 const markdown = vi.hoisted(() => vi.fn(({ children }: { children: string }) => <p>{children}</p>));
 vi.mock("react-markdown", () => ({ default: markdown }));
 afterEach(() => { cleanup(); markdown.mockClear(); });
+function taskReply(entry: NarrativeEntry): NarrativeEntry {
+  return entry.kind === "assistant" ? { ...entry, task: { id: `task:${entry.id}`, inputMessageID: `input:${entry.id}`,
+    runId: entry.runId ?? "run-1", state: entry.provisional ? "running" : "completed",
+    finalMessageID: entry.provisional ? undefined : entry.id, finishedAt: entry.createdAt } } : entry;
+}
+
 
 it("shows stored message times with a full local date and timezone, without replacing missing timestamps", () => {
   const createdAt = "2026-10-21T09:16:43Z";
@@ -18,7 +24,7 @@ it("shows stored message times with a full local date and timezone, without repl
     { id: "invalid", kind: "assistant", text: "Invalid time", createdAt: "invalid", provisional: false },
     { id: "live", kind: "assistant", text: "Streaming", createdAt, provisional: true },
   ];
-  const { container } = render(<V2Narrative client={{} as APIClient} entries={entries} threadID="thread" />);
+  const { container } = render(<V2Narrative client={{} as APIClient} entries={entries.map(taskReply)} threadID="thread" />);
   const times = container.querySelectorAll("time");
   expect(times).toHaveLength(2);
   for (const time of times) {
@@ -37,7 +43,7 @@ it("copies and reuses processed user text, quotes only the selection, and branch
   const entry: NarrativeEntry = { kind: "user", id: "queued-event", branchSourceID: "queued-event", status: "committed",
     text: "Keep the first part and quote this.", createdAt: "", provisional: false };
   const get = vi.fn().mockResolvedValue({ message_id: entry.id, content: entry.text });
-  render(<V2Narrative client={{ get } as unknown as APIClient} entries={[entry]} threadID="thread" onCompose={onCompose} onBranch={onBranch} />);
+  render(<V2Narrative client={{ get } as unknown as APIClient} entries={[taskReply(entry)]} threadID="thread" onCompose={onCompose} onBranch={onBranch} />);
   await user.click(screen.getByRole("button", { name: "Copy message" }));
   expect(writeText).toHaveBeenCalledWith(entry.text);
   await user.click(screen.getByRole("button", { name: "Reuse text in composer" }));
@@ -100,7 +106,7 @@ it("copies the full reply and branches from its final durable event with icon ac
   const onBranch = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
   const entry: NarrativeEntry = { id: "first-event", branchSourceID: "last-event", kind: "assistant",
     text: "**Full answer**\n\nSecond part", createdAt: "", provisional: false };
-  render(<V2Narrative client={{} as APIClient} entries={[entry]} threadID="thread-1" onBranch={onBranch} />);
+  render(<V2Narrative client={{} as APIClient} entries={[taskReply(entry)]} threadID="thread-1" onBranch={onBranch} />);
 
   const copy = screen.getByRole("button", { name: "Copy response" });
   const branch = screen.getByRole("button", { name: "Branch into new chat" });
@@ -119,8 +125,8 @@ it("copies the full reply and branches from its final durable event with icon ac
 it("retains the same branch request when retrying a failed response", async () => {
   const user = userEvent.setup();
   const onBranch = vi.fn().mockRejectedValueOnce(new Error("Connection lost")).mockResolvedValue(undefined);
-  render(<V2Narrative client={{} as APIClient} entries={[{ id: "reply", branchSourceID: "source-event", kind: "assistant",
-    text: "Answer", createdAt: "", provisional: false }]} threadID="thread-1" onBranch={onBranch} />);
+  render(<V2Narrative client={{} as APIClient} entries={[taskReply({ id: "reply", branchSourceID: "source-event", kind: "assistant",
+    text: "Answer", createdAt: "", provisional: false })]} threadID="thread-1" onBranch={onBranch} />);
   await user.click(screen.getByRole("button", { name: "Branch into new chat" }));
   expect(screen.getByRole("alert")).toHaveTextContent("Connection lost");
   await user.click(screen.getByRole("button", { name: "Branch into new chat" }));
@@ -132,13 +138,13 @@ it("waits for a saved reply before exposing branch actions", () => {
   const client = {} as APIClient;
   const onBranch = vi.fn();
   const entry: NarrativeEntry = { id: "reply", kind: "assistant", text: "Streaming", createdAt: "", provisional: true };
-  const view = render(<V2Narrative client={client} entries={[entry]} threadID="thread-1" onBranch={onBranch} />);
+  const view = render(<V2Narrative client={client} entries={[taskReply(entry)]} threadID="thread-1" onBranch={onBranch} />);
   expect(screen.queryByRole("button")).not.toBeInTheDocument();
-  view.rerender(<V2Narrative client={client} entries={[{ ...entry, provisional: false }]} threadID="thread-1" onBranch={onBranch} />);
+  view.rerender(<V2Narrative client={client} entries={[taskReply({ ...entry, provisional: false })]} threadID="thread-1" onBranch={onBranch} />);
   expect(screen.getByRole("button", { name: "Branch into new chat" })).toBeDisabled();
 });
 
-it("shows the producing model as muted attribution on durable replies only", () => {
+it("keeps model identities out of message footers", () => {
   const entries: NarrativeEntry[] = [
     { id: "reply", kind: "assistant", text: "Attributed reply", model: "anthropic / test-model",
       createdAt: "2026-10-28T00:00:00Z", provisional: false },
@@ -146,8 +152,8 @@ it("shows the producing model as muted attribution on durable replies only", () 
   ];
   const { container } = render(<V2Narrative client={{} as APIClient} entries={entries} threadID="thread" />);
   const badges = container.querySelectorAll(".v2-assistant-model");
-  expect(badges).toHaveLength(1);
-  expect(badges[0].textContent).toBe("anthropic / test-model");
+  expect(badges).toHaveLength(0);
+  expect(screen.queryByText("anthropic / test-model")).not.toBeInTheDocument();
   const streaming: NarrativeEntry[] = [
     { id: "live", kind: "assistant", text: "Streaming", model: "anthropic / test-model",
       createdAt: "2026-10-28T00:00:00Z", provisional: true },

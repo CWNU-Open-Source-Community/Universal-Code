@@ -24,12 +24,7 @@ type agentBrowserCDP struct {
 
 // The only dial remains in the audited restricted_cdp_transport adapter; this
 // dispatcher receives an already validated owned-loopback connection.
-type agentBrowserConnection interface {
-	ReadJSON(any) error
-	WriteJSON(any) error
-	SetWriteDeadline(time.Time) error
-	Close() error
-}
+type agentBrowserConnection = AgentBrowserConnection
 type agentBrowserPending struct {
 	session string
 	reply   chan cdpWireMessage
@@ -76,7 +71,7 @@ var agentBrowserCDPMethods = map[string]bool{
 	"Page.enable":            true, "DOM.enable": true, "Runtime.enable": true, "Accessibility.enable": true,
 	"Network.enable": true, "Network.setBlockedURLs": true, "Network.setBypassServiceWorker": true,
 	"Fetch.enable": false, "Fetch.continueRequest": false, "Fetch.failRequest": false,
-	"Page.getFrameTree": true, "Page.createIsolatedWorld": true, "Page.navigate": true, "Page.captureScreenshot": true,
+	"Page.getFrameTree": true, "Page.getLayoutMetrics": true, "Page.createIsolatedWorld": true, "Page.navigate": true, "Page.captureScreenshot": true,
 	"Page.setLifecycleEventsEnabled": true,
 	"DOM.getDocument":                true, "DOM.resolveNode": true, "DOM.scrollIntoViewIfNeeded": true, "DOM.focus": true,
 	// Upload sets file paths on one snapshot-resolved file input; the
@@ -92,6 +87,40 @@ var agentBrowserCDPMethods = map[string]bool{
 	"Page.startScreencast": true, "Page.stopScreencast": true, "Page.screencastFrameAck": true,
 }
 
+// AgentBrowserAttachedMethods is the page-only allowlist installed by the
+// native endpoint. Process-wide methods never enter an attached connection.
+func AgentBrowserAttachedMethods() []string {
+	methods := make([]string, 0, len(agentBrowserCDPMethods))
+	for method, page := range agentBrowserCDPMethods {
+		if page {
+			methods = append(methods, method)
+		}
+	}
+	return methods
+}
+
+func (c *agentBrowserCDP) write(ctx context.Context, value any) error {
+	var err error
+	if connection, ok := c.conn.(interface {
+		WriteJSONContext(context.Context, any) error
+	}); ok {
+		err = connection.WriteJSONContext(ctx, value)
+		// Native writes are discrete UI tasks. Cancelling one leaves the
+		// connection usable; a stream write failure may leave a partial frame.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			var state interface{ WriteDispatched() bool }
+			dispatched := errors.As(err, &state) && state.WriteDispatched()
+			return &AgentBrowserActionError{Err: err, Dispatched: dispatched, OutcomeUnknown: dispatched}
+		}
+	} else {
+		err = c.conn.WriteJSON(value)
+	}
+	if err != nil {
+		c.close()
+	}
+	return err
+}
+
 // send writes under the document invalidation fence. Its returned waiter must
 // run after releasing that fence so the reader can process events and replies.
 func (c *agentBrowserCDP) send(ctx context.Context, session, method string, params any) (func() error, error) {
@@ -99,7 +128,7 @@ func (c *agentBrowserCDP) send(ctx context.Context, session, method string, para
 		return nil, ErrBrowserRuntimeBoundary
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, &AgentBrowserActionError{Err: err}
 	}
 	c.mu.Lock()
 	c.nextID++
@@ -112,12 +141,11 @@ func (c *agentBrowserCDP) send(ctx context.Context, session, method string, para
 	defer c.writeMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		remove()
-		return nil, err
+		return nil, &AgentBrowserActionError{Err: err}
 	}
 	_ = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	err := c.conn.WriteJSON(map[string]any{"id": id, "sessionId": session, "method": method, "params": params})
+	err := c.write(ctx, map[string]any{"id": id, "sessionId": session, "method": method, "params": params})
 	if err != nil {
-		c.close()
 		remove()
 		return nil, err
 	}
@@ -146,7 +174,7 @@ func (c *agentBrowserCDP) call(ctx context.Context, session, method string, para
 		return ErrBrowserRuntimeBoundary
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return &AgentBrowserActionError{Err: err}
 	}
 	select {
 	case <-c.done:
@@ -163,14 +191,14 @@ func (c *agentBrowserCDP) call(ctx context.Context, session, method string, para
 	c.writeMu.Lock()
 	if err := ctx.Err(); err != nil {
 		c.writeMu.Unlock()
-		return err
+		return &AgentBrowserActionError{Err: err}
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
 	_ = c.conn.SetWriteDeadline(deadline)
-	err := c.conn.WriteJSON(struct {
+	err := c.write(ctx, struct {
 		ID        int64  `json:"id"`
 		SessionID string `json:"sessionId,omitempty"`
 		Method    string `json:"method"`
@@ -178,7 +206,6 @@ func (c *agentBrowserCDP) call(ctx context.Context, session, method string, para
 	}{id, session, method, params})
 	c.writeMu.Unlock()
 	if err != nil {
-		c.close()
 		return err
 	}
 	select {
@@ -188,6 +215,9 @@ func (c *agentBrowserCDP) call(ctx context.Context, session, method string, para
 		return ErrAgentBrowserClosed
 	case message := <-reply:
 		if message.Error != nil {
+			if method == "Page.captureScreenshot" {
+				return ErrAgentBrowserScreenshotUnavailable
+			}
 			return fmt.Errorf("browser protocol %s failed (%d)", method, message.Error.Code)
 		}
 		if len(message.Result) == 0 {

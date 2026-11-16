@@ -61,7 +61,7 @@
 .v2-message-search-result strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
 .v2-message-search-meta { display: flex; flex-wrap: wrap; gap: 3px 8px; color: var(--v2-muted); font-size: 10px; }
 .v2-message-search-snippet { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; font-size: 11px; line-height: 1.65; }
-.v2-narrative > .is-search-target { outline: 2px solid var(--v2-accent); outline-offset: 6px; border-radius: 6px; }
+.v2-narrative .is-search-target { outline: 2px solid var(--v2-accent); outline-offset: 6px; border-radius: 6px; }
 .v2-message-location button { margin-left: 8px; font: inherit; color: var(--v2-accent); background: transparent; border: 0; cursor: pointer; }
 .v2-load-history { display: block; margin: 12px auto; border: 1px solid var(--v2-border); border-radius: 7px; padding: 6px 12px; background: var(--v2-control); cursor: pointer; }
 .v2-composer-status { display: flex; flex-wrap: wrap; align-items: center; box-sizing: border-box; gap: 6px 12px; width: 100%; max-width: var(--v2-composer-width); margin: 0 auto 8px; padding-inline: 16px; }
@@ -927,6 +927,21 @@
   padding: 0;
 }
 .v2-narrative > li { min-width: 0; }
+.v2-task-inputs, .v2-task-entries, .v2-task-final { display: grid; grid-template-columns: minmax(0, 1fr); list-style: none; margin: 0; padding: 0; min-width: 0; }
+.v2-task-inputs { gap: 22px; margin-bottom: 22px; }
+.v2-task-entries { gap: 12px; }
+.v2-task-final { margin-top: 18px; }
+.v2-task-final:first-child { margin-top: 0; }
+.v2-assistant-turn.is-task-progress { font-size: 13px; line-height: 1.55; }
+.v2-assistant-turn.is-task-progress p { margin-bottom: .6em; }
+.v2-task-entries .v2-activity { font-size: 12px; }
+.v2-task-process-heading { display: flex; align-items: center; padding-bottom: 8px; border-bottom: 1px solid var(--v2-border); }
+.v2-task-process-heading + .v2-task-entries:has(> li:not([hidden])) { margin-top: 12px; }
+.v2-task-process-heading > button { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 5px; padding: 2px 0; background: transparent; color: var(--v2-muted); font-size: 12px; cursor: pointer; }
+.v2-task-process-heading > button:hover { color: var(--v2-ink); }
+.v2-task-process-heading > button > svg { transition: transform var(--prayu-motion-fast) ease; }
+.v2-task-process-heading > button[aria-expanded="true"] > svg { transform: rotate(90deg); }
+
 .v2-narrative .v2-markdown-code-header { font-size: 14px; }
 .v2-user-turn { display: flex; flex-direction: column; align-items: flex-end; }
 .v2-message-status { color: var(--v2-muted); display: block; font-size: 11px; margin-top: 6px; }
@@ -1368,6 +1383,8 @@
   position: relative;
   transition: border-color var(--prayu-motion-fast) ease;
 }
+.v2-composer-draft-actions { display: flex; justify-content: flex-end; padding: 8px 12px 0; position: relative; z-index: 2; }
+.v2-composer-draft-actions > .v2-composer-chip { height: 28px; max-width: 100%; }
 .v2-composer-surface:focus-within { border-color: var(--prayu-focus); }
 @supports selector(:has(textarea:focus-visible)) {
   .v2-composer-surface:has(textarea:focus-visible) {
@@ -2844,5 +2861,3 @@
 .v2-prompt-command-list li { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border:1px solid var(--v2-border); border-radius:8px; }
 .v2-prompt-command-actions { display:flex; gap:6px; }
 .v2-prompt-command-actions button { padding:4px 8px; border:1px solid var(--v2-border); border-radius:6px; background:transparent; color:inherit; cursor:pointer; }
-
-.v2-assistant-model { margin-left:auto; padding:2px 8px; border:1px solid var(--v2-border); border-radius:6px; color:var(--v2-muted); font-size:11px; line-height:1.4; overflow-wrap:anywhere; }

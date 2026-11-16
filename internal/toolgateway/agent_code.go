@@ -29,6 +29,7 @@ const (
 
 	WorkspaceListTool      ToolName = "workspace_list"
 	WorkspaceReadTool      ToolName = "workspace_read"
+	WorkspaceViewImageTool ToolName = "workspace_view_image"
 	WorkspaceGlobTool      ToolName = "workspace_glob"
 	WorkspaceGrepTool      ToolName = "workspace_grep"
 	WorkspaceChangeTool    ToolName = "workspace_change"
@@ -305,6 +306,9 @@ func DecodeAgentCodeCallAuthority(raw json.RawMessage) (AgentCodeCallAuthority, 
 }
 
 var agentCodeDefinitions = []ToolDefinition{
+	{Name: WorkspaceViewImageTool, Class: ClassWorkspaceRead, Approval: ApprovalAutomatic,
+		Description: "View one PNG, JPEG, or WebP image from a slash-separated workspace-relative path. Returns a saved image receipt; pixels are supplied to models with confirmed vision support. Maximum 5 MiB, 8192 pixels per dimension and 16 megapixels. Uses the same workspace and excluded-path permissions as workspace_read. SVG/HTML must be rendered with the browser tools; this tool does not render them.",
+		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["version","path"],"properties":{"version":{"const":"agent-code-tools.v1"},"path":{"type":"string","minLength":1,"maxLength":512}}}`)},
 	{Name: WorkspaceListTool, Class: ClassWorkspaceRead, Approval: ApprovalAutomatic,
 		Description: "List one directory inside the already selected workspace with stable keyset pagination. Use path '.' for its root or a slash-separated relative path such as 'src'; never pass an absolute host path. Hidden and ignored entries stay excluded by Go policy.",
 		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["version","path","limit"],"properties":{"version":{"const":"agent-code-tools.v1"},"path":{"type":"string","maxLength":512},"cursor":{"type":"string","maxLength":8192},"limit":{"type":"integer","minimum":1,"maximum":200}}}`)},
@@ -365,6 +369,11 @@ type WorkspaceReadPayload struct {
 	Path      string `json:"path"`
 	StartLine int    `json:"start_line"`
 	EndLine   int    `json:"end_line"`
+}
+
+type WorkspaceViewImagePayload struct {
+	Version string `json:"version"`
+	Path    string `json:"path"`
 }
 
 type WorkspaceGlobPayload struct {
@@ -445,6 +454,15 @@ type GitHubEvidenceReadPayload struct {
 
 func NormalizeAgentCodePayload(name ToolName, payload json.RawMessage) (json.RawMessage, error) {
 	switch name {
+	case WorkspaceViewImageTool:
+		var value WorkspaceViewImagePayload
+		if err := decodeStrictAgentCodePayload(payload, &value); err != nil {
+			return nil, err
+		}
+		if value.Version != AgentCodeRegistryVersion || !validAgentCodeText(value.Path, maxAgentCodePathRunes, false) {
+			return nil, errors.New("workspace image payload is invalid")
+		}
+		return marshalAgentCodePayload(value)
 	case WorkspaceListTool:
 		var value WorkspaceListPayload
 		if err := decodeStrictAgentCodePayload(payload, &value); err != nil {

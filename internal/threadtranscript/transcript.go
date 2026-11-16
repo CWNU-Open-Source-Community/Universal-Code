@@ -71,6 +71,7 @@ type Source struct {
 	Sequence             int64
 	CreatedAt            time.Time
 	Event                *events.Event
+	Task                 *Task
 }
 
 type Item struct {
@@ -108,6 +109,19 @@ type Item struct {
 	Provisional           bool
 	Durable               bool
 	CreatedAt             time.Time
+	Task                  *Task
+}
+
+// Task is a read-only product input boundary, independent of model calls and
+// internal Supervisor turns. Message IDs use the transcript's existing IDs.
+type Task struct {
+	ID                  string
+	InputMessageID      string
+	State               string
+	StartedAt           *time.Time
+	FinishedAt          *time.Time
+	FinalMessageID      string
+	ChangeSourceEventID string
 }
 
 type WebEvidencePresentation struct {
@@ -312,6 +326,18 @@ func Build(threadID string, source []Source) ([]Item, error) {
 				}
 			}
 			items = append(items, item)
+		}
+	}
+	tasks := make(map[string]*Task)
+	for _, record := range ordered {
+		if record.Task != nil {
+			tasks[record.RunID+"/"+strconv.FormatInt(record.Sequence, 10)] = record.Task
+		}
+	}
+	for index := range items {
+		if task := tasks[items[index].RunID+"/"+strconv.FormatInt(items[index].Sequence, 10)]; task != nil {
+			copy := *task
+			items[index].Task = &copy
 		}
 	}
 	return items, nil
@@ -628,7 +654,7 @@ func classifyTool(name string) ActivityType {
 		"code_references", "code_implementation", "code_call_hierarchy", "code_type_hierarchy",
 		"web_search":
 		return TypeSearch
-	case "read_file", "workspace_read", "note_get", "artifact_get",
+	case "read_file", "workspace_read", "workspace_view_image", "note_get", "artifact_get",
 		"github_review_evidence_read", "code_definition", "code_hover", "code_signature_help",
 		"web_fetch", "web_citation":
 		return TypeRead

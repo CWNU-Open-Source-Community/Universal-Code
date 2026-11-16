@@ -85,8 +85,9 @@ it.each(["disabled", "rules", "full"])("shares the %s web selection between sett
   await user.selectOptions(await screen.findByRole("combobox", { name: "网页搜索模式" }), mode);
   await user.click(screen.getByRole("button", { name: "返回应用" }));
   expect(await screen.findByRole("textbox", { name: "开始新对话" })).toHaveValue("保持草稿并配置网页访问");
-  const label = { disabled: "禁止搜索", rules: "规则搜索", full: "完全访问" }[mode]!;
-  expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+  for (const label of ["禁止搜索", "规则搜索", "完全访问", "网页访问与搜索"]) {
+    expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
+  }
   await user.click(screen.getByRole("button", { name: "发送消息" }));
   await waitFor(() => expect(client.createThread).toHaveBeenCalledTimes(1));
   expect(client.createThread.mock.calls[0][0]).toEqual(expect.objectContaining({

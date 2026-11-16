@@ -8,21 +8,23 @@ import (
 	"cyberagent-workbench/internal/domain"
 )
 
-// The context gate is Go-owned and runs before the next model request. Bind its
+// These gates are Go-owned and run before the next model request. Bind their
 // label to the exact sealed handoff; provider messages and generic budget
 // exhaustion cannot manufacture this failure stage.
-func recordedThreadContextFailureStage(ctx context.Context, q interface {
+func recordedThreadHandoffFailureStage(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, handoffID string) (string, error) {
-	var count int
-	err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM run_execution_handoff_results
-		WHERE operation_id=? AND status='failed' AND UPPER(error_code)='RESOURCE_EXHAUSTED'
-		AND stop_reason=?`, handoffID, domain.ThreadFailureContextWindowExceeded).Scan(&count)
+	var code, reason string
+	err := q.QueryRowContext(ctx, `SELECT UPPER(error_code),stop_reason FROM run_execution_handoff_results
+		WHERE operation_id=? AND status='failed'`, handoffID).Scan(&code, &reason)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
-	if count == 1 {
+	if err == nil && code == "RESOURCE_EXHAUSTED" && reason == domain.ThreadFailureContextWindowExceeded {
 		return domain.ThreadFailureContextWindowExceeded, nil
+	}
+	if err == nil && code == "FAILED_PRECONDITION" && reason == domain.ThreadFailureFullPermissionNotReady {
+		return domain.ThreadFailureFullPermissionNotReady, nil
 	}
 	return "", nil
 }

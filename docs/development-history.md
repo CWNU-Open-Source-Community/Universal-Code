@@ -299,5 +299,9 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v228 | 重建 hook 审计表以接纳 post_compaction 生命周期事件 | rebuild the hook audit table to admit the post_compaction lifecycle event |
 | v229 | hook 已发生边界截断过量观测输出，审计保存 output_capped 并保留既有事件和脚本拒绝绑定 | cap post-occurrence hook observations and admit output_capped audits while preserving prior event and script bindings |
 | v230 | 保存独立的项目浏览器联网偏好、已结束任务的下次执行选择及不可变操作记录，支持浏览器策略修订与继承 | persist independent project browser network preferences, next-execution selections for terminal Runs and immutable operation records for browser policy revision and inheritance |
+| v231 | 将同页指针移动接入 Agent 浏览器工具账本，保留历史调用字节、行身份及执行授权约束 | admit same-page pointer movement to the Agent browser tool ledger while preserving historical call bytes, row identities and execution authority constraints |
+| v232 | 将工作区图片读取接入既有工具账本，保留历史调用行及 AgentCode 读取授权约束 | admit workspace image reads to the existing tool ledger while preserving historical call rows and AgentCode read authority constraints |
+| v233 | 允许空闲的运行中 Thread 重新确认既有 Full 权限，保留执行租约和并发工作约束及 Ask 升级边界 | allow idle running Threads to reconfirm an existing Full permission while preserving execution lease and concurrent work guards and the Ask upgrade boundary |
+| v234 | 为初始 Preview 保存显式选择，保留历史执行配置及 created/paused、无执行租约的不可变转换约束 | record an explicit selection of the initial Preview while preserving historical execution profiles and immutable, lease-free transitions limited to created or paused Runs |
 
 </details>
