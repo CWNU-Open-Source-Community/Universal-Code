@@ -192,6 +192,40 @@ async function fillRequiredProvider(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("V2 custom Provider settings", () => {
+  it.each(["success", "failure"])("locks editing while an unchanged save refetch is pending: %s", async (outcome) => {
+    const definition = provider();
+    const controls = createClient([definition]);
+    const user = userEvent.setup();
+    renderSettings(controls.client);
+    await user.click(await screen.findByRole("button", { name: /Acme AI/u }));
+    let resolveRefetch!: (value: Awaited<ReturnType<APIClient["providerDefinitions"]>>) => void;
+    let rejectRefetch!: (error: Error) => void;
+    controls.providerDefinitions.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      resolveRefetch = resolve;
+      rejectRefetch = reject;
+    }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(controls.providerDefinitions).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("显示名称")).toBeDisabled();
+    expect(screen.getByLabelText("默认模型")).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "高级 JSON" })).toBeDisabled();
+    await user.type(screen.getByLabelText("显示名称"), " later edit");
+    expect(screen.getByLabelText("显示名称")).toHaveValue(definition.display_name);
+    if (outcome === "success") {
+      resolveRefetch({ version: "provider_definition_collection.v1", revision: 7, providers: [definition] });
+      await user.click(await screen.findByRole("button", { name: /Acme AI/u }));
+      expect(screen.getByLabelText("显示名称")).toBeEnabled();
+      expect(screen.getByLabelText("显示名称")).toHaveValue(definition.display_name);
+    } else {
+      rejectRefetch(new Error("Could not refresh provider"));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Could not refresh provider");
+      expect(screen.getByLabelText("显示名称")).toBeEnabled();
+      await user.type(screen.getByLabelText("显示名称"), " updated");
+      expect(screen.getByLabelText("显示名称")).toHaveValue("Acme AI updated");
+    }
+    expect(controls.upsertProviderDefinition).not.toHaveBeenCalled();
+  });
+
   it("keeps the editor open when an unchanged provider was deleted elsewhere", async () => {
     const controls = createClient([provider()]);
     const user = userEvent.setup();

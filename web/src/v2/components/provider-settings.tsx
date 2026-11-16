@@ -1115,7 +1115,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
       <p>{quickSetup ? t("填入 API Key，确认模型并保存，然后完成下方模型检查。自建服务可展开高级设置。", "Enter the API key, confirm the model and save, then check the model below. Expand advanced settings for self-hosted services.")
         : t("填写服务地址和模型；密钥将单独保存到系统凭据管理器。", "Enter the endpoint and models. Keys are saved separately in system credentials.")}</p></div></div>
     <form className="v2-provider-form" onSubmit={(event) => { event.preventDefault(); save(); }}>
-      <fieldset className="v2-provider-operation-lock" disabled={harnessBusy}>
+      <fieldset className="v2-provider-operation-lock" disabled={busy || harnessBusy}>
       {quickSetup && <section className="v2-settings-card v2-provider-fields v2-provider-quick" aria-labelledby="provider-quick-title">
         <header><div><h2 id="provider-quick-title">{draft.displayName}</h2>
           <p>{t("提供商已选定；其他连接参数使用当前配置。", "Provider selected. Other connection parameters use the current configuration.")}</p></div>

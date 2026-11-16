@@ -61,6 +61,7 @@ export interface NarrativeTaskGroup {
   id: string;
   task: NarrativeTask;
   entries: NarrativeEntry[];
+  footerReplies: Array<Extract<NarrativeEntry, { kind: "assistant" }>>;
   lastSegment: boolean;
   hasFinalReply: boolean;
 }
@@ -72,12 +73,17 @@ export function groupNarrativeTasks(entries: NarrativeEntry[]): Array<NarrativeE
     if (!entry.task) { result.push(entry); continue; }
     let group = lastByTask.get(entry.task.id);
     if (!group || result.at(-1) !== group) {
-      if (group) group.lastSegment = false;
-      group = { kind: "task", id: entry.id, task: entry.task, entries: [], lastSegment: true, hasFinalReply: false };
+      const footerReplies = group?.footerReplies ?? [];
+      if (group) {
+        group.lastSegment = false;
+        group.footerReplies = [];
+      }
+      group = { kind: "task", id: entry.id, task: entry.task, entries: [], footerReplies, lastSegment: true, hasFinalReply: false };
       lastByTask.set(entry.task.id, group);
       result.push(group);
     }
     group.entries.push(entry);
+    if (entry.kind === "assistant") group.footerReplies.push(entry);
     if (isFinalTaskReply(entry, entry.task)) tasksWithFinal.add(entry.task.id);
   }
   for (const item of result) {

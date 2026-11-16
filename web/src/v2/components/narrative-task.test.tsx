@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { APIClient } from "../../api/client";
 import type { ThreadChangeSummary } from "../../api/thread-changes";
@@ -22,7 +23,7 @@ function entries(value: NarrativeTask = task): NarrativeEntry[] {
   if(value.finalMessageID) rows.push({id:value.finalMessageID,kind:"assistant",text:"The page is updated and verified.",createdAt:"",provisional:false,model:"final-model",branchSourceID:value.finalMessageID,runId:value.runId});
   return rows.map((entry)=>({...entry,task:value}));
 }
-function setup(rows = entries(), locatedMessageID?: string) {
+function setup(rows = entries(), locatedMessageID?: string, actions: Pick<ComponentProps<typeof V2Narrative>, "onBranch" | "onCompose"> = {}) {
   const summary: ThreadChangeSummary = {version:"thread_change_summary.v1",thread_id:"thread-1",run_id:"run-1",source_event_id:rows[0]?.task?.changeSourceEventID ?? "final",
     change_scope:"recorded_file_edits",file_count:4,additions:4,deletions:4,counts_available:true,partial:false,reasons:[],
     files:["src/app.tsx","src/theme.css","README.md","tests/app.test.ts"].map((path,index)=>({workspace_id:"workspace-1",path,operation:"replace" as const,additions:1,deletions:1,
@@ -31,11 +32,63 @@ function setup(rows = entries(), locatedMessageID?: string) {
   const client={threadChanges,hasWorkspaceCheckpointControl:true,undoThreadChanges:vi.fn()} as unknown as APIClient;
   const queries=new QueryClient({defaultOptions:{queries:{retry:false}}});
   const tree=(next: NarrativeEntry[], target=locatedMessageID)=><QueryClientProvider client={queries}>
-    <V2Narrative client={client} entries={next} threadID="thread-1" locatedMessageID={target}/></QueryClientProvider>;
+    <V2Narrative client={client} entries={next} threadID="thread-1" locatedMessageID={target} {...actions}/></QueryClientProvider>;
   const view=render(tree(rows));
   return {...view,threadChanges,rerenderRows:(next: NarrativeEntry[], target?: string)=>view.rerender(tree(next,target))};
 }
 describe("user task narrative",()=>{
+  it("keeps one usable final-reply footer when a later task input precedes an earlier task notice", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    const onCompose = vi.fn();
+    const onBranch = vi.fn().mockResolvedValue(undefined);
+    const rows: NarrativeEntry[] = [...entries(),
+      { id: "next-input", kind: "user", text: "Another request", createdAt: "", provisional: false,
+        task: { id: "next-task", inputMessageID: "next-input", runId: task.runId, state: "running" } },
+      { id: "late-notice", kind: "notice", text: "Saved recovery information", tone: "warning", createdAt: "", task },
+    ];
+    const view = setup(rows, undefined, { onCompose, onBranch });
+    expect(screen.getAllByText("The page is updated and verified.")).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Copy response" })).toHaveLength(1);
+    const lastSegment = view.container.querySelectorAll('[data-task-id="input-1"]')[1] as HTMLElement;
+    const footer = within(lastSegment);
+    await user.click(footer.getByRole("button", { name: "Copy response" }));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("The page is updated and verified.");
+    await user.click(footer.getByRole("button", { name: "Quote message" }));
+    expect(onCompose).toHaveBeenCalledExactlyOnceWith("> The page is updated and verified.\n\n");
+    await user.click(footer.getByRole("button", { name: "Branch into new chat" }));
+    expect(onBranch).toHaveBeenCalledExactlyOnceWith("final", expect.any(String));
+    expect(screen.getAllByRole("region", { name: "Changes in this turn" })).toHaveLength(1);
+  });
+  it("copies all interrupted task replies and branches from its last saved reply after a notice-only segment", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    const onCompose = vi.fn();
+    const onBranch = vi.fn().mockResolvedValue(undefined);
+    const interrupted = { ...task, state: "interrupted" as const, finalMessageID: undefined, changeSourceEventID: "ending-event" };
+    const rows: NarrativeEntry[] = [...entries(interrupted),
+      { id: "last-progress", kind: "assistant", text: "I saved the partial result.", createdAt: "", provisional: false,
+        branchSourceID: "last-saved-event", runId: task.runId, task: interrupted },
+      { id: "next-input", kind: "user", text: "Another request", createdAt: "", provisional: false,
+        task: { id: "next-task", inputMessageID: "next-input", runId: task.runId, state: "running" } },
+      { id: "late-notice", kind: "notice", text: "Saved recovery information", tone: "warning", createdAt: "", task: interrupted },
+    ];
+    const view = setup(rows, undefined, { onCompose, onBranch });
+    expect(screen.getAllByRole("button", { name: "Copy response" })).toHaveLength(1);
+    expect(screen.getAllByText("Checking the implementation.")).toHaveLength(1);
+    const partialReply = screen.getByText("I saved the partial result.");
+    expect(partialReply).toBeVisible();
+    expect(partialReply.compareDocumentPosition(screen.getByText("Another request")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const lastSegment = view.container.querySelectorAll('[data-task-id="input-1"]')[1] as HTMLElement;
+    const footer = within(lastSegment);
+    await user.click(footer.getByRole("button", { name: "Copy response" }));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("Checking the implementation.\n\nI saved the partial result.");
+    await user.click(footer.getByRole("button", { name: "Quote message" }));
+    expect(onCompose).toHaveBeenCalledExactlyOnceWith("> Checking the implementation.\n> \n> I saved the partial result.\n\n");
+    await user.click(footer.getByRole("button", { name: "Branch into new chat" }));
+    expect(onBranch).toHaveBeenCalledExactlyOnceWith("last-saved-event", expect.any(String));
+    expect(screen.getAllByRole("region", { name: "Changes in this turn" })).toHaveLength(1);
+  });
   it("keeps a later input ahead of the earlier task's final answer and single delivery card", async () => {
     const rows = entries();
     rows.splice(-1, 0, { id: "next-input", kind: "user", text: "Another request", createdAt: "", provisional: false,

@@ -319,10 +319,11 @@ const NarrativeTaskRow = memo(function NarrativeTaskRow({ client, group, threadI
   const firstProcess = group.entries.findIndex((entry) => entry.kind !== "user");
   const inputs = firstProcess < 0 ? group.entries : group.entries.slice(0, firstProcess);
   const work = firstProcess < 0 ? [] : group.entries.slice(firstProcess).filter((entry) => entry !== finalReply);
-  const replies = group.entries.filter((entry): entry is Extract<NarrativeEntry, { kind: "assistant" }> => entry.kind === "assistant");
+  const replies = terminal ? group.footerReplies : [];
+  const footerReply = group.task.state === "completed" ? replies.find((entry) => isFinalTaskReply(entry, group.task)) : undefined;
   const lastSavedReply = replies.findLast((entry) => !entry.provisional);
-  const footerText = finalReply?.kind === "assistant" ? finalReply.text : replies.map((entry) => entry.text).join("\n\n");
-  const showActions = terminal && Boolean(finalReply || !group.task.finalMessageID);
+  const footerText = footerReply ? footerReply.text : replies.map((entry) => entry.text).join("\n\n");
+  const showActions = terminal && Boolean(footerReply || !group.task.finalMessageID);
   return <li className="v2-task-turn" data-task-id={group.task.id} data-task-state={group.task.state}>
     {inputs.length > 0 && <ol className="v2-task-inputs">{inputs.map((entry) =>
       <NarrativeRow client={client} entry={entry} key={entry.id} threadID={threadID} {...actions} />)}</ol>}
@@ -343,7 +344,7 @@ const NarrativeTaskRow = memo(function NarrativeTaskRow({ client, group, threadI
       <V2TurnChanges client={client} threadID={threadID} runID={group.task.runId} sourceEventID={group.task.changeSourceEventID} />}
     {terminal && group.lastSegment && (showActions && footerText ? <AssistantMessageActions text={footerText}
       createdAt={group.task.finishedAt ?? lastSavedReply?.createdAt ?? ""}
-      branchSourceID={finalReply?.kind === "assistant" ? finalReply.branchSourceID : lastSavedReply?.branchSourceID}
+      branchSourceID={footerReply ? footerReply.branchSourceID : lastSavedReply?.branchSourceID}
       onBranch={actions.onBranch} onCompose={actions.onCompose} />
       : <div className="v2-assistant-actions"><MessageTime createdAt={group.task.finishedAt ?? ""} /></div>)}
   </li>;
