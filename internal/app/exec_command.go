@@ -344,7 +344,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	// a success exit code. The reply may be empty when the turn paused
 	// before producing one; the file then records that emptiness.
 	if target := *outputLastMessage; target != "" {
-		if writeErr := os.WriteFile(target, []byte(result.Reply), 0o600); writeErr != nil {
+		if writeErr := writeOutputLastMessageFile(target, []byte(result.Reply)); writeErr != nil {
 			if err != nil {
 				return fmt.Errorf("%w (write --output-last-message %s: %v)", err, target, writeErr)
 			}
@@ -638,4 +638,52 @@ func (a *App) resolveRunWorkspaceID(ctx context.Context, runID string) (string, 
 		return "", fmt.Errorf("continue mission lookup: %w", err)
 	}
 	return mission.WorkspaceID, nil
+}
+
+// writeOutputLastMessageFile replaces the target atomically. Automation
+// wrappers read the file immediately after exec exits, so a truncate-then-
+// write interrupted by a crash or kill would leave a partial or empty reply
+// to be consumed as real output. The staged temp file lives in the target's
+// directory — same volume, so the final rename is atomic — and is removed on
+// every failure path. A pre-existing target keeps its own permission mode
+// instead of inheriting the staged file's 0600, matching the write-through
+// behavior of os.WriteFile that this replaces; note that rename replaces a
+// symlink or hardlink at the target path rather than writing through it.
+func writeOutputLastMessageFile(target string, reply []byte) error {
+	dir, base := filepath.Split(target)
+	if dir == "" {
+		dir = "."
+	}
+	tmp, err := os.CreateTemp(dir, base+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err = tmp.Write(reply); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	if info, statErr := os.Stat(target); statErr == nil {
+		if err = os.Chmod(tmpPath, info.Mode().Perm()); err != nil {
+			return err
+		}
+	}
+	// A reader holding the target open can make the replace fail
+	// transiently (Windows sharing violations resolve when the reader
+	// closes); a short bounded retry keeps the command from failing on a
+	// window measured in milliseconds.
+	var renameErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 25 * time.Millisecond)
+		}
+		if renameErr = os.Rename(tmpPath, target); renameErr == nil {
+			return nil
+		}
+	}
+	return renameErr
 }

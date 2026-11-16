@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -393,6 +394,89 @@ func TestExecOutputLastMessageWriteFailureFailsBeforeOutput(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Fatalf("no reply may reach stdout when the write failed, got: %s", out.String())
+	}
+}
+
+func TestExecOutputLastMessagePreservesAnExistingFilesMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not enforced on Windows")
+	}
+	a, provider, _ := newExecLastMessageTestApp(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "last-message.txt")
+	if err := os.WriteFile(target, []byte("previous reply"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	a.out = &out
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--output-last-message", target, "Any task"}); err != nil {
+		t.Fatalf("exec with --output-last-message failed: %v", err)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Fatalf("replaced file lost the existing mode: %v", info.Mode().Perm())
+	}
+}
+
+func TestExecOutputLastMessageRenameFailureLeavesNoStagedFile(t *testing.T) {
+	a, provider, _ := newExecLastMessageTestApp(t)
+	dir := t.TempDir()
+	// A directory at the target path makes the final rename fail
+	// deterministically on both platforms.
+	target := filepath.Join(dir, "last-message.txt")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	a.out = &out
+	err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--output-last-message", target, "Any task"})
+	if err == nil || !strings.Contains(err.Error(), "--output-last-message") {
+		t.Fatalf("failed rename must fail the command with the flag named, got: %v", err)
+	}
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	for _, entry := range entries {
+		if strings.Contains(entry.Name(), ".tmp-") {
+			t.Fatalf("staged temp file left behind: %s", entry.Name())
+		}
+	}
+}
+
+func TestExecOutputLastMessageAtomicReplaceKeepsDirectoryClean(t *testing.T) {
+	a, provider, _ := newExecLastMessageTestApp(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "last-message.txt")
+	if err := os.WriteFile(target, []byte("previous reply"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	a.out = &out
+	if err := a.execCommand(t.Context(), []string{
+		"--workspace", "exec-ws", "--route", provider.Name() + "/model",
+		"--output-last-message", target, "Any task"}); err != nil {
+		t.Fatalf("exec with --output-last-message failed: %v", err)
+	}
+	written, err := os.ReadFile(target)
+	if err != nil || string(written) != "first reply" {
+		t.Fatalf("atomic replace mismatch: %q %v", written, err)
+	}
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 1 || entries[0].Name() != "last-message.txt" {
+		t.Fatalf("staged temp file left behind after success: %v", entries)
 	}
 }
 
