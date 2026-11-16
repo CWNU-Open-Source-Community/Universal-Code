@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -225,6 +226,71 @@ func TestProcessScriptExecutorRejectsInvalidOutputAndFailures(t *testing.T) {
 		TimeoutMillis: 5_000}
 	if _, err := executor.ExecuteScript(t.Context(), invocation); err == nil {
 		t.Fatal("failing script exit code was accepted")
+	}
+}
+
+func TestProcessScriptExecutorKillsSpawnedChildrenWithTheTree(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "grandchild-survived")
+	var body string
+	if runtime.GOOS == "windows" {
+		escaped := strings.ReplaceAll(marker, "'", "''")
+		body = "Start-Process powershell -ArgumentList '-NoProfile','-Command'," +
+			"'Start-Sleep -Seconds 3; Set-Content -LiteralPath ''" + escaped + "'' -Value done'\n" +
+			"Start-Sleep -Seconds 30\n"
+	} else {
+		body = "(sleep 3 && touch '" + marker + "') &\nexec sleep 30\n"
+	}
+	spec := writeScriptForTest(t, dir, scriptFileNameForTest(), body)
+	spec.Interpreter = scriptInterpreterForTest(t)
+	executor := newExecutorForTest(t, dir)
+	invocation := ScriptInvocation{HookID: "guard", Event: PreTool,
+		RelativePath: spec.Path, Interpreter: spec.Interpreter, SHA256: spec.SHA256,
+		TimeoutMillis: 400}
+	ctx, cancel := context.WithTimeout(t.Context(), 400*time.Millisecond)
+	defer cancel()
+	if _, err := executor.ExecuteScript(ctx, invocation); err == nil {
+		t.Fatal("script outlived its declared timeout without an error")
+	}
+	// Give a surviving grandchild its full lifetime to prove it is dead: if
+	// the tree kill leaked, the marker appears within 3 seconds.
+	time.Sleep(4 * time.Second)
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("spawned grandchild survived the timeout kill")
+	}
+}
+
+func TestProcessScriptExecutorSweepsStaleSnapshots(t *testing.T) {
+	interpreter := scriptInterpreterForTest(t)
+	dir := t.TempDir()
+	response := `{"protocol_version":"restricted-hooks.v1"}`
+	spec := writeScriptForTest(t, dir, scriptFileNameForTest(), echoScriptBody(t, response))
+	spec.Interpreter = interpreter
+	stale := filepath.Join(dir, ".operator-hook-stale.tmp"+filepath.Ext(spec.Path))
+	if err := os.WriteFile(stale, []byte("abandoned"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	// A fresh snapshot of a concurrent execution must survive the sweep.
+	fresh := filepath.Join(dir, ".operator-hook-fresh.tmp"+filepath.Ext(spec.Path))
+	if err := os.WriteFile(fresh, []byte("in flight"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	executor := newExecutorForTest(t, dir)
+	invocation := ScriptInvocation{HookID: "guard", Event: PreTool,
+		RelativePath: spec.Path, Interpreter: spec.Interpreter, SHA256: spec.SHA256,
+		TimeoutMillis: 10000}
+	if _, err := executor.ExecuteScript(t.Context(), invocation); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale snapshot survived the sweep: %v", err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatalf("fresh snapshot was swept: %v", err)
 	}
 }
 

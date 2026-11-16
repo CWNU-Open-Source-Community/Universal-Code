@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -88,6 +89,7 @@ func (x *ProcessScriptExecutor) ExecuteScript(ctx context.Context,
 	argv = append(argv, snapshotPath)
 	argv = append(argv, invocation.Args...)
 
+	x.sweepStaleScriptSnapshots()
 	cmd := exec.CommandContext(ctx, executable, argv...)
 	cmd.Dir = x.hooksDir
 	cmd.Env = scriptEnvironmentVars()
@@ -98,7 +100,8 @@ func (x *ProcessScriptExecutor) ExecuteScript(ctx context.Context,
 	stderr := &truncatingBuffer{Limit: MaxOutputBytes}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.Cancel = func() error { return cmd.Process.Kill() }
+	configureScriptProcess(cmd)
+	cmd.Cancel = func() error { return killScriptProcessTree(cmd) }
 	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Run(); err != nil {
 		if stdout.overflowed {
@@ -117,6 +120,42 @@ func (x *ProcessScriptExecutor) ExecuteScript(ctx context.Context,
 		return ScriptOutput{}, errors.New("script hook output exceeds its size limit")
 	}
 	return parseScriptOutput(stdout.Bytes())
+}
+
+// sweepStaleScriptSnapshots removes abandoned snapshot files older than an
+// hour from the hook directory tree. A killed script tree can keep holding
+// its snapshot open while a spawned child survives the kill, so the per-run
+// deferred remove fails and the file would otherwise litter the hook
+// directory forever. The age bound keeps snapshots of concurrent live
+// executions safe.
+func (x *ProcessScriptExecutor) sweepStaleScriptSnapshots() {
+	stale := time.Now().Add(-time.Hour)
+	_ = filepath.WalkDir(x.hooksDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, ".operator-hook-") {
+			return nil
+		}
+		// ".tmp" must sit at an extension boundary of the CreateTemp pattern
+		// (".tmp" + the script extension, e.g. ".tmp.ps1"), not anywhere in
+		// the name — an operator file that merely contains the substring is
+		// never a snapshot.
+		idx := strings.LastIndex(name, ".tmp")
+		if idx < 0 {
+			return nil
+		}
+		suffix := name[idx+len(".tmp"):]
+		if suffix != "" && (suffix[0] != '.' || len(suffix) > 8) {
+			return nil
+		}
+		if info, infoErr := entry.Info(); infoErr == nil && info.ModTime().After(stale) {
+			return nil
+		}
+		_ = os.Remove(path)
+		return nil
+	})
 }
 
 func parseScriptOutput(raw []byte) (ScriptOutput, error) {
