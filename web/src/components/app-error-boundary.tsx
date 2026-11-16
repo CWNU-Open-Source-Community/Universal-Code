@@ -5,26 +5,26 @@ type AppShellErrorBoundaryProps = { children: ReactNode };
 
 class AppShellErrorBoundary extends Component<
   AppShellErrorBoundaryProps & { t: LocaleText },
-  { error: Error | null }
+  { hasError: boolean }
 > {
-  state = { error: null as Error | null };
+  state = { hasError: false };
 
-  static getDerivedStateFromError(error: Error) {
-    return { error };
+  static getDerivedStateFromError() {
+    return { hasError: true };
   }
 
-  componentDidCatch(error: Error) {
+  componentDidCatch(error: unknown) {
     // UI-evidence diagnostics count console_errors, so logging here keeps a
     // render crash observable without an external reporter.
     console.error(error);
   }
 
   render() {
-    if (this.state.error) {
+    if (this.state.hasError) {
       return <div className="v2-module-loading" role="alert">
         <p>{this.props.t("页面出现异常。", "Something went wrong.")}</p>
-        <p>{this.props.t("请先保存输入，再重新加载页面重试；重新加载后会回到连接页。",
-          "Save your input, then reload the page to retry; reloading returns to the connection page.")}</p>
+        <p>{this.props.t("重新加载页面重试。未保存的输入可能丢失，浏览器中需要重新输入访问令牌。",
+          "Reload the page to retry. Unsaved input may be lost; browser connections require the access token again.")}</p>
         <button type="button" onClick={() => window.location.reload()}>
           {this.props.t("重新加载", "Reload")}
         </button>
