@@ -2,7 +2,7 @@
 
 状态 / Status: instructions and explicit memory in schema v114; experience candidates in schema v198
 
-2026-09-11 更新：普通 Thread 的 Supervisor 主链已接入现有持久压缩器；本批没有新增 Schema。超过历史阈值或模型窗口压力时先保存摘要，再组织模型请求，不发送逐条静默删历史后的请求。摘要、原文提取和后继继承均有容量边界；完整原始历史继续保留，摘要不授予权限。实现、重启/重复压缩/工具证据及失败边界验收见 [普通 Thread 上下文连续性验收](UX_CONTEXT_CONTINUITY_VALIDATION.md)。下文 v114 说明仍描述各自原有接口，不代表这些入口自动等同普通 Thread 主链。
+普通 Thread 和独立 Session 均按当前模型的可用输入窗口触发自动压缩。工作台先为输出和安全余量留出空间，估算本次请求的输入；达到可用输入的 90% 时，有可压缩的历史就先保存摘要。主 Agent 的估算包含工具、附件、系统指令和当前输入。窗口来自已解析的模型配置或元数据，未知时采用 32K token 的默认值。
 
 协议 / Protocols: `project_instruction_snapshot.v1`, `context_memory.v1`, `context_memory_candidate.v1`,
 `continuity_snapshot.v1`, `session_continuity_node.v1`, `session_tree.v1`
@@ -12,7 +12,7 @@
 ### 当前任务的固定要求与主动压缩
 
 2026-10-17 更新（schema v206–v208）：普通 Thread 在自动摘要之外，按剩余预算保留
-近期用户消息的完整原文。更早的原文仍在历史记录中，可通过 `history_search` / `history_read`
+近期用户消息的完整原文。单条消息超出近期原文预算时保留来源 ID 和内容摘要值，较早的短纠正仍有机会进入下一次请求。原始消息保存在历史记录中，可通过 `history_search` / `history_read`
 回读；有界近期原文不能替代持续要求的显式固定。
 
 在对话的 **查看上下文 → 本次任务始终保留** 中，可以直接添加、编辑或取消固定要求。

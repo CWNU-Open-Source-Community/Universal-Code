@@ -182,7 +182,7 @@ func TestThreadToolBoundaryReturnsCompactionFromEarlierSegment(t *testing.T) {
 			role = "assistant"
 		}
 		if _, err := st.SaveSessionMessage(t.Context(), session.NewMessage(run.SessionID, role,
-			fmt.Sprintf("Earlier review checkpoint %d: preserve README and report actual observations.", index))); err != nil {
+			fmt.Sprintf("Earlier review checkpoint %d: preserve README and report actual observations. %s", index, compactionFixtureObservation()))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -193,7 +193,7 @@ func TestThreadToolBoundaryReturnsCompactionFromEarlierSegment(t *testing.T) {
 	provider := &boundaryJourneyProvider{}
 	provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
 		summary, found, err := st.LatestContextSummary(ctx, run.SessionID)
-		if err != nil || !found || summary.ID <= 0 || summary.CompactedMessageCount != 18 {
+		if err != nil || !found || summary.ID <= 0 || summary.CompactedMessageCount <= 0 {
 			return nil, fmt.Errorf("first segment did not compact real history: found=%t count=%d err=%v", found, summary.CompactedMessageCount, err)
 		}
 		if index == 1 {

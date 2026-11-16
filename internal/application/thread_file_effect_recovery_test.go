@@ -69,7 +69,7 @@ func TestThreadFileEffectsSurviveFailureCompactionAndRestart(t *testing.T) {
 			}
 			permissionBefore, _ := st.GetRunExecutionPermission(t.Context(), run.ID)
 			for i := 2; i <= 26; i++ {
-				p.responses = append(p.responses, textResponse(rootActionResponse(domain.RootActionFinish, "Only proposals were recorded; no app file was written.", "read-only answer", "")))
+				p.responses = append(p.responses, textResponse(rootActionResponse(domain.RootActionFinish, "Only proposals were recorded; no app file was written."+compactionFixtureObservation(), "read-only answer", "")))
 				if i == 15 {
 					if err := st.Close(); err != nil {
 						t.Fatal(err)

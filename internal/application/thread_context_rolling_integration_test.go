@@ -48,8 +48,17 @@ func TestThreadContextRollingContinuesBeyondLegacyLimitAndRecallsExactSources(t 
 		newHistoryProtocolProvider(t, "selected-provider", "selected-model"),
 		newHistoryProtocolProvider(t, "global-provider", "global-model"),
 	}
+	// Detailed early observations exercise the model window early in each Run.
+	// Later checkpoints stay short so the successor inherits a realistic tail.
+	detailedReply := true
+	reply := func() *llm.ChatResponse {
+		if detailedReply {
+			return textResponse(rootActionResponse(domain.RootActionFinish, strings.Repeat("历史观测。", 450), "Recorded", ""))
+		}
+		return historyRecallFinish()
+	}
 	for _, provider := range providers {
-		provider.handler = func(llm.ChatRequest) (*llm.ChatResponse, error) { return historyRecallFinish(), nil }
+		provider.handler = func(llm.ChatRequest) (*llm.ChatResponse, error) { return reply(), nil }
 	}
 	didRead := false
 	providers[0].handler = func(llm.ChatRequest) (*llm.ChatResponse, error) {
@@ -57,9 +66,9 @@ func TestThreadContextRollingContinuesBeyondLegacyLimitAndRecallsExactSources(t 
 			didRead = true
 			return boundaryRead("rolling-original-read-once", 1), nil
 		}
-		return historyRecallFinish(), nil
+		return reply(), nil
 	}
-	turns := rollingThreadTurns(st, providers).WithModelRouteRegistry(registry)
+	turns := rollingThreadTurns(t, st, providers).WithModelRouteRegistry(registry)
 	current := initial
 	var sources []rollingSessionSource
 	var summaries []contextmgr.Summary
@@ -73,6 +82,7 @@ func TestThreadContextRollingContinuesBeyondLegacyLimitAndRecallsExactSources(t 
 			start = 2
 		}
 		for step := start; step <= 12; step++ {
+			detailedReply = step <= 2 || (index > 0 && step == 3)
 			content := rollingInput(index, step, firstBody, correctionBody)
 			result := rollingSubmit(t, turns, threadID, fmt.Sprintf("rolling-user-%02d-%02d", index, step), content)
 			if result.Submission.Run.ID != current.ID || result.Submission.SuccessorCreated {
@@ -116,6 +126,7 @@ func TestThreadContextRollingContinuesBeyondLegacyLimitAndRecallsExactSources(t 
 			t.Fatal(err)
 		}
 		previous := current
+		detailedReply = true
 		next := rollingSubmit(t, turns, threadID, fmt.Sprintf("rolling-user-%02d-01", index+1), rollingInput(index+1, 1, firstBody, correctionBody))
 		inputCount++
 		if !next.Submission.SuccessorCreated || next.Submission.PredecessorRunID != previous.ID || next.Submission.Run.SessionID == previous.SessionID {
@@ -149,7 +160,7 @@ func TestThreadContextRollingContinuesBeyondLegacyLimitAndRecallsExactSources(t 
 					t.Fatal(err)
 				}
 				st = openHistoryRecallStore(t, dbPath)
-				turns = rollingThreadTurns(st, providers).WithModelRouteRegistry(registry)
+				turns = rollingThreadTurns(t, st, providers).WithModelRouteRegistry(registry)
 				reloaded, err := st.GetRun(t.Context(), current.ID)
 				if err != nil || !reflect.DeepEqual(reloaded.Config, current.Config) {
 					t.Fatal("restart changed the pinned rolling snapshot")
@@ -384,11 +395,18 @@ func rollingLegacyBundleBytes(summaries []contextmgr.Summary) int {
 	}
 	return len([]byte(historyRecallJSON(value)))
 }
-func rollingThreadTurns(st *store.SQLiteStore, providers []*historyProtocolProvider) *application.ThreadTurnService {
+func rollingThreadTurns(t *testing.T, st *store.SQLiteStore, providers []*historyProtocolProvider) *application.ThreadTurnService {
 	router := llm.NewRouter(llm.ModelRef{Provider: "tool-loop", Model: "model"})
 	router.SetRoute("code", llm.ModelRef{Provider: "global-provider", Model: "global-model"})
 	for _, provider := range providers {
 		router.RegisterProvider(provider)
+		if provider.Name() != "tool-loop" {
+			window := llm.DefaultContextWindow()
+			window.WindowTokens = 48 * 1024
+			if err := router.SetContextWindow(llm.ModelRef{Provider: provider.Name(), Model: provider.model}, window); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	// Keep this fixed exact-recall script on the extractive strategy; the
 	// generated suite independently covers the production default.

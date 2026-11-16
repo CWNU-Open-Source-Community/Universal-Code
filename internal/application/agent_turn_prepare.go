@@ -154,13 +154,13 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 		}
 		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
-	history, summary, hasSummary, didCompact, err := s.supervisorConversationContext(ctx, turn)
+	history, summary, hasSummary, err := s.supervisorConversationContext(ctx, turn)
 	result.Checkpoint = turn.Checkpoint
 	if err != nil {
 		failure := s.recordFailure(ctx, &result, err, 0)
 		return nil, result, failure
 	}
-	result.ContextCompacted, result.ContextSummaryID = didCompact, summary.ID
+	result.ContextSummaryID = summary.ID
 	workItems, err := s.store.ListWorkItems(ctx, domain.WorkItemFilter{
 		RunID: turn.Run.ID,
 		Statuses: []domain.WorkItemStatus{

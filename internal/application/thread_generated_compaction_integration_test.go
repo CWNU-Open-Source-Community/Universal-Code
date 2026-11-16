@@ -642,7 +642,7 @@ func generatedFixtureInput(index int) string {
 	if index == 2 {
 		return generatedFixtureCorrection
 	}
-	return fmt.Sprintf("Ordinary checkpoint %02d: retain all requirements; report progress only. %s", index, strings.Repeat("Background compatibility note. ", 20))
+	return fmt.Sprintf("Ordinary checkpoint %02d: retain all requirements; report progress only. %s", index, strings.Repeat("背景资料。", 84))
 }
 func generatedThreadServices(st *store.SQLiteStore, p *generatedProtocolProvider, active *application.ActiveCallRegistry) (*application.ThreadTurnService, *application.RunExecutionHandoffService) {
 	router := generatedFixtureRouter(p)

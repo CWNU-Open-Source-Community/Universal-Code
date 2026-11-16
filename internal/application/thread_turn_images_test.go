@@ -504,7 +504,7 @@ func TestThreadImageHistoryBeyond64PreservesBindingsAndExplicitCoverage(t *testi
 	// Recent text history causes the remaining image-bearing inputs to compact;
 	// no raw image row or message binding is removed by that projection.
 	for index := range 22 {
-		if _, err := st.SaveSessionMessage(t.Context(), session.NewMessage(run.SessionID, "user", fmt.Sprintf("Later text observation %d", index))); err != nil {
+		if _, err := st.SaveSessionMessage(t.Context(), session.NewMessage(run.SessionID, "user", fmt.Sprintf("Later text observation %d: %s", index, compactionFixtureObservation()))); err != nil {
 			t.Fatal(err)
 		}
 	}

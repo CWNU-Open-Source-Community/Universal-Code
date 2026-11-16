@@ -12,6 +12,7 @@ import (
 )
 
 const maxFailedTurnEvidenceRunes = 4096
+const failedToolEvidenceScanMessages = 20
 
 type failedToolEvidenceContextStore interface {
 	FailedTurnWebToolEvidence(context.Context, string, int64) (domain.ThreadTurnFailure, []domain.SupervisorToolCall, bool, error)
@@ -40,7 +41,7 @@ func (s *AgentRunner) withFailedToolEvidenceContext(ctx context.Context, run dom
 		return history, nil
 	}
 	additions := make(map[int]session.Message)
-	for i := len(history) - 1; i >= max(0, len(history)-maxSupervisorHistoryMessages) && len(additions) < 2; i-- {
+	for i := len(history) - 1; i >= max(0, len(history)-failedToolEvidenceScanMessages) && len(additions) < 2; i-- {
 		message := history[i]
 		if message.ID <= 0 || message.Role != "tool" || message.Provenance.SourceKind != session.SourceToolResult || message.SessionID != run.SessionID {
 			continue

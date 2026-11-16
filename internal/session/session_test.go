@@ -676,6 +676,25 @@ If login fails, check SESSION_SECRET and the database connection.
 	}
 }
 
+func TestSessionShortHistoryStaysActive(t *testing.T) {
+	store := newMemorySessionStore()
+	manager := NewManager(store, llm.NewDefaultRouter(), policy.NewDefaultChecker())
+	sess, err := manager.Create(t.Context(), "", "short", "learn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 22 {
+		result, err := manager.Send(t.Context(), sess.ID, "继续")
+		if err != nil || result.Compacted {
+			t.Fatalf("short input triggered compaction or failed: %v", err)
+		}
+	}
+	active, err := manager.History(t.Context(), sess.ID, false)
+	if err != nil || len(active) != 44 {
+		t.Fatalf("active history=%d, err=%v", len(active), err)
+	}
+}
+
 func TestSessionAutoCompactsLongHistory(t *testing.T) {
 	store := newMemorySessionStore()
 	manager := NewManager(store, llm.NewDefaultRouter(), policy.NewDefaultChecker())
@@ -685,7 +704,7 @@ func TestSessionAutoCompactsLongHistory(t *testing.T) {
 	}
 	var last SendResult
 	for i := 0; i < 5; i++ {
-		last, err = manager.Send(context.Background(), sess.ID, "message")
+		last, err = manager.Send(context.Background(), sess.ID, strings.Repeat("资料。", 372))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -711,15 +730,15 @@ func TestSessionCompactionRecoversSummaryBeforeMarkCrashExactlyOnce(t *testing.T
 		t.Fatal(err)
 	}
 	for i := 0; i < 4; i++ {
-		if _, err := manager.Send(ctx, sess.ID, "message"); err != nil {
+		if _, err := manager.Send(ctx, sess.ID, strings.Repeat("资料。", 372)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	store.failMark = true
-	if _, err := manager.Send(ctx, sess.ID, "trigger compaction"); err == nil || !strings.Contains(err.Error(), "injected compaction mark failure") {
+	if _, err := manager.Send(ctx, sess.ID, strings.Repeat("资料。", 372)); err == nil || !strings.Contains(err.Error(), "injected compaction mark failure") {
 		t.Fatalf("compaction mark failure = %v", err)
 	}
-	if len(store.summaries) != 1 || store.summaries[0].CompactedMessageCount != 6 {
+	if len(store.summaries) != 1 || store.summaries[0].CompactedMessageCount != 5 {
 		t.Fatalf("summary was not durably written before the injected crash: %#v", store.summaries)
 	}
 	result, err := manager.compactActiveMessages(ctx, sess)

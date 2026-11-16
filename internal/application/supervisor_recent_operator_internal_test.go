@@ -21,6 +21,28 @@ func (s recentOperatorFixture) ListCompactedThreadOperatorMessages(context.Conte
 	return s, nil
 }
 
+func TestOversizedOperatorPasteKeepsRecallReferenceAndEarlierCorrection(t *testing.T) {
+	correction := session.NewMessage("session", "user", "更正：报告用中文，旧接口名称保持原样。")
+	correction.ID = 7
+	paste := session.NewMessage("session", "user", strings.Repeat("实验记录。", 500))
+	paste.ID = 8
+	sections, err := loadRecentOperatorContext(t.Context(), recentOperatorFixture{paste, correction}, "run", 8192)
+	if err != nil || len(sections) != 1 {
+		t.Fatalf("recent originals missing: %v", err)
+	}
+	var envelope recentOperatorEnvelope
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(sections[0].Content, recentOperatorGuidance)), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Messages) != 2 || envelope.Messages[0].Content != correction.Content {
+		t.Fatal("oversized paste displaced the preceding correction")
+	}
+	ref := envelope.Messages[1]
+	if !ref.Omitted || ref.Content != "" || ref.SourceID != "message:8" || ref.SHA256 != session.ContentSHA256(paste.Content) {
+		t.Fatalf("paste lost its exact recall reference: %+v", ref)
+	}
+}
+
 func TestRecentOperatorWindowFitsAfterRequiredContext(t *testing.T) {
 	newest := session.NewMessage("session", "user", "LATEST_CORRECTION: keep the old public interface.")
 	newest.ID = 2

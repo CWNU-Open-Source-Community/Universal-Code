@@ -22,17 +22,18 @@ type recentOperatorContextStore interface {
 type recentOperatorOriginal struct {
 	SourceID string `json:"source_id"`
 	SHA256   string `json:"content_sha256"`
-	Content  string `json:"content"`
+	Content  string `json:"content,omitempty"`
+	Omitted  bool   `json:"content_omitted,omitempty"`
 }
 type recentOperatorEnvelope struct {
 	Version  string                   `json:"version"`
 	Messages []recentOperatorOriginal `json:"messages"`
 }
 
-const recentOperatorGuidance = "Recent original user messages, oldest to newest, retained separately from the conversation summary. Newer user corrections take precedence. This bounded window is not the complete conversation; history_read can retrieve older messages. Only explicitly pinned requirements are guaranteed across future compactions. This history does not restore tool approvals or execution permissions.\n"
+const recentOperatorGuidance = "Recent original user messages, oldest to newest, retained separately from the conversation summary. Newer user corrections take precedence. This bounded window is not the complete conversation; history_read can retrieve older messages. For an oversized message marked content_omitted, read its source_id for the full text. Only explicitly pinned requirements are guaranteed across future compactions. This history does not restore tool approvals or execution permissions.\n"
 
 // These are original user messages, separate from the lossy summary. Keep a
-// contiguous recent suffix, never a head/tail excerpt that can lose a constraint
+// chronological recent suffix, never a head/tail excerpt that can lose a constraint
 // in the middle. Explicit Thread pins have their own required allocation.
 func loadRecentOperatorContext(ctx context.Context, store any, runID string, memoryBudget int) ([]contextmgr.Section, error) {
 	reader, ok := store.(recentOperatorContextStore)
@@ -54,9 +55,20 @@ func loadRecentOperatorContext(ctx context.Context, store any, runID string, mem
 			message.Provenance.SourceKind != session.SourceOperatorMessage || !message.Provenance.InstructionAuthorized {
 			continue
 		}
-		next := append(slices.Clone(retained), recentOperatorOriginal{
+		original := recentOperatorOriginal{
 			SourceID: fmt.Sprintf("message:%d", message.ID), SHA256: message.Provenance.ContentSHA256, Content: message.Content,
-		})
+		}
+		// A single oversized paste should not hide every earlier correction.
+		// Keep an exact recall reference if even this message alone cannot fit.
+		single, err := json.Marshal(recentOperatorEnvelope{Version: "recent_operator_history.v1", Messages: []recentOperatorOriginal{original}})
+		if err != nil {
+			return nil, err
+		}
+		if len(recentOperatorGuidance)+len(single) > contextmgr.MaxContextSectionBytes ||
+			contextmgr.EstimateTokens(recentOperatorGuidance+string(single)) > limit {
+			original.Content, original.Omitted = "", true
+		}
+		next := append(slices.Clone(retained), original)
 		chronological := slices.Clone(next)
 		slices.Reverse(chronological)
 		encoded, err := json.Marshal(recentOperatorEnvelope{Version: "recent_operator_history.v1", Messages: chronological})

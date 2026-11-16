@@ -650,15 +650,10 @@ func (m *Manager) chat(ctx context.Context, sess Session, userMsg Message) (Send
 		return SendResult{}, apperror.New(apperror.CodeFailedPrecondition,
 			"this provider requires Root Supervisor private assistant history; legacy Session chat is unsupported")
 	}
-	active, err := m.store.ListSessionMessages(ctx, sess.ID, false)
+	prompt, compacted, err := m.sessionChatPrompt(ctx, sess, ref)
 	if err != nil {
 		return SendResult{}, err
 	}
-	summary, _, err := m.store.LatestContextSummary(ctx, sess.ID)
-	if err != nil {
-		return SendResult{}, err
-	}
-	prompt := m.contextMgr.BuildPrompt(systemPrompt(sess), summary, toContextMessages(active))
 	req := llm.ChatRequest{
 		Messages: toLLMMessages(prompt),
 		Metadata: map[string]string{
@@ -689,38 +684,61 @@ func (m *Manager) chat(ctx context.Context, sess Session, userMsg Message) (Send
 		return SendResult{}, err
 	}
 
-	compacted, summaryID, err := m.compactAfterTurn(ctx, sess)
-	if err != nil {
-		return SendResult{}, err
-	}
-
 	return SendResult{
 		Session:      sess,
 		UserMessage:  userMsg,
 		ReplyMessage: reply,
 		Text:         resp.Text,
-		Compacted:    compacted,
-		SummaryID:    summaryID,
+		Compacted:    compacted.Compacted,
+		SummaryID:    compacted.Summary.ID,
 	}, nil
 }
 
 func (m *Manager) compactAfterTurn(ctx context.Context, sess Session) (bool, int64, error) {
+	ref, err := m.resolveModelRef(sess.Route)
+	if err != nil {
+		return false, 0, err
+	}
+	_, result, err := m.sessionChatPrompt(ctx, sess, ref)
+	return result.Compacted, result.Summary.ID, err
+}
+
+func (m *Manager) sessionChatPrompt(ctx context.Context, sess Session, ref llm.ModelRef) ([]contextmgr.Message, contextmgr.Result, error) {
+	var result contextmgr.Result
 	active, err := m.store.ListSessionMessages(ctx, sess.ID, false)
 	if err != nil {
-		return false, 0, err
+		return nil, result, err
 	}
-	result, err := m.contextMgr.MaybeCompact(ctx, sess.ID, sess.WorkspaceID, toContextMessages(active))
+	summary, _, err := m.store.LatestContextSummary(ctx, sess.ID)
 	if err != nil {
-		return false, 0, err
+		return nil, result, err
 	}
-	if !result.Compacted || result.RemovedMessages <= 0 {
-		return result.Compacted, 0, nil
+	window := m.router.ContextWindow(ref)
+	limit, err := window.InputLimit(window.DefaultOutputTokens)
+	if err != nil {
+		return nil, result, err
 	}
-	through := active[result.RemovedMessages-1].ID
-	if _, err := m.store.MarkSessionMessagesCompacted(ctx, sess.ID, through); err != nil {
-		return false, 0, err
+	prompt := m.contextMgr.BuildPrompt(systemPrompt(sess), summary, toContextMessages(active))
+	estimate := func(messages []contextmgr.Message) int {
+		n := 8
+		for _, message := range messages {
+			n += contextmgr.EstimateMessageTokens(message.Role, message.Content)
+		}
+		return n
 	}
-	return true, result.Summary.ID, nil
+	tokens := estimate(prompt)
+	if len(active) > 1 && tokens >= contextmgr.AutoCompactInputThreshold(limit) {
+		result, err = m.compactSessionMessages(ctx, sess, active)
+		if err != nil {
+			return nil, result, err
+		}
+		prompt = m.contextMgr.BuildPrompt(systemPrompt(sess), result.Summary, result.Preserved)
+		tokens = estimate(prompt)
+	}
+	if tokens > limit {
+		return nil, result, apperror.New(apperror.CodeResourceExhausted, "session context exceeds the model input window")
+	}
+	return prompt, result, nil
 }
 
 func (m *Manager) compactActiveMessages(ctx context.Context, sess Session) (contextmgr.Result, error) {
@@ -728,6 +746,10 @@ func (m *Manager) compactActiveMessages(ctx context.Context, sess Session) (cont
 	if err != nil {
 		return contextmgr.Result{}, err
 	}
+	return m.compactSessionMessages(ctx, sess, active)
+}
+
+func (m *Manager) compactSessionMessages(ctx context.Context, sess Session, active []Message) (contextmgr.Result, error) {
 	result, err := m.contextMgr.Compact(ctx, sess.ID, sess.WorkspaceID, toContextMessages(active))
 	if err != nil {
 		return contextmgr.Result{}, err

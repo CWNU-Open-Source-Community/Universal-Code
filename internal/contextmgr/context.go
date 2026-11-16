@@ -292,6 +292,15 @@ func ParseMessage(raw string) Message {
 	}
 }
 
+// AutoCompactInputThreshold leaves room for another step after the model's
+// output allowance and safety margin have already been reserved.
+func AutoCompactInputThreshold(inputLimit int) int { return inputLimit - inputLimit/10 }
+
+// EstimateMessageTokens includes the role and per-message framing for text.
+func EstimateMessageTokens(role, content string) int {
+	return saturatingTokenAdd(4+EstimateTokens(role), EstimateTokens(content))
+}
+
 func EstimateTokens(value string) int {
 	if value == "" {
 		return 0

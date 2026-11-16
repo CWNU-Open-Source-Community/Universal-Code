@@ -37,7 +37,7 @@ func manualCompactFixture(t *testing.T) (*store.SQLiteStore, *generatedProtocolP
 	for i := 0; i < 4; i++ {
 		content := fmt.Sprintf("普通对话 %d 保留任务进展", i)
 		if i < 2 {
-			content += strings.Repeat("旧的详细实验过程与证据，仅作为历史。", 120)
+			content += strings.Repeat("旧的详细实验过程与证据，仅作为历史。", 95)
 		}
 		submitHistoryRecall(t, turns, run.ID, fmt.Sprintf("manual-context-seed-operation-%d", i), content)
 	}
