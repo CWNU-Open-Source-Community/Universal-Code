@@ -471,7 +471,9 @@ func (m *Manager) ApproveWithPreWriteCheck(ctx context.Context, id string,
 			return m.fail(ctx, edit, err)
 		}
 		if err := root.Remove(stagedPath); err != nil {
-			return m.fail(ctx, edit, err)
+			// Post-publish: the target already holds the proposed content;
+			// the entry gate reconciles an approved record on retry.
+			return edit, err
 		}
 	} else if err := root.Rename(stagedPath, rootedPath); err != nil {
 		return m.fail(ctx, edit, err)
@@ -479,12 +481,14 @@ func (m *Manager) ApproveWithPreWriteCheck(ctx context.Context, id string,
 	stagedPath = ""
 	syncRootParentDirectory(root, rootedPath)
 
-	written, writtenExists, err := readCurrentTextFromRoot(root, rootedPath)
-	if err != nil {
-		return m.fail(ctx, edit, err)
-	}
-	if contentHash(written, writtenExists) != edit.ProposedHash {
-		return m.fail(ctx, edit, errors.New("written file failed integrity validation"))
+	// The publish primitive succeeded: the workspace now holds the proposed
+	// content, so a post-publish verification error must NOT downgrade the
+	// record to terminal StatusFailed — the file says applied while the
+	// record would say failed forever. Return the error with the record left
+	// in its reconcilable approved state; the hash-based recovery paths
+	// reconcile it on retry.
+	if err := verifyPublishedTextFn(root, rootedPath, edit.ProposedHash); err != nil {
+		return edit, err
 	}
 	edit.Status = StatusApplied
 	edit.Reason = ""
@@ -633,11 +637,11 @@ func (m *Manager) approveMove(ctx context.Context, edit Edit,
 	if filepath.Dir(destination) != filepath.Dir(source) {
 		syncRootParentDirectory(root, rootedDestination)
 	}
-	finalSourceHash, sourceErr := currentHashFromRoot(root, rootedSource)
-	finalDestinationHash, destinationErr := currentHashFromRoot(root, rootedDestination)
-	if sourceErr != nil || destinationErr != nil || finalSourceHash != missingHash ||
-		finalDestinationHash != edit.DestinationProposedHash {
-		return m.fail(ctx, edit, errors.New("workspace move failed final hash verification"))
+	if err := verifyPublishedMoveFn(root, rootedSource, rootedDestination,
+		edit.DestinationProposedHash); err != nil {
+		// Post-publish: the source is already removed, so the move happened.
+		// Leave the record reconcilable instead of sealing StatusFailed.
+		return edit, err
 	}
 	edit.Status = StatusApplied
 	edit.UpdatedAt = time.Now().UTC()
@@ -704,9 +708,11 @@ func (m *Manager) approveDelete(ctx context.Context, edit Edit,
 		return m.fail(ctx, edit, err)
 	}
 	syncRootParentDirectory(root, rootedPath)
-	finalHash, err := currentHashFromRoot(root, rootedPath)
-	if err != nil || finalHash != missingHash {
-		return m.fail(ctx, edit, errors.New("workspace delete failed final hash verification"))
+	if err := verifyPublishedDeleteFn(root, rootedPath); err != nil {
+		// Post-publish: the target is already removed, so the deletion
+		// happened. Leave the record reconcilable instead of sealing
+		// StatusFailed.
+		return edit, err
 	}
 	edit.Status = StatusApplied
 	edit.UpdatedAt = time.Now().UTC()
@@ -1093,6 +1099,46 @@ func readProposalTextFromRoot(root *rootfs.ExactRoot, path string) (string, bool
 		return content, exists, apperror.Wrap(code, known.Error(), known)
 	}
 	return content, exists, err
+}
+
+var verifyPublishedTextFn = verifyPublishedText
+
+// verifyPublishedText re-reads a just-published replacement and checks its
+// content hash against the proposal.
+func verifyPublishedText(root *rootfs.ExactRoot, path string, proposedHash string) error {
+	written, writtenExists, err := readCurrentTextFromRoot(root, path)
+	if err != nil {
+		return err
+	}
+	if contentHash(written, writtenExists) != proposedHash {
+		return errors.New("written file failed integrity validation")
+	}
+	return nil
+}
+
+var verifyPublishedMoveFn = verifyPublishedMove
+
+// verifyPublishedMove re-reads a just-completed move: the source must be
+// gone and the destination must hold the proposed content.
+func verifyPublishedMove(root *rootfs.ExactRoot, rootedSource, rootedDestination, destinationProposedHash string) error {
+	finalSourceHash, sourceErr := currentHashFromRoot(root, rootedSource)
+	finalDestinationHash, destinationErr := currentHashFromRoot(root, rootedDestination)
+	if sourceErr != nil || destinationErr != nil || finalSourceHash != missingHash ||
+		finalDestinationHash != destinationProposedHash {
+		return errors.New("workspace move failed final hash verification")
+	}
+	return nil
+}
+
+var verifyPublishedDeleteFn = verifyPublishedDelete
+
+// verifyPublishedDelete re-reads a just-removed target and requires absence.
+func verifyPublishedDelete(root *rootfs.ExactRoot, path string) error {
+	finalHash, err := currentHashFromRoot(root, path)
+	if err != nil || finalHash != missingHash {
+		return errors.New("workspace delete failed final hash verification")
+	}
+	return nil
 }
 
 func readCurrentTextFromRoot(root *rootfs.ExactRoot, path string) (string, bool, error) {
