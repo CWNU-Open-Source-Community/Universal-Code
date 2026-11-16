@@ -542,7 +542,9 @@ func TestAttachedPointerRejectsNavigationDuringPressViewportRead(t *testing.T) {
 
 type queuedAttachedPointerConnection struct {
 	*attachedTestConnection
-	queued chan struct{}
+	queued               chan struct{}
+	queuedType           string
+	dispatchBeforeCancel bool
 }
 
 func (c *queuedAttachedPointerConnection) WriteJSONContext(ctx context.Context, value any) error {
@@ -552,16 +554,24 @@ func (c *queuedAttachedPointerConnection) WriteJSONContext(ctx context.Context, 
 		Params struct{ Type string }
 	}
 	_ = json.Unmarshal(b, &request)
-	if request.Method == "Input.dispatchMouseEvent" && request.Params.Type == "mousePressed" {
+	if (request.Method == "Input.dispatchMouseEvent" || request.Method == "Input.dispatchKeyEvent") && request.Params.Type == c.queuedType {
+		if c.dispatchBeforeCancel {
+			if err := c.WriteJSON(value); err != nil {
+				return err
+			}
+		}
 		close(c.queued)
 		<-ctx.Done()
+		if c.dispatchBeforeCancel {
+			return dispatchedAgentBrowserWriteError{ctx.Err()}
+		}
 		return ctx.Err()
 	}
 	return c.WriteJSON(value)
 }
 func TestAttachedPointerNavigationCancelsQueuedNativePress(t *testing.T) {
 	req, page, wire, _, _ := attachedFixture(t)
-	queued := &queuedAttachedPointerConnection{attachedTestConnection: wire, queued: make(chan struct{})}
+	queued := &queuedAttachedPointerConnection{attachedTestConnection: wire, queued: make(chan struct{}), queuedType: "mousePressed"}
 	page.Connection = queued
 	r, err := AttachAgentBrowser(t.Context(), req, page)
 	if err != nil {
@@ -586,12 +596,148 @@ func TestAttachedPointerNavigationCancelsQueuedNativePress(t *testing.T) {
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("queued native press=%v", err)
 		}
+		var action *AgentBrowserActionError
+		if !errors.As(err, &action) || action.Dispatched || action.OutcomeUnknown {
+			t.Fatalf("unsent native press reported as dispatched: %v", err)
+		}
 	case <-ctx.Done():
 		t.Fatal("navigation did not invalidate queued input")
 	}
 	wire.mu.Lock()
-	defer wire.mu.Unlock()
-	if len(wire.mouse) != 1 || wire.mouse[0]["type"] != "mouseMoved" {
-		t.Fatalf("queued press dispatched after navigation: %+v", wire.mouse)
+	mouse := append([]map[string]any(nil), wire.mouse...)
+	wire.mu.Unlock()
+	if len(mouse) != 1 || mouse[0]["type"] != "mouseMoved" {
+		t.Fatalf("queued press dispatched after navigation: %+v", mouse)
+	}
+	if _, err := r.document(t.Context()); err != nil {
+		t.Fatalf("DOM observation after cancelled native press: %v", err)
+	}
+}
+
+func TestAttachedBrowserNativeInputCancellationPreservesSequenceOutcome(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		inputType  string
+		key        bool
+		dispatched bool
+		unknown    bool
+	}{
+		{name: "queued mouse release", inputType: "mouseReleased", unknown: true},
+		{name: "dispatched mouse press", inputType: "mousePressed", dispatched: true, unknown: true},
+		{name: "queued key press", inputType: "keyDown", key: true},
+		{name: "queued key release", inputType: "keyUp", key: true, unknown: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req, page, wire, _, _ := attachedFixture(t)
+			queued := &queuedAttachedPointerConnection{attachedTestConnection: wire, queued: make(chan struct{}), queuedType: test.inputType, dispatchBeforeCancel: test.dispatched}
+			page.Connection = queued
+			r, err := AttachAgentBrowser(t.Context(), req, page)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			result := make(chan error, 1)
+			go func() {
+				if test.key {
+					_, err := r.Key(ctx, "Enter")
+					result <- err
+				} else {
+					_, err := r.ClickPoint(ctx, AgentBrowserPoint{X: 40, Y: 30, DocumentEpoch: r.Status().DocumentEpoch, Viewport: AgentBrowserViewport{Width: 800, Height: 600}})
+					result <- err
+				}
+			}()
+			select {
+			case <-queued.queued:
+			case <-time.After(time.Second):
+				t.Fatal("input did not reach native queue")
+			}
+			cancel()
+			select {
+			case err = <-result:
+			case <-time.After(time.Second):
+				t.Fatal("cancelled native input remained pending")
+			}
+			var action *AgentBrowserActionError
+			if !errors.Is(err, context.Canceled) || !errors.As(err, &action) || action.Dispatched != test.unknown || action.OutcomeUnknown != test.unknown {
+				t.Fatalf("native input cancellation lost sequence outcome: %+v, err=%v", action, err)
+			}
+			if test.unknown {
+				if r.life.Err() == nil {
+					t.Fatal("uncertain or partial input left the runtime reusable")
+				}
+			} else if _, err := r.document(t.Context()); err != nil {
+				t.Fatalf("observation after unsent native key press: %v", err)
+			}
+		})
+	}
+}
+
+func TestAttachedBrowserInputCancellationBeforeWritePreservesSession(t *testing.T) {
+	for _, queued := range []bool{false, true} {
+		name := "before call"
+		if queued {
+			name = "waiting for write lock"
+		}
+		t.Run(name, func(t *testing.T) {
+			req, page, wire, _, _ := attachedFixture(t)
+			r, err := AttachAgentBrowser(t.Context(), req, page)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var releaseOnce sync.Once
+			release := func() {
+				if queued {
+					releaseOnce.Do(r.cdp.writeMu.Unlock)
+				}
+			}
+			if queued {
+				r.cdp.writeMu.Lock()
+				defer release()
+			} else {
+				cancel()
+			}
+			result := make(chan error, 1)
+			go func() {
+				result <- r.inputAtEpoch(ctx, r.Status().DocumentEpoch, map[string]any{"type": "mousePressed", "x": 40, "y": 30, "button": "left", "clickCount": 1})
+			}()
+			if queued {
+				deadline := time.After(time.Second)
+				for {
+					r.cdp.mu.Lock()
+					pending := len(r.cdp.pending)
+					r.cdp.mu.Unlock()
+					if pending != 0 {
+						break
+					}
+					select {
+					case <-deadline:
+						t.Fatal("input did not reach the write lock")
+					case <-time.After(time.Millisecond):
+					}
+				}
+				r.onEvent(cdpWireMessage{SessionID: wire.session, Method: "Page.navigatedWithinDocument", Params: json.RawMessage(`{"frameId":"frame","url":"https://example.com/new"}`)})
+				release()
+			}
+			select {
+			case err = <-result:
+			case <-time.After(time.Second):
+				t.Fatal("cancelled input remained pending")
+			}
+			var action *AgentBrowserActionError
+			if !errors.Is(err, context.Canceled) || !errors.As(err, &action) || action.Dispatched || action.OutcomeUnknown {
+				t.Fatalf("unsent input reported as dispatched: %v", err)
+			}
+			if wire.called("Input.dispatchMouseEvent") {
+				t.Fatal("cancelled input was written")
+			}
+			if _, err := r.document(t.Context()); err != nil {
+				t.Fatalf("observation after cancellation before write: %v", err)
+			}
+		})
 	}
 }

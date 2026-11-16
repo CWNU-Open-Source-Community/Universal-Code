@@ -13,6 +13,9 @@ import (
 // AgentBrowserConnection carries only the exact owned page's CDP messages.
 // Native adapters map SessionID to their own top-level page and reject all
 // other target IDs. Close detaches the connection; it must not close the page.
+// An optional WriteJSONContext method must fence cancelled queued requests.
+// Cancellation after dispatch may have started must return an error exposing
+// WriteDispatched() bool with a true result; other context errors mean unsent.
 type AgentBrowserConnection interface {
 	ReadJSON(any) error
 	WriteJSON(any) error

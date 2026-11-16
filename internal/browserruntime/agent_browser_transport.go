@@ -100,12 +100,25 @@ func AgentBrowserAttachedMethods() []string {
 }
 
 func (c *agentBrowserCDP) write(ctx context.Context, value any) error {
+	var err error
 	if connection, ok := c.conn.(interface {
 		WriteJSONContext(context.Context, any) error
 	}); ok {
-		return connection.WriteJSONContext(ctx, value)
+		err = connection.WriteJSONContext(ctx, value)
+		// Native writes are discrete UI tasks. Cancelling one leaves the
+		// connection usable; a stream write failure may leave a partial frame.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			var state interface{ WriteDispatched() bool }
+			dispatched := errors.As(err, &state) && state.WriteDispatched()
+			return &AgentBrowserActionError{Err: err, Dispatched: dispatched, OutcomeUnknown: dispatched}
+		}
+	} else {
+		err = c.conn.WriteJSON(value)
 	}
-	return c.conn.WriteJSON(value)
+	if err != nil {
+		c.close()
+	}
+	return err
 }
 
 // send writes under the document invalidation fence. Its returned waiter must
@@ -115,7 +128,7 @@ func (c *agentBrowserCDP) send(ctx context.Context, session, method string, para
 		return nil, ErrBrowserRuntimeBoundary
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, &AgentBrowserActionError{Err: err}
 	}
 	c.mu.Lock()
 	c.nextID++
@@ -128,12 +141,11 @@ func (c *agentBrowserCDP) send(ctx context.Context, session, method string, para
 	defer c.writeMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		remove()
-		return nil, err
+		return nil, &AgentBrowserActionError{Err: err}
 	}
 	_ = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err := c.write(ctx, map[string]any{"id": id, "sessionId": session, "method": method, "params": params})
 	if err != nil {
-		c.close()
 		remove()
 		return nil, err
 	}
@@ -162,7 +174,7 @@ func (c *agentBrowserCDP) call(ctx context.Context, session, method string, para
 		return ErrBrowserRuntimeBoundary
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return &AgentBrowserActionError{Err: err}
 	}
 	select {
 	case <-c.done:
@@ -179,7 +191,7 @@ func (c *agentBrowserCDP) call(ctx context.Context, session, method string, para
 	c.writeMu.Lock()
 	if err := ctx.Err(); err != nil {
 		c.writeMu.Unlock()
-		return err
+		return &AgentBrowserActionError{Err: err}
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
@@ -194,7 +206,6 @@ func (c *agentBrowserCDP) call(ctx context.Context, session, method string, para
 	}{id, session, method, params})
 	c.writeMu.Unlock()
 	if err != nil {
-		c.close()
 		return err
 	}
 	select {

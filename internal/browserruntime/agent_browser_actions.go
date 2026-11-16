@@ -362,6 +362,15 @@ func (r *AgentBrowserRuntime) input(ctx context.Context, method string, params a
 	r.refs = map[string]agentBrowserRef{}
 	r.mu.Unlock()
 	if err := r.call(ctx, method, params, nil); err != nil {
+		var action *AgentBrowserActionError
+		if errors.As(err, &action) && !action.Dispatched && !action.OutcomeUnknown {
+			input, _ := params.(map[string]any)
+			// A cancelled press has not held anything down. A cancelled
+			// release still leaves the earlier press as a partial sequence.
+			if input["type"] != "mouseReleased" && input["type"] != "keyUp" {
+				return err
+			}
+		}
 		return r.unknown(err)
 	}
 	if err := r.request.CheckAuthority(ctx, r.request.Authority); err != nil {

@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -40,6 +41,12 @@ type cdpRequest struct {
 	Params    json.RawMessage `json:"params"`
 	SessionID string          `json:"sessionId"`
 }
+
+type cdpWriteDispatchedError struct{ err error }
+
+func (e *cdpWriteDispatchedError) Error() string         { return e.err.Error() }
+func (e *cdpWriteDispatchedError) Unwrap() error         { return e.err }
+func (e *cdpWriteDispatchedError) WriteDispatched() bool { return true }
 
 func (p *nativePage) OpenCDP(ctx context.Context, options CDPOptions) (JSONConnection, error) {
 	if options.Dispatch == nil {
@@ -187,7 +194,16 @@ func (c *pageConnection) WriteJSONContext(ctx context.Context, value any) error 
 		ctx, cancel = context.WithDeadline(ctx, deadline)
 		defer cancel()
 	}
-	return c.page.withUI(ctx, func() error {
+	// Cancellation and the queued UI task race for ownership. Once the task
+	// starts, a context error can no longer prove that nothing was dispatched.
+	var dispatchState atomic.Uint32 // 0: queued, 1: started, 2: cancelled
+	err = c.page.withUI(ctx, func() error {
+		if !dispatchState.CompareAndSwap(0, 1) {
+			return ctx.Err()
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		c.mu.Lock()
 		closed := c.closed
 		c.mu.Unlock()
@@ -250,6 +266,12 @@ func (c *pageConnection) WriteJSONContext(ctx context.Context, value any) error 
 			return err
 		})
 	})
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if !dispatchState.CompareAndSwap(0, 2) {
+			return &cdpWriteDispatchedError{err: err}
+		}
+	}
+	return err
 }
 
 func (c *pageConnection) enqueue(value any) {
