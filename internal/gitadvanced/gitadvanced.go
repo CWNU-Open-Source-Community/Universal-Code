@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -176,7 +178,7 @@ func (s Spec) Validate() error {
 		}
 	}
 	for _, path := range s.Paths {
-		if !validRelativePath(path) {
+		if !ValidRelativePath(path) || strings.HasPrefix(path, "-") {
 			return fmt.Errorf("Git advanced path %q is not normalized", path)
 		}
 	}
@@ -511,12 +513,12 @@ func (e ReviewDiffEvidence) Validate() error {
 		return errors.New("Git review diff evidence is invalid")
 	}
 	for _, path := range e.ChangedFiles {
-		if !validRelativePath(path) {
+		if !ValidRelativePath(path) {
 			return errors.New("Git review diff evidence contains an invalid path")
 		}
 	}
 	for _, hunk := range e.Hunks {
-		if !ValidDigest(hunk.ID) || !validRelativePath(hunk.Path) ||
+		if !ValidDigest(hunk.ID) || !ValidRelativePath(hunk.Path) ||
 			!ValidDigest(hunk.ContextSHA256) || !ValidDigest(hunk.PatchSHA256) ||
 			len(hunk.Patch) > MaxPreviewPatchBytes {
 			return errors.New("Git review diff evidence contains an invalid hunk")
@@ -898,24 +900,17 @@ func ValidObjectID(value string) bool {
 	return err == nil && len(decoded)*2 == len(value)
 }
 
-func validRelativePath(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || len([]rune(value)) > 4096 ||
-		!utf8.ValidString(value) || strings.ContainsRune(value, 0) ||
-		strings.HasPrefix(value, "-") || strings.HasPrefix(value, "/") ||
-		strings.ContainsAny(value, "\\:") || strings.Contains(value, "//") ||
-		value == "." || value == ".." || strings.HasPrefix(value, "../") ||
-		strings.Contains(value, "/../") || strings.HasSuffix(value, "/..") ||
-		strings.Contains(value, "/./") {
+// ValidRelativePath accepts an exact Git path without interpreting whitespace
+// as padding. Native worktree operations also check host filesystem limits.
+func ValidRelativePath(value string) bool {
+	if value == "" || !utf8.ValidString(value) || utf8.RuneCountInString(value) > 4096 ||
+		strings.ContainsFunc(value, unicode.IsControl) || strings.ContainsAny(value, "\\:") ||
+		path.IsAbs(value) || path.Clean(value) != value ||
+		value == "." || value == ".." || strings.HasPrefix(value, "../") {
 		return false
 	}
-	for _, current := range value {
-		if current < 0x20 || current == 0x7f {
-			return false
-		}
-	}
 	for _, component := range strings.Split(value, "/") {
-		if component == "" || component != strings.TrimSpace(component) ||
-			strings.EqualFold(component, ".git") {
+		if strings.EqualFold(strings.TrimRight(strings.TrimSpace(component), " ."), ".git") {
 			return false
 		}
 	}

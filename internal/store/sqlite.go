@@ -523,7 +523,12 @@ func migrationPlan() []migration {
 		migration{Version: 231, Name: "Authority-bound same-page Agent pointer movement", Statements: agentBrowserMoveSupervisorLedgerStatements(), DisableForeignKeys: true},
 		migration{Version: 232, Name: "Authority-bound workspace image reads", Statements: workspaceImageSupervisorLedgerStatements(), DisableForeignKeys: true})
 	previous = append(previous, migration{Version: 233, Name: "Idle current Thread Full permission reactivation", Statements: idleThreadFullReactivationStatements(previous)})
-	return append(previous, migration{Version: 234, Name: "Explicit initial Preview execution selection", Statements: explicitInitialPreviewStatements(previous)})
+	previous = append(previous, migration{Version: 234, Name: "Explicit initial Preview execution selection", Statements: explicitInitialPreviewStatements(previous)})
+	return append(previous,
+		migration{Version: 235, Name: "Preserve exact workspace evidence paths", Statements: exactWorkspaceEvidencePathStatements},
+		migration{Version: 236, Name: "Preserve exact workspace snapshot paths", Statements: exactWorkspaceSnapshotPathStatements(), DisableForeignKeys: true},
+		migration{Version: 237, Name: "Preserve exact file edit apply paths", Statements: exactFileEditApplyPathStatements(), DisableForeignKeys: true},
+		migration{Version: 238, Name: "Preserve exact command working directories", Statements: exactCommandWorkingDirectoryStatements(), DisableForeignKeys: true})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {
@@ -1038,7 +1043,7 @@ func normalizeStoredFileEdit(edit fileedit.Edit) (fileedit.Edit, error) {
 	if strings.TrimSpace(edit.WorkspaceID) == "" {
 		return fileedit.Edit{}, errors.New("workspace id is required")
 	}
-	if strings.TrimSpace(edit.Path) == "" {
+	if edit.Path == "" {
 		return fileedit.Edit{}, errors.New("file edit path is required")
 	}
 	if strings.TrimSpace(edit.Status) == "" {

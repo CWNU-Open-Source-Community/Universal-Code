@@ -1,8 +1,6 @@
 package application
 
 import (
-	"strings"
-
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileedit"
@@ -52,7 +50,7 @@ func BuildFileEditChangeSetForWorkspace(run domain.Run, mission domain.Mission,
 	for _, preview := range previews {
 		if !validControlIdentity(preview.ID) || preview.SessionID != run.SessionID ||
 			preview.WorkspaceID != workspaceID ||
-			preview.Path == "" || preview.Path != strings.TrimSpace(preview.Path) ||
+			preview.Path == "" ||
 			!fileedit.ValidStatus(preview.Status) || len([]byte(preview.Diff)) > fileedit.MaxDiffBytes {
 			return FileEditChangeSet{}, apperror.New(apperror.CodeInternal,
 				"file edit change set contains a mismatched record")

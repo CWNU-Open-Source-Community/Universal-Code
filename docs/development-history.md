@@ -303,5 +303,10 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v232 | 将工作区图片读取接入既有工具账本，保留历史调用行及 AgentCode 读取授权约束 | admit workspace image reads to the existing tool ledger while preserving historical call rows and AgentCode read authority constraints |
 | v233 | 允许空闲的运行中 Thread 重新确认既有 Full 权限，保留执行租约和并发工作约束及 Ask 升级边界 | allow idle running Threads to reconfirm an existing Full permission while preserving execution lease and concurrent work guards and the Ask upgrade boundary |
 | v234 | 为初始 Preview 保存显式选择，保留历史执行配置及 created/paused、无执行租约的不可变转换约束 | record an explicit selection of the initial Preview while preserving historical execution profiles and immutable, lease-free transitions limited to created or paused Runs |
+| v235 | 保留工作区证据附件及会话来源中的原始路径，迁移时保留既有证据绑定 | preserve exact workspace evidence paths and retain existing attachment and Session message bindings during upgrade |
+| v236 | 只读并行分析、发现报告和工作区检查点保留原始路径，迁移时保留既有记录和关联 | preserve exact paths in read-only fan-out, finding reports, and Workspace checkpoints while retaining existing records and bindings |
+| v237 | 文件编辑应用记录保留原始路径及既有审批、结果关联 | preserve exact paths in the file edit apply journal and retain existing approval and result bindings |
+| v238 | 命令记录保留工作目录的原始空格及既有任务、执行身份关联 | preserve exact command working directories and retain existing Job and actor bindings |
+
 
 </details>

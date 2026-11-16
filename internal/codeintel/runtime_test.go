@@ -3,6 +3,7 @@ package codeintel
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,9 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/rootfs"
+
+	git "github.com/go-git/go-git/v5"
 )
 
 const helperWorkspaceID = "workspace-code-intel-test"
@@ -120,6 +124,41 @@ func TestManagerExecutesAllReadOnlySemanticToolsAndInvalidatesStaleEvidence(t *t
 		changed.Provenance.DocumentSHA256 == definition.Provenance.DocumentSHA256 {
 		t.Fatalf("didChange did not advance the document binding: old=%#v new=%#v",
 			definition.Provenance, changed.Provenance)
+	}
+}
+
+func TestManagerPreservesExactDocumentPath(t *testing.T) {
+	root := testWorkspace(t)
+	if _, err := git.PlainInit(root, false); err != nil {
+		t.Fatal(err)
+	}
+	const relative = " main.go "
+	exact, err := rootfs.ExactAbsolutePath(filepath.Join(root, relative))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := []byte("package main\nfunc Main() { println(\"spaced file\") }\n")
+	if err := os.WriteFile(exact, text, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(exact) })
+	if err := os.WriteFile(filepath.Join(root, " main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager := testManager(t, root, "echo-document-location", DefaultRequestTimeout)
+	snapshot := manager.Capabilities(t.Context(), helperWorkspaceID, root)[0]
+	for _, tool := range []string{ToolDocumentSymbols, ToolDefinition, ToolDiagnostics} {
+		result, err := manager.Execute(t.Context(), semanticRequest(root, snapshot, tool, relative, "", ""))
+		if err != nil {
+			t.Fatalf("%s could not query the exact document: %v", tool, err)
+		}
+		if result.Provenance.DocumentPath != relative || !strings.HasSuffix(result.Provenance.DocumentURI, "/%20main.go%20") ||
+			result.Provenance.DocumentSHA256 != fmt.Sprintf("%x", sha256.Sum256(text)) || len(result.Items) != 1 || result.Items[0].Path != relative {
+			t.Fatalf("%s lost the exact path or content: %+v", tool, result)
+		}
+		if validation := manager.ValidateEvidence(t.Context(), root, result.Provenance); validation.State != EvidenceCurrent {
+			t.Fatalf("%s could not validate the exact document again: %+v", tool, validation)
+		}
 	}
 }
 
@@ -394,13 +433,17 @@ func TestManagerCloseReapsOwnedProcessAndChangesBootGeneration(t *testing.T) {
 
 func TestSanitizersRejectEscapesRemoteLinksSecretsAndControlCharacters(t *testing.T) {
 	root := testWorkspace(t)
-	validURI, err := fileURI(filepath.Join(root, "main.go"))
+	target, err := rootfs.EvalExactSymlinks(filepath.Join(root, "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	validURI, err := fileURI(target)
 	if err != nil {
 		t.Fatal(err)
 	}
 	path, canonical, err := workspaceRelativeURI(root, validURI)
 	if err != nil || path != "main.go" || canonical != validURI {
-		t.Fatalf("valid URI rejected: path=%q uri=%q err=%v", path, canonical, err)
+		t.Fatalf("valid URI %q rejected: path=%q uri=%q err=%v", validURI, path, canonical, err)
 	}
 	outsideURI, err := fileURI(filepath.Join(filepath.Dir(root), "outside.go"))
 	if err != nil {
@@ -666,6 +709,16 @@ func runCodeIntelLSPHelper(mode string, input io.Reader, output io.Writer) int {
 				"range": valueRange, "selectionRange": valueRange}}
 		case "textDocument/definition":
 			switch mode {
+			case "echo-document-location":
+				var params struct {
+					TextDocument struct {
+						URI string `json:"uri"`
+					} `json:"textDocument"`
+				}
+				if json.Unmarshal(request.Params, &params) != nil {
+					return 21
+				}
+				result = []any{location(params.TextDocument.URI)}
 			case "crash":
 				return 17
 			case "hang":

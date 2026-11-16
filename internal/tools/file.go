@@ -5,14 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
 
@@ -168,17 +171,14 @@ func (fs WorkspaceFS) resolveForWrite(requested string, allowMissingParents bool
 	if strings.TrimSpace(fs.Root) == "" {
 		return "", errors.New("workspace root is required")
 	}
-	if requested != strings.TrimSpace(requested) {
-		return "", errors.New("file path cannot contain surrounding whitespace")
-	}
 	if requested == "" || requested == "." {
 		return "", errors.New("file path is required")
 	}
-	if filepath.IsAbs(requested) {
-		return "", errors.New("path must be relative to the workspace")
+	if err := validateWorkspaceFilePath(requested); err != nil {
+		return "", err
 	}
 
-	root, err := filepath.Abs(fs.Root)
+	root, err := rootfs.ExactAbsolutePath(fs.Root)
 	if err != nil {
 		return "", err
 	}
@@ -186,12 +186,12 @@ func (fs WorkspaceFS) resolveForWrite(requested string, allowMissingParents bool
 	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
 		return "", errors.New("workspace root must be a real directory")
 	}
-	resolvedRoot, err := filepath.EvalSymlinks(root)
+	resolvedRoot, err := rootfs.EvalExactSymlinks(root)
 	if err != nil || !sameWorkspacePath(root, resolvedRoot) {
 		return "", errors.New("workspace root cannot be redirected")
 	}
 	root = filepath.Clean(resolvedRoot)
-	candidate, err := filepath.Abs(filepath.Join(root, requested))
+	candidate, err := rootfs.ExactAbsolutePath(filepath.Join(root, requested))
 	if err != nil {
 		return "", err
 	}
@@ -199,7 +199,7 @@ func (fs WorkspaceFS) resolveForWrite(requested string, allowMissingParents bool
 		return "", fmt.Errorf("path escapes workspace: %s", requested)
 	}
 
-	relative, err := filepath.Rel(root, candidate)
+	relative, err := filepath.Rel(rootfs.OrdinaryPath(root), rootfs.OrdinaryPath(candidate))
 	if err != nil {
 		return "", err
 	}
@@ -230,7 +230,10 @@ func (fs WorkspaceFS) resolveForWrite(requested string, allowMissingParents bool
 			}
 			return "", errors.New("parent directory must already exist")
 		}
-		current = filepath.Join(current, component)
+		current, err = rootfs.ExactAbsolutePath(filepath.Join(current, component))
+		if err != nil {
+			return "", err
+		}
 		info, infoErr := os.Lstat(current)
 		if infoErr != nil {
 			return "", infoErr
@@ -257,8 +260,8 @@ func (fs WorkspaceFS) resolveForWrite(requested string, allowMissingParents bool
 }
 
 func sameWorkspacePath(left, right string) bool {
-	left = filepath.Clean(left)
-	right = filepath.Clean(right)
+	left = filepath.Clean(rootfs.OrdinaryPath(left))
+	right = filepath.Clean(rootfs.OrdinaryPath(right))
 	if runtime.GOOS == "windows" {
 		return strings.EqualFold(left, right)
 	}
@@ -284,25 +287,17 @@ func (fs WorkspaceFS) resolveExisting(requested string) (string, error) {
 	if strings.TrimSpace(fs.Root) == "" {
 		return "", errors.New("workspace root is required")
 	}
-	if requested != strings.TrimSpace(requested) {
-		return "", errors.New("workspace path cannot contain surrounding whitespace")
-	}
 	if requested == "" {
 		requested = "."
 	}
-	if filepath.IsAbs(requested) {
-		return "", errors.New("path must be relative to the workspace")
+	if err := validateWorkspaceFilePath(requested); err != nil {
+		return "", err
 	}
-	root, err := filepath.Abs(fs.Root)
+	root, err := rootfs.EvalExactSymlinks(fs.Root)
 	if err != nil {
 		return "", err
 	}
-	root, err = filepath.EvalSymlinks(root)
-	if err != nil {
-		return "", err
-	}
-	candidate := filepath.Join(root, requested)
-	candidate, err = filepath.Abs(candidate)
+	candidate, err := rootfs.ExactAbsolutePath(filepath.Join(root, requested))
 	if err != nil {
 		return "", err
 	}
@@ -314,7 +309,7 @@ func (fs WorkspaceFS) resolveExisting(requested string) (string, error) {
 		return "", fmt.Errorf("path escapes workspace: %s", requested)
 	}
 	if len(fs.PathPolicy.ExcludePaths) != 0 {
-		relative, err := filepath.Rel(root, candidate)
+		relative, err := filepath.Rel(rootfs.OrdinaryPath(root), rootfs.OrdinaryPath(candidate))
 		if err != nil {
 			return "", err
 		}
@@ -322,7 +317,21 @@ func (fs WorkspaceFS) resolveExisting(requested string) (string, error) {
 			return "", err
 		}
 	}
-	return candidate, nil
+	return rootfs.ExactAbsolutePath(candidate)
+}
+
+func validateWorkspaceFilePath(path string) error {
+	if !utf8.ValidString(path) || strings.ContainsFunc(path, unicode.IsControl) {
+		return errors.New("workspace path must be valid text without control characters")
+	}
+	if clean := filepath.Clean(path); clean == ".." ||
+		strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("path escapes workspace: %s", path)
+	}
+	if !filepath.IsLocal(path) {
+		return errors.New("path must be relative to the workspace")
+	}
+	return nil
 }
 
 func (fs WorkspaceFS) list(ctx context.Context, requested string, maxDepth int) (string, bool, error) {
@@ -332,15 +341,11 @@ func (fs WorkspaceFS) list(ctx context.Context, requested string, maxDepth int) 
 	}
 	policyBase := requested
 	if len(fs.PathPolicy.ExcludePaths) != 0 {
-		root, err := filepath.Abs(fs.Root)
+		root, err := rootfs.EvalExactSymlinks(fs.Root)
 		if err != nil {
 			return "", false, err
 		}
-		root, err = filepath.EvalSymlinks(root)
-		if err != nil {
-			return "", false, err
-		}
-		policyBase, err = filepath.Rel(root, base)
+		policyBase, err = filepath.Rel(rootfs.OrdinaryPath(root), rootfs.OrdinaryPath(base))
 		if err != nil {
 			return "", false, err
 		}
@@ -348,23 +353,25 @@ func (fs WorkspaceFS) list(ctx context.Context, requested string, maxDepth int) 
 	var lines []string
 	truncated := false
 	limit := fs.MaxListEntries
-	err = filepath.WalkDir(base, func(path string, entry os.DirEntry, walkErr error) error {
+	root, err := rootfs.OpenExactRoot(base)
+	if err != nil {
+		return "", false, err
+	}
+	defer root.Close()
+	err = iofs.WalkDir(root.FS(), ".", func(path string, entry os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if walkErr != nil {
 			return walkErr
 		}
-		if path == base {
+		if path == "." {
 			return nil
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
-		rel, err := filepath.Rel(base, path)
-		if err != nil {
-			return err
-		}
+		rel := filepath.FromSlash(path)
 		if len(fs.PathPolicy.ExcludePaths) != 0 {
 			projectPath := filepath.ToSlash(filepath.Join(policyBase, rel))
 			if err := fs.PathPolicy.Check(projectPath); err != nil {
@@ -488,7 +495,7 @@ func validUTF8PrefixAtLimit(data []byte, limit int) ([]byte, error) {
 }
 
 func withinRoot(root string, candidate string) bool {
-	rel, err := filepath.Rel(root, candidate)
+	rel, err := filepath.Rel(rootfs.OrdinaryPath(root), rootfs.OrdinaryPath(candidate))
 	if err != nil {
 		return false
 	}

@@ -22,6 +22,7 @@ import (
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/scriptprocess"
 	"cyberagent-workbench/internal/toolbudget"
 	"cyberagent-workbench/internal/toolrun"
@@ -1101,7 +1102,6 @@ func validateOutcome(outcome Outcome, operationErr error) (Outcome, error) {
 }
 
 func (g *Gateway) bindWorkspaceRoot(ctx context.Context, workspaceID string, provided string) (string, error) {
-	provided = strings.TrimSpace(provided)
 	if g.workspaceRootResolver == nil {
 		if provided == "" {
 			return "", errors.New("workspace root is required")
@@ -1112,12 +1112,19 @@ func (g *Gateway) bindWorkspaceRoot(ctx context.Context, workspaceID string, pro
 	if err != nil {
 		return "", fmt.Errorf("resolve workspace root: %w", err)
 	}
-	expected = strings.TrimSpace(expected)
 	if expected == "" {
 		return "", errors.New("resolved workspace root is empty")
 	}
+	expected, err = rootfs.ExactAbsolutePath(expected)
+	if err != nil {
+		return "", errors.New("resolved workspace root is unavailable")
+	}
 	if provided == "" {
 		return expected, nil
+	}
+	provided, err = rootfs.ExactAbsolutePath(provided)
+	if err != nil {
+		return "", errors.New("provided workspace root is unavailable")
 	}
 	expectedInfo, err := os.Stat(expected)
 	if err != nil {

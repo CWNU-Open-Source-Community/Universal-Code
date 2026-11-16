@@ -149,6 +149,36 @@ func TestAgentBrowserInternetRequestReviewFence(t *testing.T) {
 	}
 }
 
+func TestAgentBrowserStaleNetworkCheckLeavesSessionOpen(t *testing.T) {
+	conn := newScreencastTestConn()
+	cdp := newAgentBrowserCDP(conn, func(cdpWireMessage) {})
+	defer cdp.close()
+	life, stop := context.WithCancel(t.Context())
+	defer stop()
+	ctx, cancel := context.WithCancel(life)
+	defer cancel()
+	r := &AgentBrowserRuntime{
+		request: AgentBrowserStartRequest{NetworkMode: AgentBrowserNetworkInternet},
+		life:    life, cancel: stop, cdp: cdp, session: "owned-session", frame: "main",
+		networkEpoch: 1, networkPending: map[string]context.CancelFunc{"request": cancel},
+	}
+	r.request.CheckAuthority = func(ctx context.Context, _ AgentBrowserAuthority) error {
+		// The old document's image is still paused when navigation starts.
+		r.onEvent(cdpWireMessage{SessionID: "owned-session", Method: "Page.frameStartedLoading",
+			Params: json.RawMessage(`{"frameId":"main"}`)})
+		return ctx.Err()
+	}
+	r.reviewNetworkRequest(ctx, cancel, AgentBrowserNetworkRequest{ID: "request", RequestID: "interception",
+		Method: "GET", URL: "http://127.0.0.1:3000/image", DocumentEpoch: 1}, agentBrowserPausedRequest{ResourceType: "Image"})
+	if err := life.Err(); err != nil {
+		t.Fatalf("stale network check closed the live session: %v", err)
+	}
+	commands := conn.wrote()
+	if len(commands) != 1 || commands[0].Method != "Fetch.failRequest" {
+		t.Fatalf("stale request must be denied once: %+v", commands)
+	}
+}
+
 func TestAgentBrowserRealInternetCrossOriginResourcesAndRedirect(t *testing.T) {
 	for _, permission := range []string{"ask", "auto"} {
 		t.Run(permission, func(t *testing.T) {

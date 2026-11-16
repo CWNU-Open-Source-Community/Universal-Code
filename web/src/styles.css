@@ -607,8 +607,8 @@ td code { font-size: 11px; }
 .git-advanced-stash small, .git-advanced-worktree small, .git-advanced-receipt small,
 .git-advanced-preview > code, .git-advanced-preview > small { display: block; margin-top: 5px; overflow-wrap: anywhere; color: var(--muted); font: 9px/1.45 var(--prayu-font-mono); }
 .git-advanced-form-row, .git-advanced-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
-.git-advanced-form-row input, .git-advanced-form-row select { min-width: 150px; min-height: 32px; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: var(--text); }
-.git-advanced-form-row input:not([type="checkbox"]) { flex: 1 1 190px; }
+.git-advanced-form-row input, .git-advanced-form-row select, .git-advanced-form-row textarea { min-width: 150px; min-height: 32px; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: var(--text); }
+.git-advanced-form-row input:not([type="checkbox"]), .git-advanced-form-row textarea { flex: 1 1 190px; }
 .git-advanced-form-row label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; }
 .git-advanced-form-row button, .git-advanced-actions button, .git-advanced-section > button,
 .git-advanced-hunks > button { min-height: 30px; padding: 5px 9px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface-raised); color: var(--text); font-size: 10px; }
@@ -884,7 +884,7 @@ td code { font-size: 11px; }
 .code-journey > footer .compact-command { margin-left: auto; }
 .workspace-explorer { min-width: 0; }
 .explorer-toolbar { min-height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 2px 10px; border-bottom: 1px solid var(--border); }
-.explorer-toolbar code { min-width: 0; flex: 1; overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.explorer-toolbar code { min-width: 0; flex: 1; overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: pre; }
 .compact-command { min-height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface); color: var(--ink); cursor: pointer; font-size: 11px; white-space: nowrap; }
 .compact-command:disabled { color: var(--muted); cursor: default; }
 .explorer-search { min-height: 40px; display: grid; grid-template-columns: 18px minmax(0, 1fr) 32px; align-items: center; gap: 7px; border-bottom: 1px solid var(--border); }
@@ -908,7 +908,7 @@ td code { font-size: 11px; }
 .explorer-list button { width: 100%; min-height: 38px; display: grid; grid-template-columns: 20px minmax(0, 1fr) max-content; align-items: center; gap: 8px; padding: 7px 10px; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--text); text-align: left; }
 .explorer-list button:not(:disabled):hover { background: var(--prayu-control-hover); }
 .explorer-list button:disabled { cursor: not-allowed; color: var(--prayu-muted); }
-.explorer-list button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explorer-list button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
 .explorer-list button small { color: var(--muted); font-size: 10px; }
 .explorer-file > div:not(.explorer-file-lines) { min-height: 34px; display: flex; justify-content: flex-end; align-items: center; gap: 12px; color: var(--muted); font-size: 10px; }
 .explorer-file pre { max-height: calc(100vh - 280px); min-height: 280px; margin: 0; padding: 14px; overflow: auto; border: 1px solid var(--border); border-radius: 5px; background: var(--prayu-surface-solid); color: var(--prayu-text); font-size: 11px; line-height: 1.55; white-space: pre; }

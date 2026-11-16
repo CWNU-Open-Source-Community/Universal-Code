@@ -11,6 +11,8 @@ import (
 	"time"
 	"unsafe"
 
+	"cyberagent-workbench/internal/rootfs"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -75,6 +77,9 @@ func (windowsOnceStarter) Start(ctx context.Context, spec OnceStartSpec) (OnceSt
 		append([]string{spec.ExecutablePath}, spec.Argv...)))
 	if err != nil {
 		return started, ErrOnceCommandBoundary
+	}
+	if err := rootfs.CheckExternalDirectory(spec.WorkingDirectory); err != nil {
+		return started, fmt.Errorf("%w: %v", ErrOnceCommandBoundary, err)
 	}
 	directory, err := windows.UTF16PtrFromString(spec.WorkingDirectory)
 	if err != nil {

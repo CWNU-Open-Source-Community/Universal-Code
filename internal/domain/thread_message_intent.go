@@ -28,7 +28,7 @@ func ValidateThreadMessageFiles(files []WorkspaceFileReference) error {
 	for _, file := range files {
 		if file.SourceKind != "workspace_file" || file.Path == "" || file.Path == "." ||
 			!utf8.ValidString(file.Path) || utf8.RuneCountInString(file.Path) > 512 ||
-			file.Path != strings.TrimSpace(file.Path) || path.Clean(file.Path) != file.Path ||
+			path.Clean(file.Path) != file.Path ||
 			strings.HasPrefix(file.Path, "/") || file.Path == ".." || strings.HasPrefix(file.Path, "../") ||
 			strings.ContainsAny(file.Path, `\:`) || strings.IndexFunc(file.Path, unicode.IsControl) >= 0 {
 			return errors.New("Thread file reference must use a canonical bounded workspace file path")

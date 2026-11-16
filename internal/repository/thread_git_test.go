@@ -44,15 +44,21 @@ func threadGitTestCommand(t *testing.T, root string, args ...string) string {
 func TestThreadGitSelectedCommitPreservesUnrelatedStagingAndExactBytes(t *testing.T) {
 	root := threadGitFixture(t)
 	ctx := context.Background()
+	const selected = " [chosen].txt"
 	executor, _ := NewMutationExecutor()
 	if err := os.WriteFile(filepath.Join(root, "other.txt"), []byte("unrelated user staging\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	threadGitTestCommand(t, root, "add", "other.txt")
-	if err := os.WriteFile(filepath.Join(root, "chosen.txt"), []byte("approved content\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, selected), []byte("approved content\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	review, err := executor.ReviewSelected(ctx, root, []string{"chosen.txt"})
+	if err := os.WriteFile(filepath.Join(root, " c.txt"), []byte("literal sibling\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	threadGitTestCommand(t, root, "--literal-pathspecs", "add", "--", " c.txt")
+	threadGitTestCommand(t, root, "commit", "--quiet", "--only", "-m", "literal sibling", "--", " c.txt")
+	review, err := executor.ReviewSelected(ctx, root, []string{selected})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,8 +79,14 @@ func TestThreadGitSelectedCommitPreservesUnrelatedStagingAndExactBytes(t *testin
 	if got := threadGitTestCommand(t, root, "show", ":other.txt"); got != "unrelated user staging" {
 		t.Fatalf("unrelated staging lost: %q", got)
 	}
-	if got := threadGitTestCommand(t, root, "show", "HEAD:chosen.txt"); got != "approved content" {
+	if got := threadGitTestCommand(t, root, "show", "HEAD:"+selected); got != "approved content" {
 		t.Fatalf("selected content wrong: %q", got)
+	}
+	if got := threadGitTestCommand(t, root, "show", "HEAD:chosen.txt"); got != "original" {
+		t.Fatalf("neighboring content changed: %q", got)
+	}
+	if got := threadGitTestCommand(t, root, "show", "HEAD: c.txt"); got != "literal sibling" {
+		t.Fatalf("a path matching the glob changed: %q", got)
 	}
 	if got := threadGitTestCommand(t, root, "diff", "--name-only"); got != "" {
 		t.Fatalf("selected index is inconsistent: %s", got)

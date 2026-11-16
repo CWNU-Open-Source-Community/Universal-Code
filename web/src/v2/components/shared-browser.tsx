@@ -6,6 +6,7 @@ import { commandSharedBrowser, getSharedBrowser, openSharedBrowser,
 import { useLocale } from "../../lib/locale";
 import { hideUnclaimedSharedBrowser, useSharedBrowserSurface } from "./shared-browser-surface";
 import { draftSharedBrowserAdoption, rememberDraftSharedBrowser } from "../shared-browser-session";
+import { useConnectionStore } from "../../state/connection";
 import "./shared-browser.css";
 
 export interface SharedBrowserTool { id: string; label: string; icon: ReactNode; onOpen: () => void }
@@ -68,6 +69,7 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
   }, [active, state?.fullscreen, accept, reportError]);
   useEffect(() => {
     const activeGeneration = ++generation.current;
+    const connectionGeneration = useConnectionStore.getState().connectionGeneration;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     current.current = null; setState(null); setError(""); setPollError(""); setSurfaceError(""); setPending(false);
@@ -79,8 +81,7 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
       if (!disposed) timer = setTimeout(() => void refresh(sessionID), 450);
     };
     void openSharedBrowser(scope).then((next) => {
-      rememberDraftSharedBrowser(next);
-      if (disposed || generation.current !== activeGeneration) {
+      if (!rememberDraftSharedBrowser(next, connectionGeneration) || disposed || generation.current !== activeGeneration) {
         void hideUnclaimedSharedBrowser(next).catch(reportError); return;
       }
       accept(next); timer = setTimeout(() => void refresh(next.session_id), 450);

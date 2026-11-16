@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"cyberagent-workbench/internal/gitadvanced"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 type advancedWorktreeEntry struct {
@@ -368,11 +369,10 @@ func (e *AdvancedExecutor) listGitWorktrees(ctx context.Context,
 		if current.path == "" {
 			return nil
 		}
-		abs, absErr := filepath.Abs(current.path)
-		if absErr != nil || strings.ContainsRune(current.path, 0) {
+		if !filepath.IsAbs(current.path) || strings.ContainsRune(current.path, 0) {
 			return errors.New("Git worktree list returned an invalid path")
 		}
-		current.path = filepath.Clean(abs)
+		current.path = filepath.Clean(rootfs.OrdinaryPath(current.path))
 		if current.head != "" && !gitadvanced.ValidObjectID(current.head) {
 			return errors.New("Git worktree list returned an invalid commit")
 		}

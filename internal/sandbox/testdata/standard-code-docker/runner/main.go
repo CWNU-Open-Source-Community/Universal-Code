@@ -75,7 +75,7 @@ func run(arguments []string) (int, error) {
 	default:
 		return runnerFailureExitCode, errors.New("runner stdin policy is invalid")
 	}
-	workingDirectory, err := resolveWorkingDirectory(fields[18])
+	workingDirectory, err := resolveWorkingDirectory(workspaceRoot, fields[18])
 	if err != nil {
 		return runnerFailureExitCode, err
 	}
@@ -287,19 +287,19 @@ func preparedModuleCache(root, directory string) (string, error) {
 	}
 }
 
-func resolveWorkingDirectory(relative string) (string, error) {
-	if relative == "" || relative != strings.TrimSpace(relative) ||
+func resolveWorkingDirectory(root, relative string) (string, error) {
+	if relative == "" || !utf8.ValidString(relative) || strings.ContainsFunc(relative, unicode.IsControl) ||
 		strings.Contains(relative, `\`) || filepath.IsAbs(relative) ||
 		filepath.Clean(relative) != relative || relative == ".." ||
 		strings.HasPrefix(relative, "../") {
 		return "", errors.New("working directory is not a normalized Workspace-relative path")
 	}
-	target := filepath.Join(workspaceRoot, relative)
+	target := filepath.Join(root, relative)
 	resolved, err := filepath.EvalSymlinks(target)
 	if err != nil {
 		return "", err
 	}
-	relativeToRoot, err := filepath.Rel(workspaceRoot, resolved)
+	relativeToRoot, err := filepath.Rel(root, resolved)
 	if err != nil || relativeToRoot == ".." || strings.HasPrefix(relativeToRoot, "../") {
 		return "", errors.New("working directory escaped the Workspace")
 	}

@@ -221,6 +221,28 @@ func TestOperationFingerprintBindsFinalEffectAndAuthorityInputs(t *testing.T) {
 	}
 }
 
+func TestOperationFingerprintPreservesExactPathTargets(t *testing.T) {
+	for _, target := range []Target{{"file", "workspace: note.txt"}, {"directory", "/workspace/checks"}} {
+		t.Run(target.Kind, func(t *testing.T) {
+			value := operation()
+			value.Targets = []Target{target}
+			plain, err := FingerprintOperation(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			value.Targets[0].Locator += " "
+			exact, err := FingerprintOperation(value)
+			if err != nil || exact == plain {
+				t.Fatalf("exact target did not get a distinct fingerprint: %v", err)
+			}
+			value.Targets[0].Locator += "\n"
+			if err := value.Validate(); err == nil {
+				t.Fatal("path target containing a control character was accepted")
+			}
+		})
+	}
+}
+
 func discovery() DiscoveryScope {
 	return DiscoveryScope{OperationID: "discover", ConnectionFingerprint: testDigest,
 		Profile: "2025-06-18", Methods: []string{"initialize", "tools/list"},

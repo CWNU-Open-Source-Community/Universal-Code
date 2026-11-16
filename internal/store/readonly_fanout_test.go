@@ -14,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/tools"
 )
 
@@ -284,7 +285,10 @@ func createReadOnlyFanoutFixture(t *testing.T, databaseName string,
 
 func writeReadOnlyFanoutFile(t *testing.T, root, relative, content string) {
 	t.Helper()
-	full := filepath.Join(root, relative)
+	full, err := rootfs.ExactAbsolutePath(filepath.Join(root, relative))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		t.Fatal(err)
 	}

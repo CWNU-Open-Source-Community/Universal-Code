@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/sandbox"
 	"cyberagent-workbench/internal/toolbudget"
@@ -674,15 +674,13 @@ func validateSandboxWorkspaceBinding(workspace sandbox.WorkspaceBinding) (string
 	if !domain.ValidAgentID(workspace.ID) || strings.ContainsRune(workspace.ID, 0) {
 		return "", errors.New("workspace identity is invalid")
 	}
-	if workspace.RootPath == "" || strings.TrimSpace(workspace.RootPath) != workspace.RootPath ||
-		!utf8.ValidString(workspace.RootPath) || strings.ContainsRune(workspace.RootPath, 0) {
+	if workspace.RootPath == "" || !utf8.ValidString(workspace.RootPath) || strings.ContainsRune(workspace.RootPath, 0) {
 		return "", errors.New("workspace root must be normalized UTF-8")
 	}
-	rootPath, err := filepath.Abs(workspace.RootPath)
+	rootPath, err := rootfs.EvalExactSymlinks(workspace.RootPath)
 	if err != nil {
 		return "", err
 	}
-	rootPath = filepath.Clean(rootPath)
 	info, err := os.Stat(rootPath)
 	if err != nil {
 		return "", err
@@ -690,11 +688,10 @@ func validateSandboxWorkspaceBinding(workspace sandbox.WorkspaceBinding) (string
 	if !info.IsDir() {
 		return "", errors.New("workspace root is not a directory")
 	}
-	resolved, err := filepath.EvalSymlinks(rootPath)
-	if err != nil {
+	if err := rootfs.CheckExternalDirectory(rootPath); err != nil {
 		return "", err
 	}
-	return filepath.Clean(resolved), nil
+	return rootPath, nil
 }
 
 func normalizeSandboxMissionScope(scope domain.Scope) (domain.Scope, error) {

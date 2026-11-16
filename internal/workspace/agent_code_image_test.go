@@ -9,7 +9,40 @@ import (
 	"testing"
 
 	"cyberagent-workbench/internal/imageattachment"
+	"cyberagent-workbench/internal/rootfs"
 )
+
+func TestAgentCodeImagePreservesExactSpacedPath(t *testing.T) {
+	root := t.TempDir()
+	var exactPixels bytes.Buffer
+	if err := png.Encode(&exactPixels, image.NewRGBA(image.Rect(0, 0, 3, 2))); err != nil {
+		t.Fatal(err)
+	}
+	var neighborPixels bytes.Buffer
+	if err := png.Encode(&neighborPixels, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := rootfs.OpenExactRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	for name, data := range map[string][]byte{"image.png ": exactPixels.Bytes(), "image.png": neighborPixels.Bytes()} {
+		file, err := opened.CreateExclusive(name, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, writeErr := file.Write(data)
+		closeErr := file.Close()
+		if writeErr != nil || closeErr != nil {
+			t.Fatalf("write %q: %v / %v", name, writeErr, closeErr)
+		}
+	}
+	meta, data, err := AgentCodeReadImage(root, "image.png ", AgentCodePathPolicy{})
+	if err != nil || meta.Width != 3 || meta.Height != 2 || !bytes.Equal(data, exactPixels.Bytes()) {
+		t.Fatalf("exact image read selected the wrong file: %+v / %v", meta, err)
+	}
+}
 
 func TestAgentCodeImageEnforcesWorkspaceReadPolicy(t *testing.T) {
 	root := t.TempDir()

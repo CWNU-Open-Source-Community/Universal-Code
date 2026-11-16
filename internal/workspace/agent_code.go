@@ -20,6 +20,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
 
@@ -586,12 +587,11 @@ func readAgentCodeFile(target string, expected os.FileInfo) ([]byte, error) {
 }
 
 func openAgentWorkspace(root string, policies ...AgentCodePathPolicy) (agentWorkspace, error) {
-	root = strings.TrimSpace(root)
 	if root == "" || !utf8.ValidString(root) {
 		return agentWorkspace{}, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root is unavailable")
 	}
-	absolute, err := filepath.Abs(root)
+	absolute, err := rootfs.ExactAbsolutePath(root)
 	if err != nil {
 		return agentWorkspace{}, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root could not be resolved")
@@ -601,7 +601,7 @@ func openAgentWorkspace(root string, policies ...AgentCodePathPolicy) (agentWork
 		return agentWorkspace{}, apperror.New(apperror.CodeFailedPrecondition,
 			"workspace root must be a real directory")
 	}
-	resolved, err := filepath.EvalSymlinks(absolute)
+	resolved, err := rootfs.EvalExactSymlinks(absolute)
 	if err != nil || !sameExplorerPath(absolute, resolved) {
 		return agentWorkspace{}, apperror.New(apperror.CodePolicyDenied,
 			"workspace root cannot be redirected")
@@ -662,8 +662,8 @@ func (w agentWorkspace) resolvePath(relative string, allowMissingFinal, allowMis
 					"workspace path casing does not match the stored entry")
 			}
 			if (allowMissingFinal && last) || allowMissingParents {
-				target := filepath.Join(append([]string{current}, components[index:]...)...)
-				if !explorerWithinRoot(w.root, target) {
+				target, err := rootfs.ExactAbsolutePath(filepath.Join(append([]string{current}, components[index:]...)...))
+				if err != nil || !explorerWithinRoot(w.root, target) {
 					return "", nil, apperror.New(apperror.CodePolicyDenied,
 						"workspace path cannot leave the workspace")
 				}
@@ -672,7 +672,11 @@ func (w agentWorkspace) resolvePath(relative string, allowMissingFinal, allowMis
 			return "", nil, apperror.New(apperror.CodeNotFound,
 				"workspace entry was not found")
 		}
-		current = filepath.Join(current, component)
+		current, err = rootfs.ExactAbsolutePath(filepath.Join(current, component))
+		if err != nil {
+			return "", nil, apperror.New(apperror.CodeFailedPrecondition,
+				"workspace entry could not be inspected")
+		}
 		info, err := os.Lstat(current)
 		if err != nil {
 			return "", nil, apperror.New(apperror.CodeFailedPrecondition,
@@ -817,7 +821,7 @@ func loadAgentIgnoreRules(root string) []agentIgnoreRule {
 	}
 	rules := make([]agentIgnoreRule, 0, 32)
 	for _, raw := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
-		value := strings.TrimSpace(raw)
+		value := trimGitIgnorePadding(raw)
 		if value == "" || strings.HasPrefix(value, "#") {
 			continue
 		}
@@ -833,10 +837,26 @@ func loadAgentIgnoreRules(root string) []agentIgnoreRule {
 		if value == "" || strings.ContainsRune(value, 0) {
 			continue
 		}
-		rule.pattern = filepath.ToSlash(value)
+		// Git patterns use forward slashes and backslash escapes on every OS.
+		rule.pattern = value
 		rules = append(rules, rule)
 	}
 	return rules
+}
+
+func trimGitIgnorePadding(line string) string {
+	end := len(line)
+	for end > 0 && line[end-1] == ' ' {
+		start := end - 1
+		for start > 0 && line[start-1] == '\\' {
+			start--
+		}
+		if (end-1-start)%2 != 0 {
+			break
+		}
+		end--
+	}
+	return line[:end]
 }
 
 func agentIgnoreMatches(rule agentIgnoreRule, relative string, directory bool) bool {
@@ -856,7 +876,7 @@ func normalizeAgentPath(value string, allowRoot bool) (string, error) {
 	if value == "" && allowRoot {
 		value = "."
 	}
-	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
+	if value == "" || !utf8.ValidString(value) ||
 		utf8.RuneCountInString(value) > MaxExplorerPathRunes || strings.ContainsRune(value, 0) ||
 		filepath.IsAbs(value) || filepath.VolumeName(value) != "" || strings.ContainsAny(value, `\:`) {
 		return "", apperror.New(apperror.CodeInvalidArgument,
@@ -873,7 +893,8 @@ func normalizeAgentPath(value string, allowRoot bool) (string, error) {
 		return "", apperror.New(apperror.CodePolicyDenied,
 			"workspace path cannot leave the workspace")
 	}
-	if clean != value || (!allowRoot && clean == ".") || (original == "" && !allowRoot) {
+	if clean != value || !filepath.IsLocal(filepath.FromSlash(clean)) ||
+		(!allowRoot && clean == ".") || (original == "" && !allowRoot) {
 		return "", apperror.New(apperror.CodeInvalidArgument,
 			"workspace path must be canonical")
 	}
@@ -881,8 +902,8 @@ func normalizeAgentPath(value string, allowRoot bool) (string, error) {
 }
 
 func normalizeAgentPattern(value string) (string, error) {
-	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
-		utf8.RuneCountInString(value) > MaxAgentCodeGlobPatternRunes || strings.ContainsRune(value, 0) ||
+	if value == "" || !utf8.ValidString(value) ||
+		utf8.RuneCountInString(value) > MaxAgentCodeGlobPatternRunes || strings.ContainsFunc(value, unicode.IsControl) ||
 		strings.ContainsAny(value, `\:`) || strings.HasPrefix(value, "/") ||
 		value == ".." || strings.HasPrefix(value, "../") {
 		return "", apperror.New(apperror.CodeInvalidArgument,

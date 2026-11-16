@@ -189,7 +189,7 @@ func (s *FileEditReviewService) Review(ctx context.Context,
 	}
 	if reviewed.ID != edit.ID || reviewed.SessionID != edit.SessionID ||
 		reviewed.WorkspaceID != edit.WorkspaceID || reviewed.Status != expected ||
-		strings.TrimSpace(reviewed.Path) == "" {
+		reviewed.Path == "" {
 		return ReviewFileEditResult{}, apperror.New(apperror.CodeInternal,
 			"file edit review result violated its exact binding")
 	}

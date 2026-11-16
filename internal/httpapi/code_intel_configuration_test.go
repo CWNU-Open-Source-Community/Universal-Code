@@ -19,6 +19,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/codeintel"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestCodeIntelConfigurationLSPHelperProcess(t *testing.T) {
@@ -166,13 +167,33 @@ func TestCodeIntelConfigurationFirstSetupReviewRealQueryAndRestartReadback(t *te
 	if tested.Server.Health != "healthy" || tested.Result.State != "current" || len(tested.Result.Items) != 1 || tested.Result.Items[0].Name != "FixtureMain" || tested.Result.QueryFingerprint == "" || tested.Result.DocumentSHA256 == "" || tested.Result.ServerGeneration != tested.Server.Generation {
 		t.Fatalf("probe omitted actual semantic result: %#v", tested)
 	}
+	const exactPath = " main.go "
+	exactFile, err := rootfs.ExactAbsolutePath(filepath.Join(f.workspace.RootPath, exactPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := []byte("package main\nfunc FixtureMain() { println(\"exact file\") }\n")
+	if err := os.WriteFile(exactFile, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(exactFile) })
+	probe.Path = exactPath
+	exactProbeRaw := request(CodeIntelConfigurationsPath+"/"+input.ServerID+"/test", probe)
+	var exactProbe CodeIntelConfigurationTestView
+	if err := json.Unmarshal(envelopeData(t, exactProbeRaw), &exactProbe); err != nil {
+		t.Fatal(err)
+	}
+	if exactProbe.Result.DocumentPath != exactPath || exactProbe.Result.DocumentSHA256 != fmt.Sprintf("%x", sha256.Sum256(contents)) ||
+		len(exactProbe.Result.Items) != 1 || exactProbe.Result.Items[0].Path != exactPath {
+		t.Fatalf("probe did not read the selected document: %+v", exactProbe.Result)
+	}
 	inventoryResponse := performSessionMessageRequest(t, api, http.MethodGet, CodeIntelInventoryPath+"?workspace_id="+f.workspace.ID, testAccessToken, "", "", nil)
 	var inventory CodeIntelInventoryView
 	decodeDataStatus(t, inventoryResponse, http.StatusOK, &inventory)
 	if len(inventory.Configurations) != 1 || inventory.Configurations[0].ReviewState != "reviewed" || inventory.Servers[0].Health != "healthy" {
 		t.Fatalf("inventory readback=%#v", inventory)
 	}
-	for _, body := range [][]byte{stageRaw, reviewRaw, probeRaw, inventoryResponse.Body.Bytes()} {
+	for _, body := range [][]byte{stageRaw, reviewRaw, probeRaw, exactProbeRaw, inventoryResponse.Body.Bytes()} {
 		text := string(body)
 		for _, forbidden := range []string{input.Executable, f.workspace.RootPath, `"arguments"`, `"initialization_options"`, `"document_uri"`, `"workspace_root"`} {
 			if strings.Contains(text, forbidden) {

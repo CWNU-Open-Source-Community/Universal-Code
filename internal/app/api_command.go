@@ -195,7 +195,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		return apperror.New(apperror.CodeInvalidArgument,
 			"--enable-github-review requires --enable-permission-control")
 	}
-	if strings.TrimSpace(*gitWorktreeRoot) != "" &&
+	if *gitWorktreeRoot != "" &&
 		!*gitAdvancedEnabled && !*githubReviewEnabled {
 		return apperror.New(apperror.CodeInvalidArgument,
 			"--git-worktree-root requires --enable-git-advanced or --enable-github-review")
@@ -275,7 +275,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	}
 	var gitAdvancedService *application.GitAdvancedService
 	if *gitAdvancedEnabled {
-		managedRoot := strings.TrimSpace(*gitWorktreeRoot)
+		managedRoot := *gitWorktreeRoot
 		if managedRoot == "" {
 			managedRoot = filepath.Join(a.home, "worktrees")
 		}
@@ -295,7 +295,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 	}
 	var githubReviewService *application.GitHubReviewService
 	if *githubReviewEnabled {
-		managedRoot := strings.TrimSpace(*gitWorktreeRoot)
+		managedRoot := *gitWorktreeRoot
 		if managedRoot == "" {
 			managedRoot = filepath.Join(a.home, "worktrees")
 		}

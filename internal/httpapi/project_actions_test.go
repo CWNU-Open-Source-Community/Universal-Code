@@ -42,8 +42,8 @@ func TestProjectActionsHTTPReadExecuteAndSavedFailure(t *testing.T) {
 		t.Fatalf("available actions %+v", available)
 	}
 	var started ProjectActionResultView
-	decodeDataStatus(t, performControlPathRequest(t, f.api, path+"/test", "project-http-once-0001", strings.NewReader(`{"version":"project-actions.v1","target":"web","confirm_execution":true}`)), http.StatusAccepted, &started)
-	if controller.request.Target != "web" || controller.request.Slot != "test" || !controller.request.ConfirmExecution || controller.request.OperationKey != "project-http-once-0001" || started.Job.ID == "" {
+	decodeDataStatus(t, performControlPathRequest(t, f.api, path+"/test", "project-http-once-0001", strings.NewReader(`{"version":"project-actions.v1","target":" web ","confirm_execution":true}`)), http.StatusAccepted, &started)
+	if controller.request.Target != " web " || controller.request.Slot != "test" || !controller.request.ConfirmExecution || controller.request.OperationKey != "project-http-once-0001" || started.Job.ID == "" {
 		t.Fatalf("request/receipt %+v %+v", controller.request, started)
 	}
 	var saved ProjectActionResultView
@@ -64,8 +64,8 @@ func TestProjectActionsHTTPAcceptsOneInspectionTarget(t *testing.T) {
 	f.api.projectActionsController = &projectActionsControllerStub{}
 	path := "/api/v1/runs/" + f.run.ID + "/project-actions"
 	var view ProjectActionsView
-	decodeData(t, f.get(t, path+"?target=web"), &view)
-	if view.Target != "web" {
+	decodeData(t, f.get(t, path+"?target=%20web%20"), &view)
+	if view.Target != " web " {
 		t.Fatalf("inspection target lost: %+v", view)
 	}
 	for _, query := range []string{"?target=a&target=b", "?target=", "?target=web&shell=whoami"} {

@@ -13,11 +13,13 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/agent"
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/session"
 )
 
@@ -182,12 +184,14 @@ func ImportDisplayName(name string) string {
 }
 
 func canonicalImportRoot(selectedPath string) (string, error) {
-	selectedPath = strings.TrimSpace(selectedPath)
-	if selectedPath == "" || !filepath.IsAbs(selectedPath) {
+	if !filepath.IsAbs(selectedPath) || !utf8.ValidString(selectedPath) || strings.ContainsFunc(selectedPath, unicode.IsControl) {
 		return "", fmt.Errorf("%w: an absolute directory is required",
 			ErrInvalidImportDirectory)
 	}
-	root := filepath.Clean(selectedPath)
+	root, err := rootfs.ExactAbsolutePath(selectedPath)
+	if err != nil {
+		return "", fmt.Errorf("%w: selected directory cannot be normalized", ErrInvalidImportDirectory)
+	}
 	info, err := os.Stat(root)
 	if err != nil || !info.IsDir() {
 		return "", fmt.Errorf("%w: selected path is not an existing directory",
@@ -198,7 +202,7 @@ func canonicalImportRoot(selectedPath string) (string, error) {
 		return "", fmt.Errorf("%w: selected directory cannot be resolved",
 			ErrInvalidImportDirectory)
 	}
-	resolved, err = filepath.Abs(resolved)
+	resolved, err = rootfs.ExactAbsolutePath(resolved)
 	if err != nil {
 		return "", fmt.Errorf("%w: selected directory cannot be normalized",
 			ErrInvalidImportDirectory)
@@ -207,10 +211,15 @@ func canonicalImportRoot(selectedPath string) (string, error) {
 }
 
 func sameWorkspaceRoot(left, right string) bool {
-	left = filepath.Clean(left)
-	right = filepath.Clean(right)
-	if left == right || runtime.GOOS == "windows" && strings.EqualFold(left, right) {
+	lexicalLeft := filepath.Clean(rootfs.OrdinaryPath(left))
+	lexicalRight := filepath.Clean(rootfs.OrdinaryPath(right))
+	if lexicalLeft == lexicalRight || runtime.GOOS == "windows" && strings.EqualFold(lexicalLeft, lexicalRight) {
 		return true
+	}
+	left, leftPathErr := rootfs.ExactAbsolutePath(left)
+	right, rightPathErr := rootfs.ExactAbsolutePath(right)
+	if leftPathErr != nil || rightPathErr != nil {
+		return false
 	}
 	// Older registrations retain the caller's path spelling. Match
 	// existing directory aliases without rewriting the durable registration.
@@ -221,7 +230,7 @@ func sameWorkspaceRoot(left, right string) bool {
 }
 
 func workspaceRootIdentity(root string) string {
-	root = filepath.Clean(root)
+	root = filepath.Clean(rootfs.OrdinaryPath(root))
 	if runtime.GOOS == "windows" {
 		return strings.ToLower(root)
 	}

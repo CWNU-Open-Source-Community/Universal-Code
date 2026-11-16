@@ -28,6 +28,10 @@ func TestRunTestsRejectsExecutionFieldsAndUnboundedTargets(t *testing.T) {
 	if _, err := NormalizeSupervisorToolPayload(RunTestsTool, json.RawMessage(`{"version":"run-tests.v1","target":"internal/pkg","timeout_milliseconds":25000}`)); err != nil {
 		t.Fatal(err)
 	}
+	spaced := json.RawMessage(`{"version":"run-tests.v1","target":" checks ","timeout_milliseconds":1000}`)
+	if request, canonical, err := NormalizeRunTestsPayload(spaced); err != nil || request.Target != " checks " || string(canonical) != string(spaced) {
+		t.Fatalf("test target changed: %q (%v)", canonical, err)
+	}
 }
 
 func TestRunTestsBackgroundPayloadRetainsLegacyRunAndBoundsWait(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/gitadvanced"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runner"
 )
 
@@ -169,6 +170,128 @@ func TestAdvancedHunkPathsAreAlwaysLiteralPathspecs(t *testing.T) {
 	}
 	if len(preview.Hunks) != 1 || preview.Hunks[0].Path != "[a].txt" {
 		t.Fatalf("Git interpreted a caller path as pathspec syntax: %#v", preview.Hunks)
+	}
+}
+
+func TestAdvancedHunksPreserveExactSpacedPaths(t *testing.T) {
+	for _, name := range []string{" Binary files @@ draft, copy.txt", " 中文.txt", "notes.txt "} {
+		t.Run(strings.TrimSpace(name), func(t *testing.T) {
+			if runtime.GOOS == "windows" && strings.HasSuffix(name, " ") {
+				t.Skip("Git for Windows rejects a trailing space in index entries")
+			}
+			root := newMutationRepo(t)
+			neighbor := strings.TrimSpace(name)
+			exact, closeName := filepath.Join(root, name), filepath.Join(root, neighbor)
+			original := "base\nGIT binary patch\nthird\nfourth\nfifth\nsixth\nseventh\neighth\nninth\ntenth\n"
+			edited := "edited\n" + strings.TrimPrefix(original, "base\n")
+			edited = strings.Replace(edited, "tenth\n", "last edit\n", 1)
+			for _, file := range []string{exact, closeName} {
+				if err := os.WriteFile(file, []byte(original), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			fixtureGit(t, "-C", root, "--literal-pathspecs", "add", "--", name, neighbor)
+			fixtureGit(t, "-C", root, "commit", "--quiet", "-m", "exact filenames")
+			for _, file := range []string{exact, closeName} {
+				if err := os.WriteFile(file, []byte(edited), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			executor := newAdvancedExecutor(t)
+			for _, operation := range []gitadvanced.Operation{gitadvanced.HunkStage, gitadvanced.HunkUnstage, gitadvanced.HunkRevert} {
+				spec := advancedSpec(operation)
+				spec.Paths = []string{name}
+				discovery, err := executor.ReviewAdvanced(t.Context(), root, spec)
+				if err != nil || len(discovery.Hunks) != 2 {
+					t.Fatalf("%s discovery: %v %#v", operation, err, discovery.Hunks)
+				}
+				for _, hunk := range discovery.Hunks {
+					if hunk.Path != name {
+						t.Fatalf("preview used %q for %q", hunk.Path, name)
+					}
+					spec.HunkIDs = append(spec.HunkIDs, hunk.ID)
+				}
+				preview, err := executor.ReviewAdvanced(t.Context(), root, spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := executor.ExecuteAdvanced(t.Context(), root, preview); err != nil {
+					t.Fatalf("%s exact name: %v", operation, err)
+				}
+				wantIndex, wantWorktree := original, edited
+				if operation == gitadvanced.HunkStage {
+					wantIndex = edited
+				}
+				if operation == gitadvanced.HunkRevert {
+					wantWorktree = original
+				}
+				for path, want := range map[string]string{name: wantIndex, neighbor: original} {
+					got, err := exec.Command("git", "-C", root, "show", ":"+path).Output()
+					if err != nil || string(got) != want {
+						t.Fatalf("%s changed wrong index bytes for %q: %q (%v)", operation, path, got, err)
+					}
+				}
+				for file, want := range map[string]string{exact: wantWorktree, closeName: edited} {
+					if got, err := os.ReadFile(file); err != nil || string(got) != want {
+						t.Fatalf("%s changed wrong worktree bytes for %q: %q (%v)", operation, file, got, err)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAdvancedGitRefusesWindowsPathsThatGitCannotAddress(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows path spelling")
+	}
+	root := newMutationRepo(t)
+	name := "base.txt "
+	exact, err := rootfs.ExactAbsolutePath(filepath.Join(root, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exact, []byte("exact file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(exact) })
+	spec := advancedSpec(gitadvanced.HunkRevert)
+	spec.Paths = []string{name}
+	executor := newAdvancedExecutor(t)
+	_, err = executor.ReviewAdvanced(t.Context(), root, spec)
+	var blocked *gitadvanced.Error
+	if !errors.As(err, &blocked) || blocked.Code != gitadvanced.FailureUnsafeRepository ||
+		!strings.Contains(blocked.Message, "ends in a space or dot") {
+		t.Fatalf("hunk path was not refused explicitly: %v", err)
+	}
+	stash := advancedSpec(gitadvanced.StashCreate)
+	stash.Message, stash.IncludeUntracked = "untracked exact file", true
+	_, err = executor.ReviewAdvanced(t.Context(), root, stash)
+	if !errors.As(err, &blocked) || blocked.Code != gitadvanced.FailureUnsafeRepository {
+		t.Fatalf("stash accepted a path that Git for Windows cannot address: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, "base.txt")); err != nil || string(got) != "base\n" {
+		t.Fatalf("the neighboring tracked file changed: %q (%v)", got, err)
+	}
+	for _, suffix := range []string{" ", "."} {
+		alias := root + suffix
+		exact, err := rootfs.ExactAbsolutePath(alias)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(exact, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Remove(exact) })
+		if _, err := executor.CaptureAdvancedBinding(t.Context(), alias); err == nil ||
+			!strings.Contains(err.Error(), "ending in a space or dot") {
+			t.Fatalf("Git could have inspected the neighboring repository for %q: %v", alias, err)
+		}
+		if _, err := NewAdvancedExecutor(alias, true); err == nil ||
+			!strings.Contains(err.Error(), "ending in a space or dot") {
+			t.Fatalf("ambiguous managed root was accepted: %v", err)
+		}
 	}
 }
 

@@ -184,6 +184,19 @@ it("allows correcting a rejected target and prevents preparation while the agent
   expect(screen.getByRole("button", { name: "准备项目" })).toBeDisabled();
 });
 
+it("keeps significant spaces in the inspected and prepared directory", async () => {
+  const { client, ui } = setup();
+  render(ui());
+  await screen.findByRole("button", { name: "准备项目" });
+  const target = " web ";
+  fireEvent.change(screen.getByRole("textbox", { name: /项目目录/ }), { target: { value: target } });
+  fireEvent.click(screen.getByRole("button", { name: "检测目录" }));
+  await waitFor(() => expect(client.getProjectPreparation).toHaveBeenCalledWith("run-1", target, expect.any(AbortSignal)));
+  fireEvent.click(await screen.findByRole("button", { name: "准备项目" }));
+  await waitFor(() => expect(client.prepareProject).toHaveBeenCalledWith("run-1",
+    expect.objectContaining({ target }), expect.any(String)));
+});
+
 it("keeps a late response bound to the original Run when the selected Run changes", async () => {
   const { client, ui } = setup();
   let finish!: (value: ReturnType<typeof preparationView>) => void;

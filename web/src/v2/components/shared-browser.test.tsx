@@ -10,6 +10,8 @@ import { V2WorkspaceDock } from "./workspace-dock";
 import { focusWorkspaceSingletonTab, useThreadWorkspaceState } from "../workspace-tabs";
 import type { APIClient } from "../../api/client";
 import type { ThreadDetailView } from "../../api/types";
+import { useConnectionStore } from "../../state/connection";
+import { bindDraftSharedBrowser, draftSharedBrowserAdoption } from "../shared-browser-session";
 
 const rpc = vi.hoisted(() => ({ open: vi.fn(), get: vi.fn(), command: vi.fn(), surface: vi.fn() }));
 vi.mock("../../lib/desktop-shared-browser", async (original) => ({ ...await original<typeof import("../../lib/desktop-shared-browser")>(),
@@ -117,6 +119,24 @@ describe("native shared-browser controls", () => {
     const view = mount(); view.unmount();
     await act(async () => resolve(initial));
     expect(rpc.surface).toHaveBeenCalledWith(expect.objectContaining({ session_id: "session-ui", visible: false }));
+  });
+  it("does not adopt a draft Open response from an earlier connection", async () => {
+    const connectionGeneration = useConnectionStore.getState().connectionGeneration;
+    const workspaceID = "late-open-after-reconnect";
+    let resolve!: (state: SharedBrowserState) => void;
+    rpc.open.mockReturnValueOnce(new Promise<SharedBrowserState>((done) => { resolve = done; }));
+    const view = mount({ workspaceID });
+    try {
+      act(() => useConnectionStore.setState({ connectionGeneration: connectionGeneration + 1 }));
+      await act(async () => resolve({ ...initial, workspace_id: workspaceID, session_id: "old-connection-session" }));
+      bindDraftSharedBrowser(workspaceID, "new-connection-thread");
+      expect(draftSharedBrowserAdoption(workspaceID, "new-connection-thread")).toBeUndefined();
+      expect(rpc.surface).toHaveBeenCalledWith(expect.objectContaining({ session_id: "old-connection-session", visible: false }));
+      expect(screen.queryByRole("tab", { name: "Example" })).not.toBeInTheDocument();
+    } finally {
+      view.unmount();
+      act(() => useConnectionStore.setState({ connectionGeneration }));
+    }
   });
   it("shows actual tools and host history on the new-tab page while hiding the native surface", async () => {
     const tool = vi.fn();

@@ -168,27 +168,21 @@ done:
   return result;
 }
 
-typedef struct { int pid, ppid, pgid, uid, zombie; uint64_t sec, usec, rss; } uc_proc_sample;
 static int uc_chrome_sample(int pid, uc_proc_sample *out) {
-  struct proc_bsdinfo bsd;
-  errno = 0;
-  if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, sizeof(bsd)) != sizeof(bsd)) {
-    return errno == ENOENT ? ESRCH : (errno ? errno : EIO);
-  }
+  int status = uc_chrome_process_identity(pid, out);
+  if (status || out->zombie) return status;
   struct proc_taskinfo task;
-  memset(&task, 0, sizeof(task));
   errno = 0;
-  if (bsd.pbi_status != SZOMB && proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task, sizeof(task)) != sizeof(task)) {
+  if (proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task, sizeof(task)) != sizeof(task)) {
     return errno == ENOENT ? ESRCH : (errno ? errno : EIO);
   }
-  *out = (uc_proc_sample){pid, (int)bsd.pbi_ppid, (int)bsd.pbi_pgid, (int)bsd.pbi_uid,
-    bsd.pbi_status == SZOMB, bsd.pbi_start_tvsec, bsd.pbi_start_tvusec, task.pti_resident_size};
+  out->rss = task.pti_resident_size;
   return 0;
 }
 
 // Parse only argc arguments for a matching executable; never export a process'
 // environment or unrelated command line. Crashpad deliberately reparents itself.
-static int uc_chrome_crashpad(const char *profile, int *pids, int capacity) {
+static int uc_chrome_crashpad(const char *profile, uc_proc_sample *samples, int capacity) {
   int all[8192];
   int total = uc_chrome_all_processes(all, 8192);
   if (total < 0) return total;
@@ -197,7 +191,7 @@ static int uc_chrome_crashpad(const char *profile, int *pids, int capacity) {
   int found = 0;
   for (int i = 0; i < total; i++) {
     uc_proc_sample sample;
-    if (uc_chrome_sample(all[i], &sample) || sample.uid != getuid() || sample.zombie) continue;
+    if (uc_chrome_process_identity(all[i], &sample) || sample.uid != getuid() || sample.zombie) continue;
     char path[PROC_PIDPATHINFO_MAXSIZE];
     if (proc_pidpath(all[i], path, sizeof(path)) <= 0) continue;
     const char *prefix = "/Applications/Google Chrome.app/Contents/Frameworks/";
@@ -207,8 +201,13 @@ static int uc_chrome_crashpad(const char *profile, int *pids, int capacity) {
     size_t size = 1024 * 1024;
     char *args = malloc(size);
     if (!args) { free(expected); return -ENOMEM; }
-    int mib[] = {CTL_KERN, KERN_PROCARGS2, all[i]};
-    if (sysctl(mib, 3, args, &size, NULL, 0) || size <= sizeof(int)) { free(args); free(expected); return -EACCES; }
+    int status = uc_chrome_crashpad_args(&sample, args, &size);
+    if (status <= 0) {
+      free(args);
+      if (status == 0) continue;
+      free(expected);
+      return status;
+    }
     int argc;
     memcpy(&argc, args, sizeof(argc));
     char *at = args + sizeof(int), *end = args + size;
@@ -225,7 +224,7 @@ static int uc_chrome_crashpad(const char *profile, int *pids, int capacity) {
     free(args);
     if (matched) {
       if (found == capacity) { free(expected); return -ENOSPC; }
-      pids[found++] = all[i];
+      samples[found++] = sample;
     }
   }
   free(expected);
@@ -312,8 +311,12 @@ func darwinChromeSample(pid int) (darwinChromeProcessSample, error) {
 	if status := C.uc_chrome_sample(C.int(pid), &sample); status != 0 {
 		return darwinChromeProcessSample{}, syscall.Errno(status)
 	}
+	return darwinChromeSampleFromC(sample), nil
+}
+
+func darwinChromeSampleFromC(sample C.uc_proc_sample) darwinChromeProcessSample {
 	return darwinChromeProcessSample{int(sample.pid), int(sample.ppid), int(sample.pgid), int(sample.uid), sample.zombie != 0,
-		uint64(sample.sec), uint64(sample.usec), uint64(sample.rss)}, nil
+		uint64(sample.sec), uint64(sample.usec), uint64(sample.rss)}
 }
 
 func darwinChromeGroup(group int) ([]int, error) {
@@ -331,17 +334,17 @@ func darwinChromeGroup(group int) ([]int, error) {
 	return result, nil
 }
 
-func darwinChromeCrashpad(profile string) ([]int, error) {
+func darwinChromeCrashpad(profile string) ([]darwinChromeProcessSample, error) {
 	path := C.CString(profile)
 	defer C.free(unsafe.Pointer(path))
-	var pids [32]C.int
-	count := int(C.uc_chrome_crashpad(path, &pids[0], C.int(len(pids))))
+	var samples [32]C.uc_proc_sample
+	count := int(C.uc_chrome_crashpad(path, &samples[0], C.int(len(samples))))
 	if count < 0 {
 		return nil, syscall.Errno(-count)
 	}
-	result := make([]int, count)
-	for index, pid := range pids[:count] {
-		result[index] = int(pid)
+	result := make([]darwinChromeProcessSample, count)
+	for index, sample := range samples[:count] {
+		result[index] = darwinChromeSampleFromC(sample)
 	}
 	return result, nil
 }

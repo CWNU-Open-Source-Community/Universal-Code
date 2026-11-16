@@ -55,14 +55,22 @@ func TestSpecValidateRejectsGitInvalidWorktreeBranches(t *testing.T) {
 
 func TestSpecValidateRejectsNonPortableOrMetadataPaths(t *testing.T) {
 	for _, candidate := range []string{
-		"file:stream", " leading.txt", "trailing.txt ", "line\nbreak.txt",
-		"folder/.git/config", "folder/ .git /config",
+		"file:stream", "line\nbreak.txt", "line\u0085break.txt", "folder/.",
+		"./file.txt", "folder/.git/config", "folder/ .git /config", ".git./config",
 	} {
 		spec := Spec{ProtocolVersion: ProtocolVersion, Operation: HunkStage,
 			Paths: []string{candidate}}
 		if err := spec.Validate(); err == nil {
 			t.Fatalf("unsafe path %q was accepted", candidate)
 		}
+	}
+}
+
+func TestSpecPreservesExactSpacedPaths(t *testing.T) {
+	spec := Spec{ProtocolVersion: ProtocolVersion, Operation: HunkStage,
+		Paths: []string{"draft.txt", " draft.txt", "draft.txt ", " notes / draft.txt "}}
+	if err := spec.Validate(); err != nil {
+		t.Fatalf("distinct Git paths were rejected: %v", err)
 	}
 }
 

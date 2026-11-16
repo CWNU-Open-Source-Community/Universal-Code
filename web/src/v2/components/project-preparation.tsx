@@ -236,7 +236,7 @@ function ProjectPreparationForRun({ client, runID, threadID, working = false, on
     <form className="v2-preparation-target" onSubmit={(event) => {
       event.preventDefault();
       let next: string;
-      try { next = normalizePreparationTarget(draftTarget.trim() || "."); }
+      try { next = normalizePreparationTarget(draftTarget || "."); }
       catch (error) { setLocalError(error instanceof Error ? error.message : t("请输入项目内的相对目录。", "Enter a relative directory within the project.")); return; }
       setLocalError("");
       setDraftTarget(next);
