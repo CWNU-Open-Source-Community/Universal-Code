@@ -1,6 +1,7 @@
 package application
 
 import (
+	"slices"
 	"strconv"
 
 	"cyberagent-workbench/internal/apperror"
@@ -73,11 +74,14 @@ func constrainRequestToModelWindow(request llm.ChatRequest, window llm.ContextWi
 				"native private assistant history exceeds the conservative input window; history truncation is unsupported")
 		}
 	}
-	for estimated > inputLimit && layout.HistoryCount > 0 {
-		request.Messages = append(request.Messages[:layout.HistoryStart],
-			request.Messages[layout.HistoryStart+1:]...)
-		layout.HistoryCount--
+	// Long sequences of small messages can legitimately remain active. Size
+	// the discarded prefix once instead of rescanning the suffix per message.
+	for estimated > inputLimit && omitted < layout.HistoryCount {
+		estimated -= estimateModelMessageTokens(request.Messages[layout.HistoryStart+omitted])
 		omitted++
+	}
+	if omitted > 0 {
+		request.Messages = slices.Delete(request.Messages, layout.HistoryStart, layout.HistoryStart+omitted)
 		estimated = estimateModelRequestTokens(request)
 	}
 	plan := modelContextPlan{
@@ -117,26 +121,7 @@ func constrainRequestToModelWindow(request llm.ChatRequest, window llm.ContextWi
 func estimateModelRequestTokens(request llm.ChatRequest) int {
 	total := 8
 	for _, message := range request.Messages {
-		total = addModelTokens(total, modelMessageFramingTokens)
-		total = addModelTokens(total, contextmgr.EstimateTokens(message.Role))
-		total = addModelTokens(total, contextmgr.EstimateTokens(message.Content))
-		// Opaque continuation state is still part of the provider input. Count
-		// its bytes conservatively without exposing it to public context logs.
-		if message.Replay != nil {
-			total = addModelTokens(total, message.Replay.ContextBytes())
-		}
-		for _, image := range message.Images {
-			total = addModelTokens(total, llm.EstimateImageTokens(image))
-		}
-		for _, call := range message.ToolCalls {
-			total = addModelTokens(total, contextmgr.EstimateTokens(call.ID))
-			total = addModelTokens(total, contextmgr.EstimateTokens(call.Name))
-			total = addModelTokens(total, contextmgr.EstimateTokens(string(call.Arguments)))
-		}
-		for _, result := range message.ToolResults {
-			total = addModelTokens(total, contextmgr.EstimateTokens(result.ToolCallID))
-			total = addModelTokens(total, contextmgr.EstimateTokens(result.Content))
-		}
+		total = addModelTokens(total, estimateModelMessageTokens(message))
 	}
 	for _, tool := range request.Tools {
 		total = addModelTokens(total, modelMessageFramingTokens)
@@ -146,6 +131,28 @@ func estimateModelRequestTokens(request llm.ChatRequest) int {
 	}
 	if request.JSONMode {
 		total = addModelTokens(total, 8)
+	}
+	return total
+}
+
+func estimateModelMessageTokens(message llm.Message) int {
+	total := contextmgr.EstimateMessageTokens(message.Role, message.Content)
+	// Opaque continuation state is still part of the provider input. Count
+	// its bytes conservatively without exposing it to public context logs.
+	if message.Replay != nil {
+		total = addModelTokens(total, message.Replay.ContextBytes())
+	}
+	for _, image := range message.Images {
+		total = addModelTokens(total, llm.EstimateImageTokens(image))
+	}
+	for _, call := range message.ToolCalls {
+		total = addModelTokens(total, contextmgr.EstimateTokens(call.ID))
+		total = addModelTokens(total, contextmgr.EstimateTokens(call.Name))
+		total = addModelTokens(total, contextmgr.EstimateTokens(string(call.Arguments)))
+	}
+	for _, result := range message.ToolResults {
+		total = addModelTokens(total, contextmgr.EstimateTokens(result.ToolCallID))
+		total = addModelTokens(total, contextmgr.EstimateTokens(result.Content))
 	}
 	return total
 }

@@ -26,8 +26,6 @@ import (
 	"cyberagent-workbench/internal/webevidence"
 )
 
-const maxSupervisorHistoryMessages = 20
-
 const maxSupervisorWorkItems = 20
 
 const maxSupervisorWorkBoardRunes = 16 * 1024
@@ -828,7 +826,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 	}
 
 	rebuildHistoryRequest := func(compacted bool) error {
-		prepared.context.history, prepared.context.summary, prepared.context.hasSummary, _, err = s.supervisorConversationContext(ctx, &turn)
+		prepared.context.history, prepared.context.summary, prepared.context.hasSummary, err = s.supervisorConversationContext(ctx, &turn)
 		prepared.context.history = withoutCurrentMCPReferenceEvidence(prepared.context.history, prepared.input.mcpEvidenceIDs)
 		result.Checkpoint = turn.Checkpoint
 		if err == nil {
@@ -1069,27 +1067,34 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			failure := s.recordFailure(ctx, &result, supervisorContextWindowFailure(err), 0)
 			return result, failure
 		}
-		if contextPlan.HistoryOmitted > 0 {
-			// Never send the generic fitter's lossy history slice on the root
-			// path. Compact durable history first, then reassemble the complete
-			// request, including the still-current input and native tool pairs.
-			compacted, compactErr := s.compactSupervisorHistory(ctx, &turn, 1)
+		// Measure the assembled request, including tools and the pending input.
+		// Leave a tenth of the usable input window for the next model step.
+		overLimit := contextPlan.HistoryOmitted > 0
+		nearLimit := modelContextLayout.HistoryCount > 1 && contextPlan.EstimatedInput >= contextmgr.AutoCompactInputThreshold(inputLimit)
+		if overLimit || (nearLimit && !s.router.RequiresPrivateAssistantHistory(prepared.ref)) {
+			tailBudget := inputLimit / 10
+			if overLimit {
+				tailBudget = 0
+			}
+			compacted, compactErr := s.compactSupervisorHistory(ctx, &turn, tailBudget)
 			result.Checkpoint = turn.Checkpoint
-			if compactErr == nil && !compacted {
+			if compactErr != nil {
+				return result, s.recordFailure(ctx, &result, compactErr, 0)
+			}
+			if compacted {
+				if err := rebuildHistoryRequest(true); err != nil {
+					return result, s.recordFailure(ctx, &result, err, 0)
+				}
+				continue
+			}
+			if overLimit {
+				// Never dispatch the fitter's temporary, lossy history slice.
 				if trySegmentReceipt() {
 					continue
 				}
-				compactErr = supervisorContextWindowFailure(apperror.New(apperror.CodeResourceExhausted,
-					"model context remains too large after compaction; history is preserved, use a larger context window or shorten the current input"))
+				return result, s.recordFailure(ctx, &result, supervisorContextWindowFailure(apperror.New(apperror.CodeResourceExhausted,
+					"model context remains too large after compaction; history is preserved, use a larger context window or shorten the current input")), 0)
 			}
-			if compactErr != nil {
-				failure := s.recordFailure(ctx, &result, compactErr, 0)
-				return result, failure
-			}
-			if err := rebuildHistoryRequest(true); err != nil {
-				return result, s.recordFailure(ctx, &result, err, 0)
-			}
-			continue
 		}
 		modelRequest = boundedRequest
 		modelRequest, skillReadGuidance = skillReadGuidance.retainPresent(modelRequest)
@@ -1128,7 +1133,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 					}
 					if claimed {
 						before := estimateModelRequestTokens(request)
-						compacted, compactErr := s.compactSupervisorHistory(ctx, &turn, 1)
+						compacted, compactErr := s.compactSupervisorHistory(ctx, &turn, 0)
 						result.Checkpoint = turn.Checkpoint
 						if compactErr == nil && compacted {
 							compactErr = rebuildHistoryRequest(true)

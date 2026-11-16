@@ -46,7 +46,7 @@ func (p *continuityPurposeProvider) Chat(ctx context.Context, request llm.ChatRe
 
 // Exercise the ordinary product path; no Session.Manager or manual summary call
 // is inserted between ThreadTurnService, the handoff, and the Supervisor.
-func TestThreadContextContinuityPreservesOriginalIntentAndEvidenceAfterHistoryLimitAndRestart(t *testing.T) {
+func TestThreadContextContinuityPreservesOriginalIntentAndEvidenceAfterCompactionAndRestart(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "thread-continuity.db")
 	st, err := store.Open(dbPath)
 	if err != nil {
@@ -76,8 +76,12 @@ func TestThreadContextContinuityPreservesOriginalIntentAndEvidenceAfterHistoryLi
 	provider := &continuityPurposeProvider{scriptedToolProvider: &scriptedToolProvider{}}
 	provider.responses = append(provider.responses, boundaryRead("context-read-once", 1))
 	for index := 1; index <= 24; index++ {
+		observation := compactionFixtureObservation()
+		if index > 12 && (index < 16 || index > 21) {
+			observation = ""
+		}
 		provider.responses = append(provider.responses, textResponse(rootActionResponse(domain.RootActionFinish,
-			fmt.Sprintf("Acknowledged checkpoint %d. The requested final acceptance remains pending.", index),
+			fmt.Sprintf("Acknowledged checkpoint %d. The requested final acceptance remains pending. %s", index, observation),
 			fmt.Sprintf("End this interactive reply %d", index), "")))
 	}
 	newTurns := func(st *store.SQLiteStore) *application.ThreadTurnService {
@@ -491,7 +495,7 @@ func assertContinuitySummaryProvenance(t *testing.T, content string, history []s
 			record.InstructionAuthorized != original.Provenance.InstructionAuthorized {
 			t.Errorf("summary source %d lost its exact original provenance", record.SourceMessageID)
 		}
-		if strings.Contains(record.Content, "UX_CONTEXT_ORIGINAL_ACCEPTANCE") {
+		if strings.Contains(original.Content, "UX_CONTEXT_ORIGINAL_ACCEPTANCE") && record.SourceKind == session.SourceOperatorMessage {
 			operatorFound = record.SourceKind == session.SourceOperatorMessage && record.InstructionAuthorized
 		}
 		if record.SourceKind == session.SourceToolResult && strings.Contains(record.Content, call.CallID) {

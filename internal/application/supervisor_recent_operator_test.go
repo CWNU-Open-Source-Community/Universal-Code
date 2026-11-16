@@ -27,6 +27,9 @@ func TestRecentOperatorOriginalSurvivesRepeatedFallbackCompaction(t *testing.T) 
 	p.auxiliary = func(context.Context, llm.ChatRequest, int) (*llm.ChatResponse, error) {
 		return nil, llm.NewProviderError(llm.OutcomePermanent, p.Name(), "fixed auxiliary provider failure", nil)
 	}
+	p.normal = func(context.Context, llm.ChatRequest) (*llm.ChatResponse, error) {
+		return compactionFixtureReply(), nil
+	}
 	turns, _ := generatedThreadServices(st, p, nil)
 	var summaryIDs []int64
 	var afterCompactionPresent, beforeCompactionPresent bool

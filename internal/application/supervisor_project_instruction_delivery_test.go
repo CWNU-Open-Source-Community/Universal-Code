@@ -613,7 +613,7 @@ func TestSupervisorProjectInstructionDeliveryIncludesPinnedRulesInGeneratedSumma
 	}, true)
 	for index := range 24 {
 		if _, err := st.SaveSessionMessage(t.Context(), session.NewMessage(run.SessionID, "user",
-			fmt.Sprintf("Historical checkpoint %02d: keep original acceptance constraints and report observed evidence.", index))); err != nil {
+			fmt.Sprintf("Historical checkpoint %02d: keep original acceptance constraints and report observed evidence. %s", index, strings.Repeat("Background compatibility note. ", 97)))); err != nil {
 			t.Fatal(err)
 		}
 	}

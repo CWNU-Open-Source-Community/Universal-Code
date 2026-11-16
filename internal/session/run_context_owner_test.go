@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"cyberagent-workbench/internal/llm"
@@ -25,7 +26,7 @@ func TestRunContextOwnerPreventsUnleasedPostCommitCompaction(t *testing.T) {
 				t.Fatal(err)
 			}
 			for range 10 {
-				if _, err := st.SaveSessionMessage(t.Context(), NewMessage(sess.ID, "user", "preserve requirement")); err != nil {
+				if _, err := st.SaveSessionMessage(t.Context(), NewMessage(sess.ID, "user", strings.Repeat("原文。", 350))); err != nil {
 					t.Fatal(err)
 				}
 			}

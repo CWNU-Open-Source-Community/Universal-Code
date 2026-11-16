@@ -53,7 +53,7 @@ func supervisorContextWindowFailure(cause error) error {
 }
 
 func (s *AgentRunner) compactSupervisorHistory(ctx context.Context, turn *domain.SupervisorTurn,
-	preserveRecent int,
+	recentTokenBudget int,
 ) (bool, error) {
 	privateHistory, err := s.requiresSupervisorPrivateHistory(turn.Run.Config.ModelRoute)
 	if err != nil {
@@ -68,8 +68,24 @@ func (s *AgentRunner) compactSupervisorHistory(ctx context.Context, turn *domain
 		return false, nil
 	}
 	history, err := s.store.ListSessionMessages(ctx, turn.Run.SessionID, false)
-	if err != nil || len(history) <= preserveRecent {
+	if err != nil {
 		return false, err
+	}
+	// The store keeps a contiguous suffix. Keep recent originals within the
+	// token allowance; at least the latest entry survives hard-limit recovery.
+	preserveRecent := 0
+	for i := len(history) - 1; i >= 0; i-- {
+		message := session.ProjectContextMessage(history[i])
+		tokens := contextmgr.EstimateMessageTokens(message.Role, message.Content)
+		if tokens > recentTokenBudget {
+			break
+		}
+		recentTokenBudget -= tokens
+		preserveRecent++
+	}
+	preserveRecent = max(1, preserveRecent)
+	if len(history) <= preserveRecent {
+		return false, nil
 	}
 	if err := executeLifecycleBoundary(ctx, s.lifecycleHooks, hooks.Compaction,
 		turn.Run.ID, turn.Mission.WorkspaceID, map[string]any{
@@ -113,53 +129,28 @@ func (s *AgentRunner) compactSupervisorHistory(ctx context.Context, turn *domain
 }
 
 func (s *AgentRunner) supervisorConversationContext(ctx context.Context, turn *domain.SupervisorTurn) (
-	[]session.Message, contextmgr.Summary, bool, bool, error,
+	[]session.Message, contextmgr.Summary, bool, error,
 ) {
 	history, err := s.store.ListSessionMessages(ctx, turn.Run.SessionID, false)
 	if err != nil {
-		return nil, contextmgr.Summary{}, false, false, err
-	}
-	didCompact := false
-	// This replaces the old last-20-message slice. Small conversations remain
-	// intact; model-window pressure may request an earlier compaction below.
-	if len(history) > maxSupervisorHistoryMessages {
-		// A count-based optimization must not block a provider that requires
-		// native history while its complete request still fits the window.
-		privateHistory, err := s.requiresSupervisorPrivateHistory(turn.Run.Config.ModelRoute)
-		if err != nil {
-			return nil, contextmgr.Summary{}, false, false, err
-		}
-		compacted := false
-		if !privateHistory {
-			compacted, err = s.compactSupervisorHistory(ctx, turn, 4)
-		}
-		if err != nil {
-			return nil, contextmgr.Summary{}, false, false, err
-		}
-		if compacted {
-			didCompact = true
-			history, err = s.store.ListSessionMessages(ctx, turn.Run.SessionID, false)
-			if err != nil {
-				return nil, contextmgr.Summary{}, false, didCompact, err
-			}
-		}
+		return nil, contextmgr.Summary{}, false, err
 	}
 	history, err = s.withFailedToolEvidenceContext(ctx, turn.Run, history)
 	if err != nil {
-		return nil, contextmgr.Summary{}, false, didCompact, err
+		return nil, contextmgr.Summary{}, false, err
 	}
 	summary, hasSummary, err := s.store.LatestContextSummary(ctx, turn.Run.SessionID)
 	if err == nil && hasSummary {
 		privateHistory, scopeErr := s.requiresSupervisorPrivateHistory(turn.Run.Config.ModelRoute)
 		if scopeErr != nil {
-			return nil, summary, hasSummary, didCompact, scopeErr
+			return nil, summary, hasSummary, scopeErr
 		}
 		if privateHistory {
-			return nil, summary, hasSummary, didCompact, apperror.New(apperror.CodeFailedPrecondition,
+			return nil, summary, hasSummary, apperror.New(apperror.CodeFailedPrecondition,
 				"summarized or imported history lacks the native private assistant replay required by this provider")
 		}
 	}
-	return history, summary, hasSummary, didCompact, err
+	return history, summary, hasSummary, err
 }
 
 func supervisorGoalContext(turn domain.SupervisorTurn) []contextmgr.Section {

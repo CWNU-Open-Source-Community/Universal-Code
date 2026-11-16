@@ -233,7 +233,7 @@ func TestThreadContextPinsReachOutboundRequestsAfterCompactionAndSuccessor(t *te
 	}
 	provider := &continuityPurposeProvider{scriptedToolProvider: base, summary: "A deliberately lossy summary that omits every fixed requirement."}
 	for range 14 {
-		base.responses = append(base.responses, textResponse(rootActionResponse(domain.RootActionWait, "本轮已回复。", "", "等待下一条用户输入")))
+		base.responses = append(base.responses, textResponse(rootActionResponse(domain.RootActionWait, "本轮已回复。"+compactionFixtureObservation(), "", "等待下一条用户输入")))
 	}
 	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
 	router.RegisterProvider(provider)

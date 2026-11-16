@@ -49,7 +49,7 @@ func TestThreadHistoryRecallAfterRepeatedCompactionAndRestart(t *testing.T) {
 	p := newHistoryProtocolProvider(t, "tool-loop", "model")
 	p.responses = append(p.responses, boundaryRead("recall-original-read-once", 1))
 	for i := 0; i < 24; i++ {
-		p.responses = append(p.responses, historyRecallFinish())
+		p.responses = append(p.responses, compactionFixtureReply())
 	}
 	turns := historyRecallTurns(st, p)
 	for index := 1; index <= 24; index++ {
@@ -535,6 +535,15 @@ func historyRecallTurns(st *store.SQLiteStore, provider *historyProtocolProvider
 	// This fixture measures exact extractive omissions and original recall;
 	// generated summaries have a separate default-path integration suite.
 	return application.NewThreadTurnService(st, application.NewRunLifecycleControlService(st), application.NewRunExecutionHandoffService(st, router, policy.NewDefaultChecker()).WithGeneratedContextCompaction(false))
+}
+
+// Multi-turn retention fixtures use substantial observations so the model
+// reaches its input window while the operator messages stay recognizable.
+func compactionFixtureObservation() string {
+	return strings.Repeat("Recorded compatibility observation. ", 148)
+}
+func compactionFixtureReply() *llm.ChatResponse {
+	return textResponse(rootActionResponse(domain.RootActionFinish, compactionFixtureObservation(), "End this interactive reply", ""))
 }
 func historyRecallFinish() *llm.ChatResponse {
 	return textResponse(rootActionResponse(domain.RootActionFinish, "Fixed protocol checkpoint acknowledged; no project changes.", "End this interactive reply", ""))

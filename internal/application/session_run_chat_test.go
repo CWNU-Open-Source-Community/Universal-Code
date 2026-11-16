@@ -431,7 +431,7 @@ func TestSessionRunChatFeedsCompactedSummaryBackToSupervisor(t *testing.T) {
 	}
 	responses := make([]string, 12)
 	for i := range responses {
-		responses[i] = rootActionResponse(domain.RootActionContinue, "continue", "", "")
+		responses[i] = rootActionResponse(domain.RootActionContinue, compactionFixtureObservation()+strings.Repeat("Extra observation. ", 73), "", "")
 	}
 	provider := &extractiveSessionProvider{lifecycleProvider: lifecycleProvider{responses: responses}}
 	router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
@@ -449,12 +449,12 @@ func TestSessionRunChatFeedsCompactedSummaryBackToSupervisor(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if i == 12 {
+		if result.Compacted {
 			compacted = result
 		}
 	}
 	if !compacted.Compacted || compacted.SummaryID == 0 {
-		t.Fatalf("executor-owned compaction was not reported: %#v", compacted)
+		t.Fatalf("executor-owned compaction was not reported: last request input=%s, limit=%s", provider.requests[11].Metadata["context_input_estimate"], provider.requests[11].Metadata["context_input_limit"])
 	}
 	if len(provider.requests) != 12 {
 		t.Fatalf("provider request count = %d, want 12", len(provider.requests))
