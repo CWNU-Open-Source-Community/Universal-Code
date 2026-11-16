@@ -73,8 +73,8 @@ function source(value: unknown): value is string {
   } catch { return false; }
 }
 export function validPreparationTarget(value: unknown): value is string {
-  return text(value) && value.length > 0 && value.trim() === value && !/^[\\/]|^[a-z]:/iu.test(value) &&
-    !value.split(/[\\/]/u).some((part) => part === "..") && !/[\u0000-\u001f\u007f]/u.test(value);
+  return text(value) && value.length > 0 && !/^[\\/]|:|\p{Cc}/u.test(value) &&
+    !value.split(/[\\/]/u).some((part) => part === "..");
 }
 export function normalizePreparationTarget(value: string): string {
   if (!validPreparationTarget(value)) throw new Error("请输入项目内的相对目录。");

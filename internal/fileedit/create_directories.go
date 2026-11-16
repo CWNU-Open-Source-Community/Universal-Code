@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/tools"
 )
 
@@ -13,7 +14,7 @@ import (
 // existing component is revalidated. Failure may retain new empty parents:
 // pathname-based rollback cannot safely delete by the original directory's
 // identity during external renames. The file still uses no-clobber Link.
-func prepareCreateDirectories(root *os.Root, workspaceRoot, target string) error {
+func prepareCreateDirectories(root *rootfs.ExactRoot, workspaceRoot, target string) error {
 	parent := filepath.Dir(target)
 	if parent == "." {
 		return nil

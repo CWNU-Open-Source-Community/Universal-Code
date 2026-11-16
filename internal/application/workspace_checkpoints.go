@@ -19,6 +19,7 @@ import (
 	"cyberagent-workbench/internal/hooks"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/repository"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/session"
@@ -1188,7 +1189,7 @@ func (s *WorkspaceCheckpointService) fork(ctx context.Context,
 		return WorkspaceForkResult{}, err
 	}
 	if forkSnapshot.Checkpoint.ManifestSHA256 != target.Checkpoint.ManifestSHA256 ||
-		forkSnapshot.Checkpoint.IndexSHA256 != target.Checkpoint.IndexSHA256 ||
+		!forkSnapshot.Checkpoint.SameGitIndex(target.Checkpoint) ||
 		forkSnapshot.Checkpoint.BaseCommit != target.Checkpoint.BaseCommit ||
 		forkSnapshot.Checkpoint.Branch != request.Branch {
 		err = errors.New("forked Workspace failed final checkpoint verification")
@@ -1487,7 +1488,7 @@ func (s *WorkspaceCheckpointService) cleanupInterruptedWorkspaceFork(ctx context
 			return apperror.Normalize(captureErr)
 		}
 		if observed.Checkpoint.ManifestSHA256 != target.ManifestSHA256 ||
-			observed.Checkpoint.IndexSHA256 != target.IndexSHA256 ||
+			!observed.Checkpoint.SameGitIndex(target) ||
 			observed.Checkpoint.BaseCommit != target.BaseCommit ||
 			observed.Checkpoint.Branch != branch {
 			return fmt.Errorf("interrupted fork Workspace changed before cleanup: "+
@@ -1603,7 +1604,7 @@ func verifyWorkspaceForkCheckpoint(ctx context.Context, store WorkspaceCheckpoin
 	if checkpoint.RunID != run.ID || checkpoint.Trigger != workspacecheckpoint.TriggerFork ||
 		checkpoint.TriggerReceiptID != transaction.ID ||
 		checkpoint.ManifestSHA256 != target.ManifestSHA256 ||
-		checkpoint.IndexSHA256 != target.IndexSHA256 ||
+		!checkpoint.SameGitIndex(target) ||
 		checkpoint.BaseCommit != target.BaseCommit {
 		return errors.New("forked Workspace checkpoint does not match the historical target")
 	}
@@ -1756,7 +1757,7 @@ func (s *WorkspaceCheckpointService) resumeRestore(ctx context.Context,
 	verification, verifyErr := workspacecheckpoint.PreviewRestore(target, target,
 		resultSnapshot)
 	if verifyErr != nil || len(verification.Conflicts) != 0 ||
-		resultSnapshot.Checkpoint.IndexSHA256 != target.Checkpoint.IndexSHA256 ||
+		!resultSnapshot.Checkpoint.SameGitIndex(target.Checkpoint) ||
 		resultSnapshot.Checkpoint.ManifestSHA256 != target.Checkpoint.ManifestSHA256 {
 		if verifyErr == nil {
 			verifyErr = &workspacecheckpoint.ConflictError{Conflicts: verification.Conflicts}
@@ -1796,7 +1797,7 @@ func (s *WorkspaceCheckpointService) finishRestoreFailureWithAfter(ctx context.C
 	transaction.Status = workspacecheckpoint.TransactionFailed
 	if wasApplying ||
 		after.Checkpoint.ManifestSHA256 != before.Checkpoint.ManifestSHA256 ||
-		after.Checkpoint.IndexSHA256 != before.Checkpoint.IndexSHA256 {
+		!after.Checkpoint.SameGitIndex(before.Checkpoint) {
 		transaction.Status = workspacecheckpoint.TransactionInterrupted
 	}
 	transaction.AfterCheckpointID = after.Checkpoint.ID
@@ -2216,7 +2217,7 @@ func materializeWorkspaceFork(ctx context.Context, sourceRoot, destinationRoot,
 		Trigger: workspacecheckpoint.TriggerFork, Phase: workspacecheckpoint.PhaseStandalone,
 		TriggerReceiptID: target.Checkpoint.ID, CreatedAt: time.Now().UTC()})
 	if err != nil || verified.Checkpoint.ManifestSHA256 != rebound.Checkpoint.ManifestSHA256 ||
-		verified.Checkpoint.IndexSHA256 != rebound.Checkpoint.IndexSHA256 {
+		!verified.Checkpoint.SameGitIndex(rebound.Checkpoint) {
 		if err == nil {
 			err = errors.New("new Git worktree content failed exact verification")
 		}
@@ -2368,8 +2369,8 @@ func defaultWorkspaceForkRoot(sourceRoot, operationDigest string) (string, error
 		return "", apperror.New(apperror.CodeInvalidArgument,
 			"workspace fork operation identity is invalid")
 	}
-	source, err := filepath.Abs(strings.TrimSpace(sourceRoot))
-	if err != nil || strings.TrimSpace(sourceRoot) == "" {
+	source, err := rootfs.ExactAbsolutePath(sourceRoot)
+	if err != nil || sourceRoot == "" {
 		return "", apperror.New(apperror.CodeFailedPrecondition,
 			"source Workspace root is unavailable")
 	}

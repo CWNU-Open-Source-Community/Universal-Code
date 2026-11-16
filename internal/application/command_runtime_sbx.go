@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -17,6 +18,7 @@ import (
 
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/runner"
 	"cyberagent-workbench/internal/sandbox"
 )
@@ -101,11 +103,14 @@ func NormalizeSBXCommandRuntimeSpec(spec runner.CommandRuntimeSpec, root, templa
 	if !sbxGuestExecutableAllowed(intent.Executable) {
 		return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
 	}
+	directory := filepath.Join(root, filepath.FromSlash(intent.WorkingDirectory))
+	if err := rootfs.CheckExternalDirectory(directory); err != nil {
+		return runner.CommandRuntimeResolvedSpec{}, fmt.Errorf("%w: %w", runner.ErrCommandRuntimeBoundary, err)
+	}
 	canonical, err := filepath.EvalSymlinks(root)
 	if err != nil || canonical != root || !filepath.IsAbs(root) || filepath.Clean(root) != root {
 		return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary
 	}
-	directory := filepath.Join(root, filepath.FromSlash(intent.WorkingDirectory))
 	resolved, err := filepath.EvalSymlinks(directory)
 	if err != nil || resolved != directory {
 		return runner.CommandRuntimeResolvedSpec{}, runner.ErrCommandRuntimeBoundary

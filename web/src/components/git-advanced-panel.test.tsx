@@ -75,6 +75,31 @@ function activeBisectProjection() {
 }
 
 describe("GitAdvancedPanel", () => {
+  it("sends and displays the exact hunk paths through discovery and approval", async () => {
+    const user = userEvent.setup();
+    const paths = [" notes, draft.txt ", "notes.txt"];
+    const spec = { protocol_version: "git-advanced.v1", operation: "hunk_stage", paths };
+    const discoverGitAdvancedHunks = vi.fn().mockResolvedValue({ preview: {
+      ...preview("hunk_stage"), spec, hunks: [{ id: sha, path: paths[0], old_start: 1, new_start: 1,
+        patch: "@@ -1 +1 @@\n-old\n+new\n" }],
+    } });
+    const reviewGitAdvanced = vi.fn().mockReturnValue(new Promise(() => undefined));
+    renderPanel({ hasGitAdvancedControl: true, gitAdvancedProjection: vi.fn().mockResolvedValue(projection()),
+      discoverGitAdvancedHunks, reviewGitAdvanced } as unknown as APIClient);
+    const input = await screen.findByRole("textbox", { name: "Restricted paths" });
+    await user.type(input, paths.join("\n"));
+    await user.click(screen.getByRole("button", { name: "Inspect available hunks" }));
+    expect(discoverGitAdvancedHunks).toHaveBeenCalledWith("run-1", spec);
+    expect(await screen.findByText('" notes, draft.txt " · -1,+1')).toBeInTheDocument();
+    await user.type(input, " ");
+    expect(screen.queryByRole("button", { name: "Request approval for selected hunks" })).toBeNull();
+    await user.type(input, "{Backspace}");
+    await user.click(screen.getByRole("button", { name: "Request approval for selected hunks" }));
+    expect(reviewGitAdvanced).toHaveBeenCalledWith("run-1", expect.objectContaining({
+      spec: { ...spec, hunk_ids: [sha] },
+    }));
+  });
+
   it("previews an NPM bisect with operator-selected bounds through the registered recipe", async () => {
     const user = userEvent.setup();
     const reviewGitAdvanced = vi.fn().mockReturnValue(new Promise(() => undefined));

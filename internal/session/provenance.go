@@ -79,7 +79,7 @@ func NewEvidenceMessage(sessionID string, sourceKind string, sourceRef string, c
 		Provenance: ContextProvenance{
 			Version:    ContextProvenanceVersion,
 			SourceKind: strings.TrimSpace(sourceKind),
-			SourceRef:  strings.TrimSpace(sourceRef),
+			SourceRef:  sourceRef,
 		},
 		CreatedAt: time.Now().UTC(),
 	}
@@ -115,7 +115,9 @@ func PrepareMessageForStorage(message Message) (Message, error) {
 	}
 	message.Provenance.Version = strings.TrimSpace(message.Provenance.Version)
 	message.Provenance.SourceKind = strings.TrimSpace(message.Provenance.SourceKind)
-	message.Provenance.SourceRef = strings.TrimSpace(message.Provenance.SourceRef)
+	if !isWorkspacePathSource(message.Provenance.SourceKind) {
+		message.Provenance.SourceRef = strings.TrimSpace(message.Provenance.SourceRef)
+	}
 	if message.Provenance.Version != ContextProvenanceVersion {
 		return Message{}, fmt.Errorf("new session messages require %s", ContextProvenanceVersion)
 	}
@@ -217,7 +219,7 @@ func validateProvenance(role string, provenance ContextProvenance, legacy bool) 
 	}
 	if !utf8.ValidString(provenance.SourceRef) || strings.ContainsRune(provenance.SourceRef, 0) ||
 		utf8.RuneCountInString(provenance.SourceRef) > MaxContextSourceRefRunes ||
-		provenance.SourceRef != strings.TrimSpace(provenance.SourceRef) {
+		(!isWorkspacePathSource(provenance.SourceKind) && provenance.SourceRef != strings.TrimSpace(provenance.SourceRef)) {
 		return errors.New("context provenance source ref must be normalized and bounded")
 	}
 	for _, current := range provenance.SourceRef {
@@ -257,6 +259,10 @@ func validateProvenance(role string, provenance ContextProvenance, legacy bool) 
 		return fmt.Errorf("unsupported context source kind %q", provenance.SourceKind)
 	}
 	return nil
+}
+
+func isWorkspacePathSource(kind string) bool {
+	return kind == SourceWorkspaceFile || kind == SourceWorkspaceList || kind == SourceWorkspaceDiff
 }
 
 func validSHA256(value string) bool {

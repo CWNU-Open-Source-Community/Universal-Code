@@ -587,7 +587,10 @@ jobs:
           uname -m >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
           git rev-parse HEAD >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' '/Applications/Google Chrome.app/Contents/Info.plist' >> "$TRAVERSE_DARWIN_CHROME_EVIDENCE/platform.txt"
-          go test -v -count=1 -timeout=25m ./internal/browserruntime -run '^(TestDarwinChromeNativeBindingAndLifecycle|TestDarwinPIDEnumerationErrorsPropagate|TestAgentBrowserReal.*|TestAgentBrowserDarwinRevocationBeforeResume|TestAgentBrowserCleanupRequiresItsActualProcessScope)$'
+          # Approval subtests each launch and verify a fresh signed Chrome.
+          # Give these scenarios their own test budget on slower Intel runners.
+          go test -v -count=1 -timeout=15m ./internal/browserruntime -run '^TestAgentBrowserReal(Scoped|Internet)WriteExactApproval$'
+          go test -v -count=1 -timeout=25m ./internal/browserruntime -run '^(TestDarwinChromeNativeBindingAndLifecycle|TestDarwinProcessObservationDistinguishesExitFromErrors|TestAgentBrowserReal.*|TestAgentBrowserDarwinRevocationBeforeResume|TestAgentBrowserCleanupRequiresItsActualProcessScope)$' -skip '^TestAgentBrowserReal(Scoped|Internet)WriteExactApproval$'
           go test -v -count=1 -timeout=5m ./internal/httpapi -run '^TestAgentBrowserHTTPProductApprovalAndScreenshot$'
           go test -v -count=1 -timeout=15m ./internal/store -run '^TestBrowserNetworkRequestRealApprovalControl$'
           go test -v -count=1 -timeout=3m ./internal/app ./internal/desktop -run '^(TestControlPlaneWiresOrdinaryAgentBrowserIntoModelRequests|TestAPIServeWiresOrdinaryAgentBrowserIntoModelRequests|TestCLIExecutionEntrypointsWireOrdinaryAgentBrowser|TestCLIWakeConsumeWiresOrdinaryAgentBrowser|TestCLIApprovalExecutionHandoffWiresOrdinaryAgentBrowser|TestCLIExecutionRuntimeClosesAgentBrowserWithoutGrantingPersistedFullAccess)$'
@@ -728,6 +731,40 @@ jobs:
           -run '^(TestCommandOperationApproval.*|TestCommandOperationRechecksAfterPrepareAndAtNativeLaunch|TestCommandOperationInitialInputOutlivesRequestButRechecksAuthority|TestCommandRuntimeForegroundCancellationReapsProcessTree|TestCommandRuntimeUIEvidenceCleanupReapsExactJobAfterLeaseRelease|TestThreadBackgroundCommandWaitRetainsJobUntilExplicitPause|TestWorkspaceInit.*|TestWorkspaceImport.*DirectoryAlias)$'
       - name: Verify Windows command runtime transports
         run: go test -v -count=1 ./internal/runner -run '^TestCommandRuntime(Platform(ShellSmoke|CancelReapsOwnedProcessTree)|WindowsPowerShell(5PowerShell7AndGitBashSmoke|5BindsWorkspaceProfileBeforeLaunch|5ProfileWatchdogReapsProcess|7KeepsExistingProfileEnvironment))$'
+      - name: Verify exact workspace paths on Windows
+        shell: pwsh
+        run: |
+          # Git requires a direct repository root. Hosted RUNNER_TEMP can
+          # traverse a reparse point, and the test names need a short base.
+          $systemTemp = Get-ChildItem -LiteralPath $env:SystemRoot -Directory -Filter 'Temp'
+          if (!$systemTemp -or ($systemTemp.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Workspace path tests require a direct Windows system temp directory"
+          }
+          $env:TMP = $systemTemp.FullName
+          $env:TEMP = $systemTemp.FullName
+          # The formatter test starts gofmt through the native executable
+          # resolver. Use the direct installation prepared above.
+          if ($env:RUNNER_ENVIRONMENT -eq 'github-hosted') {
+            $programFiles = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
+            $fixedGoBin = Join-Path $programFiles 'Go\bin'
+            $fixedGofmt = Get-Item -LiteralPath (Join-Path $fixedGoBin 'gofmt.exe') -ErrorAction Stop
+            if ($fixedGofmt.PSIsContainer -or ($fixedGofmt.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw "Formatter tests require the fixed Go installation's gofmt.exe"
+            }
+            $env:PATH = $fixedGoBin + [IO.Path]::PathSeparator + $env:PATH
+          }
+          $exactPathTests = @(
+            'TestAdvancedHunksPreserveExactSpacedPaths'
+            'TestAdvancedGitRefusesWindowsPathsThatGitCannotAddress'
+            'TestThreadGitSelectedCommitPreservesUnrelatedStagingAndExactBytes'
+            'TestGitAdvancedServiceRequiresApprovalCheckpointAndExactHunk'
+            'TestProjectActionsNonzeroTestKeepsSavedOutput'
+            'TestProjectActionsFormatRealFileReplayColdAndRejectChangedTarget'
+            'TestDetectPreservesExactSpacedTarget'
+            'TestCommandRuntimeDirectoryRejectsWindowsPathAliasing'
+          )
+          go test -v -count=1 -timeout 5m ./internal/repository ./internal/application ./internal/projectprep ./internal/runner `
+            -run ('^(' + ($exactPathTests -join '|') + ')$')
       - name: Verify Windows analyzer conformance boundaries
         shell: pwsh
         run: |

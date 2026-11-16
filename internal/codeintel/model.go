@@ -212,14 +212,21 @@ func (d ServerDescriptor) Fingerprint() string {
 
 func (d ServerDescriptor) LanguageForPath(path string) (string, bool) {
 	extension := strings.ToLower(filepath.Ext(path))
+	trimmed := strings.TrimRightFunc(extension, unicode.IsSpace)
+	var paddedLanguage string
 	for _, language := range d.Languages {
 		for _, candidate := range language.Extensions {
 			if extension == candidate {
 				return language.ID, true
 			}
+			// Match an ordinary language suffix on a padded file name without
+			// changing the document path or overriding an explicit suffix.
+			if paddedLanguage == "" && trimmed == candidate {
+				paddedLanguage = language.ID
+			}
 		}
 	}
-	return "", false
+	return paddedLanguage, paddedLanguage != ""
 }
 
 type Capabilities struct {
@@ -575,7 +582,8 @@ func (item EvidenceItem) validate() error {
 }
 
 func validRelativeEvidencePath(value string) bool {
-	if value == "" || !validDisplayText(value, 512, false) ||
+	if value == "" || !utf8.ValidString(value) || utf8.RuneCountInString(value) > 512 ||
+		strings.ContainsFunc(value, unicode.IsControl) ||
 		!redactionInvariant(value) || filepath.IsAbs(value) || strings.ContainsAny(value, `\\:`) {
 		return false
 	}

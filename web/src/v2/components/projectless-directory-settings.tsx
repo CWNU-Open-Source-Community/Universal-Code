@@ -54,7 +54,7 @@ function ProjectlessDirectorySettings({ client }: { client: APIClient }) {
         </button></div>
       </div>
       {editing && canImport && <form className="v2-projectless-form" onSubmit={(event) => {
-        event.preventDefault(); if (path.trim() && !update.isPending) update.mutate(path.trim());
+        event.preventDefault(); if (path.trim() && !update.isPending) update.mutate(path);
       }}>
         <p>{t("输入运行 Universal-Code 服务的电脑上已存在的文件夹完整路径。", "Enter the full path to an existing folder on the computer running the Universal-Code service.")}</p>
         <label htmlFor={inputID}>{t("服务电脑上的目录", "Directory on the service computer")}</label>

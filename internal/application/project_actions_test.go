@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -275,17 +276,33 @@ func TestProjectActionsBackgroundJobSurvivesRequestAndStreamsBeforeStop(t *testi
 
 func TestProjectActionsNonzeroTestKeepsSavedOutput(t *testing.T) {
 	f, service := projectActionsFixtureWithTestID(t, false, "test.node")
-	script := `const {test}=require('node:test');test('failure',()=>{process.stdout.write('failure-output\n');throw new Error('expected failure');});`
-	if err := os.WriteFile(filepath.Join(f.root, "failure.test.js"), []byte(script), 0600); err != nil {
-		t.Fatal(err)
+	target := " checks"
+	if runtime.GOOS != "windows" {
+		target += " "
 	}
-	value, err := service.Run(t.Context(), ProjectActionRequest{RunID: f.run.ID, Slot: "test", OperationKey: "node-failure-output", RequestedBy: "web_operator", ConfirmExecution: true})
+	for dir, script := range map[string]string{
+		target:   `const {test}=require('node:test');test('failure',()=>{console.log('failure-output');throw new Error('expected failure');});`,
+		"checks": `const {test}=require('node:test');test('neighbor',()=>console.log('different-directory'));`,
+	} {
+		if err := os.Mkdir(filepath.Join(f.root, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(f.root, dir, "check.test.js"), []byte(script), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	value, err := service.Run(t.Context(), ProjectActionRequest{RunID: f.run.ID, Slot: "test", Target: target, OperationKey: "node-failure-output", RequestedBy: "web_operator", ConfirmExecution: true})
 	if err != nil || value.Job.ID == "" {
 		t.Fatalf("failed test start %+v %v", value, err)
 	}
 	value = waitProjectAction(t, service, f.run.ID, value.Job.ID)
-	if value.Job.State != runner.CommandRuntimeJobFailed || value.Job.ExitCode == nil || *value.Job.ExitCode == 0 || !strings.Contains(value.Job.Stdout, "failure-output") {
-		t.Fatalf("failed test became success: %+v", value)
+	if value.Job.State != runner.CommandRuntimeJobFailed || value.Job.ExitCode == nil || *value.Job.ExitCode == 0 ||
+		!strings.Contains(value.Job.Stdout, "failure-output") || strings.Contains(value.Job.Stdout, "different-directory") {
+		t.Fatalf("failed test became success or ran in another directory: %+v", value)
+	}
+	job, err := f.st.GetCommandRuntimeJob(t.Context(), value.Job.ID)
+	if err != nil || job.WorkingDirectory != target {
+		t.Fatalf("stored working directory changed: %q (%v)", job.WorkingDirectory, err)
 	}
 }
 
@@ -319,14 +336,19 @@ func TestProjectActionsFormatRealFileReplayColdAndRejectChangedTarget(t *testing
 	if err != nil || len(view.Actions) != 2 || !view.Actions[1].Available {
 		t.Fatalf("exclude patterns incorrectly disabled formatting: %+v %v", view, err)
 	}
-	if err := os.MkdirAll(filepath.Join(f.root, "pkg"), 0700); err != nil {
-		t.Fatal(err)
+	const unformatted = "package pkg\nfunc Value()int{return 1}\n"
+	target := " value.go"
+	if runtime.GOOS != "windows" {
+		target += " "
 	}
-	filename := filepath.Join(f.root, "pkg", "value.go")
-	if err := os.WriteFile(filename, []byte("package pkg\nfunc Value()int{return 1}\n"), 0600); err != nil {
-		t.Fatal(err)
+	neighbor := filepath.Join(f.root, "value.go")
+	filename := filepath.Join(f.root, target)
+	for _, path := range []string{filename, neighbor} {
+		if err := os.WriteFile(path, []byte(unformatted), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	request := ProjectActionRequest{RunID: f.run.ID, Slot: "format", Target: "pkg/value.go", OperationKey: "project-format-once", RequestedBy: "web_operator", ConfirmExecution: true}
+	request := ProjectActionRequest{RunID: f.run.ID, Slot: "format", Target: target, OperationKey: "project-format-once", RequestedBy: "web_operator", ConfirmExecution: true}
 	started, err := service.Run(t.Context(), request)
 	if err != nil || started.Job.ID == "" {
 		t.Fatalf("project action start %+v %v", started, err)
@@ -339,6 +361,9 @@ func TestProjectActionsFormatRealFileReplayColdAndRejectChangedTarget(t *testing
 	if err != nil || !strings.Contains(string(content), "func Value() int") {
 		t.Fatalf("real formatting did not occur: %q %v", content, err)
 	}
+	if content, err := os.ReadFile(neighbor); err != nil || string(content) != unformatted {
+		t.Fatalf("formatting changed the neighboring file: %q (%v)", content, err)
+	}
 	// Cold reads do not require a running adapter, a current executable, or
 	// the project's later on-disk configuration.
 	cold := NewProjectActionsService(f.st, nil, nil)
@@ -350,7 +375,7 @@ func TestProjectActionsFormatRealFileReplayColdAndRejectChangedTarget(t *testing
 	if err != nil || !replay.Replayed || replay.Job.ID != value.Job.ID {
 		t.Fatalf("cold replay %+v %v", replay, err)
 	}
-	request.Target = "pkg/other.go"
+	request.Target = strings.TrimSpace(target)
 	if _, err := cold.Run(t.Context(), request); apperror.CodeOf(err) != apperror.CodeConflict {
 		t.Fatalf("changed target acquired old key: %v", err)
 	}
@@ -360,7 +385,7 @@ func TestProjectActionsFormatRealFileReplayColdAndRejectChangedTarget(t *testing
 }
 
 func TestProjectActionsExcludedAndHostPolicyRefuseBeforeJob(t *testing.T) {
-	for _, kind := range []string{"excluded", "policy"} {
+	for _, kind := range []string{"excluded", "policy", "directory"} {
 		t.Run(kind, func(t *testing.T) {
 			f, service := projectActionsFixture(t, kind == "readonly")
 			target := "allowed.go"
@@ -370,6 +395,14 @@ func TestProjectActionsExcludedAndHostPolicyRefuseBeforeJob(t *testing.T) {
 			if kind == "policy" {
 				f.checker.deny = true
 				if err := os.WriteFile(filepath.Join(f.root, target), []byte("package pkg\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if kind == "directory" {
+				if err := os.Mkdir(filepath.Join(f.root, target), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(f.root, target, "child.go"), []byte("package pkg\nfunc F()int{return 1}\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}

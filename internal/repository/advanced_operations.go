@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/gitadvanced"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 type advancedStash struct {
@@ -62,6 +63,11 @@ func (e *AdvancedExecutor) populateAdvancedPreview(ctx context.Context, root str
 		preview.Summary = fmt.Sprintf("%s exact stash %s affecting %d file(s)",
 			spec.Operation, shortOID(stash.oid), len(preview.Files))
 		if spec.Operation != gitadvanced.StashDrop {
+			for _, file := range preview.Files {
+				if err := checkNativeGitPath(file.Path); err != nil {
+					return err
+				}
+			}
 			reason, collisionErr := e.ignoredCandidateCollision(ctx, root,
 				fileImpactPaths(preview.Files))
 			if collisionErr != nil {
@@ -343,8 +349,8 @@ func (e *AdvancedExecutor) changedFileImpacts(ctx context.Context, root string,
 	}
 	out := make([]gitadvanced.FileImpact, 0, len(paths))
 	for path, states := range paths {
-		if !safeGitRelativePath(path) {
-			return nil, errors.New("stash preview contains an unsafe path")
+		if err := checkNativeGitPath(path); err != nil {
+			return nil, err
 		}
 		identity, err := e.captureAdvancedFileIdentity(ctx, root, path)
 		if err != nil {
@@ -497,7 +503,7 @@ func (e *AdvancedExecutor) stashFileImpacts(ctx context.Context, root string,
 		if path == "" {
 			continue
 		}
-		if !safeGitRelativePath(path) {
+		if !gitadvanced.ValidRelativePath(path) {
 			return nil, errors.New("stash contains an unsafe path")
 		}
 		pathStates := states[path]
@@ -546,7 +552,7 @@ func (e *AdvancedExecutor) addStashDiffPaths(ctx context.Context, root, before,
 		if path == "" {
 			continue
 		}
-		if !safeGitRelativePath(path) {
+		if !gitadvanced.ValidRelativePath(path) {
 			return errors.New("stash contains an unsafe path")
 		}
 		if target[path] == nil {
@@ -575,7 +581,7 @@ func (e *AdvancedExecutor) gitTreePaths(ctx context.Context, root,
 		if path == "" {
 			continue
 		}
-		if !safeGitRelativePath(path) {
+		if !gitadvanced.ValidRelativePath(path) {
 			return nil, errors.New("stash contains an unsafe path")
 		}
 		out = append(out, path)
@@ -732,8 +738,8 @@ func (e *AdvancedExecutor) advancedChangedPaths(ctx context.Context, root string
 		if path == "" {
 			continue
 		}
-		if !safeGitRelativePath(path) {
-			return nil, errors.New("Git sequence impact contains an unsafe path")
+		if err := checkNativeGitPath(path); err != nil {
+			return nil, err
 		}
 		if _, exists := seen[path]; exists {
 			continue
@@ -779,8 +785,8 @@ func (e *AdvancedExecutor) ignoredWorktreePaths(ctx context.Context,
 		if path == "" {
 			continue
 		}
-		if !safeGitRelativePath(path) {
-			return nil, errors.New("ignored worktree state contains an unsafe path")
+		if err := checkNativeGitPath(path); err != nil {
+			return nil, err
 		}
 		if _, exists := seen[path]; exists {
 			continue
@@ -890,6 +896,18 @@ func advancedPathsOverlap(left, right string) bool {
 		strings.HasPrefix(right, left+"/")
 }
 
+func checkNativeGitPath(path string) error {
+	if !gitadvanced.ValidRelativePath(path) || !filepath.IsLocal(filepath.FromSlash(path)) {
+		return &gitadvanced.Error{Code: gitadvanced.FailureUnsafeRepository,
+			Message: fmt.Sprintf("Git worktree path %q is not a valid relative name", path)}
+	}
+	if err := rootfs.CheckExternalDirectory(path); err != nil {
+		return &gitadvanced.Error{Code: gitadvanced.FailureUnsafeRepository,
+			Message: fmt.Sprintf("Git for Windows cannot safely address %q because a component ends in a space or dot", path)}
+	}
+	return nil
+}
+
 func (e *AdvancedExecutor) previewSequenceControl(ctx context.Context, root string,
 	preview *gitadvanced.Preview, expected gitadvanced.SequenceKind,
 ) error {
@@ -956,7 +974,7 @@ func (e *AdvancedExecutor) captureConflictState(ctx context.Context,
 		}
 		metadata, path, ok := strings.Cut(record, "\t")
 		fields := strings.Fields(metadata)
-		if !ok || len(fields) != 3 || !safeGitRelativePath(path) ||
+		if !ok || len(fields) != 3 || !gitadvanced.ValidRelativePath(path) ||
 			!gitadvanced.ValidObjectID(fields[1]) {
 			return gitadvanced.ConflictState{}, errors.New("Git conflict index entry is invalid")
 		}

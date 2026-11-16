@@ -11,8 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/workspacecheckpoint"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
@@ -34,15 +34,10 @@ func BindSource(ctx context.Context, workspaceRoot string,
 	if err := snapshot.Validate(); err != nil {
 		return SourceBinding{}, err
 	}
-	workspaceRoot = strings.TrimSpace(workspaceRoot)
 	if workspaceRoot == "" {
 		return SourceBinding{}, errors.New("UI evidence Workspace root is invalid")
 	}
-	root, err := filepath.Abs(workspaceRoot)
-	if err != nil || !filepath.IsAbs(root) {
-		return SourceBinding{}, errors.New("UI evidence Workspace root is invalid")
-	}
-	root, err = filepath.EvalSymlinks(root)
+	root, err := rootfs.EvalExactSymlinks(workspaceRoot)
 	if err != nil {
 		return SourceBinding{}, errors.New("UI evidence Workspace root is unavailable")
 	}
@@ -107,6 +102,9 @@ func sourceManifestSHA256(entries []workspacecheckpoint.Entry) (string, error) {
 }
 
 func readGitStatus(ctx context.Context, root string) ([]byte, error) {
+	if err := rootfs.CheckExternalDirectory(root); err != nil {
+		return nil, err
+	}
 	git, err := exec.LookPath("git")
 	if err != nil {
 		return nil, errors.New("UI evidence source binding requires Git")

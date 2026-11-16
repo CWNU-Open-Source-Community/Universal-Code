@@ -164,6 +164,9 @@ test-only `workbenchjourney` Go harness. Set `WORKBENCH_JOURNEY_SKIP_BUILD=1`
 to reuse an existing production renderer build, as CI does. The harness uses a
 separate build tag and does not add test endpoints to the product.
 To use an installed Edge locally, set `WORKBENCH_JOURNEY_BROWSER_CHANNEL=msedge`.
+The workspace tabs journey opens two windows on the same task and queues both
+updates behind an IndexedDB transaction. It verifies that both tabs remain
+visible in both windows and are restored on reload.
 
 ## Store tests
 

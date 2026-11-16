@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { APIClient } from "../../api/client";
 import { APIRequestError } from "../../api/client";
 import { LocaleProvider } from "../../lib/locale";
+import { projectActionAttemptsDatabase } from "../project-action-attempt";
 import { ProjectActions } from "./project-actions";
 import { V2RecoveryProvider } from "../recovery-storage";
 
@@ -83,6 +84,28 @@ it("runs a detected test without asking the user to configure the pinned action"
   fireEvent.click(screen.getByRole("button", { name: "运行测试" }));
   await screen.findByText("expected true");
   expect(client.runProjectAction).toHaveBeenCalledWith("run-1", "test", "web", expect.stringMatching(/^project-action-/));
+});
+
+it("inspects and runs the literal directory, including its surrounding spaces", async () => {
+  const { client, ui } = setup();
+  render(ui());
+  await readyTests();
+  const target = " web ";
+  fireEvent.change(screen.getByLabelText(/测试目录/), { target: { value: target } });
+  await waitFor(() => expect(client.listProjectActions).toHaveBeenCalledWith("run-1", target, expect.any(AbortSignal)));
+  fireEvent.click(await readyTests());
+  await waitFor(() => expect(client.runProjectAction).toHaveBeenCalledWith("run-1", "test", target, expect.any(String)));
+});
+
+it("sends the exact formatter path, including its leading space", async () => {
+  const { client, ui } = setup();
+  client.runProjectAction.mockResolvedValueOnce({ ...result(), slot: "format", command_id: "format.go" });
+  render(ui());
+  await readyTests();
+  const target = " value.go";
+  fireEvent.change(screen.getByLabelText(/要格式化的文件/), { target: { value: target } });
+  fireEvent.click(screen.getByRole("button", { name: "格式化文件" }));
+  await waitFor(() => expect(client.runProjectAction).toHaveBeenCalledWith("run-1", "format", target, expect.any(String)));
 });
 
 it("keeps an unknown outcome on the same request key and does not automatically rerun", async () => {
@@ -198,4 +221,41 @@ it("replays a recovered legacy request with its original empty target after anot
   fireEvent.click(await screen.findByRole("button", { name: "确认上次运行" }));
   await waitFor(() => expect(client.runProjectAction).toHaveBeenCalledWith("run-1", "test", "", "project-action-original"));
   expect(screen.getByRole("textbox", { name: /测试目录/ })).toHaveValue("web");
+});
+
+it.each([
+  { outcome: "success", sameKey: false },
+  { outcome: "rejection", sameKey: false },
+  { outcome: "rejection", sameKey: true },
+] as const)("keeps a newer submission after an old $outcome arrives (same key: $sameKey)", async ({ outcome, sameKey }) => {
+  const { client, queries } = setup();
+  const scope = "late-project-action-" + outcome + "-" + sameKey;
+  const legacyKey = `v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent(client.baseURL)}:${scope}:${encodeURIComponent("run:run-1:project-action") }`;
+  const key = projectActionAttemptsDatabase + ":" + legacyKey;
+  let reply!: () => void;
+  client.runProjectAction.mockImplementationOnce(() => new Promise((resolve, reject) => {
+    reply = () => {
+      if (outcome === "success") resolve(result());
+      else reject(new APIRequestError("Earlier request rejected", "POLICY_DENIED", 403));
+    };
+  }));
+  try {
+    render(<LocaleProvider><QueryClientProvider client={queries}>
+      <V2RecoveryProvider client={client} scopeID={scope}>
+        <ProjectActions client={client as unknown as APIClient} runID="run-1" threadID="thread-1" />
+      </V2RecoveryProvider>
+    </QueryClientProvider></LocaleProvider>);
+    fireEvent.click(await readyTests());
+    await waitFor(() => expect(client.runProjectAction).toHaveBeenCalledTimes(1));
+    const previous = JSON.parse(localStorage.getItem(key)!);
+    const newer = { ...previous, submissionID: "newer-submission",
+      ...(sameKey ? {} : { target: "web", key: "project-action-newer" }) };
+    localStorage.setItem(key, JSON.stringify(newer));
+    await act(async () => reply());
+    await screen.findByRole("button", { name: "确认上次运行" });
+    expect(JSON.parse(localStorage.getItem(key)!)).toEqual(newer);
+    expect(client.runProjectAction).toHaveBeenCalledTimes(1);
+  } finally {
+    localStorage.removeItem(key);
+  }
 });

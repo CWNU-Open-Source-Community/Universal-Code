@@ -6,8 +6,8 @@ export function hasRequiredOnlyKeys(value: unknown, required: string[], optional
 
 export function validWorkspaceRelativePath(value: unknown): value is string {
   if (typeof value !== "string" || value.length === 0 || Array.from(value).length > 512 ||
-    value.trim() !== value || value.startsWith("/") || value.includes("\\") ||
-    value.includes(":") || /[\u0000-\u001f\u007f]/u.test(value)) {
+    value.startsWith("/") || value.includes("\\") ||
+    value.includes(":") || /\p{Cc}/u.test(value)) {
     return false;
   }
   if (value === ".") return true;
@@ -16,8 +16,13 @@ export function validWorkspaceRelativePath(value: unknown): value is string {
 
 export function validWorkspaceEntryName(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && Array.from(value).length <= 255 &&
-    value.trim() === value && !value.includes("/") && !value.includes("\\") &&
-    !value.includes(":") && !/[\u0000-\u001f\u007f]/u.test(value);
+    !value.includes("/") && !value.includes("\\") &&
+    !value.includes(":") && !/\p{Cc}/u.test(value);
+}
+
+export function validWorkspaceDirectoryPath(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 4096 &&
+    !/\p{Cc}/u.test(value);
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

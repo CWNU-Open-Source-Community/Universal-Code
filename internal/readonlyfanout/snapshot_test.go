@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 func TestBuildPlanCreatesDeterministicSixWayReadOnlySnapshot(t *testing.T) {
@@ -132,9 +133,61 @@ func TestLoadVerifiedSnapshotRejectsAnyManifestDrift(t *testing.T) {
 	}
 }
 
+func TestVerifiedSnapshotPreservesWhitespaceInScopeAndFiles(t *testing.T) {
+	root := t.TempDir()
+	const scope = "src "
+	const relative = scope + "/nested /entry.go "
+	const content = "package exact\n"
+	dir, err := rootfs.ExactAbsolutePath(filepath.Join(root, scope))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	})
+	writeSnapshotTestFile(t, root, relative, content)
+	writeSnapshotTestFile(t, root, scope+"/nested /entry.go", "package ordinary\n")
+	writeSnapshotTestFile(t, root, scope+"/.env ", "API_KEY=excluded-value\n")
+	writeSnapshotTestFile(t, root, "src/nested/entry.go", "package neighbor\n")
+
+	plan, err := BuildPlan(t.Context(), BuildPlanRequest{
+		PlanID: "fanout-plan-whitespace", RunID: "run-whitespace",
+		WorkspaceID: "ws-whitespace", WorkspaceRoot: root, ScopePath: scope,
+		Goal: "review source", Tier: domain.ReadOnlyFanoutOne, RequestedBy: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ScopePath != scope || len(plan.Files) != 2 ||
+		plan.Files[0].RelativePath != strings.TrimSuffix(relative, " ") ||
+		plan.Files[1].RelativePath != relative || plan.ExcludedCount != 1 {
+		t.Fatalf("unexpected snapshot for %q: files=%#v excluded=%d", plan.ScopePath, plan.Files, plan.ExcludedCount)
+	}
+
+	writeSnapshotTestFile(t, root, "src/nested/entry.go", "package updatedNeighbor\n")
+	snapshot, err := LoadVerifiedSnapshot(t.Context(), root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := snapshot.Shards[0].Files
+	if len(files) != 2 || files[0].Content != "package ordinary\n" ||
+		files[1].RelativePath != relative || files[1].Content != content {
+		t.Fatalf("unexpected verified files: %#v", files)
+	}
+	writeSnapshotTestFile(t, root, relative, "package change\n")
+	if _, err := LoadVerifiedSnapshot(t.Context(), root, plan); err == nil {
+		t.Fatal("change to exact path did not invalidate the snapshot")
+	}
+}
+
 func writeSnapshotTestFile(t *testing.T, root, name, content string) {
 	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(name))
+	path, err := rootfs.ExactAbsolutePath(filepath.Join(root, filepath.FromSlash(name)))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}

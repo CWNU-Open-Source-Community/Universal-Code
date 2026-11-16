@@ -15,6 +15,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"cyberagent-workbench/internal/rootfs"
 )
 
 const (
@@ -273,7 +275,8 @@ func (r LocalRunRequest) Validate() error {
 	}
 	if workspaceMount < 0 || manifest.Mounts[workspaceMount].Source != "." ||
 		manifest.Mounts[workspaceMount].Target != "/workspace" ||
-		!pathWithin(manifest.Command.WorkingDirectory, "/workspace") {
+		!pathWithin(manifest.Command.WorkingDirectory, "/workspace") ||
+		rootfs.CheckExternalDirectory(manifest.Command.WorkingDirectory) != nil {
 		return ErrLocalSandboxBoundary
 	}
 	seenIDs := make(map[string]struct{}, len(r.ToolchainInputs))

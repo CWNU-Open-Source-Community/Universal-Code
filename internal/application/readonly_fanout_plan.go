@@ -192,7 +192,6 @@ func normalizeReadOnlyFanoutPlanRequest(request CreateReadOnlyFanoutPlanRequest,
 	originalKey := request.OperationKey
 	request.RunID = strings.TrimSpace(request.RunID)
 	request.Goal = strings.TrimSpace(redact.String(request.Goal))
-	request.ScopePath = strings.TrimSpace(request.ScopePath)
 	request.RequestedBy = strings.TrimSpace(redact.String(request.RequestedBy))
 	if request.ScopePath == "" {
 		request.ScopePath = "."

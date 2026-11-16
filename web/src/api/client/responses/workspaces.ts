@@ -1,11 +1,11 @@
 import { APIRequestError } from "../protocol";
 import {
-  boundedText,
   hasExactKeys,
   isRecord,
   isSHA256,
   safeBoundedCount,
   validDate,
+  validWorkspaceDirectoryPath,
   validWorkspaceEntryName,
   validWorkspaceRelativePath,
 } from "../validation";
@@ -97,8 +97,8 @@ export function parseWorkspaceSearch(value: unknown, workspaceID: string): Works
 
 export function parseProjectlessDirectory(value: unknown): ProjectlessDirectory {
   if (!hasExactKeys(value, ["version", "directory_path", "default_directory_path"]) ||
-    value.version !== "projectless_directory.v1" || !boundedText(value.directory_path, 4096) ||
-    !boundedText(value.default_directory_path, 4096)) {
+    value.version !== "projectless_directory.v1" || !validWorkspaceDirectoryPath(value.directory_path) ||
+    !validWorkspaceDirectoryPath(value.default_directory_path)) {
     throw new APIRequestError("Projectless directory response is invalid", "INVALID_RESPONSE", 502);
   }
   return value as ProjectlessDirectory;
@@ -112,7 +112,7 @@ export function normalizeWorkspaceName(name: string): string {
 
 export function parseWorkspaceProject(value: unknown, id: string): WorkspaceProjectView {
   if (!hasExactKeys(value, ["id", "name", "created_at", "directory_path", "thread_count", "active_thread_count"]) || value.id !== id ||
-    (typeof value.name !== "string" || !value.name) || !validDate(value.created_at) || typeof value.directory_path !== "string" || !value.directory_path || value.directory_path.length > 4096 ||
+    (typeof value.name !== "string" || !value.name) || !validDate(value.created_at) || !validWorkspaceDirectoryPath(value.directory_path) ||
     typeof value.thread_count !== "number" || !Number.isSafeInteger(value.thread_count) || value.thread_count < 0 ||
     typeof value.active_thread_count !== "number" || !Number.isSafeInteger(value.active_thread_count) || value.active_thread_count < 0 || value.active_thread_count > value.thread_count)
     throw new APIRequestError("Project details response is invalid", "INVALID_RESPONSE", 502);

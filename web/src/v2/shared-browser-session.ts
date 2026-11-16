@@ -6,8 +6,10 @@ const drafts = new Map<string, string>();
 const adoptions = new Map<string, string>();
 const key = (workspaceID: string, threadID = "") => JSON.stringify([useConnectionStore.getState().connectionGeneration, workspaceID, threadID]);
 
-export function rememberDraftSharedBrowser(state: SharedBrowserState) {
+export function rememberDraftSharedBrowser(state: SharedBrowserState, expectedGeneration = useConnectionStore.getState().connectionGeneration) {
+  if (useConnectionStore.getState().connectionGeneration !== expectedGeneration) return false;
   if (!state.thread_id) drafts.set(key(state.workspace_id), state.session_id);
+  return true;
 }
 
 // Called only at the successful thread-creation handoff for this exact draft.

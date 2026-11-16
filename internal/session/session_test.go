@@ -16,6 +16,7 @@ import (
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/rootfs"
 	"cyberagent-workbench/internal/toolbudget"
 	"cyberagent-workbench/internal/toolrun"
 )
@@ -491,6 +492,49 @@ func TestSessionWriteCreatesFileEditProposal(t *testing.T) {
 	}
 	if string(data) != "# Old\n" {
 		t.Fatalf("proposal wrote before approval: %q", data)
+	}
+}
+
+func TestSessionSlashCommandsPreserveWorkspacePaths(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "project ")
+	nativeRoot, err := rootfs.ExactAbsolutePath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(nativeRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(nativeRoot) })
+	const spaced = " notes  draft.txt "
+	for path, content := range map[string]string{
+		"notes draft.txt": "neighbor marker",
+		spaced:            "exact marker",
+	} {
+		if err := os.WriteFile(filepath.Join(nativeRoot, path), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := newMemorySessionStore()
+	store.workspaces["ws-demo"] = WorkspaceInfo{ID: "ws-demo", Name: "demo", RootPath: root}
+	manager := NewManager(store, llm.NewDefaultRouter(), policy.NewDefaultChecker())
+	sess, err := manager.Create(t.Context(), "ws-demo", "demo", "learn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []string{"/read " + spaced, "/read \" notes  draft.txt \""} {
+		got, err := manager.Send(t.Context(), sess.ID, input)
+		if err != nil || !strings.Contains(got.Text, "exact marker") || got.ReplyMessage.Provenance.SourceRef != spaced {
+			t.Fatalf("read %q returned %q with source %q, %v", input, got.Text, got.ReplyMessage.Provenance.SourceRef, err)
+		}
+	}
+	result, err := manager.Send(t.Context(), sess.ID, "/write \" notes  draft.txt \" replacement")
+	if err != nil || result.FileEditID == "" || result.ReplyMessage.Provenance.SourceRef != spaced {
+		t.Fatalf("proposal did not preserve %q: %q, %v", spaced, result.Text, err)
+	}
+	edit, err := store.GetFileEdit(t.Context(), result.FileEditID)
+	if err != nil || edit.Path != spaced || edit.OriginalHash != fileedit.HashText("exact marker") {
+		t.Fatalf("proposal used a different path or source hash: %#v, %v", edit, err)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 // ReadReviewFile reads a complete, bounded regular file using the explorer's
@@ -35,7 +36,7 @@ func ReadReviewFile(root, requested string, limit int) ([]byte, bool, error) {
 // when the path is replaced between those filesystem operations.
 func readReviewTarget(root, relative string, limit int, expected os.FileInfo) ([]byte, bool, error) {
 	// Root confines the open even if a parent directory changes after validation.
-	dir, err := os.OpenRoot(root)
+	dir, err := rootfs.OpenExactRoot(root)
 	if err != nil {
 		return nil, false, apperror.New(apperror.CodeFailedPrecondition, "review root could not be opened")
 	}

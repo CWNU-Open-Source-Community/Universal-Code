@@ -9,10 +9,11 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/imageattachment"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 // AgentCodeReadImage applies the same exclusions and redirect checks as text
-// reads, then opens through os.Root so a path swap cannot escape the workspace.
+// reads, then opens through the rooted filesystem so a path swap cannot escape the workspace.
 func AgentCodeReadImage(root, requested string, policy AgentCodePathPolicy) (domain.WorkspaceImage, []byte, error) {
 	w, err := openAgentWorkspace(root, policy)
 	if err != nil {
@@ -32,7 +33,7 @@ func AgentCodeReadImage(root, requested string, policy AgentCodePathPolicy) (dom
 	if !expected.Mode().IsRegular() || expected.Size() > imageattachment.MaxBytes {
 		return domain.WorkspaceImage{}, nil, apperror.New(apperror.CodeInvalidArgument, "workspace image must be a regular file of at most 5 MiB")
 	}
-	openedRoot, err := os.OpenRoot(w.root)
+	openedRoot, err := rootfs.OpenExactRoot(w.root)
 	if err != nil {
 		return domain.WorkspaceImage{}, nil, err
 	}

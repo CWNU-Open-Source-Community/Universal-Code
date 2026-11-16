@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/domain"
@@ -459,7 +460,7 @@ func NormalizeAgentCodePayload(name ToolName, payload json.RawMessage) (json.Raw
 		if err := decodeStrictAgentCodePayload(payload, &value); err != nil {
 			return nil, err
 		}
-		if value.Version != AgentCodeRegistryVersion || !validAgentCodeText(value.Path, maxAgentCodePathRunes, false) {
+		if value.Version != AgentCodeRegistryVersion || !validAgentCodePathArgument(value.Path, maxAgentCodePathRunes, false) {
 			return nil, errors.New("workspace image payload is invalid")
 		}
 		return marshalAgentCodePayload(value)
@@ -469,7 +470,7 @@ func NormalizeAgentCodePayload(name ToolName, payload json.RawMessage) (json.Raw
 			return nil, err
 		}
 		if value.Version != AgentCodeRegistryVersion ||
-			!validAgentCodeText(value.Path, maxAgentCodePathRunes, true) ||
+			!validAgentCodePathArgument(value.Path, maxAgentCodePathRunes, true) ||
 			!validAgentCodeText(value.Cursor, maxAgentCodeCursorRunes, true) ||
 			value.Limit <= 0 || value.Limit > 200 {
 			return nil, errors.New("workspace list payload is invalid")
@@ -481,7 +482,7 @@ func NormalizeAgentCodePayload(name ToolName, payload json.RawMessage) (json.Raw
 			return nil, err
 		}
 		if value.Version != AgentCodeRegistryVersion ||
-			!validAgentCodeText(value.Path, maxAgentCodePathRunes, false) || value.StartLine <= 0 ||
+			!validAgentCodePathArgument(value.Path, maxAgentCodePathRunes, false) || value.StartLine <= 0 ||
 			value.EndLine < value.StartLine || value.EndLine-value.StartLine >= 2000 {
 			return nil, errors.New("workspace read payload is invalid")
 		}
@@ -492,7 +493,7 @@ func NormalizeAgentCodePayload(name ToolName, payload json.RawMessage) (json.Raw
 			return nil, err
 		}
 		if value.Version != AgentCodeRegistryVersion ||
-			!validAgentCodeText(value.Pattern, maxAgentCodePatternRunes, false) ||
+			!validAgentCodePathArgument(value.Pattern, maxAgentCodePatternRunes, false) ||
 			!validAgentCodeText(value.Cursor, maxAgentCodeCursorRunes, true) ||
 			value.Limit <= 0 || value.Limit > 200 {
 			return nil, errors.New("workspace glob payload is invalid")
@@ -505,7 +506,7 @@ func NormalizeAgentCodePayload(name ToolName, payload json.RawMessage) (json.Raw
 		}
 		if value.Version != AgentCodeRegistryVersion ||
 			!validAgentCodeText(value.Query, maxAgentCodePatternRunes, false) ||
-			!validAgentCodeText(value.Pattern, maxAgentCodePatternRunes, false) ||
+			!validAgentCodePathArgument(value.Pattern, maxAgentCodePatternRunes, false) ||
 			!validAgentCodeText(value.Cursor, maxAgentCodeCursorRunes, true) ||
 			value.Limit <= 0 || value.Limit > 200 {
 			return nil, errors.New("workspace grep payload is invalid")
@@ -573,8 +574,7 @@ func NormalizeAgentCodePayload(name ToolName, payload json.RawMessage) (json.Raw
 			return nil, err
 		}
 		if value.Version != AgentCodeRegistryVersion ||
-			!validAgentCodeText(value.Path, maxAgentCodePathRunes, false) ||
-			!validAgentCodeText(value.ConfirmPath, maxAgentCodePathRunes, false) ||
+			!validAgentCodePathArgument(value.Path, maxAgentCodePathRunes, false) ||
 			value.ConfirmPath != value.Path || !validAgentCodeDigest(value.ExpectedSHA256, false) ||
 			(value.Action != "propose" && value.Action != "apply") ||
 			(value.Action == "propose" && value.EditID != "") ||
@@ -618,7 +618,7 @@ func marshalAgentCodePayload(value any) (json.RawMessage, error) {
 
 func normalizeWorkspaceChangePayload(value *WorkspaceChangePayload) error {
 	if value == nil || value.Version != AgentCodeRegistryVersion ||
-		!validAgentCodeText(value.Path, maxAgentCodePathRunes, false) ||
+		!validAgentCodePathArgument(value.Path, maxAgentCodePathRunes, false) ||
 		!validAgentCodeDigest(value.ExpectedSHA256, true) {
 		return errors.New("workspace change payload is invalid")
 	}
@@ -666,7 +666,7 @@ func normalizeWorkspaceChangePayload(value *WorkspaceChangePayload) error {
 		}
 	case "move":
 		if value.ExpectedSHA256 == "missing" || value.Content != "" || len(value.Replacements) != 0 ||
-			!validAgentCodeText(value.DestinationPath, maxAgentCodePathRunes, false) ||
+			!validAgentCodePathArgument(value.DestinationPath, maxAgentCodePathRunes, false) ||
 			value.DestinationPath == value.Path ||
 			value.DestinationExpectedSHA256 != "missing" {
 			return errors.New("workspace move payload is invalid")
@@ -691,6 +691,10 @@ func validAgentCodeText(value string, maxRunes int, allowEmpty bool) bool {
 		return false
 	}
 	return allowEmpty || value != ""
+}
+
+func validAgentCodePathArgument(value string, maxRunes int, allowEmpty bool) bool {
+	return validAgentCodeContent(value, maxRunes, allowEmpty) && !strings.ContainsFunc(value, unicode.IsControl)
 }
 
 func validAgentCodeContent(value string, maxRunes int, allowEmpty bool) bool {

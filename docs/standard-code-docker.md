@@ -56,6 +56,8 @@ npm/Go capabilities and request a rebuild for the missing package manager.
 The current fixture contains `standard-code-docker-runner.v2`; rebuild it when
 upgrading from a v1 image. Durable v1 manifests remain readable as closed-stdin
 recovery evidence, but new execution always compiles the v2 contract.
+Rebuild an existing image with the current runner to run commands in
+directories with significant spaces at either end of their names.
 
 Project action support adds the installed npm package and its `npm` launcher to
 the fixed Node toolchain, and exposes the Go distribution's `gofmt` as a fixed

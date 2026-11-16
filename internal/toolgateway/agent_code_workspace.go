@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"strings"
+
+	"cyberagent-workbench/internal/rootfs"
 )
 
 // AgentCodeWorkspaceResolver resolves one Run's filesystem target without
@@ -30,7 +32,15 @@ func (g *Gateway) bindAgentCodeWorkspace(ctx context.Context, call ToolCall) (st
 	if !validAgentCodeIdentity(workspaceID) || strings.TrimSpace(root) == "" {
 		return "", "", errors.New("Run file workspace resolver returned an invalid target")
 	}
-	if provided := strings.TrimSpace(call.WorkspaceRoot); provided != "" {
+	root, err = rootfs.ExactAbsolutePath(root)
+	if err != nil {
+		return "", "", errors.New("Run file workspace resolver returned an invalid path")
+	}
+	if call.WorkspaceRoot != "" {
+		provided, err := rootfs.ExactAbsolutePath(call.WorkspaceRoot)
+		if err != nil {
+			return "", "", errors.New("provided file root is invalid")
+		}
 		expectedInfo, expectedErr := os.Stat(root)
 		providedInfo, providedErr := os.Stat(provided)
 		if expectedErr != nil || providedErr != nil || !expectedInfo.IsDir() || !providedInfo.IsDir() ||

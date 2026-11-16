@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/redact"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 const (
@@ -365,11 +366,10 @@ type instructionCandidate struct {
 }
 
 func instructionBoundary(workspaceRoot, targetPath string) (string, string, string, string, error) {
-	workspaceRoot = strings.TrimSpace(workspaceRoot)
 	if workspaceRoot == "" || strings.ContainsRune(workspaceRoot, 0) {
 		return "", "", "", "", errors.New("workspace root is invalid")
 	}
-	root, err := filepath.Abs(filepath.Clean(workspaceRoot))
+	root, err := rootfs.ExactAbsolutePath(workspaceRoot)
 	if err != nil {
 		return "", "", "", "", err
 	}
@@ -377,7 +377,7 @@ func instructionBoundary(workspaceRoot, targetPath string) (string, string, stri
 	if err != nil || !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
 		return "", "", "", "", errors.New("workspace root must be a real directory without symlink indirection")
 	}
-	resolved, err := filepath.EvalSymlinks(root)
+	resolved, err := rootfs.EvalExactSymlinks(root)
 	if err != nil || !sameInstructionPath(root, resolved) {
 		return "", "", "", "", errors.New("workspace root must not resolve through a symlink or junction")
 	}

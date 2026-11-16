@@ -94,7 +94,6 @@ func (r ReadOnlyFanoutReport) Normalize(allowedPaths map[string]struct{},
 		finding.Category = strings.TrimSpace(redact.String(finding.Category))
 		finding.Title = strings.TrimSpace(redact.String(finding.Title))
 		finding.Detail = strings.TrimSpace(redact.String(finding.Detail))
-		finding.Path = strings.TrimSpace(finding.Path)
 	}
 	if err := r.Validate(allowedPaths); err != nil {
 		return ReadOnlyFanoutReport{}, err

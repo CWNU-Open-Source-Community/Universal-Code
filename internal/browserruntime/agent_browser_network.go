@@ -132,8 +132,14 @@ func (r *AgentBrowserRuntime) reviewNetworkRequest(ctx context.Context, cancel c
 		return
 	}
 	dispatch := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := r.request.CheckAuthority(ctx, r.request.Authority); err != nil {
-			r.Cancel()
+			// Navigation can cancel this request while its authority is checked.
+			if ctxErr := ctx.Err(); ctxErr == nil || !errors.Is(err, ctxErr) {
+				r.Cancel()
+			}
 			return err
 		}
 		r.mu.Lock()

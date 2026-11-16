@@ -440,7 +440,7 @@ func (s *FileEditProposalService) pruneLocked(now time.Time) {
 }
 
 func validProposalSourcePath(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) ||
+	if value == "" || !utf8.ValidString(value) ||
 		utf8.RuneCountInString(value) > workspace.MaxExplorerPathRunes ||
 		strings.ContainsRune(value, 0) {
 		return false

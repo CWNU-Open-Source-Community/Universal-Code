@@ -13,3 +13,7 @@ import (
 func OpenReadOnly(root *os.Root, name string) (*os.File, error) {
 	return root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 }
+
+func (r *ExactRoot) OpenReadOnly(name string) (*os.File, error) {
+	return OpenReadOnly(r.Root, name)
+}

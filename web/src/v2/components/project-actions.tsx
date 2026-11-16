@@ -1,28 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { APIRequestError, type APIClient } from "../../api/client";
-import { projectActionIsRunning, type ProjectActionSlot } from "../../api/project-actions";
+import { projectActionIsRunning } from "../../api/project-actions";
 import { normalizePreparationTarget } from "../../api/project-preparation";
 import { ErrorState, StatusLabel } from "../../components/common";
 import { useLocale } from "../../lib/locale";
-import { useV2PersistentState, useV2RecoveryStore } from "../recovery-storage";
+import { useProjectActionAttempt, type ProjectActionAttempt } from "../project-action-attempt";
+import { useV2RecoveryRecordKey } from "../recovery-storage";
 import { taskReviewKey } from "./task-overview";
 import "./project-actions.css";
 
-interface ActionAttempt {
-  runID: string;
-  slot: ProjectActionSlot;
-  target: string;
-  key: string;
-  jobID?: string;
-}
-function validAttempt(value: unknown, runID: string): value is ActionAttempt {
-  if (!value || typeof value !== "object") return false;
-  const item = value as Partial<ActionAttempt>;
-  return item.runID === runID && (item.slot === "test" || item.slot === "format") &&
-    typeof item.target === "string" && typeof item.key === "string" &&
-    /^project-action-[\w-]+$/u.test(item.key) && (item.jobID === undefined || typeof item.jobID === "string");
-}
 const actionKey = (client: APIClient, runID: string) => ["run", runID, "project-actions", client.baseURL] as const;
 const jobKey = (client: APIClient, runID: string, jobID: string) => ["run", runID, "project-action-job", client.baseURL, jobID] as const;
 
@@ -32,28 +19,34 @@ export function ProjectActions(props: {
   testTarget?: string;
   onTestTargetChange?: (target: string) => void;
 }) {
-  return <ProjectActionsForRun key={props.client.baseURL + ":" + props.runID} {...props} />;
+  const recordKey = useV2RecoveryRecordKey("run:" + props.runID + ":project-action");
+  return <ProjectActionsForRun key={JSON.stringify([props.client.baseURL, props.runID, recordKey])}
+    {...props} recordKey={recordKey} />;
 }
 
-function ProjectActionsForRun({ client, runID, threadID, working = false, onFeedback, testTarget, onTestTargetChange }: {
+function ProjectActionsForRun({ client, runID, threadID, working = false, onFeedback, testTarget, onTestTargetChange, recordKey }: {
   client: APIClient; runID: string; threadID: string; working?: boolean;
   onFeedback?: (context: string) => void;
   testTarget?: string;
   onTestTargetChange?: (target: string) => void;
+  recordKey?: string;
 }) {
   const { t } = useLocale();
   const queries = useQueryClient();
-  const store = useV2RecoveryStore();
-  const storageKey = "run:" + runID + ":project-action";
-  const [saved, setSaved] = useV2PersistentState<ActionAttempt | null>(storageKey, null);
-  const attempt = validAttempt(saved, runID) ? saved : null;
-  const damaged = saved !== null && !attempt;
+  const { attempt, ready, error: recoveryError, update, refresh } = useProjectActionAttempt(runID, recordKey);
   const [targets, setTargets] = useState({ test: "", format: "" });
   const [localError, setLocalError] = useState("");
   const submitting = useRef(false);
+  const live = useRef({ mounted: false, client, working });
+  live.current.client = client;
+  live.current.working = working;
+  useEffect(() => {
+    live.current.mounted = true;
+    return () => { live.current.mounted = false; };
+  }, []);
   const testDirectory = testTarget ?? targets.test;
   let inspectedTarget: string | undefined;
-  try { inspectedTarget = normalizePreparationTarget(testDirectory.trim() || "."); }
+  try { inspectedTarget = normalizePreparationTarget(testDirectory || "."); }
   catch { /* Invalid input stays editable and cannot start an action. */ }
   const actions = useQuery({ queryKey: [...actionKey(client, runID), inspectedTarget ?? null],
     queryFn: ({ signal }) => client.listProjectActions(runID, inspectedTarget!, signal),
@@ -71,22 +64,44 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
     void queries.invalidateQueries({ queryKey: taskReviewKey(threadID) });
   }, [terminalJobID, baseURL, runID, threadID, queries]);
   const active = Boolean(attempt && (!attempt.jobID || !result || projectActionIsRunning(result.job.state)));
-  const saveAttempt = (value: ActionAttempt | null) => {
-    store?.write(storageKey, value);
-    setSaved(value);
-  };
   const execute = useMutation({ retry: false,
-    mutationFn: (input: ActionAttempt) => client.runProjectAction(input.runID, input.slot, input.target, input.key),
-    onSuccess: (value, input) => {
-      queries.setQueryData(jobKey(client, input.runID, value.job.id), value);
-      try { saveAttempt({ ...input, jobID: value.job.id }); }
-      catch (error) { setLocalError(error instanceof Error ? error.message : t("无法保存运行记录。", "Could not save the execution record.")); }
+    mutationFn: async ({ input, observed }: { input: ProjectActionAttempt; observed: ProjectActionAttempt | null }) => {
+      let saved: ProjectActionAttempt | null;
+      try {
+        saved = await update((current) => current?.key === observed?.key &&
+          current?.submissionID === observed?.submissionID && current?.jobID === observed?.jobID
+          ? input : undefined);
+      } catch {
+        throw new Error(t("无法保存运行请求。", "Could not save the execution request."));
+      }
+      if (saved?.key !== input.key || saved.submissionID !== input.submissionID || saved.jobID) {
+        throw new Error(t("另一窗口已更新运行记录，请先核对当前操作。", "Another window updated the execution record. Check the current operation first."));
+      }
+      const current = live.current;
+      if (!current.mounted || current.client !== client || current.working ||
+        !current.client.hasControl || !current.client.hasRunExecution) {
+        throw new Error(t("任务状态已变化，请核对已保存的请求。", "The task state changed. Check the saved request."));
+      }
+      return client.runProjectAction(input.runID, input.slot, input.target, input.key);
     },
-    onError: (error) => {
+    onSuccess: async (value, { input }) => {
+      queries.setQueryData(jobKey(client, input.runID, value.job.id), value);
+      try {
+        await update((current) => current?.key === input.key && !current.jobID
+          ? { ...current, jobID: value.job.id } : undefined);
+      } catch {
+        setLocalError(t("无法保存运行结果，请用原请求核对。", "Could not save the result. Check the original request."));
+      }
+    },
+    onError: async (error, { input }) => {
       // Rejections before admission cannot have started a Job. Unknown outcomes
       // retain the original key so a retry reads the same execution.
       if (error instanceof APIRequestError && error.status >= 400 && error.status < 500) {
-        try { saveAttempt(null); } catch { /* The persistence provider displays the storage error. */ }
+        try {
+          await update((current) => current?.key === input.key &&
+            current.submissionID === input.submissionID && !current.jobID ? null : undefined);
+        }
+        catch { setLocalError(t("无法更新原运行记录。", "Could not update the original execution record.")); }
       }
     },
     onSettled: () => {
@@ -99,13 +114,11 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
     mutationFn: (jobID: string) => client.stopThreadApplicationService(threadID, runID, jobID),
     onSettled: () => { void job.refetch(); },
   });
-  function submit(input: ActionAttempt) {
-    if (submitting.current || !client.hasControl || !client.hasRunExecution || working) return;
+  function submit(input: ProjectActionAttempt) {
+    if (!ready || submitting.current || !client.hasControl || !client.hasRunExecution || working) return;
     setLocalError("");
-    try { saveAttempt(input); }
-    catch (error) { setLocalError(error instanceof Error ? error.message : t("无法保存运行请求。", "Could not save the execution request.")); return; }
     submitting.current = true;
-    execute.mutate(input);
+    execute.mutate({ input: { ...input, submissionID: crypto.randomUUID() }, observed: attempt });
   }
   const backend = actions.data?.backend ?? result?.backend;
   const backendLabel = backend === "host" || backend === "host_unsandboxed" ? t("本机", "Host")
@@ -132,7 +145,10 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
   };
   return <section className="v2-task-delivery v2-project-actions" aria-label={t("项目测试与格式化", "Project tests and formatting")}>
     <div className="v2-delivery-heading"><h2>{t("项目测试与格式化", "Project tests and formatting")}</h2>
-      <button type="button" disabled={actions.isFetching || inspectedTarget === undefined} onClick={() => void actions.refetch()}>{t("刷新动作", "Refresh actions")}</button></div>
+      <button type="button" disabled={actions.isFetching || inspectedTarget === undefined} onClick={() => {
+        refresh();
+        void actions.refetch();
+      }}>{t("刷新动作", "Refresh actions")}</button></div>
     <p className="v2-delivery-muted">{t("使用本次任务保存的项目配置运行，结果保存在命令记录中。", "Run the project actions saved for this task. Results are retained in command history.")}
       {backendLabel && <> {t("执行环境：", "Environment: ")}{backendLabel}</>}</p>
     {actions.isFetching && <p role="status">{t("正在读取项目动作…", "Reading project actions…")}</p>}
@@ -140,7 +156,8 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
     {actions.isError && <ErrorState error={actions.error} />}
     {working && <p role="status">{t("代理正在执行，暂停后可手动运行项目动作。", "The agent is working. Pause it to run project actions manually.")}</p>}
     {(!client.hasControl || !client.hasRunExecution) && <p role="status">{t("当前连接仅可查看结果，没有命令执行权限。", "This connection can view results but cannot execute commands.")}</p>}
-    {damaged && <p role="alert">{t("保存的运行请求无法读取，请先到命令记录核对。", "The saved request could not be read. Check command history first.")}</p>}
+    {recoveryError === "invalid" && <p role="alert">{t("保存的运行请求无法读取，请先到命令记录核对。", "The saved request could not be read. Check command history first.")}</p>}
+    {recoveryError === "unavailable" && <p role="alert">{t("无法读取本机运行记录，请刷新动作后重试。", "Could not read local execution history. Refresh actions and try again.")}</p>}
     {localError && <p role="alert">{localError}</p>}
     <div className="v2-project-action-forms">
       {(["test", "format"] as const).map((slot) => {
@@ -150,8 +167,8 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
         const needsFile = !directory;
         return <form key={slot} onSubmit={(event) => {
           event.preventDefault();
-          if (!available || active || damaged) return;
-          submit({ runID, slot, target: directory ? inspectedTarget! : targets.format.trim(), key: "project-action-" + crypto.randomUUID() });
+          if (!ready || !available || active) return;
+          submit({ runID, slot, target: directory ? inspectedTarget! : targets.format, key: "project-action-" + crypto.randomUUID() });
         }}>
           <h3>{slot === "test" ? t("测试", "Tests") : t("格式化", "Formatting")}</h3>
           {action?.command_id ? <><code>{action.command_id}</code>{!action.configured && <small>{t("根据项目文件检测", "Detected from project files")}</small>}</>
@@ -167,8 +184,8 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
             <small>{t("填写相对于项目目录的路径。", "Enter a path relative to the project directory.")}</small>
           </label>}
           {action?.reason && <p className="v2-delivery-muted">{reasonLabel(action.reason)}</p>}
-          <button type="submit" disabled={!available || active || damaged || working || !client.hasControl ||
-            !client.hasRunExecution || (needsFile && !targets[slot].trim())}>
+          <button type="submit" disabled={!ready || !available || active || execute.isPending || working || !client.hasControl ||
+            !client.hasRunExecution || (needsFile && targets.format === "")}>
             {slot === "test" ? t("运行测试", "Run tests") : t("格式化文件", "Format file")}
           </button>
         </form>;

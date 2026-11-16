@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/rootfs"
 )
 
 const (
@@ -250,8 +251,8 @@ func validWorkspaceOpenTarget(target WorkspaceOpenTarget, expectedID string) boo
 	return target.ID == expectedID && validWorkspaceIdentity(target.ID) &&
 		validNormalizedText(target.Name, maxWorkspaceNameBytes) &&
 		utf8.ValidString(target.RootPath) && !strings.ContainsRune(target.RootPath, 0) &&
-		target.RootPath == strings.TrimSpace(target.RootPath) && filepath.IsAbs(target.RootPath) &&
-		target.RootPath == filepath.Clean(target.RootPath)
+		filepath.IsAbs(target.RootPath) &&
+		target.RootPath == filepath.Clean(target.RootPath) && rootfs.CheckExternalDirectory(target.RootPath) == nil
 }
 
 func validNativeWorkspaceOpenResult(result NativeWorkspaceOpenResult) bool {

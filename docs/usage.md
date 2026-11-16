@@ -2058,6 +2058,8 @@ cyberagent session history <session-id> --all
 
 Thread history and its Run composer are the primary path for generic AI agent features. The `session` command is an advanced diagnostic and compatibility path for one Run-local context/authority boundary. Ordinary text in a Run-bound Session is supervised and consumes that Run's turn, token, and model-time budgets. Older Sessions created directly with `session create` have no Run and temporarily retain the legacy direct Router path for compatibility. Slash commands remain explicit command paths, but `/ls`, `/read`, `/write`, and `/run` now enter the same Go Tool Gateway used by the CLI and TUI and consume the Run tool-call budget. Workspace commands require an attached workspace; `/read` responses are bounded and redacted before persistence or model use. `/write` and `/run` normally create reviewable proposals. A matching active Run-local Session grant may apply a file edit immediately or complete Shell as a dry run; Shell is never executed on the host.
 
+`/read` and `/ls` preserve the exact path after the command separator. Double-quoted paths make leading or trailing spaces visible, as in `/read "notes.txt "`. Use a double-quoted path for `/write` when the filename contains spaces.
+
 ## Unified Tool Gateway
 
 The Gateway validates exact argument schemas, binds calls to a Run/Session/Workspace scope, atomically charges the Run tool-call budget, runs policy checks, selects an approval mode, and normalizes execution results. `read_file`, `list_workspace`, `work_item_create`, and `note_create` use automatic approval only when scope and policy allow them. `replace_file`, `shell`, and `script_process` normally use per-call approval. A policy denial is terminal and cannot be converted into approval by a grant or later review. Schema v11 persists each per-call decision with a request fingerprint, Run/Session association, and immutable idempotency operation before the compatibility proposal advances. Schema v12 persists revocable Session grants scoped to one Run, Session, Workspace, Tool, and ActionClass; terminal Runs and archived Sessions cannot create or consume them. Schema v13 stores typed script processes and makes initial Script Run creation atomic and recoverably idempotent. Schema v14 stores source-bound tool-output Artifacts and projects metadata-only creation events. Schema v15 stores idempotent create-only structured-memory mutations without raw operation keys or content-bearing tool events.
@@ -2248,8 +2250,11 @@ Execution retains existing permission, approval and lease checks and produces
 an ordinary command Job. Host execution retains its explicit acknowledgement;
 owned workspaces use their sandbox without host fallback. Test directories and
 format files are checked against the pinned excluded paths; read-only projects
-cannot be formatted. An existing UI operation key reads its original Job even
-after restart, without starting the action again. Docker needs the updated
+cannot be formatted. Enter the file or directory name with its original spaces.
+Windows command execution rejects path components ending in a space or dot
+when native tools could resolve a different name. An existing UI operation key
+reads its original Job even after restart, without starting the action again.
+Docker needs the updated
 [fixed image](standard-code-docker.md#fixed-image) for npm and gofmt. Tool IDs
 without one of these presets do not become shell commands.
 
@@ -2401,6 +2406,12 @@ Approval. `run` is also preview-only until `--confirm`; a confirmed invocation p
 read-only in-process inspection, creates the exact proposal, then re-renders and compares that
 same inspection before Approval and execution. The confirmed result prints the reviewed
 preview together with the Approval and receipt; any drift inside the invocation is rejected.
+
+Quote an exact file path in CLI arguments, for example `--path " notes.txt"`. The desktop
+path field accepts one repository-relative path per line, including spaces and commas.
+Git for Windows can normalize components ending in a space or dot. Native Git operations
+reject workspace roots with these names and block affected advanced operations before
+mutation. The workspace file tools can still address these names on a supporting filesystem.
 
 The closed operation and flag mapping is:
 
