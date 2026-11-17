@@ -23,6 +23,7 @@ import (
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/store"
 	"cyberagent-workbench/internal/threadtranscript"
+	"cyberagent-workbench/internal/tools"
 )
 
 type boundaryJourneyProvider struct {
@@ -131,7 +132,7 @@ func boundaryContextText(t *testing.T, request llm.ChatRequest) string {
 			Authorized bool   `json:"instruction_authorized"`
 		}
 		start := strings.Index(message.Content, "{")
-		if start < 0 || json.Unmarshal([]byte(message.Content[start:]), &value) != nil || value.Authorized || message.Role != "user" || len([]rune(value.Content)) > 16*1024 {
+		if start < 0 || json.Unmarshal([]byte(message.Content[start:]), &value) != nil || value.Authorized || message.Role != "user" || len([]rune(value.Content)) > 128*1024 {
 			t.Fatal("tool-boundary evidence is unbounded or instruction-authorized")
 		}
 		return value.Content
@@ -173,7 +174,7 @@ func assertOneBoundaryTranscriptInput(t *testing.T, st *store.SQLiteStore, threa
 }
 
 func TestThreadToolBoundaryReturnsCompactionFromEarlierSegment(t *testing.T) {
-	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 	// Seed committed source history, not a fabricated summary. The first real
 	// Supervisor segment must compact it; the next segment only reads that summary.
 	for index := 0; index < 22; index++ {
@@ -204,16 +205,16 @@ func TestThreadToolBoundaryReturnsCompactionFromEarlierSegment(t *testing.T) {
 			return nil, fmt.Errorf("later request lost or replaced the first-segment summary: metadata=%v", request.Metadata)
 		}
 		switch {
-		case index <= 4:
+		case index <= domain.MaxSupervisorToolRounds:
 			return boundaryRead(fmt.Sprintf("compaction-read-%d", index), 1), nil
-		case index == 5:
+		case index == domain.MaxSupervisorToolRounds+1:
 			assertBoundaryPrompt(t, request)
 			return textResponse(rootActionResponse(domain.RootActionContinue, "One final observation remains", "", "")), nil
-		case index == 6:
+		case index == domain.MaxSupervisorToolRounds+2:
 			assertInternalInputDelivery(t, request, input.Content)
 			boundaryContextText(t, request)
 			return boundaryRead("compaction-final-read", 1), nil
-		case index == 7:
+		case index == domain.MaxSupervisorToolRounds+3:
 			return textResponse(rootActionResponse(domain.RootActionFinish, "Observed the original file", "done", "")), nil
 		default:
 			return nil, fmt.Errorf("unexpected model call %d", index)
@@ -227,7 +228,7 @@ func TestThreadToolBoundaryReturnsCompactionFromEarlierSegment(t *testing.T) {
 	if !step.ContextCompacted || step.ContextSummaryID != firstSummaryID || firstSummaryID == 0 {
 		t.Fatalf("final segment hid earlier actual compaction: compacted=%t summary=%d want=%d", step.ContextCompacted, step.ContextSummaryID, firstSummaryID)
 	}
-	if len(provider.Requests()) != 7 || step.ToolRounds != 5 || step.ToolCalls != 5 || step.ToolBoundary ||
+	if len(provider.Requests()) != domain.MaxSupervisorToolRounds+3 || step.ToolRounds != domain.MaxSupervisorToolRounds+1 || step.ToolCalls != domain.MaxSupervisorToolRounds+1 || step.ToolBoundary ||
 		step.Checkpoint.Phase != domain.SupervisorIdle || result.Submission.Message.Status != domain.OperatorSteeringCommitted {
 		t.Fatalf("compaction altered ordinary segmentation: calls=%d step=%#v", len(provider.Requests()), step)
 	}
@@ -238,24 +239,26 @@ func TestThreadToolBoundaryReturnsCompactionFromEarlierSegment(t *testing.T) {
 }
 
 func TestThreadToolBoundaryContinuesSixDependentWorkspaceCalls(t *testing.T) {
-	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 	var edit fileedit.Edit
 	provider := &boundaryJourneyProvider{}
 	provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		switch index {
-		case 1:
+		switch {
+		case index == 1:
 			return toolResponse("list", "workspace_list", `{"version":"agent-code-tools.v1","path":".","limit":20}`), nil
-		case 2:
+		case index == 2:
 			return boundaryRead("read", 1), nil
-		case 3:
+		case index == 3:
 			return toolResponse("grep", "workspace_grep", `{"version":"agent-code-tools.v1","query":"original","pattern":"README.md","limit":20}`), nil
-		case 4:
+		case index >= 4 && index < domain.MaxSupervisorToolRounds:
+			return boundaryRead(fmt.Sprintf("read-%d", index), 1), nil
+		case index == domain.MaxSupervisorToolRounds:
 			return boundaryPropose("propose"), nil
-		case 5:
+		case index == domain.MaxSupervisorToolRounds+1:
 			assertBoundaryPrompt(t, request)
 			edit = approveBoundaryEdit(t, st, run)
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Proposal reviewed; apply it next", "", "")), nil
-		case 6:
+		case index == domain.MaxSupervisorToolRounds+2:
 			assertInternalInputDelivery(t, request, input.Content)
 			content := boundaryContextText(t, request)
 			for _, exact := range []string{edit.ID, edit.OriginalHash, edit.ProposedHash, "workspace_change"} {
@@ -267,9 +270,9 @@ func TestThreadToolBoundaryContinuesSixDependentWorkspaceCalls(t *testing.T) {
 				t.Fatal("next segment did not regain allowed tools")
 			}
 			return boundaryApply("apply", edit), nil
-		case 7:
+		case index == domain.MaxSupervisorToolRounds+3:
 			return boundaryRead("verify", 1), nil
-		case 8:
+		case index == domain.MaxSupervisorToolRounds+4:
 			if !hasToolResult(request, "reviewed text") {
 				t.Fatal("final model did not see actual applied content")
 			}
@@ -281,9 +284,9 @@ func TestThreadToolBoundaryContinuesSixDependentWorkspaceCalls(t *testing.T) {
 	turns := toolBoundaryService(st, st, provider)
 	result, err := turns.Execute(t.Context(), input)
 	if err != nil {
-		t.Fatalf("six-call journey stopped: %v", err)
+		t.Fatalf("dependent workspace boundary journey stopped: %v", err)
 	}
-	if len(provider.Requests()) != 8 || result.Submission.Message.Status != domain.OperatorSteeringCommitted || result.Execution == nil ||
+	if len(provider.Requests()) != domain.MaxSupervisorToolRounds+4 || result.Submission.Message.Status != domain.OperatorSteeringCommitted || result.Execution == nil ||
 		result.Execution.Handoff.Result.Status != domain.RunExecutionHandoffCompleted || result.Execution.Handoff.Result.StepsCompleted != 1 {
 		t.Fatalf("one input did not remain one handoff selection: %#v", result)
 	}
@@ -291,8 +294,8 @@ func TestThreadToolBoundaryContinuesSixDependentWorkspaceCalls(t *testing.T) {
 	if err != nil || string(content) != "reviewed text\n" {
 		t.Fatalf("file=%q err=%v", content, err)
 	}
-	rounds, err := st.ListRunSupervisorToolRoundsPage(t.Context(), run.ID, 0, 10)
-	if err != nil || len(rounds) != 6 {
+	rounds, err := st.ListRunSupervisorToolRoundsPage(t.Context(), run.ID, 0, domain.MaxSupervisorToolRounds+10)
+	if err != nil || len(rounds) != domain.MaxSupervisorToolRounds+2 {
 		t.Fatalf("tool rounds=%d err=%v", len(rounds), err)
 	}
 	messages, err := st.ListSessionMessages(t.Context(), run.SessionID, true)
@@ -324,15 +327,22 @@ func TestThreadToolBoundaryContinuesSixDependentWorkspaceCalls(t *testing.T) {
 					if message.Provenance.SourceRef != "supervisor-tools:"+call.AttemptID {
 						continue
 					}
-					if call.Status != domain.SupervisorToolCompleted || call.ResultJSON == "" ||
-						!strings.Contains(message.Content, call.CallID) || !strings.Contains(message.Content, session.ContentSHA256(call.ResultJSON)) {
-						t.Fatal("segment evidence lost an exact completed tool call or result hash")
+					if call.Status != domain.SupervisorToolCompleted || call.ResultJSON == "" {
+						t.Fatal("segment evidence recorded incomplete call")
 					}
-					matchedCalls++
+					if strings.Contains(message.Content, call.CallID) {
+						if !strings.Contains(message.Content, session.ContentSHA256(call.ResultJSON)) {
+							t.Fatal("segment evidence lost an exact completed result hash")
+						}
+						matchedCalls++
+					}
 				}
 			}
-			if matchedCalls != 4 && matchedCalls != 2 {
+			if matchedCalls != 6 && matchedCalls != 2 {
 				t.Fatalf("unexpected segment tool evidence count=%d", matchedCalls)
+			}
+			if matchedCalls == 6 && !strings.Contains(message.Content, fmt.Sprintf("Earlier tool facts omitted: %d", domain.MaxSupervisorToolRounds-6)) {
+				t.Fatalf("segment evidence missing omission summary: %s", message.Content)
 			}
 			evidenceByAttempt[message.Provenance.SourceRef]++
 		default:
@@ -355,7 +365,7 @@ func TestThreadToolBoundaryContinuesSixDependentWorkspaceCalls(t *testing.T) {
 		t.Fatalf("normal boundary recorded protocol failure: %v", err)
 	}
 	_, err = turns.Execute(t.Context(), input)
-	if err != nil || len(provider.Requests()) != 8 {
+	if err != nil || len(provider.Requests()) != domain.MaxSupervisorToolRounds+4 {
 		t.Fatalf("completed operation replayed model/tools: %v", err)
 	}
 }
@@ -383,31 +393,31 @@ func (s *crashAfterToolBoundaryStore) CompleteSupervisorToolBoundary(ctx context
 }
 
 func TestThreadToolBoundaryRestartKeepsAppliedEditAndOriginalHandoff(t *testing.T) {
-	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 	var edit fileedit.Edit
 	provider := &boundaryJourneyProvider{}
 	provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		switch index {
-		case 1:
+		switch {
+		case index == 1:
 			return boundaryRead("read", 1), nil
-		case 2:
+		case index == 2:
 			return boundaryPropose("propose"), nil
-		case 3:
+		case index == 3:
 			edit = approveBoundaryEdit(t, st, run)
 			return boundaryApply("apply", edit), nil
-		case 4:
-			return boundaryRead("verify", 1), nil
-		case 5:
+		case index >= 4 && index <= domain.MaxSupervisorToolRounds:
+			return boundaryRead(fmt.Sprintf("verify-%d", index), 1), nil
+		case index == domain.MaxSupervisorToolRounds+1:
 			assertBoundaryPrompt(t, request)
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Applied the file; inspect it once more", "", "")), nil
-		case 6:
+		case index == domain.MaxSupervisorToolRounds+2:
 			content := boundaryContextText(t, request)
 			assertInternalInputDelivery(t, request, input.Content)
 			if !strings.Contains(content, `"file_written":true`) || !strings.Contains(content, edit.ID) || !strings.Contains(content, edit.ProposedHash) {
 				t.Fatal("restart lost completed apply facts")
 			}
 			return boundaryRead("inspect-after-restart", 1), nil
-		case 7:
+		case index == domain.MaxSupervisorToolRounds+3:
 			return textResponse(rootActionResponse(domain.RootActionFinish, "Verified after restart", "done", "")), nil
 		default:
 			return nil, fmt.Errorf("unexpected restarted call %d", index)
@@ -431,10 +441,10 @@ func TestThreadToolBoundaryRestartKeepsAppliedEditAndOriginalHandoff(t *testing.
 	// attempt, tool result or operator input is rewritten to simulate recovery.
 	time.Sleep(150 * time.Millisecond)
 	result, err := toolBoundaryService(st, st, provider).Execute(t.Context(), input)
-	if err != nil || !result.Replayed || len(provider.Requests()) != 7 {
+	if err != nil || !result.Replayed || len(provider.Requests()) != domain.MaxSupervisorToolRounds+3 {
 		t.Fatalf("restart result=%#v err=%v", result, err)
 	}
-	rounds, err := st.ListRunSupervisorToolRoundsPage(t.Context(), run.ID, 0, 10)
+	rounds, err := st.ListRunSupervisorToolRoundsPage(t.Context(), run.ID, 0, domain.MaxSupervisorToolRounds+10)
 	applies := 0
 	for _, round := range rounds {
 		for _, call := range round.Calls {
@@ -453,17 +463,17 @@ func TestThreadToolBoundaryRestartKeepsAppliedEditAndOriginalHandoff(t *testing.
 }
 
 func TestThreadToolBoundaryProtocolRepairPreservesTheSchedulingBoundary(t *testing.T) {
-	st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 	provider := &boundaryJourneyProvider{}
 	provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		if index <= 4 {
+		if index <= domain.MaxSupervisorToolRounds {
 			return boundaryRead(fmt.Sprintf("read-%d", index), 1), nil
 		}
 		switch index {
-		case 5:
+		case domain.MaxSupervisorToolRounds + 1:
 			assertBoundaryPrompt(t, request)
 			return textResponse(`{"version":"root_lifecycle.v1","action":"continue","message":false}`), nil
-		case 6:
+		case domain.MaxSupervisorToolRounds + 2:
 			if request.Metadata["protocol_repair"] != "1" || len(request.Tools) != 0 {
 				t.Fatalf("actual malformed boundary response lost its protocol repair: marker=%q tools=%d messages=%d", request.Metadata["protocol_repair"], len(request.Tools), len(request.Messages))
 			}
@@ -475,20 +485,20 @@ func TestThreadToolBoundaryProtocolRepairPreservesTheSchedulingBoundary(t *testi
 				t.Fatal("repair forgot that Go is requesting an internal tool boundary")
 			}
 			return textResponse(rootActionResponse(domain.RootActionContinue, "One remaining read", "", "")), nil
-		case 7:
+		case domain.MaxSupervisorToolRounds + 3:
 			boundaryContextText(t, request)
 			if request.Metadata["protocol_repair"] != "" || !hasToolSpec(request, "workspace_read") {
 				t.Fatal("next segment inherited protocol repair or lost its tools")
 			}
 			return boundaryRead("last-read", 1), nil
-		case 8:
+		case domain.MaxSupervisorToolRounds + 4:
 			return textResponse(rootActionResponse(domain.RootActionFinish, "Read completed", "done", "")), nil
 		default:
 			return nil, fmt.Errorf("unexpected model call %d", index)
 		}
 	}
 	result, err := toolBoundaryService(st, st, provider).Execute(t.Context(), input)
-	if err != nil || len(provider.Requests()) != 8 || result.Execution == nil || result.Execution.Handoff.Result.StepsCompleted != 1 {
+	if err != nil || len(provider.Requests()) != domain.MaxSupervisorToolRounds+4 || result.Execution == nil || result.Execution.Handoff.Result.StepsCompleted != 1 {
 		t.Fatalf("repaired segment did not continue the original input: %#v %v", result, err)
 	}
 	eventList, err := st.ListRunEvents(t.Context(), run.ID)
@@ -500,19 +510,25 @@ func TestThreadToolBoundaryProtocolRepairPreservesTheSchedulingBoundary(t *testi
 
 func TestThreadToolBoundaryHonorsTurnBudgetAndNaturalWait(t *testing.T) {
 	for _, test := range []struct {
-		name   string
-		turns  int
-		tools  int64
-		action domain.RootActionKind
-	}{{"turn_budget", 1, 20, domain.RootActionContinue}, {"tool_budget", 4, 4, domain.RootActionContinue}, {"real_wait", 4, 20, domain.RootActionWait}, {"real_finish", 4, 20, domain.RootActionFinish}} {
+		name           string
+		turns          int
+		tools          int64
+		boundaryRounds int
+		action         domain.RootActionKind
+	}{
+		{"turn_budget", 1, int64(domain.MaxSupervisorToolRounds + 10), domain.MaxSupervisorToolRounds, domain.RootActionContinue},
+		{"tool_budget", 4, 4, 4, domain.RootActionContinue},
+		{"real_wait", 4, int64(domain.MaxSupervisorToolRounds + 10), domain.MaxSupervisorToolRounds, domain.RootActionWait},
+		{"real_finish", 4, int64(domain.MaxSupervisorToolRounds + 10), domain.MaxSupervisorToolRounds, domain.RootActionFinish},
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: test.turns, MaxToolCalls: test.tools})
 			provider := &boundaryJourneyProvider{}
 			provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-				if index <= 4 {
-					return toolResponse(fmt.Sprintf("list-%d", index), "workspace_list", fmt.Sprintf(`{"version":"agent-code-tools.v1","path":".","limit":%d}`, index)), nil
+				if index <= test.boundaryRounds {
+					return toolResponse(fmt.Sprintf("list-%d", index), "workspace_list", fmt.Sprintf(`{"version":"agent-code-tools.v1","path":".","limit":%d}`, (index%20)+1)), nil
 				}
-				if index != 5 {
+				if index != test.boundaryRounds+1 {
 					return nil, fmt.Errorf("boundary continued past %s", test.name)
 				}
 				assertBoundaryPrompt(t, request)
@@ -534,8 +550,8 @@ func TestThreadToolBoundaryHonorsTurnBudgetAndNaturalWait(t *testing.T) {
 			} else if err != nil {
 				t.Fatal(err)
 			}
-			if len(provider.Requests()) != 5 {
-				t.Fatal("natural boundary called another model")
+			if len(provider.Requests()) != test.boundaryRounds+1 {
+				t.Fatalf("natural boundary called another model: got=%d want=%d", len(provider.Requests()), test.boundaryRounds+1)
 			}
 			checkpoint, _, lookupErr := st.GetSupervisorCheckpoint(t.Context(), run.ID)
 			if lookupErr != nil || checkpoint.Phase == domain.SupervisorTurnStarted {
@@ -546,17 +562,17 @@ func TestThreadToolBoundaryHonorsTurnBudgetAndNaturalWait(t *testing.T) {
 }
 
 func TestThreadToolBoundaryStopPreservesOneInputAndQueuedFollowup(t *testing.T) {
-	st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 	started := make(chan struct{})
 	provider := &boundaryJourneyProvider{}
 	provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		if index <= 4 {
+		if index <= domain.MaxSupervisorToolRounds {
 			return boundaryRead(fmt.Sprintf("read-%d", index), 1), nil
 		}
-		if index == 5 {
+		if index == domain.MaxSupervisorToolRounds+1 {
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Need another segment", "", "")), nil
 		}
-		if index != 6 {
+		if index != domain.MaxSupervisorToolRounds+2 {
 			return nil, fmt.Errorf("unexpected post-stop call %d", index)
 		}
 		boundaryContextText(t, request)
@@ -567,7 +583,11 @@ func TestThreadToolBoundaryStopPreservesOneInputAndQueuedFollowup(t *testing.T) 
 	turns := toolBoundaryService(st, st, provider)
 	done := make(chan error, 1)
 	go func() { _, err := turns.Execute(t.Context(), input); done <- err }()
-	awaitTurnSignal(t, started)
+	select {
+	case <-started:
+	case <-time.After(20 * time.Second):
+		t.Fatal("model did not start")
+	}
 	queued := input
 	queued.Content, queued.OperationKey = "Keep this separately accepted next request", "tool-boundary-followup"
 	accepted, err := turns.Execute(t.Context(), queued)
@@ -610,7 +630,360 @@ func TestThreadToolBoundaryStopPreservesOneInputAndQueuedFollowup(t *testing.T) 
 	if err != nil || checkpoint.Phase != domain.SupervisorIdle {
 		t.Fatalf("stop left execution active: %#v %v", checkpoint, err)
 	}
-	if len(provider.Requests()) != 6 {
+	if len(provider.Requests()) != domain.MaxSupervisorToolRounds+2 {
 		t.Fatal("stop called the model again")
 	}
+}
+
+type privateHistoryBoundaryProvider struct {
+	boundaryJourneyProvider
+}
+
+func (p *privateHistoryBoundaryProvider) RequiresPrivateAssistantHistory(string) bool {
+	return true
+}
+
+type boundaryApprovalChecker struct {
+	base        policy.Checker
+	needsReview func(tools.Call) bool
+}
+
+func (c boundaryApprovalChecker) CheckText(ctx, text string) policy.Decision {
+	return c.base.CheckText(ctx, text)
+}
+
+func (c boundaryApprovalChecker) CheckToolCall(call tools.Call) policy.Decision {
+	d := c.base.CheckToolCall(call)
+	if c.needsReview != nil && c.needsReview(call) {
+		d.NeedsApproval = true
+	}
+	return d
+}
+
+func TestThreadToolBoundaryRunsTenNativeRoundsUninterrupted(t *testing.T) {
+	st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 4, MaxToolCalls: 30})
+	provider := &boundaryJourneyProvider{}
+	provider.respond = func(_ context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+		if index <= 10 {
+			if len(request.Tools) == 0 {
+				return nil, fmt.Errorf("tools prematurely withdrawn at round %d", index)
+			}
+			return boundaryRead(fmt.Sprintf("ten-round-%d", index), 1), nil
+		}
+		if len(request.Tools) == 0 {
+			return nil, errors.New("unexpected boundary tool withdrawal after 10 rounds")
+		}
+		return textResponse(rootActionResponse(domain.RootActionFinish, "Completed 10 native rounds in one segment", "done", "")), nil
+	}
+	result, err := toolBoundaryService(st, st, provider).Execute(t.Context(), input)
+	if err != nil {
+		t.Fatalf("10-round native segment failed: %v", err)
+	}
+	step := result.Execution.Execution.Steps[0]
+	if step.ToolRounds != 10 || step.ToolCalls != 10 || step.ModelAttempts != 11 || step.ToolBoundary {
+		t.Fatalf("unexpected 10-round step metrics: %#v", step)
+	}
+	eventList, err := st.ListRunEvents(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range eventList {
+		if ev.Type == events.AgentTurnCompletedEvent && strings.Contains(ev.PayloadJSON, `"tool_round_boundary":true`) {
+			t.Fatalf("unexpected tool_round_boundary rollover event during 10-round segment: %s", ev.PayloadJSON)
+		}
+	}
+}
+
+func TestThreadToolBoundaryCrossesFortyEightCallsAcrossSegmentRollover(t *testing.T) {
+	st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 100})
+	provider := &boundaryJourneyProvider{}
+	provider.respond = func(_ context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+		switch {
+		case index <= domain.MaxSupervisorToolRounds:
+			return toolBatchResponse(
+				llm.ToolCall{ID: fmt.Sprintf("r%d-a", index), Name: "workspace_list", Arguments: json.RawMessage(`{"version":"agent-code-tools.v1","path":".","limit":10}`)},
+				llm.ToolCall{ID: fmt.Sprintf("r%d-b", index), Name: "workspace_read", Arguments: json.RawMessage(`{"version":"agent-code-tools.v1","path":"README.md","start_line":1,"end_line":2}`)},
+			), nil
+		case index == domain.MaxSupervisorToolRounds+1:
+			assertBoundaryPrompt(t, request)
+			return textResponse(rootActionResponse(domain.RootActionContinue, "Rolling over 48 calls into segment 2", "", "")), nil
+		case index == domain.MaxSupervisorToolRounds+2:
+			content := boundaryContextText(t, request)
+			if !strings.Contains(content, "Selected 48 of 48 returned receipts") {
+				t.Fatalf("48-call boundary receipt truncated calls: %s", content)
+			}
+			return boundaryRead("seg2-final", 1), nil
+		default:
+			return textResponse(rootActionResponse(domain.RootActionFinish, "Completed 49 calls across rollover", "done", "")), nil
+		}
+	}
+	result, err := toolBoundaryService(st, st, provider).Execute(t.Context(), input)
+	if err != nil {
+		t.Fatalf("48-call segment rollover failed: %v", err)
+	}
+	step := result.Execution.Execution.Steps[0]
+	if step.ToolRounds != domain.MaxSupervisorToolRounds+1 || step.ToolCalls != domain.MaxSupervisorToolRounds*2+1 {
+		t.Fatalf("unexpected rollover stats: %#v", step)
+	}
+	eventList, err := st.ListRunEvents(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rollovers := 0
+	for _, ev := range eventList {
+		if ev.Type == events.AgentTurnCompletedEvent && strings.Contains(ev.PayloadJSON, `"tool_round_boundary":true`) {
+			rollovers++
+		}
+	}
+	if rollovers != 1 {
+		t.Fatalf("expected 1 boundary rollover, got %d", rollovers)
+	}
+}
+
+func TestThreadToolBoundaryWithdrawsToolsImmediatelyOnToolBudgetZero(t *testing.T) {
+	for _, action := range []domain.RootActionKind{domain.RootActionFinish, domain.RootActionContinue} {
+		t.Run(string(action), func(t *testing.T) {
+			st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 4, MaxToolCalls: 2})
+			provider := &boundaryJourneyProvider{}
+			provider.respond = func(_ context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+				if index == 1 {
+					return toolBatchResponse(
+						llm.ToolCall{ID: "tb-1", Name: "workspace_list", Arguments: json.RawMessage(`{"version":"agent-code-tools.v1","path":".","limit":10}`)},
+						llm.ToolCall{ID: "tb-2", Name: "workspace_read", Arguments: json.RawMessage(`{"version":"agent-code-tools.v1","path":"README.md","start_line":1,"end_line":2}`)},
+					), nil
+				}
+				if index != 2 {
+					return nil, fmt.Errorf("unexpected extra call %d after ToolBudgetZero", index)
+				}
+				assertBoundaryPrompt(t, request)
+				if action == domain.RootActionFinish {
+					return textResponse(rootActionResponse(domain.RootActionFinish, "Finished on tool budget boundary", "done", "")), nil
+				}
+				return textResponse(rootActionResponse(domain.RootActionContinue, "Try continue past budget", "", "")), nil
+			}
+			result, err := toolBoundaryService(st, st, provider).Execute(t.Context(), input)
+			if action == domain.RootActionContinue {
+				var failed *application.ThreadTurnFailedError
+				if !errors.As(err, &failed) || apperror.CodeOf(err) != apperror.CodeResourceExhausted {
+					t.Fatalf("expected CodeResourceExhausted on continue past ToolBudgetZero, got result=%#v err=%v", result, err)
+				}
+			} else {
+				if err != nil || result.Execution.Execution.Steps[0].ToolRounds != 1 || result.Execution.Execution.Steps[0].ToolCalls != 2 {
+					t.Fatalf("expected clean finish on ToolBudgetZero, got result=%#v err=%v", result, err)
+				}
+			}
+			usage, usageErr := st.GetToolCallUsage(t.Context(), run.ID)
+			if usageErr != nil || usage.Consumed != 2 || usage.Remaining != 0 {
+				t.Fatalf("unexpected tool usage: %#v err=%v", usage, usageErr)
+			}
+		})
+	}
+}
+
+func TestThreadToolBoundaryPrivateAssistantHistoryContextPressure(t *testing.T) {
+	runPrivatePressure := func(t *testing.T, handler func(llm.ChatRequest, int) (*llm.ChatResponse, error)) (application.ExecuteThreadTurnResult, []*llm.ChatRequest, error) {
+		t.Helper()
+		st, _, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 40})
+		big := strings.Repeat("private history context pressure payload line\n", 100)
+		if err := os.WriteFile(filepath.Join(root, "big.txt"), []byte(big), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		provider := &privateHistoryBoundaryProvider{}
+		provider.respond = func(_ context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+			return handler(request, index)
+		}
+		router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+		router.RegisterProvider(provider)
+		if err := router.SetContextWindow(llm.ModelRef{Provider: provider.Name(), Model: "model"}, llm.ContextWindow{
+			ProtocolVersion:     llm.ContextWindowProtocolVersion,
+			WindowTokens:        16384,
+			SafetyMarginTokens:  512,
+			DefaultOutputTokens: 512,
+			MaxOutputTokens:     1024,
+			Source:              "test_private_pressure",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		turns := application.NewThreadTurnService(st, application.NewRunLifecycleControlService(st),
+			application.NewRunExecutionHandoffService(st, router, policy.NewDefaultChecker()).WithGeneratedContextCompaction(false))
+		res, err := turns.Execute(t.Context(), input)
+		reqs := provider.Requests()
+		ptrs := make([]*llm.ChatRequest, len(reqs))
+		for i := range reqs {
+			ptrs[i] = &reqs[i]
+		}
+		return res, ptrs, err
+	}
+
+	t.Run("withdraws_tools_and_finishes_cleanly", func(t *testing.T) {
+		withdrew := false
+		res, reqs, err := runPrivatePressure(t, func(request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+			if len(request.Tools) == 0 {
+				withdrew = true
+				last := request.Messages[len(request.Messages)-1].Content
+				if !strings.Contains(last, "private-history context window limit") || strings.Contains(last, "scheduling boundary") {
+					return nil, fmt.Errorf("unexpected context-pressure prompt: %s", last)
+				}
+				return textResponse(rootActionResponse(domain.RootActionFinish, "Finished under private-history pressure", "done", "")), nil
+			}
+			if index > 15 {
+				return nil, errors.New("context pressure did not withdraw tools before 15 rounds")
+			}
+			return toolResponse(fmt.Sprintf("ph-%d", index), "workspace_read", `{"version":"agent-code-tools.v1","path":"big.txt","start_line":1,"end_line":80}`), nil
+		})
+		if err != nil || !withdrew {
+			t.Fatalf("private-history finish failed: withdrew=%t err=%v reqs=%d", withdrew, err, len(reqs))
+		}
+		if res.Execution.Execution.Steps[0].ToolBoundary {
+			t.Fatal("private-history context pressure must not roll over via CompleteSupervisorToolBoundary")
+		}
+	})
+
+	t.Run("withdraws_tools_and_blocks_continue_with_wait_or_finish_repair", func(t *testing.T) {
+		sawContinueRepair := false
+		res, _, err := runPrivatePressure(t, func(request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+			if len(request.Tools) == 0 {
+				if request.Metadata["protocol_repair"] == "1" {
+					sawContinueRepair = true
+					last := request.Messages[len(request.Messages)-1].Content
+					if strings.Contains(last, `"action":"continue"`) || !strings.Contains(last, `action="finish"`) {
+						return nil, fmt.Errorf("context-pressure repair allowed continue: %s", last)
+					}
+					return textResponse(rootActionResponse(domain.RootActionWait, "Awaiting smaller scope", "", "context window full")), nil
+				}
+				return textResponse(rootActionResponse(domain.RootActionContinue, "Try continue", "", "")), nil
+			}
+			return toolResponse(fmt.Sprintf("phw-%d", index), "workspace_read", `{"version":"agent-code-tools.v1","path":"big.txt","start_line":1,"end_line":80}`), nil
+		})
+		if err != nil || !sawContinueRepair || res.Execution.Execution.Steps[0].Action.Kind != domain.RootActionWait {
+			t.Fatalf("expected continue rejection -> wait repair under context pressure, got err=%v sawRepair=%t res=%#v", err, sawContinueRepair, res)
+		}
+	})
+
+	t.Run("provider_context_limit_recovery_withdraws_tools", func(t *testing.T) {
+		st, _, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+		provider := &privateHistoryBoundaryProvider{}
+		recovered := false
+		provider.respond = func(_ context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+			switch index {
+			case 1:
+				return boundaryRead("pre-limit-read", 1), nil
+			case 2:
+				if len(request.Tools) == 0 {
+					return nil, errors.New("expected tools on attempt before provider context_limit")
+				}
+				return nil, &llm.ProviderError{
+					Kind: llm.OutcomePermanent, Reason: llm.ProviderFailureContextLimit,
+					Provider: provider.Name(), Message: "provider context length exceeded",
+				}
+			case 3:
+				if len(request.Tools) != 0 {
+					return nil, errors.New("expected tools withdrawn on private-history context_limit recovery retry")
+				}
+				recovered = true
+				return textResponse(rootActionResponse(domain.RootActionFinish, "Recovered after tool withdrawal", "done", "")), nil
+			default:
+				return nil, fmt.Errorf("unexpected call %d", index)
+			}
+		}
+		router := llm.NewRouter(llm.ModelRef{Provider: provider.Name(), Model: "model"})
+		router.RegisterProvider(provider)
+		turns := application.NewThreadTurnService(st, application.NewRunLifecycleControlService(st),
+			application.NewRunExecutionHandoffService(st, router, policy.NewDefaultChecker()).WithGeneratedContextCompaction(false))
+		res, err := turns.Execute(t.Context(), input)
+		if err != nil || !recovered || res.Execution.Execution.Steps[0].RequestedAction != domain.RootActionFinish {
+			t.Fatalf("provider context_limit recovery failed: recovered=%t err=%v res=%#v", recovered, err, res)
+		}
+	})
+}
+
+func TestThreadToolBoundaryPreservesSteeringAndApprovalPastFourRounds(t *testing.T) {
+	t.Run("waiting_approval_pauses_at_round_six", func(t *testing.T) {
+		st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 4, MaxToolCalls: 30})
+		checker := boundaryApprovalChecker{
+			base:        policy.NewDefaultChecker(),
+			needsReview: func(c tools.Call) bool { return c.Name == "replace_file" },
+		}
+		provider := &boundaryJourneyProvider{}
+		provider.respond = func(_ context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+			if index <= 5 {
+				return boundaryRead(fmt.Sprintf("app-r-%d", index), 1), nil
+			}
+			if index == 6 {
+				return boundaryPropose("propose-at-6"), nil
+			}
+			return textResponse(rootActionResponse(domain.RootActionWait, "Awaiting approval at round 6", "", "operator review required")), nil
+		}
+		res, err := toolBoundaryServiceWithPolicy(st, st, provider, checker).Execute(t.Context(), input)
+		if err != nil || res.Execution.Execution.Steps[0].Action.Kind != domain.RootActionWait {
+			t.Fatalf("expected wait for approval at round 6, got res=%#v err=%v", res, err)
+		}
+		edits, err := st.ListFileEdits(t.Context(), fileedit.ListFilter{SessionID: run.SessionID})
+		if err != nil || len(edits) != 1 || edits[0].Status != fileedit.StatusProposed {
+			t.Fatalf("expected proposed edit at round 6, got %#v err=%v", edits, err)
+		}
+	})
+
+	t.Run("mid_turn_steering_supersedes_at_round_six", func(t *testing.T) {
+		st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 4, MaxToolCalls: 30})
+		round6Started := make(chan struct{})
+		releaseRound6 := make(chan struct{})
+		sawSteer := false
+		provider := &boundaryJourneyProvider{}
+		provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+			switch {
+			case index <= 5:
+				return boundaryRead(fmt.Sprintf("steer-r-%d", index), 1), nil
+			case index == 6:
+				close(round6Started)
+				select {
+				case <-releaseRound6:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				return boundaryRead("stale-round-6", 1), nil
+			default:
+				for _, m := range request.Messages {
+					if strings.Contains(m.Content, "Redirect at round 6") {
+						sawSteer = true
+					}
+				}
+				return textResponse(rootActionResponse(domain.RootActionFinish, "Steered cleanly at round 6", "done", "")), nil
+			}
+		}
+		turns := toolBoundaryService(st, st, provider)
+		done := make(chan error, 1)
+		go func() {
+			_, err := turns.Execute(context.Background(), input)
+			done <- err
+		}()
+		awaitTurnSignal(t, round6Started)
+		if _, err := application.NewSessionMessageSubmissionService(st).Submit(t.Context(), application.SubmitSessionMessageRequest{
+			Version: domain.SessionMessageSubmissionProtocolVersion, SessionID: run.SessionID,
+			Content: "Redirect at round 6", OperationKey: "steer-round-6-op-key", RequestedBy: "test_operator",
+			DeliveryMode: domain.OperatorSteeringCurrentTurn,
+		}); err != nil {
+			close(releaseRound6)
+			t.Fatal(err)
+		}
+		close(releaseRound6)
+		if err := awaitTurnResult(t, done); err != nil || !sawSteer {
+			t.Fatalf("steering at round 6 failed: err=%v sawSteer=%t", err, sawSteer)
+		}
+		rounds, err := st.ListRunSupervisorToolRoundsPage(t.Context(), run.ID, 0, 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		superseded := 0
+		for _, r := range rounds {
+			for _, c := range r.Calls {
+				if c.ErrorCode == "steering_superseded" {
+					superseded++
+				}
+			}
+		}
+		if superseded == 0 {
+			t.Fatalf("expected steering_superseded call at round 6, got rounds=%#v", rounds)
+		}
+	})
 }

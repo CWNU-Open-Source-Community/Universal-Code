@@ -85,6 +85,7 @@ func TestWorkflowRestartProcessRecoversShortWorkflowBeforeDeadline(t *testing.T)
 		t.Fatal(err)
 	}
 	child := exec.CommandContext(t.Context(), binary, "-test.run=^TestWorkflowRestartProcessChild$", "-test.v")
+	hideSubprocessWindow(child)
 	child.Env = append(os.Environ(), "UC_WORKFLOW_RESTART_DB="+path, "UC_WORKFLOW_RESTART_BOUNDARY=prepared")
 	output, err := child.CombinedOutput()
 	exit, ok := err.(*exec.ExitError)
@@ -161,6 +162,7 @@ func TestWorkflowRestartProcessRetainsPreparedIdentityAndFencesLostAttempt(t *te
 				t.Fatal(err)
 			}
 			child := exec.CommandContext(t.Context(), binary, "-test.run=^TestWorkflowRestartProcessChild$", "-test.v")
+			hideSubprocessWindow(child)
 			child.Env = append(os.Environ(), "UC_WORKFLOW_RESTART_DB="+path, "UC_WORKFLOW_RESTART_BOUNDARY="+boundary)
 			output, err := child.CombinedOutput()
 			exit, ok := err.(*exec.ExitError)

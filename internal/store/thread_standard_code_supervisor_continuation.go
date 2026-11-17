@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"reflect"
+	"strings"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
@@ -51,7 +52,8 @@ func getStandardCodeContinuation(ctx context.Context, q drydockQueryer, runID st
 		return c, c.Validate()
 	}
 	mutation, err := scanStandardCodeSupervisorLedgerEntry(q.QueryRowContext(ctx,
-		standardCodeSupervisorLedgerSelect+` WHERE run_id=? AND kind='call_observed' AND reason_code='workspace_mutation_checkpoint_verified'
+		standardCodeSupervisorLedgerSelect+` WHERE run_id=? AND kind IN ('call_observed','phase_advanced')
+ AND tool_kind='workspace_mutation' AND reason_code='workspace_mutation_checkpoint_verified'
  AND CAST(json_extract(snapshot_json,'$.mutation_epoch') AS INTEGER)=? ORDER BY snapshot_version DESC LIMIT 1`, c.PredecessorRunID, c.MutationEpoch))
 	if errors.Is(err, sql.ErrNoRows) && previous.Snapshot.Continuation != nil {
 		origin := previous.Snapshot.Continuation
@@ -64,8 +66,11 @@ func getStandardCodeContinuation(ctx context.Context, q drydockQueryer, runID st
 	if err != nil {
 		return nil, errors.Join(err, invalidStandardCodeContinuation())
 	}
-	if mutation.Kind != domain.StandardCodeSupervisorCallObserved || mutation.ToolKind != domain.StandardCodeToolWorkspaceMutation ||
-		mutation.ResultStatus != domain.SupervisorToolCompleted || mutation.ReasonCode != "workspace_mutation_checkpoint_verified" ||
+	validToolCall := mutation.Kind == domain.StandardCodeSupervisorCallObserved && mutation.ResultStatus == domain.SupervisorToolCompleted
+	validDirectApply := mutation.Kind == domain.StandardCodeSupervisorPhaseAdvanced && strings.HasPrefix(mutation.ToolAction, "direct_apply:")
+	if (!validToolCall && !validDirectApply) ||
+		mutation.ToolKind != domain.StandardCodeToolWorkspaceMutation ||
+		mutation.ReasonCode != "workspace_mutation_checkpoint_verified" ||
 		mutation.Snapshot.MissionID != missionID || mutation.Snapshot.MutationEpoch != c.MutationEpoch {
 		return nil, invalidStandardCodeContinuation()
 	}
@@ -83,18 +88,41 @@ func getStandardCodeContinuation(ctx context.Context, q drydockQueryer, runID st
 	// An observed mutation must still name the exact completed FileTool journal
 	// and sealed after checkpoint, not merely an old nonzero counter.
 	var checkpointID string
-	if err := q.QueryRowContext(ctx, `SELECT cp.id FROM workspace_checkpoints cp
+	if validToolCall {
+		if err := q.QueryRowContext(ctx, `SELECT cp.id FROM workspace_checkpoints cp
  JOIN workspace_checkpoint_transactions journal ON journal.after_checkpoint_id=cp.id
  JOIN run_supervisor_tool_calls call ON call.run_id=journal.run_id AND call.attempt_id=cp.attempt_id
- AND call.turn=? AND call.call_id=? AND call.tool_name='workspace_apply' AND call.status='completed'
- AND json_extract(call.payload_json,'$.edit_id')=journal.trigger_receipt_id
+ AND call.turn=? AND call.call_id=? AND call.status='completed'
+ AND (
+   (call.tool_name='workspace_apply' AND json_extract(call.payload_json,'$.edit_id')=journal.trigger_receipt_id)
+   OR (call.tool_name='workspace_change' AND json_extract(call.result_json,'$.metadata.status')='applied' AND json_extract(call.result_json,'$.metadata.edit_id')=journal.trigger_receipt_id)
+ )
  WHERE journal.run_id=? AND journal.workspace_id=? AND journal.kind='file_tool' AND journal.status='completed'
  AND cp.run_id=journal.run_id AND cp.mission_id=? AND cp.workspace_id=journal.workspace_id
  AND cp.attempt_id=? AND cp.capability_generation=? AND cp.phase='after' AND cp.sealed=1
  AND cp.trigger_receipt_id=journal.trigger_receipt_id AND cp.root_fingerprint=?
  ORDER BY cp.created_at DESC LIMIT 1`, mutation.Snapshot.Turn, mutation.ToolCallID, mutation.Snapshot.RunID, c.WorkspaceID, missionID,
-		mutation.Snapshot.AttemptID, mutation.Snapshot.CapabilityGeneration, mutation.Snapshot.WorkspaceRootFingerprint).Scan(&checkpointID); err != nil {
-		return nil, errors.Join(err, invalidStandardCodeContinuation())
+			mutation.Snapshot.AttemptID, mutation.Snapshot.CapabilityGeneration, mutation.Snapshot.WorkspaceRootFingerprint).Scan(&checkpointID); err != nil {
+			return nil, errors.Join(err, invalidStandardCodeContinuation())
+		}
+	} else {
+		editID := strings.TrimPrefix(mutation.ToolAction, "direct_apply:")
+		if editID == "" {
+			return nil, invalidStandardCodeContinuation()
+		}
+		if err := q.QueryRowContext(ctx, `SELECT cp.id FROM workspace_checkpoints cp
+ JOIN workspace_checkpoint_transactions journal ON journal.after_checkpoint_id=cp.id
+ JOIN file_edits fe ON fe.id=journal.trigger_receipt_id AND fe.status='applied'
+ JOIN tool_approvals ap ON ap.proposal_id=fe.id AND ap.run_id=journal.run_id AND ap.session_id=fe.session_id AND ap.workspace_id=fe.workspace_id AND ap.action_class='workspace_write' AND ap.status='approved'
+ WHERE journal.run_id=? AND journal.workspace_id=? AND journal.kind='file_tool' AND journal.status='completed'
+ AND journal.trigger_receipt_id=?
+ AND cp.run_id=journal.run_id AND cp.mission_id=? AND cp.workspace_id=journal.workspace_id
+ AND cp.attempt_id IN (?,'') AND cp.phase='after' AND cp.sealed=1
+ AND cp.trigger_receipt_id=journal.trigger_receipt_id AND cp.root_fingerprint=?
+ ORDER BY cp.created_at DESC LIMIT 1`, mutation.Snapshot.RunID, c.WorkspaceID, editID, missionID,
+			mutation.Snapshot.AttemptID, mutation.Snapshot.WorkspaceRootFingerprint).Scan(&checkpointID); err != nil {
+			return nil, errors.Join(err, invalidStandardCodeContinuation())
+		}
 	}
 	cp, err := getWorkspaceCheckpoint(ctx, q, checkpointID)
 	if err != nil {

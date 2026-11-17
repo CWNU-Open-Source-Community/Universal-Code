@@ -22,7 +22,7 @@ describe("FileEditPanel", () => {
       renderPanel(client);
       const user = userEvent.setup();
       await user.click(await screen.findByRole("button", { name: /README.md/ }));
-      await user.click(screen.getByRole("button", { name: "Approve intent README.md" }));
+      await user.click(screen.getByRole("button", { name: "Approve and apply README.md" }));
       await waitFor(() => expect(queue.mock.calls.length).toBeGreaterThanOrEqual(2));
       expect(await screen.findByText({
         failed: "Review saved, but subsequent execution failed. Check the records and continue in this conversation.",
@@ -31,7 +31,7 @@ describe("FileEditPanel", () => {
         not_started: "Review saved. Send a new message to continue in this conversation.",
       }[state])).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /README.md.*applied/ })).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Approve intent README.md" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Approve and apply README.md" })).not.toBeInTheDocument();
       expect(client.applyFileEdit).not.toHaveBeenCalled();
     });
   it("keeps same-path source history read-only beside the current execution target", async () => {
@@ -99,7 +99,7 @@ describe("FileEditPanel", () => {
     expect(await screen.findByText("Apply authority: disabled")).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "Review README.md" })).toBeInTheDocument();
     expect(screen.getByText("new")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Approve intent README.md" }));
+    await user.click(screen.getByRole("button", { name: "Approve and apply README.md" }));
     await waitFor(() => expect(reviewFileEdit).toHaveBeenCalledTimes(1));
     expect(reviewFileEdit.mock.calls[0]?.slice(0, 3)).toEqual([
       "run-1", "edit-1", { version: "file_edit_review.v1", action: "approve_intent" },
@@ -246,7 +246,7 @@ describe("FileEditPanel", () => {
     await user.click(await screen.findByRole("button", { name: /README.md/ }));
     await user.click(screen.getByRole("button", { name: "Preview revert of this edit" }));
     expect(await screen.findByText(/This revert diff is awaiting review/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Approve intent README.md" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve and apply README.md" })).toBeInTheDocument();
     expect(reviewFileEdit).not.toHaveBeenCalled();
     expect(client.applyFileEdit).not.toHaveBeenCalled();
     expect(onRequestRevert).not.toHaveBeenCalled();
@@ -258,19 +258,19 @@ describe("FileEditPanel", () => {
     await waitFor(() => expect(reviewFileEdit).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(/The revert proposal was denied/)).toBeInTheDocument();
     expect(screen.queryByText(/This revert diff is awaiting review/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Approve intent README.md" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve and apply README.md" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Apply README.md" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /README.md.*applied/ }));
     await user.click(screen.getByRole("button", { name: "Preview revert of this edit" }));
     await waitFor(() => expect(createFileEditRevertProposal).toHaveBeenCalledTimes(2));
     expect(createFileEditRevertProposal.mock.calls[1]).not.toEqual(createFileEditRevertProposal.mock.calls[0]);
-    await user.click(await screen.findByRole("button", { name: "Approve intent README.md" }));
+    await user.click(await screen.findByRole("button", { name: "Approve and apply README.md" }));
     expect(await screen.findByText(/The revert proposal is approved/)).toBeInTheDocument();
     expect(applyFileEdit).not.toHaveBeenCalled();
     await user.click(await screen.findByRole("button", { name: "Apply README.md" }));
     expect(await screen.findByText(/The revert changes were applied/)).toBeInTheDocument();
     expect(screen.queryByText(/awaiting review|awaits application/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Approve intent README.md" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve and apply README.md" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Apply README.md" })).not.toBeInTheDocument();
     expect(applyFileEdit).toHaveBeenCalledTimes(1);
   });
@@ -346,7 +346,7 @@ describe("FileEditPanel", () => {
     expect(screen.getByRole("heading", { name: "Diff review" }).closest("header")?.querySelector(".diff-deletions")).toBeNull();
     await user.click(deletionRow);
     expect(fileEdit).toHaveBeenCalledWith("run-1", "delete", expect.any(AbortSignal));
-    expect(screen.queryByRole("button", { name: "Approve intent README.md" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve and apply README.md" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /other.txt/ }));
     await act(async () => resolve(exact));
     expect(screen.getByRole("complementary", { name: "Review other.txt" })).toBeInTheDocument();
@@ -354,7 +354,7 @@ describe("FileEditPanel", () => {
     await user.click(screen.getByRole("button", { name: /README.md/ }));
     expect(await screen.findByText("first line being removed")).toBeInTheDocument();
     expect(screen.getByText("second line being removed")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Approve intent README.md" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve and apply README.md" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^README\.md/ }).querySelector(".diff-deletions")).toHaveTextContent("-2");
     expect(screen.getByRole("button", { name: /^README\.md/ })).not.toHaveTextContent("Metadata only");
     expect(screen.getByRole("heading", { name: "Diff review" }).closest("header")?.querySelector(".diff-deletions")).toBeNull();
@@ -419,6 +419,26 @@ describe("FileEditPanel", () => {
     await user.click(await screen.findByRole("button", { name: /README.md/ }));
     expect(screen.getByRole("button", { name: "Preview revert of this edit" })).toBeDisabled();
     expect(client.createFileEditRevertProposal).not.toHaveBeenCalled();
+  });
+
+  it("displays direct Go apply outcome and renders edit.reason alert on CAS conflict failure", async () => {
+    const proposed = editFixture("edit-cas", "proposed");
+    const failed = { ...proposed, status: "failed" as const, allowed_actions: [],
+      reason: "workspace file changed after review; refusing to apply" };
+    const queue = vi.fn().mockResolvedValueOnce({ items: [proposed], truncated: false, apply_enabled: false })
+      .mockResolvedValue({ items: [failed], truncated: false, apply_enabled: false });
+    const review = vi.fn().mockResolvedValue({ protocol_version: "file_edit_review.v1", run_id: "run-1",
+      action: "approve_intent", edit: failed, file_written: false, replayed: false,
+      continuation: { state: "completed", replayed: false, model_called: true, tool_called: false, handoff_id: "h-1" } });
+    const client = { hasFileEditReview: true, fileEditQueue: queue,
+      fileEditChangeSet: vi.fn().mockResolvedValue(changeSetFor(proposed)),
+      reviewFileEdit: review } as unknown as APIClient;
+    const user = userEvent.setup();
+    renderPanel(client);
+    await user.click(await screen.findByRole("button", { name: /README.md/ }));
+    await user.click(screen.getByRole("button", { name: "Approve and apply README.md" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("workspace file changed after review; refusing to apply");
   });
 });
 

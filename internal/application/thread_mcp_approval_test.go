@@ -74,15 +74,18 @@ func TestThreadTurnStopsAtPendingMCPApprovalAndResumesSameTurn(t *testing.T) {
 func TestThreadPendingMCPApprovalContinuesAcrossToolBoundary(t *testing.T) {
 	f := newMCPRecoveryAcceptanceRuntime(t, domain.RunExecutionPermissionAsk, 1, false)
 	request := ExecuteThreadTurnRequest{Version: domain.ThreadMessageProtocolVersion,
-		ThreadID: domain.InitialThreadID(f.run.ID), Content: "Read the approved result and finish all five tool rounds.",
+		ThreadID: domain.InitialThreadID(f.run.ID), Content: "Read the approved result and finish all tool rounds across the scheduling boundary.",
 		OperationKey: "thread-mcp-approved-tool-boundary", RequestedBy: "operator"}
+	boundaryIndex := domain.MaxSupervisorToolRounds + 1
+	postBoundaryToolIndex := domain.MaxSupervisorToolRounds + 2
+	finalWaitIndex := domain.MaxSupervisorToolRounds + 3
 	f.provider.respond = func(modelRequest llm.ChatRequest, index int) (*llm.ChatResponse, error) {
 		response := &llm.ChatResponse{Provider: f.provider.Name(), Model: "fixture", Usage: llm.Usage{InputTokens: 2, OutputTokens: 2, TotalTokens: 4}}
-		switch index {
-		case 1:
+		switch {
+		case index == 1:
 			return nil, nil // The original MCP call must really stop for Ask approval.
-		case 2, 3, 4, 6:
-			if index == 6 {
+		case (index >= 2 && index <= domain.MaxSupervisorToolRounds) || index == postBoundaryToolIndex:
+			if index == postBoundaryToolIndex {
 				original, priorResults := false, false
 				for _, message := range modelRequest.Messages {
 					original = original || strings.Contains(message.Content, request.Content)
@@ -94,13 +97,13 @@ func TestThreadPendingMCPApprovalContinuesAcrossToolBoundary(t *testing.T) {
 			}
 			response.ToolCalls = []llm.ToolCall{{ID: fmt.Sprintf("approved-boundary-note-%d", index), Name: "note_create",
 				Arguments: json.RawMessage(fmt.Sprintf(`{"title":"Round result","category":"observation","content":"Recorded result in round %d"}`, index))}}
-		case 5, 7:
-			kind, message, reason := domain.RootActionContinue, "The fifth tool round still remains.", ""
-			if index == 5 && (len(modelRequest.Tools) != 0 || !strings.Contains(modelRequest.Messages[len(modelRequest.Messages)-1].Content, "scheduling boundary")) {
-				return nil, fmt.Errorf("expected the four-round scheduling boundary")
+		case index == boundaryIndex || index == finalWaitIndex:
+			kind, message, reason := domain.RootActionContinue, "The post-boundary tool round still remains.", ""
+			if index == boundaryIndex && (len(modelRequest.Tools) != 0 || !strings.Contains(modelRequest.Messages[len(modelRequest.Messages)-1].Content, "scheduling boundary")) {
+				return nil, fmt.Errorf("expected the scheduling boundary at round %d", domain.MaxSupervisorToolRounds)
 			}
-			if index == 7 {
-				kind, message = domain.RootActionWait, "All five tool rounds completed."
+			if index == finalWaitIndex {
+				kind, message = domain.RootActionWait, "All tool rounds completed."
 				reason = "Awaiting the next operator input"
 			}
 			raw, err := json.Marshal(domain.RootAction{Version: domain.RootLifecycleVersion, Kind: kind, Message: message, Reason: reason})
@@ -131,8 +134,8 @@ func TestThreadPendingMCPApprovalContinuesAcrossToolBoundary(t *testing.T) {
 		checkpoint, _, checkpointErr := f.st.GetSupervisorCheckpoint(t.Context(), f.run.ID)
 		t.Fatalf("resume: %+v model calls=%d checkpoint=%+v err=%v", resumed, f.provider.requests, checkpoint, checkpointErr)
 	}
-	if f.provider.requests != 7 || f.wireCalls.Load() != 1 {
-		t.Fatalf("approval stopped before fifth round or repeated MCP: model=%d MCP=%d", f.provider.requests, f.wireCalls.Load())
+	if f.provider.requests != finalWaitIndex || f.wireCalls.Load() != 1 {
+		t.Fatalf("approval stopped before post-boundary round or repeated MCP: model=%d MCP=%d", f.provider.requests, f.wireCalls.Load())
 	}
 	message, err := f.st.GetOperatorSteering(t.Context(), first.Submission.Message.ID)
 	if err != nil || message.Status != domain.OperatorSteeringCommitted {
@@ -156,7 +159,7 @@ func TestThreadPendingMCPApprovalContinuesAcrossToolBoundary(t *testing.T) {
 	if replay, err := f.turns.Execute(t.Context(), request); err != nil || !replay.Replayed {
 		t.Fatalf("Thread replay: %+v %v", replay, err)
 	}
-	if f.provider.requests != 7 || f.wireCalls.Load() != 1 {
+	if f.provider.requests != finalWaitIndex || f.wireCalls.Load() != 1 {
 		t.Fatal("replay repeated model or tool execution")
 	}
 }

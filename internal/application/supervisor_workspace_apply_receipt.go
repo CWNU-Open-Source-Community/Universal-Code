@@ -24,19 +24,20 @@ type workspaceApplyReceiptStore interface {
 	GetWorkspaceCheckpoint(context.Context, string) (workspacecheckpoint.Checkpoint, error)
 }
 
-// Reconcile only a successful workspace_apply whose optional feedback or
-// artifact capture crossed the tool deadline. This never retries a mutation or
-// infers success from current file bytes. The original fenced operation and its
-// exact completed checkpoint must already be durable.
+// Reconcile only a successful workspace_apply or 1-step workspace_change whose
+// optional feedback or artifact capture crossed the tool deadline. This never
+// retries a mutation or infers success from current file bytes. The original
+// fenced operation and its exact completed checkpoint must already be durable.
 func (s *AgentRunner) reconcileWorkspaceApplyDeadline(ctx context.Context,
 	turn domain.SupervisorTurn, call domain.SupervisorToolCall, outcome toolgateway.Outcome,
 ) (toolgateway.Outcome, bool, error) {
 	reader, ok := s.store.(workspaceApplyReceiptStore)
-	if !ok || call.ToolName != string(toolgateway.WorkspaceApplyTool) ||
+	toolName := toolgateway.ToolName(call.ToolName)
+	if !ok || (toolName != toolgateway.WorkspaceApplyTool && toolName != toolgateway.WorkspaceChangeTool) ||
 		outcome.Result == nil || outcome.Result.Status != toolgateway.StatusCompleted ||
 		!outcome.Decision.Allowed || outcome.Execution == nil ||
 		outcome.Execution.Backend != "agent_code_workspace" || outcome.Validate() != nil ||
-		outcome.Call.Name != toolgateway.WorkspaceApplyTool || outcome.Call.InvocationID == "" ||
+		outcome.Call.Name != toolName || outcome.Call.InvocationID == "" ||
 		outcome.Call.RunID != call.RunID || outcome.Call.SessionID != turn.Run.SessionID ||
 		outcome.Call.WorkspaceID != turn.Mission.WorkspaceID ||
 		outcome.Call.AgentID != turn.Agent.ID || outcome.Call.AgentAttemptID != call.AttemptID ||
@@ -45,17 +46,13 @@ func (s *AgentRunner) reconcileWorkspaceApplyDeadline(ctx context.Context,
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	payload, err := toolgateway.NormalizeAgentCodePayload(toolgateway.WorkspaceApplyTool, json.RawMessage(call.PayloadJSON))
+	payload, err := toolgateway.NormalizeAgentCodePayload(toolName, json.RawMessage(call.PayloadJSON))
 	if err != nil || string(payload) != call.PayloadJSON {
 		return outcome, false, nil
 	}
-	var input toolgateway.WorkspaceApplyPayload
-	if json.Unmarshal(payload, &input) != nil {
-		return outcome, false, nil
-	}
 	authority, err := toolgateway.DecodeAgentCodeCallAuthority(json.RawMessage(call.AuthorityJSON))
-	key := supervisorToolOperationKey(call.RunID, call.Turn, toolgateway.WorkspaceApplyTool, payload)
-	callID, keyErr := runmutation.SupervisorToolCallID(key, call.Round)
+	proposeOrApplyKey := supervisorToolOperationKey(call.RunID, call.Turn, toolName, payload)
+	callID, keyErr := runmutation.SupervisorToolCallID(proposeOrApplyKey, call.Round)
 	if err != nil || keyErr != nil || callID != call.CallID ||
 		call.RunID != turn.Run.ID || call.AttemptID != turn.Checkpoint.AttemptID ||
 		call.AgentID != turn.Agent.ID || call.AgentAttemptID != call.AttemptID ||
@@ -67,12 +64,41 @@ func (s *AgentRunner) reconcileWorkspaceApplyDeadline(ctx context.Context,
 		outcome.Result.Metadata["capability_generation"] != authority.CapabilityGeneration {
 		return outcome, false, nil
 	}
+	var editID, key, expectedAction, expectedOriginal, expectedProposed string
+	if toolName == toolgateway.WorkspaceApplyTool {
+		var input toolgateway.WorkspaceApplyPayload
+		if json.Unmarshal(payload, &input) != nil {
+			return outcome, false, nil
+		}
+		editID = input.EditID
+		key = proposeOrApplyKey
+		expectedAction = map[string]string{"create": fileedit.OperationCreate, "propose_patch": fileedit.OperationReplace,
+			"replace": fileedit.OperationReplace, "move": fileedit.OperationMove}[input.ExpectedAction]
+		expectedOriginal = input.ExpectedOriginalSHA256
+		expectedProposed = input.ExpectedProposedSHA256
+	} else {
+		var input toolgateway.WorkspaceChangePayload
+		if json.Unmarshal(payload, &input) != nil {
+			return outcome, false, nil
+		}
+		editID = agentCodeEditID(proposeOrApplyKey)
+		if input.Action == "propose_revert" {
+			editID = "edit-revert-" + runmutation.Fingerprint("file_edit_revert_proposal.v1",
+				call.RunID, input.SourceEditID, proposeOrApplyKey)[:48]
+		}
+		key = agentCodeAutoApplyOperationKey(proposeOrApplyKey)
+		expectedAction = map[string]string{"create": fileedit.OperationCreate, "propose_patch": fileedit.OperationReplace,
+			"replace": fileedit.OperationReplace, "move": fileedit.OperationMove}[input.Action]
+		if input.Action != "propose_revert" {
+			expectedOriginal = input.ExpectedSHA256
+		}
+	}
 	// An explicit retry of a sealed pre-boundary failure can reuse its prepared
 	// intent. Its NEW checkpoint must still belong to this exact invocation.
 	if recovery, ok := s.store.(interface {
 		GetFailedFileApplyOperationKey(context.Context, string, string, string) (string, bool, error)
 	}); ok {
-		oldKey, found, lookupErr := recovery.GetFailedFileApplyOperationKey(ctx, call.RunID, input.EditID, turn.Agent.ID)
+		oldKey, found, lookupErr := recovery.GetFailedFileApplyOperationKey(ctx, call.RunID, editID, turn.Agent.ID)
 		if lookupErr != nil {
 			return outcome, false, lookupErr
 		}
@@ -80,18 +106,18 @@ func (s *AgentRunner) reconcileWorkspaceApplyDeadline(ctx context.Context,
 			key = oldKey
 		}
 	}
-	digest := runmutation.FileEditApplyOperationDigest(call.RunID, input.EditID, key)
+	digest := runmutation.FileEditApplyOperationDigest(call.RunID, editID, key)
 	operation, result, found, err := reader.GetFileEditApplyOperation(ctx, digest)
 	if err != nil || !found || result == nil {
 		return outcome, false, err
 	}
-	kind := map[string]string{"create": fileedit.OperationCreate, "propose_patch": fileedit.OperationReplace,
-		"replace": fileedit.OperationReplace, "move": fileedit.OperationMove}[input.ExpectedAction]
 	if operation.ProtocolVersion != fileedit.FileEditApplyProtocolVersion || operation.KeyDigest != digest ||
-		operation.RequestFingerprint != runmutation.FileEditApplyRequestFingerprint(call.RunID, input.EditID, turn.Agent.ID) ||
+		operation.RequestFingerprint != runmutation.FileEditApplyRequestFingerprint(call.RunID, editID, turn.Agent.ID) ||
 		operation.RunID != call.RunID || operation.SessionID != turn.Run.SessionID ||
-		operation.AppliedBy != turn.Agent.ID || operation.EditID != input.EditID || operation.Operation != kind ||
-		operation.OriginalHash != input.ExpectedOriginalSHA256 || operation.ProposedHash != input.ExpectedProposedSHA256 ||
+		operation.AppliedBy != turn.Agent.ID || operation.EditID != editID ||
+		(expectedAction != "" && operation.Operation != expectedAction) ||
+		(expectedOriginal != "" && operation.OriginalHash != expectedOriginal) ||
+		(expectedProposed != "" && operation.ProposedHash != expectedProposed) ||
 		result.OperationKeyDigest != digest || result.Status != fileedit.ApplyCompleted || result.ReasonCode != "" {
 		return outcome, false, nil
 	}
@@ -101,11 +127,11 @@ func (s *AgentRunner) reconcileWorkspaceApplyDeadline(ctx context.Context,
 	if err != nil {
 		return outcome, false, err
 	}
-	edit, err := reader.GetFileEdit(ctx, input.EditID)
+	edit, err := reader.GetFileEdit(ctx, editID)
 	if err != nil {
 		return outcome, false, err
 	}
-	if edit.ID != input.EditID || operation.WorkspaceID != files.Workspace.ID || edit.WorkspaceID != operation.WorkspaceID ||
+	if edit.ID != editID || operation.WorkspaceID != files.Workspace.ID || edit.WorkspaceID != operation.WorkspaceID ||
 		edit.SessionID != operation.SessionID || edit.Status != fileedit.StatusApplied ||
 		edit.Operation != operation.Operation || edit.Path != operation.Path ||
 		edit.DestinationPath != operation.DestinationPath || edit.OriginalHash != operation.OriginalHash ||
@@ -120,10 +146,10 @@ func (s *AgentRunner) reconcileWorkspaceApplyDeadline(ctx context.Context,
 	}
 	fingerprint := runmutation.Fingerprint("workspace_mutation_boundary_request.v1", call.RunID,
 		turn.Mission.ID, turn.Run.SessionID, operation.WorkspaceID,
-		string(workspacecheckpoint.TransactionFileTool), input.EditID, call.CallID)
+		string(workspacecheckpoint.TransactionFileTool), editID, call.CallID)
 	if transaction.OperationKeyDigest != boundaryDigest || transaction.RequestFingerprint != fingerprint ||
 		transaction.RunID != call.RunID || transaction.WorkspaceID != operation.WorkspaceID ||
-		transaction.Kind != workspacecheckpoint.TransactionFileTool || transaction.TriggerReceiptID != input.EditID ||
+		transaction.Kind != workspacecheckpoint.TransactionFileTool || transaction.TriggerReceiptID != editID ||
 		transaction.Status != workspacecheckpoint.TransactionCompleted || transaction.ErrorCode != "" ||
 		transaction.AfterCheckpointID == "" || transaction.CompletedAt == nil {
 		return outcome, false, nil
@@ -140,7 +166,7 @@ func (s *AgentRunner) reconcileWorkspaceApplyDeadline(ctx context.Context,
 		if checkpoint.RunID != call.RunID || checkpoint.MissionID != turn.Mission.ID ||
 			checkpoint.SessionID != turn.Run.SessionID || checkpoint.WorkspaceID != operation.WorkspaceID ||
 			checkpoint.AttemptID != call.AttemptID || checkpoint.CapabilityGeneration != authority.CapabilityGeneration ||
-			checkpoint.Trigger != workspacecheckpoint.TriggerFileTool || checkpoint.TriggerReceiptID != input.EditID ||
+			checkpoint.Trigger != workspacecheckpoint.TriggerFileTool || checkpoint.TriggerReceiptID != editID ||
 			checkpoint.Phase != phase || (phase == workspacecheckpoint.PhaseAfter &&
 			checkpoint.ParentCheckpointID != transaction.BeforeCheckpointID) {
 			return outcome, false, nil

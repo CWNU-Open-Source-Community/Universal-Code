@@ -43,7 +43,7 @@ func writeSupervisorToolProgressTx(ctx context.Context, tx *sql.Tx, runID string
 		model_attempt, call_id, stream_response_id, stream_item_id, stream_call_id,
 		tool_name, payload_json, authority_json, status, result_json, error_code, created_at, completed_at
 		FROM run_supervisor_tool_calls WHERE run_id=? AND status='completed' AND error_code=''
-		AND completed_at IS NOT NULL AND tool_name IN ('workspace_read','workspace_apply','workspace_delete','browser_snapshot')
+		AND completed_at IS NOT NULL AND tool_name IN ('workspace_read','workspace_change','workspace_apply','workspace_delete','browser_snapshot')
 		ORDER BY turn,rowid`, runID)
 	if err != nil {
 		return fmt.Errorf("read sealed tool progress: %w", err)
@@ -193,32 +193,81 @@ func progressAppliedObservation(call domain.SupervisorToolCall, envelope progres
 		return "", false
 	}
 	var result struct {
-		Operation string `json:"operation"`
-		Original  string `json:"original_sha256"`
-		Proposed  string `json:"proposed_sha256"`
+		Operation           string `json:"operation"`
+		Original            string `json:"original_sha256"`
+		Proposed            string `json:"proposed_sha256"`
+		DestinationPath     string `json:"destination_path"`
+		DestinationOriginal string `json:"destination_original_sha256"`
+		DestinationProposed string `json:"destination_proposed_sha256"`
 	}
 	if json.Unmarshal([]byte(envelope.Stdout), &result) != nil || !progressRelativePath(effect.Path) ||
-		!progressSHA256(result.Proposed) || result.Proposed != effect.ProposedSHA256 ||
-		(result.Original != "missing" && !progressSHA256(result.Original)) || result.Original == result.Proposed {
+		(result.Original != "missing" && !progressSHA256(result.Original)) {
 		return "", false
 	}
-	var request toolgateway.WorkspaceApplyPayload
-	if call.ToolName != "workspace_apply" || json.Unmarshal([]byte(call.PayloadJSON), &request) != nil ||
-		request.Version != "agent-code-tools.v1" || request.EditID != effect.EditID ||
-		request.ExpectedOriginalSHA256 != result.Original || request.ExpectedProposedSHA256 != result.Proposed ||
-		!((request.ExpectedAction == "create" && result.Operation == "create" && result.Original == "missing") ||
-			((request.ExpectedAction == "propose_patch" || request.ExpectedAction == "replace") && result.Operation == "replace" && progressSHA256(result.Original))) {
+	isMove := result.Operation == "move"
+	if isMove {
+		if !progressRelativePath(result.DestinationPath) || result.DestinationPath == effect.Path ||
+			!progressSHA256(result.Original) || result.Proposed != "missing" ||
+			(result.DestinationOriginal != "" && result.DestinationOriginal != "missing") ||
+			!progressSHA256(result.DestinationProposed) || result.DestinationProposed != effect.DestinationProposedSHA256 {
+			return "", false
+		}
+	} else if !progressSHA256(result.Proposed) || result.Proposed != effect.ProposedSHA256 || result.Original == result.Proposed {
 		return "", false
+	}
+	switch call.ToolName {
+	case "workspace_apply":
+		var request toolgateway.WorkspaceApplyPayload
+		if json.Unmarshal([]byte(call.PayloadJSON), &request) != nil ||
+			request.Version != "agent-code-tools.v1" || request.EditID != effect.EditID ||
+			request.ExpectedOriginalSHA256 != result.Original || request.ExpectedProposedSHA256 != result.Proposed ||
+			!((request.ExpectedAction == "create" && result.Operation == "create" && result.Original == "missing") ||
+				((request.ExpectedAction == "propose_patch" || request.ExpectedAction == "replace") && result.Operation == "replace" && progressSHA256(result.Original)) ||
+				(request.ExpectedAction == "move" && result.Operation == "move" && progressSHA256(result.Original))) {
+			return "", false
+		}
+	case "workspace_change":
+		var request toolgateway.WorkspaceChangePayload
+		if json.Unmarshal([]byte(call.PayloadJSON), &request) != nil ||
+			request.Version != "agent-code-tools.v1" ||
+			path.Clean(strings.ReplaceAll(request.Path, "\\", "/")) != effect.Path {
+			return "", false
+		}
+		validAction := (request.Action == "create" && result.Operation == "create" && result.Original == "missing" && request.ExpectedSHA256 == "missing") ||
+			((request.Action == "replace" || request.Action == "propose_patch") && result.Operation == "replace" && progressSHA256(result.Original) && request.ExpectedSHA256 == result.Original) ||
+			(request.Action == "move" && result.Operation == "move" && progressSHA256(result.Original) && request.ExpectedSHA256 == result.Original &&
+				request.DestinationExpectedSHA256 == "missing" && path.Clean(strings.ReplaceAll(request.DestinationPath, "\\", "/")) == result.DestinationPath) ||
+			(request.Action == "propose_revert" && request.ExpectedSHA256 == result.Original &&
+				((result.Operation == "replace" && progressSHA256(result.Original)) || (result.Operation == "create" && result.Original == "missing")))
+		if !validAction {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+	metadata := map[string]string{
+		"path":            effect.Path,
+		"original_sha256": result.Original,
+		"proposed_sha256": result.Proposed,
+		"file_written":    "true",
+		"replayed":        "false",
+	}
+	if isMove {
+		metadata["destination_path"] = result.DestinationPath
+		metadata["destination_proposed_sha256"] = result.DestinationProposed
 	}
 	authority, err := toolgateway.DecodeAgentCodeCallAuthority(json.RawMessage(call.AuthorityJSON))
 	if err != nil || !progressScopeMatches(call, envelope.Metadata, authority.WorkspaceID, authority.RootFingerprint) ||
-		!progressMetadataMatches(envelope.Metadata, map[string]string{"path": effect.Path,
-			"original_sha256": result.Original, "proposed_sha256": result.Proposed, "file_written": "true", "replayed": "false"}) {
+		!progressMetadataMatches(envelope.Metadata, metadata) {
 		return "", false
 	}
 	// An exact replay, a duplicate receipt with a new ID, or an already seen
 	// A->B transition contributes no additional effect. This is a past observed
 	// write, never a claim about the current filesystem or a grant of authority.
+	if isMove {
+		return progressTuple(authority.WorkspaceID, authority.RootFingerprint, effect.Path,
+			result.DestinationPath, result.Operation, result.Original, result.DestinationProposed), true
+	}
 	return progressTuple(authority.WorkspaceID, authority.RootFingerprint, effect.Path,
 		result.Operation, result.Original, result.Proposed), true
 }

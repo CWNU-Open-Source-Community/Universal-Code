@@ -93,7 +93,15 @@ func (s *FileEditApplyService) checkWorkerFileEditSource(ctx context.Context, bi
 	var payload struct {
 		EditID string `json:"edit_id"`
 	}
-	if json.Unmarshal([]byte(c.PayloadJSON), &payload) != nil || payload.EditID != binding.edit.ID || source.SessionID != binding.edit.SessionID || source.Ref.AgentID != request.AppliedBy || source.LeaseID != request.LeaseID || source.LeaseGeneration != request.LeaseGeneration || (c.Name != string(toolgateway.WorkspaceApplyTool) && c.Name != string(toolgateway.WorkspaceDeleteTool)) {
+	validTool := false
+	switch c.Name {
+	case string(toolgateway.WorkspaceApplyTool), string(toolgateway.WorkspaceDeleteTool):
+		validTool = json.Unmarshal([]byte(c.PayloadJSON), &payload) == nil && payload.EditID == binding.edit.ID
+	case string(toolgateway.WorkspaceChangeTool):
+		validTool = binding.approval.Mode == "automatic" &&
+			agentCodeEditID(domain.SpecialistToolApprovalID(c.Ref, c.CallID)) == binding.edit.ID
+	}
+	if !validTool || source.SessionID != binding.edit.SessionID || source.Ref.AgentID != request.AppliedBy || source.LeaseID != request.LeaseID || source.LeaseGeneration != request.LeaseGeneration {
 		return errors.New("worker FileEdit intent differs from its prepared apply")
 	}
 	a, err := toolgateway.DecodeAgentCodeCallAuthority(json.RawMessage(c.AuthorityJSON))

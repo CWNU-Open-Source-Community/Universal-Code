@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"testing"
 )
 
@@ -14,7 +13,7 @@ func TestNativeMCPStateCreationRejectsPreexistingJunction(t *testing.T) {
 	root, outside := t.TempDir(), t.TempDir()
 	link := filepath.Join(root, "redirected")
 	command := exec.Command("cmd.exe", "/d", "/c", "mklink", "/J", link, outside)
-	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	hideSubprocessWindow(command)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("controlled temporary fixture junction: %v %s", err, output)
 	}

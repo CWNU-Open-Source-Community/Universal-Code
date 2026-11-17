@@ -38,11 +38,14 @@ func TestApprovalContinuationFileDecisionReturnsToOriginalTask(t *testing.T) {
 						}
 					}
 					if approve {
-						return boundaryApply("apply", edit), nil
+						for _, exact := range []string{"System-recorded direct file apply result after operator approval", "APPLIED"} {
+							if !strings.Contains(all.String(), exact) {
+								t.Fatalf("approved continuation omitted %q", exact)
+							}
+						}
+						return textResponse(rootActionResponse(domain.RootActionFinish, "Applied the approved edit", "done", "")), nil
 					}
 					return textResponse(rootActionResponse(domain.RootActionFinish, "The proposal was denied; no file was changed", "done", "")), nil
-				case 4:
-					return textResponse(rootActionResponse(domain.RootActionFinish, "Applied the approved edit", "done", "")), nil
 				default:
 					return nil, fmt.Errorf("unexpected model call %d", index)
 				}
@@ -67,7 +70,7 @@ func TestApprovalContinuationFileDecisionReturnsToOriginalTask(t *testing.T) {
 			}
 			resumeRequest := application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: edit.ID}
 			result := turns.ResumeApproval(t.Context(), resumeRequest)
-			if result.State != "completed" || !result.ModelCalled || result.ToolCalled != approve || result.Replayed {
+			if result.State != "completed" || !result.ModelCalled || result.ToolCalled || result.Replayed {
 				_, _, diagnostic := st.PrepareApprovalContinuation(t.Context(), run.ID, "file_edit", edit.ID)
 				t.Logf("preparation diagnostic: %v", diagnostic)
 				t.Fatalf("continuation=%#v", result)
@@ -82,7 +85,7 @@ func TestApprovalContinuationFileDecisionReturnsToOriginalTask(t *testing.T) {
 			}
 			before := len(provider.Requests())
 			replay, err := application.NewFileEditReviewService(st).Review(t.Context(), reviewRequest)
-			if err != nil || !replay.Replayed || replay.Edit.Status != review.Edit.Status || !replay.Edit.UpdatedAt.Equal(review.Edit.UpdatedAt) {
+			if err != nil || !replay.Replayed || replay.Edit.Status != review.Edit.Status && (!approve || replay.Edit.Status != fileedit.StatusApplied) {
 				t.Fatalf("sealed review replay=%#v err=%v", replay, err)
 			}
 			again := turns.ResumeApproval(t.Context(), resumeRequest)
@@ -106,15 +109,11 @@ func TestApprovalContinuationChainedReviewsReuseUserWithoutReplayingWrites(t *te
 		switch index {
 		case 1:
 			return boundaryPropose("first-proposal"), nil
-		case 2, 5:
+		case 2, 4:
 			return textResponse(rootActionResponse(domain.RootActionWait, "Review next file change", "", "operator review required")), nil
 		case 3:
-			return boundaryApply("apply-first", first), nil
-		case 4:
 			return toolResponse("second-proposal", "workspace_change", fmt.Sprintf(`{"version":"agent-code-tools.v1","action":"propose_patch","path":"README.md","expected_sha256":%q,"replacements":[{"old_text":"reviewed text","new_text":"final text","expected_occurrences":1}]}`, fileedit.HashText("reviewed text\n"))), nil
-		case 6:
-			return boundaryApply("apply-second", second), nil
-		case 7:
+		case 5:
 			return textResponse(rootActionResponse(domain.RootActionFinish, "Both separately approved edits applied", "done", "")), nil
 		default:
 			return nil, fmt.Errorf("unexpected call %d", index)
@@ -140,14 +139,14 @@ func TestApprovalContinuationChainedReviewsReuseUserWithoutReplayingWrites(t *te
 		}
 	}
 	// Reconfirm the first approval during a new wait; never consume the second.
-	if replay := turns.ResumeApproval(t.Context(), firstRequest); !replay.Replayed || len(p.Requests()) != 5 {
+	if replay := turns.ResumeApproval(t.Context(), firstRequest); !replay.Replayed || len(p.Requests()) != 4 {
 		t.Fatalf("old review woke new wait: %#v", replay)
 	}
 	if _, err := application.NewFileEditReviewService(st).Review(t.Context(), application.ReviewFileEditRequest{Version: application.FileEditReviewProtocolVersion, RunID: run.ID, EditID: second.ID, Action: application.FileEditApproveIntent}); err != nil {
 		t.Fatal(err)
 	}
 	r2 := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: second.ID})
-	if r2.State != "completed" || r2.HandoffID == r1.HandoffID || len(p.Requests()) != 7 {
+	if r2.State != "completed" || r2.HandoffID == r1.HandoffID || len(p.Requests()) != 5 {
 		t.Fatalf("second continuation=%#v calls=%d", r2, len(p.Requests()))
 	}
 	body, err := os.ReadFile(filepath.Join(root, "README.md"))
@@ -172,7 +171,7 @@ func TestApprovalContinuationStopPreventsLateApprovalRevival(t *testing.T) {
 			<-ctx.Done()
 			return nil, ctx.Err()
 		case 4:
-			return textResponse(rootActionResponse(domain.RootActionFinish, "Stopped edit retained; following the new read-only request", "done", "")), nil
+			return textResponse(rootActionResponse(domain.RootActionFinish, "Stopped turn settled; following the new read-only request", "done", "")), nil
 		default:
 			return nil, fmt.Errorf("unexpected call %d", index)
 		}
@@ -209,12 +208,12 @@ func TestApprovalContinuationStopPreventsLateApprovalRevival(t *testing.T) {
 		t.Fatalf("late approval=%#v", replay)
 	}
 	body, _ := os.ReadFile(filepath.Join(root, "README.md"))
-	if string(body) != "original text\n" {
-		t.Fatalf("stop wrote %q", body)
+	if string(body) != "reviewed text\n" {
+		t.Fatalf("direct apply wrote=%q", body)
 	}
 	next := input
 	next.OperationKey = "after-stopped-review"
-	next.Content = "Leave the approved edit unapplied. Only explain current state."
+	next.Content = "Only explain current state."
 	if _, err := turns.Execute(t.Context(), next); err != nil {
 		t.Fatalf("new request blocked after safely closed continuation: %v", err)
 	}
@@ -241,8 +240,6 @@ func TestApprovalContinuationDecisionDuringModelWaitUsesExistingOwner(t *testing
 			}
 			return textResponse(rootActionResponse(domain.RootActionWait, "Review", "", "operator review")), nil
 		case 3:
-			return boundaryApply("apply", edit), nil
-		case 4:
 			return textResponse(rootActionResponse(domain.RootActionFinish, "Applied exact approved edit", "done", "")), nil
 		default:
 			return nil, fmt.Errorf("unexpected call %d", index)
@@ -274,35 +271,40 @@ func TestApprovalContinuationDecisionDuringModelWaitUsesExistingOwner(t *testing
 		t.Fatal("existing owner failed to drain approval")
 	}
 	body, _ := os.ReadFile(filepath.Join(root, "README.md"))
-	if string(body) != "reviewed text\n" || len(p.Requests()) != 4 {
+	if string(body) != "reviewed text\n" || len(p.Requests()) != 3 {
 		t.Fatalf("body=%q calls=%d", body, len(p.Requests()))
 	}
 	assertOneBoundaryTranscriptInput(t, st, input.ThreadID, input.Content)
 }
 
 func TestApprovalContinuationPreservesInputAcrossFourToolRoundBoundary(t *testing.T) {
-	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 	var edit fileedit.Edit
 	p := &boundaryJourneyProvider{}
 	p.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		switch index {
-		case 1:
+		switch {
+		case index == 1:
 			return boundaryPropose("proposal"), nil
-		case 2:
+		case index == 2:
 			return textResponse(rootActionResponse(domain.RootActionWait, "Review", "", "operator review")), nil
-		case 3:
-			return boundaryApply("apply-once", edit), nil
-		case 4, 5, 6:
+		case index >= 3 && index <= domain.MaxSupervisorToolRounds+2:
 			return boundaryRead(fmt.Sprintf("read-%d", index), 1), nil
-		case 7:
+		case index == domain.MaxSupervisorToolRounds+3:
 			assertBoundaryPrompt(t, request)
 			return textResponse(rootActionResponse(domain.RootActionContinue, "One final read remains", "", "")), nil
-		case 8:
-			if !strings.Contains(boundaryContextText(t, request), edit.ID) {
-				t.Fatal("next segment lost actual completed apply")
+		case index == domain.MaxSupervisorToolRounds+4:
+			if strings.TrimSpace(boundaryContextText(t, request)) == "" {
+				t.Fatal("next segment lost preceding tool-boundary evidence")
 			}
-			return boundaryRead("fifth-tool", 1), nil
-		case 9:
+			var all strings.Builder
+			for _, message := range request.Messages {
+				all.WriteString(message.Content)
+			}
+			if !strings.Contains(all.String(), edit.ID) || !strings.Contains(all.String(), "APPLIED") {
+				t.Fatal("next segment lost actual completed direct apply evidence")
+			}
+			return boundaryRead("final-tool", 1), nil
+		case index == domain.MaxSupervisorToolRounds+5:
 			return textResponse(rootActionResponse(domain.RootActionFinish, "Finished the approved task after actual final read", "done", "")), nil
 		default:
 			return nil, fmt.Errorf("unexpected call %d", index)
@@ -314,7 +316,7 @@ func TestApprovalContinuationPreservesInputAcrossFourToolRoundBoundary(t *testin
 	}
 	edit = approveBoundaryEdit(t, st, run)
 	result := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: edit.ID})
-	if result.State != "completed" || len(p.Requests()) != 9 {
+	if result.State != "completed" || len(p.Requests()) != domain.MaxSupervisorToolRounds+5 {
 		t.Fatalf("boundary stopped: %#v calls=%d", result, len(p.Requests()))
 	}
 	body, _ := os.ReadFile(filepath.Join(root, "README.md"))
@@ -329,26 +331,24 @@ func TestApprovalContinuationPreservesInputAcrossFourToolRoundBoundary(t *testin
 }
 
 func TestApprovalContinuationProposalBeforeBoundaryWaitsForExactLaterSegment(t *testing.T) {
-	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 9, MaxToolCalls: 20})
+	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 9, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 15)})
 	var first, second fileedit.Edit
 	p := &boundaryJourneyProvider{}
 	p.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		switch index {
-		case 1:
+		switch {
+		case index == 1:
 			return boundaryPropose("first-proposal"), nil
-		case 2, 9:
+		case index == 2, index == domain.MaxSupervisorToolRounds+5:
 			return textResponse(rootActionResponse(domain.RootActionWait, "Review next exact edit", "", "operator review")), nil
-		case 3:
-			return boundaryApply("first-apply", first), nil
-		case 4:
+		case index == 3:
 			return toolResponse("second-proposal", "workspace_change", fmt.Sprintf(`{"version":"agent-code-tools.v1","action":"propose_patch","path":"README.md","expected_sha256":%q,"replacements":[{"old_text":"reviewed text","new_text":"final text","expected_occurrences":1}]}`, fileedit.HashText("reviewed text\n"))), nil
-		case 5, 6, 8:
+		case index >= 4 && index <= domain.MaxSupervisorToolRounds+2:
 			return boundaryRead(fmt.Sprintf("read-%d", index), 1), nil
-		case 7:
+		case index == domain.MaxSupervisorToolRounds+3:
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Inspect once more before waiting", "", "")), nil
-		case 10:
-			return boundaryApply("second-apply", second), nil
-		case 11:
+		case index == domain.MaxSupervisorToolRounds+4:
+			return boundaryRead("read-after-boundary", 1), nil
+		case index == domain.MaxSupervisorToolRounds+6:
 			return textResponse(rootActionResponse(domain.RootActionFinish, "Both reviewed edits complete", "done", "")), nil
 		default:
 			return nil, fmt.Errorf("unexpected call %d", index)
@@ -359,7 +359,7 @@ func TestApprovalContinuationProposalBeforeBoundaryWaitsForExactLaterSegment(t *
 		t.Fatal(err)
 	}
 	first = approveBoundaryEdit(t, st, run)
-	if result := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: first.ID}); result.State != "completed" || len(p.Requests()) != 9 {
+	if result := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: first.ID}); result.State != "completed" || len(p.Requests()) != domain.MaxSupervisorToolRounds+5 {
 		t.Fatalf("first=%#v calls=%d", result, len(p.Requests()))
 	}
 	edits, err := st.ListFileEdits(t.Context(), fileedit.ListFilter{SessionID: run.SessionID})
@@ -374,7 +374,7 @@ func TestApprovalContinuationProposalBeforeBoundaryWaitsForExactLaterSegment(t *
 	if _, err := application.NewFileEditReviewService(st).Review(t.Context(), application.ReviewFileEditRequest{Version: application.FileEditReviewProtocolVersion, RunID: run.ID, EditID: second.ID, Action: application.FileEditApproveIntent}); err != nil {
 		t.Fatal(err)
 	}
-	if result := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: second.ID}); result.State != "completed" || len(p.Requests()) != 11 {
+	if result := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: second.ID}); result.State != "completed" || len(p.Requests()) != domain.MaxSupervisorToolRounds+6 {
 		t.Fatalf("second=%#v calls=%d", result, len(p.Requests()))
 	}
 	body, _ := os.ReadFile(filepath.Join(root, "README.md"))
@@ -424,3 +424,112 @@ func TestApprovalContinuationDoesNotWakeManualReviewOrOverrideNewInput(t *testin
 		})
 	}
 }
+
+func TestApprovalContinuationDeletesDirectlyOnOperatorApproval(t *testing.T) {
+	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	var edit fileedit.Edit
+	p := &boundaryJourneyProvider{}
+	p.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+		switch index {
+		case 1:
+			return toolResponse("delete-proposal", "workspace_delete", fmt.Sprintf(`{"version":"agent-code-tools.v1","action":"propose","path":"README.md","confirm_path":"README.md","expected_sha256":%q}`, fileedit.HashText("original text\n"))), nil
+		case 2:
+			return textResponse(rootActionResponse(domain.RootActionWait, "Await operator confirmation to delete README.md", "", "delete confirmation required")), nil
+		case 3:
+			var all strings.Builder
+			for _, message := range request.Messages {
+				all.WriteString(message.Content)
+			}
+			for _, exact := range []string{"System-recorded direct file apply result after operator approval", edit.ID, "APPLIED"} {
+				if !strings.Contains(all.String(), exact) {
+					t.Fatalf("delete continuation omitted %q", exact)
+				}
+			}
+			return textResponse(rootActionResponse(domain.RootActionFinish, "Confirmed README.md deleted directly on approval", "done", "")), nil
+		default:
+			return nil, fmt.Errorf("unexpected call %d", index)
+		}
+	}
+	turns := toolBoundaryServiceWithPolicy(st, st, p, &fileOperationPolicy{review: true, reviewDelete: true})
+	if _, err := turns.Execute(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	edit = approveBoundaryEdit(t, st, run)
+	result := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: edit.ID})
+	if result.State != "completed" || !result.ModelCalled || result.ToolCalled || result.Replayed {
+		t.Fatalf("delete continuation=%#v", result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "README.md")); !os.IsNotExist(err) {
+		t.Fatalf("approved delete left README.md behind: %v", err)
+	}
+	updated, err := st.GetFileEdit(t.Context(), edit.ID)
+	if err != nil || updated.Status != fileedit.StatusApplied {
+		t.Fatalf("delete edit=%#v err=%v", updated, err)
+	}
+}
+
+func TestApprovalContinuationRecordsCASConflictWithoutAbortingTurn(t *testing.T) {
+	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	var edit fileedit.Edit
+	p := &boundaryJourneyProvider{}
+	p.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+		switch index {
+		case 1:
+			return boundaryPropose("proposal"), nil
+		case 2:
+			return textResponse(rootActionResponse(domain.RootActionWait, "Await operator review", "", "operator review required")), nil
+		case 3:
+			var all strings.Builder
+			for _, message := range request.Messages {
+				all.WriteString(message.Content)
+			}
+			for _, exact := range []string{"System-recorded direct file apply result after operator approval", edit.ID, "FAILED"} {
+				if !strings.Contains(all.String(), exact) {
+					t.Fatalf("CAS conflict continuation omitted %q", exact)
+				}
+			}
+			return textResponse(rootActionResponse(domain.RootActionFinish, "Reported CAS conflict cleanly without overwriting disk", "done", "")), nil
+		default:
+			return nil, fmt.Errorf("unexpected call %d", index)
+		}
+	}
+	turns := toolBoundaryServiceWithPolicy(st, st, p, &fileOperationPolicy{review: true})
+	if _, err := turns.Execute(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	edit = approveBoundaryEdit(t, st, run)
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("external conflict\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	req := application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: edit.ID}
+	result := turns.ResumeApproval(t.Context(), req)
+	if result.State != "completed" || !result.ModelCalled || result.ToolCalled || result.Replayed {
+		t.Fatalf("CAS conflict continuation=%#v", result)
+	}
+	failedEdit, err := st.GetFileEdit(t.Context(), edit.ID)
+	if err != nil || failedEdit.Status != fileedit.StatusFailed || strings.TrimSpace(failedEdit.Reason) == "" {
+		t.Fatalf("CAS conflict did not transition edit to failed with reason: edit=%#v err=%v", failedEdit, err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil || string(body) != "external conflict\n" {
+		t.Fatalf("CAS conflict overwrote external file: body=%q err=%v", body, err)
+	}
+	replay := turns.ResumeApproval(t.Context(), req)
+	if replay.State != "completed" || !replay.Replayed || len(p.Requests()) != 3 {
+		t.Fatalf("CAS conflict replay=%#v calls=%d", replay, len(p.Requests()))
+	}
+	msgs, err := st.ListSessionMessages(t.Context(), run.SessionID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceCount := 0
+	for _, msg := range msgs {
+		if strings.Contains(msg.Content, "System-recorded direct file apply result after operator approval") {
+			evidenceCount++
+		}
+	}
+	if evidenceCount != 1 {
+		t.Fatalf("expected 1 idempotent direct-apply evidence message, got %d", evidenceCount)
+	}
+}
+

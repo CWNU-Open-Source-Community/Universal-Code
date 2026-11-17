@@ -109,6 +109,7 @@ func TestFixedOperatorWindowsNativeDiagnostic(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	command := exec.CommandContext(ctx, executable, "-test.run=^TestFixedOperatorWindowsNativeDiagnosticChild$")
+	hideSubprocessWindow(command)
 	t.Cleanup(func() {
 		cancel()
 		if command.Process != nil {

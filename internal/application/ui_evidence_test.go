@@ -1053,6 +1053,7 @@ func newUIEvidenceGitWorkspace(t *testing.T) string {
 	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "ui@example.invalid"},
 		{"config", "user.name", "UI Test"}, {"add", "."}, {"commit", "-m", "fixture"}} {
 		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		hideSubprocessWindow(command)
 		command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, output)

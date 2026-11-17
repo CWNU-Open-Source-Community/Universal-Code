@@ -1262,7 +1262,9 @@ func newBatchDeliveryApplicationFixtureWithWorker(t *testing.T,
 
 func fixtureGit(t *testing.T, args ...string) string {
 	t.Helper()
-	output, err := exec.Command("git", args...).CombinedOutput()
+	cmd := exec.Command("git", args...)
+	hideSubprocessWindow(cmd)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, strings.TrimSpace(string(output)))
 	}

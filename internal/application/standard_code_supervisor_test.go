@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/commandruntimeadapter"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/runmutation"
@@ -19,6 +21,7 @@ import (
 	"cyberagent-workbench/internal/standardcodedelivery"
 	"cyberagent-workbench/internal/store"
 	"cyberagent-workbench/internal/toolgateway"
+	"cyberagent-workbench/internal/tools"
 	"cyberagent-workbench/internal/workspacecheckpoint"
 )
 
@@ -1171,3 +1174,166 @@ func TestStandardCodeSupervisorPersistsInitialStateWithExactPresetBinding(t *tes
 		t.Fatal("durable ledger accepted a non-current execution profile snapshot")
 	}
 }
+
+type standardCodeAlwaysReviewPolicy struct {
+	base policy.Checker
+}
+
+func (p standardCodeAlwaysReviewPolicy) CheckText(ctx, text string) policy.Decision {
+	return p.base.CheckText(ctx, text)
+}
+
+func (p standardCodeAlwaysReviewPolicy) CheckToolCall(call tools.Call) policy.Decision {
+	d := p.base.CheckToolCall(call)
+	if call.Name == "create_file" || call.Name == "replace_file" || call.Name == "move_file" || call.Name == "delete_file" {
+		d.NeedsApproval = true
+	}
+	return d
+}
+
+func TestStandardCodeSupervisorOneStepWorkspaceChangeAndDiagnoseBudget(t *testing.T) {
+	machine, memStore := newStandardCodeSupervisorTestMachine(
+		domain.StandardCodeSupervisorCheckpoint, domain.ExecutionPhaseDeliver)
+	machine.permission.Mode = domain.RunExecutionPermissionAuto
+	standardCodeAddCheckpoint(machine, memStore, "one-step-edit")
+	standardCodeObserveCompleted(t, machine,
+		standardCodeWorkspaceProposal(t, "one-step-change"),
+		map[string]string{"status": fileedit.StatusApplied, "edit_id": "one-step-edit"}, "applied")
+	if machine.snapshot.MutationEpoch != 1 || machine.snapshot.State != domain.StandardCodeSupervisorExecute {
+		t.Fatalf("1-step workspace_change did not advance MutationEpoch/Execute: %+v", machine.snapshot)
+	}
+	failedExit := 1
+	for attempt := 0; attempt <= domain.StandardCodeSupervisorMaximumFixRounds; attempt++ {
+		command := standardCodeCommandCall(t, fmt.Sprintf("one-step-fail-%d", attempt),
+			toolgateway.CommandRuntimeActionRun, fmt.Sprintf("go test ./... #%d", attempt), "", 0)
+		standardCodeObserveCompleted(t, machine, command, nil,
+			standardCodeCommandOutput(t, toolgateway.CommandRuntimeActionRun,
+				[]runner.CommandRuntimeJobSnapshot{{ID: fmt.Sprintf("one-step-job-%d", attempt),
+					State: runner.CommandRuntimeJobFailed, ExitCode: &failedExit, TreeReaped: true,
+					StderrSHA256: runmutation.Fingerprint("one-step-failure", fmt.Sprint(attempt))}}, nil))
+		if machine.snapshot.State != domain.StandardCodeSupervisorDiagnose {
+			t.Fatalf("attempt %d left diagnose state: %s", attempt, machine.snapshot.State)
+		}
+		if attempt == domain.StandardCodeSupervisorMaximumFixRounds {
+			break
+		}
+		editID := fmt.Sprintf("one-step-fix-%d", attempt)
+		standardCodeAddCheckpoint(machine, memStore, editID)
+		standardCodeObserveCompleted(t, machine,
+			standardCodeWorkspaceProposal(t, fmt.Sprintf("one-step-fix-proposal-%d", attempt)),
+			map[string]string{"status": fileedit.StatusApplied, "edit_id": editID}, "fixed")
+	}
+	decision, err := machine.Authorize(context.Background(),
+		standardCodeWorkspaceProposal(t, "one-step-exhausted"))
+	if err != nil || decision.Allowed || decision.Result == nil ||
+		machine.snapshot.State != domain.StandardCodeSupervisorStopped ||
+		machine.snapshot.StopReason != "fix_round_budget_exhausted" {
+		t.Fatalf("1-step fix round exhaustion did not stop on workspace_change: decision=%+v snapshot=%+v err=%v",
+			decision, machine.snapshot, err)
+	}
+}
+
+func TestStandardCodeSupervisorDirectPostApprovalApplyReconcilesCheckpoint(t *testing.T) {
+	f, owned := newFileEditDrydockFixture(t)
+	ctx := t.Context()
+	checkpoints, err := NewWorkspaceCheckpointService(f.state, standardCodeThreadTestRuntime().ExecutionPermissionCapabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.service.WithCheckpointService(checkpoints)
+	p := &continuationCodeProvider{}
+	ref := llm.ModelRef{Provider: p.Name(), Model: "model"}
+	router := llm.NewRouter(ref)
+	router.RegisterProvider(p)
+	router.SetRoute("code", ref)
+	checker := standardCodeAlwaysReviewPolicy{base: policy.NewDefaultChecker()}
+	agentRunner := NewAgentRunner(f.state, router, checker).WithRunWorktree(f.service).
+		WithExecutionPermissionCapabilities(standardCodeThreadTestRuntime().ExecutionPermissionCapabilities)
+	wait := func(msg string) *llm.ChatResponse {
+		raw, _ := json.Marshal(domain.RootAction{Version: domain.RootLifecycleVersion, Kind: domain.RootActionWait,
+			Message: msg, Reason: "operator review"})
+		return &llm.ChatResponse{Provider: p.Name(), Model: "model", Text: string(raw)}
+	}
+	tool := func(name string, payload any) *llm.ChatResponse {
+		var raw json.RawMessage
+		if text, ok := payload.(string); ok {
+			raw = json.RawMessage(text)
+		} else {
+			raw = mustAgentCodeDrydockJSON(t, payload)
+		}
+		return &llm.ChatResponse{Provider: p.Name(), Model: "model", ToolCalls: []llm.ToolCall{{ID: fmt.Sprintf("call-%d", p.calls+len(p.responses)+1), Name: name, Arguments: raw}}}
+	}
+	if _, err = NewRunService(f.state).Start(ctx, f.run.ID); err != nil {
+		t.Fatal(err)
+	}
+	plan := `{"version":"plan_delivery.v1","directions":[
+ {"title":"Small change","summary":"Change the tracked line","tradeoffs":["One scope"],"modules":[{"title":"Update line","objective":"Update tracked text","acceptance_criteria":["Text updated"],"dependencies":[]}]},
+ {"title":"Broader review","summary":"Review surrounding text","tradeoffs":["More review"],"modules":[{"title":"Review text","objective":"Review text","acceptance_criteria":["Reviewed"],"dependencies":[]}]},
+ {"title":"Defer change","summary":"Document limit","tradeoffs":["Later"],"modules":[{"title":"Document limit","objective":"Record boundary","acceptance_criteria":["Recorded"],"dependencies":[]}]}]}`
+	p.responses = []*llm.ChatResponse{
+		tool("workspace_read", `{"version":"agent-code-tools.v1","path":"tracked.txt","start_line":1,"end_line":1}`),
+		tool("workspace_read", `{"version":"agent-code-tools.v1","path":"tracked.txt","start_line":1,"end_line":2}`),
+		tool("plan_delivery_propose", plan),
+		wait("Choose direction"),
+	}
+	if _, err = agentRunner.StepWithInput(ctx, f.run.ID, "Plan tracked.txt update"); err != nil {
+		t.Fatal(err)
+	}
+	proposals, err := f.state.ListPlanDeliveryProposals(ctx, f.run.ID, 10)
+	if err != nil || len(proposals) != 1 {
+		t.Fatalf("plan=%+v err=%v", proposals, err)
+	}
+	control := NewPlanDeliveryControlService(f.state)
+	if _, err = control.SelectDirection(ctx, ControlPlanDirectionRequest{Version: PlanDeliveryControlProtocolVersion, RunID: f.run.ID, ProposalID: proposals[0].ID,
+		Direction: 1, OperationKey: "sc-direct-select-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = control.EnterDelivery(ctx, ControlPlanDeliveryTransitionRequest{Version: PlanDeliveryControlProtocolVersion, RunID: f.run.ID,
+		OperationKey: "sc-direct-deliver-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	thread, err := f.state.GetThreadByRun(ctx, f.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = NewRunService(f.state).Resume(ctx, f.run.ID); err != nil {
+		t.Fatal(err)
+	}
+	caps := standardCodeThreadTestRuntime().ExecutionPermissionCapabilities
+	lifecycle := NewRunLifecycleControlService(f.state)
+	execution := NewRunExecutionHandoffService(f.state, router, checker).
+		WithRunWorktree(f.service).
+		WithExecutionPermissionCapabilities(caps)
+	turns := NewThreadTurnServiceWithExecutionCapabilities(f.state, lifecycle, execution, caps)
+	p.responses = []*llm.ChatResponse{
+		tool("workspace_change", toolgateway.WorkspaceChangePayload{Version: toolgateway.AgentCodeRegistryVersion,
+			Action: "propose_patch", Path: "tracked.txt", ExpectedSHA256: fileedit.HashText("base\n"),
+			Replacements: []toolgateway.WorkspaceReplacement{{OldText: "base", NewText: "approved direct apply", ExpectedOccurrences: 1}}}),
+		wait("Await approval"),
+		wait("Direct apply observed; ready to verify"),
+	}
+	if _, err := turns.Execute(ctx, ExecuteThreadTurnRequest{Version: domain.ThreadMessageProtocolVersion, ThreadID: thread.ID, Content: "Update tracked.txt", OperationKey: "sc-direct-exec-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	edits, err := f.state.ListFileEdits(ctx, fileedit.ListFilter{SessionID: f.run.SessionID})
+	if err != nil || len(edits) != 1 || edits[0].Status != fileedit.StatusProposed {
+		t.Fatalf("edits=%+v err=%v", edits, err)
+	}
+	if _, err = NewFileEditReviewService(f.state).WithRunWorktree(f.service).Review(ctx, ReviewFileEditRequest{
+		Version: FileEditReviewProtocolVersion, RunID: f.run.ID, EditID: edits[0].ID, Action: FileEditApproveIntent,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resumed := turns.ResumeApproval(ctx, ApprovalContinuationRequest{RunID: f.run.ID, Kind: "file_edit", ProposalID: edits[0].ID})
+	if resumed.State != "completed" || resumed.ToolCalled {
+		t.Fatalf("direct approval continuation=%+v", resumed)
+	}
+	if got, readErr := os.ReadFile(filepath.Join(owned.Path, "tracked.txt")); readErr != nil || string(got) != "approved direct apply\n" {
+		t.Fatalf("direct apply bytes=%q err=%v", got, readErr)
+	}
+	snapshot, found, err := f.state.GetStandardCodeSupervisorSnapshot(ctx, f.run.ID)
+	if err != nil || !found || snapshot.MutationEpoch != 1 || snapshot.State != domain.StandardCodeSupervisorExecute || snapshot.StopReason != "" {
+		t.Fatalf("supervisor did not reconcile direct post-approval checkpoint: found=%t snapshot=%+v err=%v", found, snapshot, err)
+	}
+}
+

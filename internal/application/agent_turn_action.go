@@ -10,6 +10,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/session"
+	"cyberagent-workbench/internal/toolbudget"
 )
 
 type agentRootActionEvaluation struct {
@@ -21,6 +22,7 @@ type agentRootActionEvaluation struct {
 
 func (s *AgentRunner) evaluateAgentRootAction(ctx context.Context, turn domain.SupervisorTurn,
 	response *llm.ChatResponse, prepared *agentTurnPreparation, protocolRepair int, repairReason string,
+	boundary supervisorSegmentBoundaryState,
 ) agentRootActionEvaluation {
 	var action domain.RootAction
 	var parseErr error
@@ -28,7 +30,7 @@ func (s *AgentRunner) evaluateAgentRootAction(ctx context.Context, turn domain.S
 	var repairableRootResponse bool
 	action, parseErr = parseRootActionForTurn(response.Text, prepared.context.threadEndTurn)
 	structuredReply := parseErr == nil
-	if parseErr != nil && prepared.context.threadEndTurn && supervisorNativeToolRounds(prepared.toolRounds) < domain.MaxSupervisorToolRounds &&
+	if parseErr != nil && prepared.context.threadEndTurn && !boundary.Reached &&
 		domain.RootActionHasTrailingToolCalls(response.Text) {
 		reason, _ := domain.NewSupervisorTextToolRepairReason(len(prepared.toolRounds))
 		parseErr = errors.New(reason)
@@ -78,8 +80,8 @@ func (s *AgentRunner) evaluateAgentRootAction(ctx context.Context, turn domain.S
 	}
 	_, textToolRepair := domain.SupervisorTextToolRepairRound(repairReason)
 	if parseErr == nil && prepared.context.threadEndTurn && action.Kind == domain.RootActionContinue &&
-		((structuredReply && len(prepared.toolRounds) > 0 && supervisorNativeToolRounds(prepared.toolRounds) < domain.MaxSupervisorToolRounds) ||
-			(protocolRepair == 1 && textToolRepair && supervisorNativeToolRounds(prepared.toolRounds) < domain.MaxSupervisorToolRounds)) {
+		((structuredReply && len(prepared.toolRounds) > 0 && !boundary.AllowsContinue()) ||
+			(protocolRepair == 1 && textToolRepair && !boundary.AllowsContinue())) {
 		// The model explicitly selected continue after actual tool work.
 		// Do not consume the input as if it had selected an end-of-reply.
 		// Reuse the one durable repair; finish/wait remain valid exits.
@@ -99,6 +101,15 @@ func (s *AgentRunner) evaluateAgentRootAction(ctx context.Context, turn domain.S
 func (s *AgentRunner) commitAgentRootAction(ctx context.Context, turn *domain.SupervisorTurn,
 	result LifecycleResult, modelCall modelCallResult, action domain.RootAction,
 	rootActionRecovery rootActionTrailingCommentaryRecovery, prepared *agentTurnPreparation,
+) (completed LifecycleResult, retry bool, returnErr error) {
+	boundary := evaluateSupervisorSegmentBoundary(supervisorNativeToolRounds(prepared.toolRounds), len(prepared.toolRounds), toolbudget.Usage{}, false, false)
+	return s.commitAgentRootActionAtBoundary(ctx, turn, result, modelCall, action, rootActionRecovery, prepared, boundary)
+}
+
+func (s *AgentRunner) commitAgentRootActionAtBoundary(ctx context.Context, turn *domain.SupervisorTurn,
+	result LifecycleResult, modelCall modelCallResult, action domain.RootAction,
+	rootActionRecovery rootActionTrailingCommentaryRecovery, prepared *agentTurnPreparation,
+	boundary supervisorSegmentBoundaryState,
 ) (completed LifecycleResult, retry bool, returnErr error) {
 	response := modelCall.Response
 	modelCall.Attempt.Outcome = llm.OutcomeSuccess
@@ -132,7 +143,7 @@ func (s *AgentRunner) commitAgentRootAction(ctx context.Context, turn *domain.Su
 	if !safeResponse.Replay.RequiresPrivateAssistantHistory() {
 		safeResponse.Text = safeAction.Message
 	}
-	if safeAction.Kind == domain.RootActionFinish || (prepared.context.threadEndTurn && safeAction.Kind == domain.RootActionContinue && supervisorNativeToolRounds(prepared.toolRounds) < domain.MaxSupervisorToolRounds) {
+	if safeAction.Kind == domain.RootActionFinish || (prepared.context.threadEndTurn && safeAction.Kind == domain.RootActionContinue && !boundary.Reached) {
 		rounds, added, waiting, hookErr := s.beforeProjectHookFinish(ctx, *turn, prepared.toolRounds, prepared.tools.standardCode)
 		prepared.toolRounds = rounds
 		if hookErr != nil {
@@ -158,12 +169,11 @@ func (s *AgentRunner) commitAgentRootAction(ctx context.Context, turn *domain.Su
 			safeResponse.Text = safeAction.Message
 		}
 	}
-	toolRoundCount := supervisorNativeToolRounds(prepared.toolRounds)
 	var updatedRun domain.Run
 	var checkpoint domain.SupervisorCheckpoint
 	var messages session.TurnMessages
 	if boundaryStore, ok := s.store.(supervisorToolBoundaryStore); ok && (turn.OperatorSteering || turn.ApprovalContinuation) &&
-		toolRoundCount == domain.MaxSupervisorToolRounds && safeAction.Kind == domain.RootActionContinue {
+		boundary.AllowsContinue() && safeAction.Kind == domain.RootActionContinue {
 		updatedRun, checkpoint, messages, err = boundaryStore.CompleteSupervisorToolBoundary(ctx, turn.Checkpoint, safeResponse, safeAction, decision, 0)
 	} else {
 		updatedRun, checkpoint, messages, err = s.store.CompleteSupervisorTurn(ctx, turn.Checkpoint, safeResponse, safeAction, decision, 0)

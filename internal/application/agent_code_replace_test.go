@@ -17,6 +17,7 @@ import (
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/projectconfig"
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/store"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/workspace"
@@ -27,19 +28,19 @@ func TestAgentCodeReplaceProposesThenAppliesExactWholeFile(t *testing.T) {
 		t.Run(map[bool]string{true: "empty", false: "nonempty"}[content == ""], func(t *testing.T) {
 			f := newAgentCodeReplaceFixture(t, true)
 			proposal := f.propose(t, content, "replace-proposal-0001")
-			if !proposal.ApplyAuthorized || proposal.Operation != fileedit.OperationReplace || proposal.ApplyArguments.ExpectedAction != "replace" ||
+			if !proposal.ApplyAuthorized || proposal.Status != fileedit.StatusApplied || proposal.Operation != fileedit.OperationReplace || proposal.ApplyArguments.ExpectedAction != "replace" ||
 				proposal.ApplyArguments.EditID != proposal.EditID || proposal.ApplyArguments.ExpectedOriginalSHA256 != fileedit.HashText("before\n") ||
 				proposal.ApplyArguments.ExpectedProposedSHA256 != fileedit.HashText(content) {
-				t.Fatalf("proposal lacks the exact apply contract: %+v", proposal)
+				t.Fatalf("1-step replace lacks exact applied contract: %+v", proposal)
 			}
-			f.assertFile(t, "before\n")
+			f.assertFile(t, content)
 			payload := mustAgentCodePayload(t, proposal.ApplyArguments)
 			if _, err := toolgateway.NormalizeAgentCodePayload(toolgateway.WorkspaceApplyTool, payload); err != nil {
 				t.Fatal(err)
 			}
 			applied, err := f.execute(t, toolgateway.WorkspaceApplyTool, payload, "replace-apply-0001")
-			if err != nil || !strings.Contains(applied.JSON, `"file_written":true`) {
-				t.Fatalf("apply=%s err=%v", applied.JSON, err)
+			if err != nil || !applied.Replayed || !strings.Contains(applied.JSON, `"file_written":false`) {
+				t.Fatalf("compat workspace_apply replay=%s err=%v", applied.JSON, err)
 			}
 			f.assertFile(t, content)
 		})
@@ -83,24 +84,25 @@ func TestAgentCodeReplacePreservesCASAndIdempotency(t *testing.T) {
 	for _, mode := range []string{"cas", "replay"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newAgentCodeReplaceFixture(t, true)
-			proposal := f.propose(t, "after\n", "replace-proposal-0001")
-			replayed, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, f.payload("after\n")), "replace-proposal-0001")
-			if err != nil || !replayed.Replayed {
-				t.Fatalf("proposal replay=%s err=%v", replayed.JSON, err)
-			}
-			if _, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, f.payload("different\n")), "replace-proposal-0001"); apperror.CodeOf(err) != apperror.CodeConflict {
-				t.Fatalf("same proposal key accepted another body: %v", err)
-			}
 			if mode == "cas" {
 				f.write(t, "user changed\n")
-				if _, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, proposal.ApplyArguments), "replace-apply-0001"); apperror.CodeOf(err) != apperror.CodeConflict {
+				if _, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, f.payload("after\n")), "replace-proposal-0001"); apperror.CodeOf(err) != apperror.CodeConflict {
 					t.Fatalf("CAS drift was not rejected: %v", err)
 				}
 				f.assertFile(t, "user changed\n")
 				return
 			}
-			if _, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, proposal.ApplyArguments), "replace-apply-0001"); err != nil {
-				t.Fatal(err)
+			proposal := f.propose(t, "after\n", "replace-proposal-0001")
+			if proposal.Status != fileedit.StatusApplied {
+				t.Fatalf("expected 1-step applied replace, got %+v", proposal)
+			}
+			f.assertFile(t, "after\n")
+			replayed, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, f.payload("after\n")), "replace-proposal-0001")
+			if err != nil || !replayed.Replayed || !strings.Contains(replayed.JSON, `"file_written":false`) {
+				t.Fatalf("proposal replay=%s err=%v", replayed.JSON, err)
+			}
+			if _, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, f.payload("different\n")), "replace-proposal-0001"); apperror.CodeOf(err) != apperror.CodeConflict {
+				t.Fatalf("same proposal key accepted another body: %v", err)
 			}
 			f.write(t, "later user change\n")
 			replayed, err = f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, proposal.ApplyArguments), "replace-apply-0001")
@@ -109,7 +111,7 @@ func TestAgentCodeReplacePreservesCASAndIdempotency(t *testing.T) {
 			}
 			f.assertFile(t, "later user change\n")
 			replayed, err = f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, f.payload("after\n")), "replace-proposal-0001")
-			if err != nil || !replayed.Replayed {
+			if err != nil || !replayed.Replayed || !strings.Contains(replayed.JSON, `"file_written":false`) {
 				t.Fatalf("applied proposal replay=%s err=%v", replayed.JSON, err)
 			}
 			f.assertFile(t, "later user change\n")
@@ -121,9 +123,44 @@ func TestAgentCodeReplaceCannotWriteWithoutCurrentApprovalAndAuthority(t *testin
 	for _, mode := range []string{"review", "revoked", "restarted", "stopped"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newAgentCodeReplaceFixture(t, mode != "review")
-			proposal := f.propose(t, "after\n", "replace-proposal-0001")
-			if mode == "review" && (proposal.ApplyAuthorized || !proposal.ReviewRequired) {
-				t.Fatalf("review proposal granted authority: %+v", proposal)
+			var editID string
+			var applyArgs toolgateway.WorkspaceApplyPayload
+			if mode == "review" {
+				proposal := f.propose(t, "after\n", "replace-proposal-0001")
+				if proposal.ApplyAuthorized || !proposal.ReviewRequired {
+					t.Fatalf("review proposal granted authority: %+v", proposal)
+				}
+				editID = proposal.EditID
+				applyArgs = proposal.ApplyArguments
+			} else {
+				prepared, prepErr := fileedit.NewManager(f.state).PrepareProposal(t.Context(), fileedit.Proposal{
+					SessionID: f.scope.SessionID, WorkspaceID: f.scope.WorkspaceID, WorkspaceRoot: f.root,
+					Path: "target.txt", Operation: fileedit.OperationReplace, ProposedText: "after\n",
+					ExpectedOriginalHash: fileedit.HashText("before\n"),
+				})
+				if prepErr != nil {
+					t.Fatal(prepErr)
+				}
+				created, _, createErr := f.state.CreateAutomaticallyAuthorizedFileEditIfAbsent(t.Context(), prepared, fileedit.AutoAuthorization{
+					RunID: f.scope.RunID, SessionID: f.scope.SessionID, WorkspaceID: f.scope.WorkspaceID,
+					AgentID: f.scope.ActorID(), OperationKeyDigest: runmutation.Fingerprint("agent_code_file_edit_source.v1", f.scope.RunID, "replace-proposal-0001"),
+					ProposalFingerprint: runmutation.Fingerprint("agent_code_file_edit_proposal.v1",
+						prepared.ID, prepared.SessionID, prepared.WorkspaceID, prepared.Operation, prepared.Path,
+						prepared.DestinationPath, prepared.OriginalHash, prepared.ProposedHash,
+						prepared.DestinationOriginalHash, prepared.DestinationProposedHash),
+					PermissionSnapshotID: f.scope.PermissionSnapshotID, PermissionRevision: f.scope.PermissionRevision,
+					ModeRevision: f.scope.ModeRevision, RuntimeEpoch: f.scope.PermissionRuntimeEpoch,
+					RuntimeGeneration: f.scope.PermissionGeneration, RunAuthorizationFence: f.scope.RunAuthorizationFence,
+					CapabilityGeneration: f.scope.CapabilityGeneration, LeaseID: f.scope.LeaseID, LeaseGeneration: f.scope.LeaseGeneration,
+				})
+				if createErr != nil {
+					t.Fatal(createErr)
+				}
+				editID = created.ID
+				applyArgs = toolgateway.WorkspaceApplyPayload{
+					Version: toolgateway.AgentCodeRegistryVersion, EditID: created.ID, ExpectedAction: "replace",
+					ExpectedOriginalSHA256: created.OriginalHash, ExpectedProposedSHA256: created.ProposedHash,
+				}
 			}
 			switch mode {
 			case "revoked":
@@ -145,17 +182,22 @@ func TestAgentCodeReplaceCannotWriteWithoutCurrentApprovalAndAuthority(t *testin
 					t.Fatal(err)
 				}
 			}
-			if result, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, proposal.ApplyArguments), "unauthorized-replace-apply-0001"); err == nil {
+			if result, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, applyArgs), "unauthorized-replace-apply-0001"); err == nil {
 				t.Fatalf("unapproved apply=%s", result.JSON)
+			}
+			if mode != "review" {
+				if result, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, f.payload("after\n")), "unauthorized-replace-change-0001"); err == nil {
+					t.Fatalf("unauthorized 1-step change=%s", result.JSON)
+				}
 			}
 			f.assertFile(t, "before\n")
 			if mode == "review" {
 				if _, err := application.NewFileEditReviewService(f.state).Review(t.Context(), application.ReviewFileEditRequest{
-					Version: application.FileEditReviewProtocolVersion, RunID: f.scope.RunID, EditID: proposal.EditID, Action: application.FileEditApproveIntent,
+					Version: application.FileEditReviewProtocolVersion, RunID: f.scope.RunID, EditID: editID, Action: application.FileEditApproveIntent,
 				}); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, proposal.ApplyArguments), "reviewed-replace-apply-0001"); err != nil {
+				if _, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, applyArgs), "reviewed-replace-apply-0001"); err != nil {
 					t.Fatal(err)
 				}
 				f.assertFile(t, "after\n")
@@ -223,7 +265,29 @@ func TestAgentCodeReplaceManualAuthorizationProjectionFailsClosed(t *testing.T) 
 	}
 	t.Run("old automatic", func(t *testing.T) {
 		f := newAgentCodeReplaceFixture(t, true)
-		proposal := f.propose(t, "after\n", "old-auto-projection-0001")
+		prepared, prepErr := fileedit.NewManager(f.state).PrepareProposal(t.Context(), fileedit.Proposal{
+			SessionID: f.scope.SessionID, WorkspaceID: f.scope.WorkspaceID, WorkspaceRoot: f.root,
+			Path: "target.txt", Operation: fileedit.OperationReplace, ProposedText: "after\n",
+			ExpectedOriginalHash: fileedit.HashText("before\n"),
+		})
+		if prepErr != nil {
+			t.Fatal(prepErr)
+		}
+		created, _, createErr := f.state.CreateAutomaticallyAuthorizedFileEditIfAbsent(t.Context(), prepared, fileedit.AutoAuthorization{
+			RunID: f.scope.RunID, SessionID: f.scope.SessionID, WorkspaceID: f.scope.WorkspaceID,
+			AgentID: f.scope.ActorID(), OperationKeyDigest: runmutation.Fingerprint("agent_code_file_edit_source.v1", f.scope.RunID, "old-auto-projection-0001"),
+			ProposalFingerprint: runmutation.Fingerprint("agent_code_file_edit_proposal.v1",
+				prepared.ID, prepared.SessionID, prepared.WorkspaceID, prepared.Operation, prepared.Path,
+				prepared.DestinationPath, prepared.OriginalHash, prepared.ProposedHash,
+				prepared.DestinationOriginalHash, prepared.DestinationProposedHash),
+			PermissionSnapshotID: f.scope.PermissionSnapshotID, PermissionRevision: f.scope.PermissionRevision,
+			ModeRevision: f.scope.ModeRevision, RuntimeEpoch: f.scope.PermissionRuntimeEpoch,
+			RuntimeGeneration: f.scope.PermissionGeneration, RunAuthorizationFence: f.scope.RunAuthorizationFence,
+			CapabilityGeneration: f.scope.CapabilityGeneration, LeaseID: f.scope.LeaseID, LeaseGeneration: f.scope.LeaseGeneration,
+		})
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
 		f.capabilities.RuntimeAuthority = domain.NewExecutionPermissionRuntimeAuthority()
 		permission, err := f.state.GetRunExecutionPermission(t.Context(), f.scope.RunID)
 		if err != nil {
@@ -247,12 +311,11 @@ func TestAgentCodeReplaceManualAuthorizationProjectionFailsClosed(t *testing.T) 
 			PermissionRuntimeEpoch: f.scope.PermissionRuntimeEpoch, RunAuthorizationFence: f.scope.RunAuthorizationFence, ModeRevision: f.scope.ModeRevision, PermissionRevision: f.scope.PermissionRevision,
 		}).Generation
 		f.executor = application.NewAgentCodeToolExecutor(f.state, policy.NewDefaultChecker()).WithExecutionPermissionCapabilities(f.capabilities)
-		replay := f.propose(t, "after\n", "old-auto-projection-0001")
-		if replay.EditID != proposal.EditID || replay.Status != fileedit.StatusApproved || replay.ApplyAuthorized || replay.ReviewRequired ||
-			replay.AuthorizationSource != "operation_policy_automatic" {
-			t.Fatalf("expired automatic proposal was reinterpreted as manual approval: %+v", replay)
+		applyArgs := toolgateway.WorkspaceApplyPayload{
+			Version: toolgateway.AgentCodeRegistryVersion, EditID: created.ID, ExpectedAction: "replace",
+			ExpectedOriginalSHA256: created.OriginalHash, ExpectedProposedSHA256: created.ProposedHash,
 		}
-		if _, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, replay.ApplyArguments), "old-auto-apply-0001"); err == nil {
+		if _, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, applyArgs), "old-auto-apply-0001"); err == nil {
 			t.Fatal("old automatic proposal bypassed the current backend authorization gate")
 		}
 		f.assertFile(t, "before\n")

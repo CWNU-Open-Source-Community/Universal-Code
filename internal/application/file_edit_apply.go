@@ -68,6 +68,7 @@ type ApplyFileEditRequest struct {
 	OperationKey           string
 	AppliedBy              string
 	InvocationID           string
+	AttemptID              string
 	CapabilityGeneration   string
 	LeaseID                string
 	LeaseGeneration        int64
@@ -299,6 +300,7 @@ func (s *FileEditApplyService) applyWithLease(ctx context.Context,
 	boundaryRequest := WorkspaceMutationBoundaryRequest{RunID: operation.RunID,
 		Kind: workspacecheckpoint.TransactionFileTool, OperationKey: operation.KeyDigest,
 		TriggerReceiptID: operation.EditID, InvocationID: normalized.InvocationID,
+		AttemptID:            normalized.AttemptID,
 		CapabilityGeneration: normalized.CapabilityGeneration,
 		LeaseID:              normalized.LeaseID, LeaseGeneration: normalized.LeaseGeneration}
 	checkpoints := s.checkpoints
@@ -643,6 +645,7 @@ func normalizeFileEditApplyRequest(request ApplyFileEditRequest) (
 	}
 	request.AppliedBy = strings.TrimSpace(request.AppliedBy)
 	request.InvocationID = strings.TrimSpace(request.InvocationID)
+	request.AttemptID = strings.TrimSpace(request.AttemptID)
 	request.CapabilityGeneration = strings.TrimSpace(request.CapabilityGeneration)
 	request.LeaseID = strings.TrimSpace(request.LeaseID)
 	request.PermissionSnapshotID = strings.TrimSpace(request.PermissionSnapshotID)

@@ -977,14 +977,17 @@ func TestAgentRunnerReturnsToolBudgetExhaustionAndResetsTransportAttemptsPerRoun
 	ctx := context.Background()
 	run := newStartedRunForProvider(t, st, "tool-loop", domain.Budget{MaxTurns: 3, MaxToolCalls: 1})
 	provider := &scriptedToolProvider{responses: []*llm.ChatResponse{
-		toolResponse("provider-note-1", "note_create", `{"title":"First","content":"saved"}`),
-		toolResponse("provider-note-2", "note_create", `{"title":"Second","content":"over budget"}`),
+		toolBatchResponse(
+			llm.ToolCall{ID: "provider-note-1", Name: "note_create", Arguments: json.RawMessage(`{"title":"First","content":"saved"}`)},
+			llm.ToolCall{ID: "provider-note-2", Name: "note_create", Arguments: json.RawMessage(`{"title":"Second","content":"over budget"}`)},
+		),
 		textResponse(rootActionResponse(domain.RootActionContinue, "budget observed", "", "")),
 	}}
 	result, err := newToolLoopSupervisor(st, provider).Step(ctx, run.ID)
-	if err != nil || result.ToolRounds != 2 || result.ToolCalls != 2 || result.ModelAttempts != 3 ||
-		!hasErrorToolResult(provider.Requests()[2], "RESOURCE_EXHAUSTED") {
-		t.Fatalf("tool budget exhaustion was not returned to the model: %#v err=%v requests=%#v",
+	if err != nil || result.ToolRounds != 1 || result.ToolCalls != 2 || result.ModelAttempts != 2 ||
+		len(provider.Requests()[1].Tools) != 0 ||
+		!hasErrorToolResult(provider.Requests()[1], "RESOURCE_EXHAUSTED") {
+		t.Fatalf("tool budget exhaustion was not returned to the model or tools were not withdrawn: %#v err=%v requests=%#v",
 			result, err, provider.Requests())
 	}
 	notes, err := st.ListNotes(ctx, domain.NoteFilter{RunID: run.ID})
@@ -992,14 +995,14 @@ func TestAgentRunnerReturnsToolBudgetExhaustionAndResetsTransportAttemptsPerRoun
 		t.Fatalf("over-budget Note was persisted: %#v err=%v", notes, err)
 	}
 	usage, err := st.GetToolCallUsage(ctx, run.ID)
-	if err != nil || usage.Consumed != 1 || usage.ExhaustedAt == nil {
+	if err != nil || usage.Consumed != 1 || usage.Remaining != 0 || usage.ExhaustedAt == nil {
 		t.Fatalf("tool budget ledger is inconsistent: %#v err=%v", usage, err)
 	}
 	eventList, err := st.ListRunEvents(ctx, run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for round := 0; round < 3; round++ {
+	for round := 0; round < 2; round++ {
 		needle := `"tool_round":` + strconv.Itoa(round) + `,"transport_attempt":1`
 		found := false
 		for _, event := range eventList {
@@ -1020,7 +1023,7 @@ func TestAgentRunnerBoundsStructuredToolRounds(t *testing.T) {
 	}
 	defer st.Close()
 	ctx := context.Background()
-	run := newStartedRunForProvider(t, st, "tool-loop", domain.Budget{MaxTurns: 3, MaxToolCalls: 10})
+	run := newStartedRunForProvider(t, st, "tool-loop", domain.Budget{MaxTurns: 3, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 	responses := make([]*llm.ChatResponse, 0, domain.MaxSupervisorToolRounds+2)
 	for round := 1; round <= domain.MaxSupervisorToolRounds+2; round++ {
 		responses = append(responses, toolResponse(fmt.Sprintf("provider-round-%d", round),
@@ -1188,6 +1191,13 @@ func toolResponse(id string, name string, payload string) *llm.ChatResponse {
 	return &llm.ChatResponse{
 		Provider: "tool-loop", Model: "model", Usage: llm.Usage{InputTokens: 2, OutputTokens: 2, TotalTokens: 4},
 		ToolCalls: []llm.ToolCall{{ID: id, Name: name, Arguments: json.RawMessage(payload)}},
+	}
+}
+
+func toolBatchResponse(calls ...llm.ToolCall) *llm.ChatResponse {
+	return &llm.ChatResponse{
+		Provider: "tool-loop", Model: "model", Usage: llm.Usage{InputTokens: 2, OutputTokens: 2, TotalTokens: 4},
+		ToolCalls: calls,
 	}
 }
 

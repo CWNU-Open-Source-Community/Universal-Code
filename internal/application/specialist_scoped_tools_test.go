@@ -263,7 +263,9 @@ func TestSpecialistGatewayRejectsDirectoryLinkEscape(t *testing.T) {
 	}
 	link := filepath.Join(root, "allowed", "redirect")
 	if runtime.GOOS == "windows" {
-		if out, err := exec.Command("cmd", "/d", "/c", "mklink", "/J", link, outside).CombinedOutput(); err != nil {
+		mklinkCmd := exec.Command("cmd", "/d", "/c", "mklink", "/J", link, outside)
+		hideSubprocessWindow(mklinkCmd)
+		if out, err := mklinkCmd.CombinedOutput(); err != nil {
 			t.Fatalf("create test junction: %s %v", out, err)
 		}
 	} else if err := os.Symlink(outside, link); err != nil {

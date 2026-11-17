@@ -16,6 +16,7 @@ import (
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/rootfs"
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/store"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/workspace"
@@ -140,18 +141,20 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 	if err := json.Unmarshal([]byte(proposed.JSON), &proposalResult); err != nil {
 		t.Fatal(err)
 	}
-	if edit.Status != fileedit.StatusApproved || proposalResult["review_required"] != false ||
+	if edit.Status != fileedit.StatusApplied || proposalResult["review_required"] != false ||
 		proposalResult["apply_authorized"] != true ||
-		proposalResult["authorization_source"] != "operation_policy_automatic" {
-		t.Fatalf("Full Access proposal was not automatically authorized: %s", proposed.JSON)
+		proposalResult["authorization_source"] != "operation_policy_automatic" ||
+		proposalResult["file_written"] != true || proposalResult["replayed"] != false {
+		t.Fatalf("Full Access 1-step create was not automatically applied: %s", proposed.JSON)
 	}
 	approvalRecord, err := state.GetApprovalByProposal(ctx, edit.EditID)
 	if err != nil || approvalRecord.Mode != "automatic" || approvalRecord.Status != "approved" ||
 		approvalRecord.ReviewedBy != "automatic_policy" {
 		t.Fatalf("automatic approval record=%+v err=%v", approvalRecord, err)
 	}
-	if _, err := os.Stat(filepath.Join(rootPath, "normal.txt")); !os.IsNotExist(err) {
-		t.Fatalf("proposal wrote file before workspace_apply: %v", err)
+	bytes, err := os.ReadFile(filepath.Join(rootPath, "normal.txt"))
+	if err != nil || string(bytes) != "normal task\n" {
+		t.Fatalf("1-step written file=%q err=%v", bytes, err)
 	}
 	applyScope := scope
 	applyScope.InvocationID = "auto-file-edit-apply-invocation"
@@ -161,12 +164,8 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 			Version: toolgateway.AgentCodeRegistryVersion, EditID: edit.EditID,
 			ExpectedAction: "create", ExpectedOriginalSHA256: edit.OriginalSHA256,
 			ExpectedProposedSHA256: edit.ProposedSHA256}))
-	if err != nil || !strings.Contains(applied.JSON, `"file_written":true`) {
-		t.Fatalf("Full Access apply=%s err=%v", applied.JSON, err)
-	}
-	bytes, err := os.ReadFile(filepath.Join(rootPath, "normal.txt"))
-	if err != nil || string(bytes) != "normal task\n" {
-		t.Fatalf("written file=%q err=%v", bytes, err)
+	if err != nil || !strings.Contains(applied.JSON, `"file_written":false`) || !strings.Contains(applied.JSON, `"replayed":true`) {
+		t.Fatalf("Full Access compat workspace_apply=%s err=%v", applied.JSON, err)
 	}
 	replaceScope := scope
 	replaceScope.InvocationID = "auto-file-edit-replace-invocation"
@@ -181,19 +180,10 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 		t.Fatal(err)
 	}
 	replaceEdit := decodeAgentCodeToolResult(t, replaced.JSON)
-	if replaceEdit.Status != fileedit.StatusApproved ||
-		replaceEdit.OriginalSHA256 != edit.ProposedSHA256 {
-		t.Fatalf("Full Access replace was not automatically authorized: %s", replaced.JSON)
-	}
-	replaceApplyScope := replaceScope
-	replaceApplyScope.InvocationID = "auto-file-edit-replace-apply-invocation"
-	replaceApplyScope.OperationKey = "auto-file-edit-replace-apply-0001"
-	if _, err := executor.ExecuteAgentCode(ctx, replaceApplyScope, toolgateway.WorkspaceApplyTool,
-		mustAgentCodePayload(t, toolgateway.WorkspaceApplyPayload{
-			Version: toolgateway.AgentCodeRegistryVersion, EditID: replaceEdit.EditID,
-			ExpectedAction: "propose_patch", ExpectedOriginalSHA256: replaceEdit.OriginalSHA256,
-			ExpectedProposedSHA256: replaceEdit.ProposedSHA256})); err != nil {
-		t.Fatal(err)
+	if replaceEdit.Status != fileedit.StatusApplied ||
+		replaceEdit.OriginalSHA256 != edit.ProposedSHA256 ||
+		!strings.Contains(replaced.JSON, `"file_written":true`) {
+		t.Fatalf("Full Access replace was not applied in 1 step: %s", replaced.JSON)
 	}
 	bytes, err = os.ReadFile(filepath.Join(rootPath, "normal.txt"))
 	if err != nil || string(bytes) != "updated task\n" {
@@ -266,27 +256,16 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 	revertEdit := decodeAgentCodeToolResult(t, reverted.JSON)
 	var revertProposal map[string]any
 	if err := json.Unmarshal([]byte(reverted.JSON), &revertProposal); err != nil ||
-		revertEdit.Status != fileedit.StatusApproved || revertEdit.Operation != fileedit.OperationReplace ||
+		revertEdit.Status != fileedit.StatusApplied || revertEdit.Operation != fileedit.OperationReplace ||
 		revertProposal["review_required"] != false || revertProposal["apply_authorized"] != true ||
-		revertProposal["delete_confirmation_required"] != false {
-		t.Fatalf("Full Access inverse replace was not automatically authorized: %s err=%v",
+		revertProposal["delete_confirmation_required"] != false ||
+		revertProposal["file_written"] != true {
+		t.Fatalf("Full Access inverse replace was not applied in 1 step: %s err=%v",
 			reverted.JSON, err)
 	}
 	revertApproval, err := state.GetApprovalByProposal(ctx, revertEdit.EditID)
 	if err != nil || revertApproval.Mode != "automatic" || revertApproval.Status != "approved" {
 		t.Fatalf("automatic revert approval=%+v err=%v", revertApproval, err)
-	}
-	revertApplyScope := revertScope
-	revertApplyScope.InvocationID = "auto-file-edit-revert-apply-invocation"
-	revertApplyScope.OperationKey = "auto-file-edit-revert-apply-0001"
-	revertApplied, err := executor.ExecuteAgentCode(ctx, revertApplyScope,
-		toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t,
-			toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion,
-				EditID: revertEdit.EditID, ExpectedAction: "propose_patch",
-				ExpectedOriginalSHA256: revertEdit.OriginalSHA256,
-				ExpectedProposedSHA256: revertEdit.ProposedSHA256}))
-	if err != nil || !strings.Contains(revertApplied.JSON, `"file_written":true`) {
-		t.Fatalf("Full Access inverse replace apply=%s err=%v", revertApplied.JSON, err)
 	}
 	bytes, err = os.ReadFile(filepath.Join(rootPath, "normal.txt"))
 	if err != nil || string(bytes) != "normal task\n" {
@@ -295,6 +274,9 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(rootPath, "normal.txt"), []byte("later user edit\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	revertApplyScope := revertScope
+	revertApplyScope.InvocationID = "auto-file-edit-revert-apply-invocation"
+	revertApplyScope.OperationKey = "auto-file-edit-revert-apply-0001"
 	revertReplay, err := executor.ExecuteAgentCode(ctx, revertApplyScope,
 		toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t,
 			toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion,
@@ -325,16 +307,8 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 		t.Fatal(err)
 	}
 	collisionSourceEdit := decodeAgentCodeToolResult(t, collisionSourceProposal.JSON)
-	collisionApplyScope := collisionSourceScope
-	collisionApplyScope.InvocationID = "auto-file-edit-revert-key-collision-source-apply-invocation"
-	collisionApplyScope.OperationKey = "auto-file-edit-revert-key-collision-source-apply-0001"
-	if _, err := executor.ExecuteAgentCode(ctx, collisionApplyScope,
-		toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t,
-			toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion,
-				EditID: collisionSourceEdit.EditID, ExpectedAction: "propose_patch",
-				ExpectedOriginalSHA256: collisionSourceEdit.OriginalSHA256,
-				ExpectedProposedSHA256: collisionSourceEdit.ProposedSHA256})); err != nil {
-		t.Fatal(err)
+	if collisionSourceEdit.Status != fileedit.StatusApplied || !strings.Contains(collisionSourceProposal.JSON, `"file_written":true`) {
+		t.Fatalf("collision source change did not apply in 1 step: %s", collisionSourceProposal.JSON)
 	}
 	collisionRevertScope := revertScope
 	collisionRevertScope.InvocationID = "auto-file-edit-revert-key-collision-invocation"
@@ -381,45 +355,11 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 	if err := json.Unmarshal([]byte(moveResult.JSON), &moveProposal); err != nil {
 		t.Fatal(err)
 	}
-	if moveEdit.Status != fileedit.StatusApproved || moveProposal["review_required"] != false ||
+	if moveEdit.Status != fileedit.StatusApplied || moveProposal["review_required"] != false ||
 		moveProposal["apply_authorized"] != true ||
-		moveProposal["authorization_source"] != "operation_policy_automatic" {
-		t.Fatalf("Full Access move was not automatically authorized: %s", moveResult.JSON)
-	}
-	if _, err := os.Stat(filepath.Join(rootPath, "moved.txt")); !os.IsNotExist(err) {
-		t.Fatalf("move proposal wrote before workspace_apply: %v", err)
-	}
-	moveReplay, err := executor.ExecuteAgentCode(ctx, moveScope,
-		toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, movePayload))
-	if err != nil || moveReplay.JSON != moveResult.JSON {
-		t.Fatalf("exact move proposal replay changed result: replay=%s err=%v",
-			moveReplay.JSON, err)
-	}
-	changedMove := movePayload
-	changedMove.DestinationPath = "different.txt"
-	if _, err := executor.ExecuteAgentCode(ctx, moveScope, toolgateway.WorkspaceChangeTool,
-		mustAgentCodePayload(t, changedMove)); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodeConflict {
-		t.Fatalf("same move key accepted a changed destination: %v", err)
-	}
-	moveApplyScope := moveScope
-	moveApplyScope.InvocationID = "auto-file-edit-move-apply-invocation"
-	moveApplyScope.OperationKey = "auto-file-edit-move-apply-0001"
-	moveApplied, err := executor.ExecuteAgentCode(ctx, moveApplyScope,
-		toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, toolgateway.WorkspaceApplyPayload{
-			Version: toolgateway.AgentCodeRegistryVersion, EditID: moveEdit.EditID,
-			ExpectedAction: "move", ExpectedOriginalSHA256: moveEdit.OriginalSHA256,
-			ExpectedProposedSHA256: moveEdit.ProposedSHA256}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var moveApplyResult map[string]any
-	if err := json.Unmarshal([]byte(moveApplied.JSON), &moveApplyResult); err != nil ||
-		moveApplyResult["file_written"] != true {
-		t.Fatalf("Full Access move apply=%s err=%v", moveApplied.JSON, err)
-	}
-	feedback, ok := moveApplyResult["diagnostics"].(map[string]any)
-	if !ok || feedback["path"] != "moved.txt" || feedback["document_sha256"] != fileedit.HashText("normal task\n") || feedback["status"] != "unavailable" {
-		t.Fatalf("move feedback must identify its destination and missing backend: %s", moveApplied.JSON)
+		moveProposal["authorization_source"] != "operation_policy_automatic" ||
+		moveProposal["file_written"] != true {
+		t.Fatalf("Full Access move was not applied in 1 step: %s", moveResult.JSON)
 	}
 	if _, err := os.Stat(filepath.Join(rootPath, "normal.txt")); !os.IsNotExist(err) {
 		t.Fatalf("move source still exists: %v", err)
@@ -428,10 +368,32 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 	if err != nil || string(bytes) != "normal task\n" {
 		t.Fatalf("moved file=%q err=%v", bytes, err)
 	}
+	moveReplay, err := executor.ExecuteAgentCode(ctx, moveScope,
+		toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, movePayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var moveReplayMap map[string]any
+	if err := json.Unmarshal([]byte(moveReplay.JSON), &moveReplayMap); err != nil ||
+		moveReplayMap["edit_id"] != moveEdit.EditID ||
+		moveReplayMap["status"] != fileedit.StatusApplied ||
+		moveReplayMap["replayed"] != true ||
+		moveReplayMap["file_written"] != false {
+		t.Fatalf("exact applied move replay=%s err=%v", moveReplay.JSON, err)
+	}
+	changedMove := movePayload
+	changedMove.DestinationPath = "different.txt"
+	if _, err := executor.ExecuteAgentCode(ctx, moveScope, toolgateway.WorkspaceChangeTool,
+		mustAgentCodePayload(t, changedMove)); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodeConflict {
+		t.Fatalf("same move key accepted a changed destination: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(rootPath, "moved.txt"),
 		[]byte("user changed after move\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	moveApplyScope := moveScope
+	moveApplyScope.InvocationID = "auto-file-edit-move-apply-invocation"
+	moveApplyScope.OperationKey = "auto-file-edit-move-apply-0001"
 	moveApplyReplay, err := executor.ExecuteAgentCode(ctx, moveApplyScope,
 		toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, toolgateway.WorkspaceApplyPayload{
 			Version: toolgateway.AgentCodeRegistryVersion, EditID: moveEdit.EditID,
@@ -444,6 +406,10 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 	if err := json.Unmarshal([]byte(moveApplyReplay.JSON), &moveReplayResult); err != nil ||
 		moveReplayResult["replayed"] != true || moveReplayResult["file_written"] != false {
 		t.Fatalf("completed move receipt replay=%s err=%v", moveApplyReplay.JSON, err)
+	}
+	feedback, ok := moveReplayResult["diagnostics"].(map[string]any)
+	if !ok || feedback["path"] != "moved.txt" || feedback["status"] != "unavailable" {
+		t.Fatalf("move feedback must identify its destination and missing backend: %s", moveApplyReplay.JSON)
 	}
 	if data, readErr := os.ReadFile(filepath.Join(rootPath, "moved.txt")); readErr != nil || string(data) != "user changed after move\n" {
 		t.Fatalf("completed move replay touched later user content=%q err=%v", data, readErr)
@@ -501,23 +467,13 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 	restoreEdit := decodeAgentCodeToolResult(t, restoreProposal.JSON)
 	var restoreProposalResult map[string]any
 	if err := json.Unmarshal([]byte(restoreProposal.JSON), &restoreProposalResult); err != nil ||
-		restoreEdit.Operation != fileedit.OperationCreate || restoreEdit.Status != fileedit.StatusApproved ||
+		restoreEdit.Operation != fileedit.OperationCreate || restoreEdit.Status != fileedit.StatusApplied ||
 		restoreProposalResult["review_required"] != false ||
 		restoreProposalResult["apply_authorized"] != true ||
-		restoreProposalResult["delete_confirmation_required"] != false {
-		t.Fatalf("Full Access inverse create was not automatically authorized: %s err=%v",
+		restoreProposalResult["delete_confirmation_required"] != false ||
+		restoreProposalResult["file_written"] != true {
+		t.Fatalf("Full Access inverse create was not applied in 1 step: %s err=%v",
 			restoreProposal.JSON, err)
-	}
-	restoreApplyScope := restoreScope
-	restoreApplyScope.InvocationID = "auto-file-edit-restore-delete-apply-invocation"
-	restoreApplyScope.OperationKey = "auto-file-edit-restore-delete-apply-0001"
-	if _, err := executor.ExecuteAgentCode(ctx, restoreApplyScope,
-		toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t,
-			toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion,
-				EditID: restoreEdit.EditID, ExpectedAction: "create",
-				ExpectedOriginalSHA256: restoreEdit.OriginalSHA256,
-				ExpectedProposedSHA256: restoreEdit.ProposedSHA256})); err != nil {
-		t.Fatal(err)
 	}
 	if data, readErr := os.ReadFile(filepath.Join(rootPath, "moved.txt")); readErr != nil || string(data) != "user changed after move\n" {
 		t.Fatalf("inverse create did not restore deleted bytes=%q err=%v", data, readErr)
@@ -561,34 +517,51 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 		t.Fatal(err)
 	}
 	pendingInverseSourceEdit := decodeAgentCodeToolResult(t, pendingInverseSource.JSON)
-	pendingInverseSourceApplyScope := pendingInverseSourceScope
-	pendingInverseSourceApplyScope.InvocationID = "auto-file-edit-pending-inverse-source-apply-invocation"
-	pendingInverseSourceApplyScope.OperationKey = "auto-file-edit-pending-inverse-source-apply-0001"
-	if _, err := executor.ExecuteAgentCode(ctx, pendingInverseSourceApplyScope,
-		toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t,
-			toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion,
-				EditID: pendingInverseSourceEdit.EditID, ExpectedAction: "propose_patch",
-				ExpectedOriginalSHA256: pendingInverseSourceEdit.OriginalSHA256,
-				ExpectedProposedSHA256: pendingInverseSourceEdit.ProposedSHA256})); err != nil {
-		t.Fatal(err)
+	if pendingInverseSourceEdit.Status != fileedit.StatusApplied {
+		t.Fatalf("pending inverse source was not applied in 1 step: %s", pendingInverseSource.JSON)
 	}
-	pendingInverseScope := scope
-	pendingInverseScope.InvocationID = "auto-file-edit-pending-inverse-invocation"
-	pendingInverseScope.OperationKey = "auto-file-edit-pending-inverse-0001"
-	pendingInverse, err := executor.ExecuteAgentCode(ctx, pendingInverseScope,
-		toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t,
-			toolgateway.WorkspaceChangePayload{Version: toolgateway.AgentCodeRegistryVersion,
-				Action: "propose_revert", SourceRunID: run.ID,
-				SourceEditID: pendingInverseSourceEdit.EditID, Path: "moved.txt",
-				ExpectedSHA256: pendingInverseSourceEdit.ProposedSHA256}))
-	if err != nil {
-		t.Fatal(err)
+	createUnappliedAutoEdit := func(editID, opKey string, proposal fileedit.Proposal) fileedit.Edit {
+		t.Helper()
+		prepared, prepErr := fileedit.NewManager(state).PrepareProposal(ctx, proposal)
+		if prepErr != nil {
+			t.Fatal(prepErr)
+		}
+		created, _, createErr := state.CreateAutomaticallyAuthorizedFileEditIfAbsent(ctx, prepared,
+			fileedit.AutoAuthorization{
+				RunID: run.ID, SessionID: run.SessionID, WorkspaceID: workspaceRecord.ID,
+				AgentID:            scope.ActorID(),
+				OperationKeyDigest: runmutation.Fingerprint("agent_code_file_edit_source.v1", run.ID, opKey),
+				ProposalFingerprint: runmutation.Fingerprint("agent_code_file_edit_proposal.v1",
+					prepared.ID, prepared.SessionID, prepared.WorkspaceID, prepared.Operation, prepared.Path,
+					prepared.DestinationPath, prepared.OriginalHash, prepared.ProposedHash,
+					prepared.DestinationOriginalHash, prepared.DestinationProposedHash),
+				PermissionSnapshotID:    scope.PermissionSnapshotID,
+				DestinationPath:         prepared.DestinationPath,
+				DestinationOriginalHash: prepared.DestinationOriginalHash,
+				DestinationProposedHash: prepared.DestinationProposedHash,
+				PermissionRevision:      scope.PermissionRevision,
+				ModeRevision:            scope.ModeRevision,
+				RuntimeEpoch:            scope.PermissionRuntimeEpoch,
+				RuntimeGeneration:       scope.PermissionGeneration,
+				RunAuthorizationFence:   scope.RunAuthorizationFence,
+				CapabilityGeneration:    scope.CapabilityGeneration,
+				LeaseID:                 scope.LeaseID,
+				LeaseGeneration:         scope.LeaseGeneration,
+			})
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		if created.Status != fileedit.StatusApproved {
+			t.Fatalf("unapplied automatic edit %s status=%s", created.ID, created.Status)
+		}
+		return created
 	}
-	pendingInverseEdit := decodeAgentCodeToolResult(t, pendingInverse.JSON)
-	if pendingInverseEdit.Operation != fileedit.OperationReplace ||
-		pendingInverseEdit.Status != fileedit.StatusApproved {
-		t.Fatalf("pending inverse was not automatically authorized: %s", pendingInverse.JSON)
-	}
+	pendingInverseEdit := createUnappliedAutoEdit("", "auto-file-edit-pending-inverse-0001",
+		fileedit.Proposal{
+			SessionID: run.SessionID, WorkspaceID: workspaceRecord.ID,
+			WorkspaceRoot: rootPath, Path: "moved.txt", Operation: fileedit.OperationReplace,
+			ProposedText: "user changed after move\n", ExpectedOriginalHash: pendingInverseSourceEdit.ProposedSHA256,
+		})
 	if err := os.WriteFile(filepath.Join(rootPath, "pending-move-source.txt"),
 		[]byte("must remain\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -597,34 +570,23 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	pendingMoveScope := scope
-	pendingMoveScope.InvocationID = "auto-file-edit-pending-move-invocation"
-	pendingMoveScope.OperationKey = "auto-file-edit-pending-move-0001"
-	pendingMove, err := executor.ExecuteAgentCode(ctx, pendingMoveScope,
-		toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, toolgateway.WorkspaceChangePayload{
-			Version: toolgateway.AgentCodeRegistryVersion, Action: "move",
-			Path: "pending-move-source.txt", ExpectedSHA256: pendingMoveSourceHash,
-			DestinationPath:           "pending-move-destination.txt",
-			DestinationExpectedSHA256: "missing"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pendingMoveEdit := decodeAgentCodeToolResult(t, pendingMove.JSON)
-	pendingScope := scope
-	pendingScope.InvocationID = "auto-file-edit-pending-invocation"
-	pendingScope.OperationKey = "auto-file-edit-pending-0001"
-	pending, err := executor.ExecuteAgentCode(ctx, pendingScope, toolgateway.WorkspaceChangeTool,
-		mustAgentCodePayload(t, toolgateway.WorkspaceChangePayload{
-			Version: toolgateway.AgentCodeRegistryVersion, Action: "create",
-			Path: "pending.txt", ExpectedSHA256: "missing", Content: "pending work\n"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pendingEdit := decodeAgentCodeToolResult(t, pending.JSON)
+	pendingMoveEdit := createUnappliedAutoEdit("", "auto-file-edit-pending-move-0001",
+		fileedit.Proposal{
+			SessionID: run.SessionID, WorkspaceID: workspaceRecord.ID,
+			WorkspaceRoot: rootPath, Path: "pending-move-source.txt", Operation: fileedit.OperationMove,
+			DestinationPath: "pending-move-destination.txt", ExpectedOriginalHash: pendingMoveSourceHash,
+			ExpectedDestinationHash: "missing",
+		})
+	pendingEdit := createUnappliedAutoEdit("", "auto-file-edit-pending-0001",
+		fileedit.Proposal{
+			SessionID: run.SessionID, WorkspaceID: workspaceRecord.ID,
+			WorkspaceRoot: rootPath, Path: "pending.txt", Operation: fileedit.OperationCreate,
+			ProposedText: "pending work\n", ExpectedOriginalHash: "missing",
+		})
 	runtimeAuthority.RevokeRun(run.ID)
 	staleApply := application.ApplyFileEditRequest{
 		Version: fileedit.FileEditApplyProtocolVersion, RunID: run.ID,
-		EditID: pendingEdit.EditID, OperationKey: "auto-file-edit-pending-apply-0001",
+		EditID: pendingEdit.ID, OperationKey: "auto-file-edit-pending-apply-0001",
 		AppliedBy: rootAgent.ID, InvocationID: "auto-file-edit-pending-apply-invocation",
 		CapabilityGeneration: scope.CapabilityGeneration, LeaseID: scope.LeaseID,
 		LeaseGeneration: scope.LeaseGeneration, PermissionSnapshotID: permission.ID,
@@ -633,8 +595,8 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 		policy.NewDefaultChecker()).WithExecutionPermissionCapabilities(runtimeCapabilities)
 	completedReplay, err := applyService.Apply(ctx, application.ApplyFileEditRequest{
 		Version: fileedit.FileEditApplyProtocolVersion, RunID: run.ID,
-		EditID: edit.EditID, OperationKey: applyScope.OperationKey,
-		AppliedBy: rootAgent.ID, InvocationID: applyScope.InvocationID,
+		EditID: edit.EditID, OperationKey: runmutation.Fingerprint("agent_code_auto_apply_v1", scope.OperationKey),
+		AppliedBy: rootAgent.ID, InvocationID: scope.InvocationID,
 		CapabilityGeneration: scope.CapabilityGeneration, LeaseID: scope.LeaseID,
 		LeaseGeneration: scope.LeaseGeneration, PermissionSnapshotID: permission.ID,
 		PermissionGeneration: generation, PermissionRuntimeEpoch: runtimeAuthority.RuntimeEpoch(), RunAuthorizationFence: fence})
@@ -646,7 +608,7 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 		t.Fatalf("revoked automatic FileEdit apply err=%v", err)
 	}
 	staleInverseApply := staleApply
-	staleInverseApply.EditID = pendingInverseEdit.EditID
+	staleInverseApply.EditID = pendingInverseEdit.ID
 	staleInverseApply.OperationKey = "auto-file-edit-pending-inverse-apply-0001"
 	staleInverseApply.InvocationID = "auto-file-edit-pending-inverse-apply-invocation"
 	if _, err := applyService.Apply(ctx, staleInverseApply); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodePolicyDenied {
@@ -656,7 +618,7 @@ func TestAgentCodeFullAccessCreatesAndAppliesWithoutPerFileReview(t *testing.T) 
 		t.Fatalf("revoked automatic inverse changed bytes=%q err=%v", data, err)
 	}
 	staleMoveApply := staleApply
-	staleMoveApply.EditID = pendingMoveEdit.EditID
+	staleMoveApply.EditID = pendingMoveEdit.ID
 	staleMoveApply.OperationKey = "auto-file-edit-pending-move-apply-0001"
 	staleMoveApply.InvocationID = "auto-file-edit-pending-move-apply-invocation"
 	if _, err := applyService.Apply(ctx, staleMoveApply); apperror.CodeOf(apperror.Normalize(err)) != apperror.CodePolicyDenied {

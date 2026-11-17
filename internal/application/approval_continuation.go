@@ -3,12 +3,18 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
+	"cyberagent-workbench/internal/approval"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/idgen"
+	"cyberagent-workbench/internal/runmutation"
+	"cyberagent-workbench/internal/session"
+	"cyberagent-workbench/internal/toolgateway"
 )
 
 type ApprovalContinuationRequest struct {
@@ -168,7 +174,10 @@ func (s *ThreadTurnService) resumeApprovalWithOwner(ctx context.Context, request
 	}
 	var execution LifecycleResult
 	err = s.execution.supervisor.withRunExecutionLease(ctx, request.RunID, func(leaseCtx context.Context, lease domain.RunExecutionLease) error {
-		_, stepErr := store.BeginSupervisorApprovalContinuation(leaseCtx, lease, value.Handoff.Operation.ID)
+		turn, stepErr := store.BeginSupervisorApprovalContinuation(leaseCtx, lease, value.Handoff.Operation.ID)
+		if stepErr == nil && request.Kind == "file_edit" {
+			stepErr = s.execution.supervisor.applyApprovedFileEditForContinuation(leaseCtx, lease, turn, value.Handoff.Operation.ID, request.ProposalID)
+		}
 		if stepErr == nil {
 			execution, stepErr = s.execution.supervisor.stepWithLease(leaseCtx, lease, value.Input)
 		}
@@ -217,4 +226,124 @@ func approvalContinuationProjection(handoff domain.RunExecutionHandoff, replayed
 		result.Message = "审批已保存，后续执行未完成。请先查看执行记录；结果未确认的写入或命令不会自动重试。"
 	}
 	return result
+}
+
+func (s *AgentRunner) applyApprovedFileEditForContinuation(ctx context.Context,
+	lease domain.RunExecutionLease, turn domain.SupervisorTurn,
+	handoffID, proposalID string,
+) error {
+	if s == nil || s.store == nil || s.checker == nil {
+		return nil
+	}
+	applyStore, ok := s.store.(FileEditApplyStore)
+	if !ok {
+		return nil
+	}
+	edit, err := applyStore.GetFileEdit(ctx, proposalID)
+	if err != nil {
+		if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeNotFound {
+			return nil
+		}
+		return apperror.Normalize(err)
+	}
+	if edit.Status != fileedit.StatusApproved || edit.SessionID != turn.Run.SessionID {
+		return nil
+	}
+	approvalRecord, err := applyStore.GetApprovalByProposal(ctx, edit.ID)
+	if err != nil {
+		if apperror.CodeOf(apperror.Normalize(err)) == apperror.CodeNotFound {
+			return nil
+		}
+		return apperror.Normalize(err)
+	}
+	if approvalRecord.Status != approval.StatusApproved {
+		return nil
+	}
+	permission, err := s.store.GetRunExecutionPermission(ctx, turn.Run.ID)
+	if err != nil {
+		return apperror.Normalize(err)
+	}
+	_, authorityJSON, err := s.supervisorAgentCodeCapabilities(ctx, turn, permission)
+	if err != nil {
+		return err
+	}
+	capabilityGeneration := ""
+	permissionSnapshotID := ""
+	var permissionGeneration uint64
+	permissionRuntimeEpoch := ""
+	var runAuthorizationFence uint64
+	if len(authorityJSON) > 0 {
+		if authority, decodeErr := toolgateway.DecodeAgentCodeCallAuthority(authorityJSON); decodeErr == nil {
+			capabilityGeneration = authority.CapabilityGeneration
+			permissionSnapshotID = authority.PermissionSnapshotID
+			permissionGeneration = authority.PermissionGeneration
+			permissionRuntimeEpoch = authority.PermissionRuntimeEpoch
+			runAuthorizationFence = authority.RunAuthorizationFence
+		}
+	}
+	checkpoints := embeddedWorkspaceCheckpointService(applyStore, s.executionCapabilities)
+	applyService := NewFileEditApplyService(applyStore, s.checker, checkpoints).
+		WithExecutionPermissionCapabilities(s.executionCapabilities).
+		WithRunWorktree(s.drydocks)
+	applied, applyErr := applyService.Apply(ctx, ApplyFileEditRequest{
+		Version:                fileedit.FileEditApplyProtocolVersion,
+		RunID:                  turn.Run.ID,
+		EditID:                 edit.ID,
+		OperationKey:           runmutation.Fingerprint("file_edit_approval_apply_v1", turn.Run.ID, edit.ID),
+		AppliedBy:              "approval_continuation",
+		AttemptID:              turn.Checkpoint.AttemptID,
+		CapabilityGeneration:   capabilityGeneration,
+		LeaseID:                lease.LeaseID,
+		LeaseGeneration:        lease.Generation,
+		PermissionSnapshotID:   permissionSnapshotID,
+		PermissionGeneration:   permissionGeneration,
+		PermissionRuntimeEpoch: permissionRuntimeEpoch,
+		RunAuthorizationFence:  runAuthorizationFence,
+	})
+	var evidenceText string
+	if applyErr != nil {
+		code := apperror.CodeOf(apperror.Normalize(applyErr))
+		if code != apperror.CodeConflict && code != apperror.CodePolicyDenied {
+			return applyErr
+		}
+		if latest, lookupErr := applyStore.GetFileEdit(ctx, edit.ID); lookupErr == nil && latest.Status == fileedit.StatusApproved {
+			latest.Status = fileedit.StatusFailed
+			latest.Reason = applyErr.Error()
+			latest.UpdatedAt = time.Now().UTC()
+			if saved, saveErr := applyStore.SaveFileEdit(ctx, latest); saveErr == nil {
+				edit = saved
+			}
+		}
+		evidenceText = fmt.Sprintf(
+			"System-recorded direct file apply result after operator approval: File proposal %s (%s) FAILED (%s) for path %q: %s. The file was NOT applied. Do not call workspace_apply; inspect the current workspace state before proposing a replacement.",
+			edit.ID, edit.Operation, code, edit.Path, applyErr.Error(),
+		)
+	} else {
+		evidenceText = fmt.Sprintf(
+			"System-recorded direct file apply result after operator approval: File proposal %s (%s) is APPLIED for path %q (original SHA256 %s; proposed SHA256 %s; file_written=%t; replayed=%t). The approved change is already written to the workspace; do not call workspace_apply or repeat this edit.",
+			applied.Edit.ID, applied.Edit.Operation, applied.Edit.Path, applied.Edit.OriginalHash, applied.Edit.ProposedHash, applied.FileWritten, applied.Replayed,
+		)
+	}
+	if msgStore, ok := s.store.(interface {
+		SaveSessionMessage(context.Context, session.Message) (session.Message, error)
+	}); ok {
+		sourceRef := handoffID + "-apply-" + edit.ID
+		existing, listErr := s.store.ListSessionMessages(ctx, turn.Run.SessionID, true)
+		alreadyRecorded := false
+		if listErr == nil {
+			for _, msg := range existing {
+				if msg.Provenance.SourceKind == session.SourceToolResult && msg.Provenance.SourceRef == sourceRef {
+					alreadyRecorded = true
+					break
+				}
+			}
+		}
+		if !alreadyRecorded {
+			if _, saveErr := msgStore.SaveSessionMessage(ctx, session.NewEvidenceMessage(
+				turn.Run.SessionID, session.SourceToolResult, sourceRef, evidenceText)); saveErr != nil {
+				return apperror.Normalize(saveErr)
+			}
+		}
+	}
+	return nil
 }
