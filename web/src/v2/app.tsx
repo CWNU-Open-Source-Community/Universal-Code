@@ -49,6 +49,9 @@ import { threadProjectID } from "./components/thread-project-dialog";
 import { useChatShortcuts } from "./chat-preferences";
 import { V2DraftBrowserWorkspace } from "./components/draft-browser-workspace";
 import { adoptDraftSharedBrowser, bindDraftSharedBrowser } from "./shared-browser-session";
+import { requestAutomationDraftPrefill } from "./automation-nl-schedule";
+import { requestPluginRoleFilter } from "./plugin-recommendations";
+import { V2PluginRecommendationBanner } from "./components/plugin-recommendation-banner";
 
 type CreationAttempt = Map<string, { operationID: string; approvalMode?: ExecutionApprovalMode; approvalRevision: number }>;
 type NewThreadOptions = { networkMode: V2NetworkMode; allowedTargets: string[];
@@ -864,7 +867,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
               disabled={workspacesQuery.isFetchingNextPage} onClick={() => void workspacesQuery.fetchNextPage()}
               type="button">{t("加载更多项目", "Load more projects")}</button>}
             workspaceID={workspaceID} workspaces={workspaces} />
-          : <V2Conversation client={client} onArchive={setArchiveCandidate}
+          : <div className="v2-active-conversation-shell"><V2PluginRecommendationBanner client={client} threadID={selectedThreadID} thread={threads.find((item) => item.id === selectedThreadID)} draft={drafts[draftKey] ?? ""} onApplyDraftHint={(hint) => { const cur = drafts[draftKey] ?? ""; updateDraft(cur.trim() ? `${cur}\n\n${hint}` : hint); }} onConfigureRole={(role) => { requestPluginRoleFilter(role); setSettingsSection("extensions"); }} onOpenAutomations={(prefill) => { if (prefill) requestAutomationDraftPrefill(prefill); navigate({ kind: "automations", ...(selectedThreadID ? { threadID: selectedThreadID } : {}) }); closeNavigationSidebar(); }} /><V2Conversation client={client} onArchive={setArchiveCandidate}
             replyReading={unread.reading} readRequest={readRequest.threadID === selectedThreadID ? readRequest.revision : 0}
             readingEnabled={!(narrowLayout && sidebarVisible) && !archiveCandidate && !editingProject && !moveMutation.isPending}
             onOpenThread={openConversation}
@@ -885,7 +888,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
             draft={drafts[draftKey] ?? ""} onDraftChange={updateDraft}
             onManageModels={() => openModels(false)}
             messageID={route.messageID} onExitMessage={() => navigate({ kind: "thread", threadID: selectedThreadID })}
-            threadID={selectedThreadID} workspaces={workspaces} />}
+            threadID={selectedThreadID} workspaces={workspaces} /></div>}
       </div>
     </V2SidebarLayout>
     {browserAdoptionFailure?.generation === connectionGeneration && <div className="v2-toast" role="alert">

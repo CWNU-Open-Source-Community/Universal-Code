@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Copy, Search, Sparkles, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { ThreadDetailView, WorkspaceView } from "../../api/types";
 import { DesktopSkillPreviewDialog } from "../../components/desktop-skill-preview";
@@ -10,13 +11,276 @@ import { SafeWebReadinessPanel } from "../../components/safe-web-readiness";
 import { AboutSettings, ExtensionSettings, WebSkillInstall, persistDensity, readDensity,
   type Density } from "../../components/shared-settings-panels";
 import { applyRunNavigationMode, readRunNavigationMode, type RunNavigationMode } from "../../lib/run-navigation";
+import {
+  classifyExtensionCatalog,
+  consumePluginRoleFilter,
+  countToolsByRole,
+  filterClassifiedTools,
+  PLUGIN_TOOL_ROLES,
+  ROLE_TEMPLATE_PRESETS,
+  subscribePluginRoleFilter,
+  type PluginToolRole,
+} from "../plugin-recommendations";
 import { v2QueryKeys } from "../query-keys";
 import { useConnectionStore } from "../../state/connection";
 import { useLocale } from "../../lib/locale";
 import "./advanced-settings.css";
 
-export function V2ExtensionSettings({ client, threadID, workspaces = [], onOpenTask }: {
-  client: APIClient; threadID: string; workspaces?: WorkspaceView[]; onOpenTask?: (workspaceID?: string) => void;
+function V2RoleToolDirectory({
+  client,
+  selectedRunID,
+  selectedWorkspaceID = "",
+  initialRole,
+}: {
+  client: APIClient;
+  selectedRunID: string;
+  selectedWorkspaceID?: string;
+  initialRole?: PluginToolRole;
+}) {
+  const { locale, t } = useLocale();
+  const isZh = locale.startsWith("zh");
+  const searchId = useId();
+  const [role, setRole] = useState<PluginToolRole>(() => consumePluginRoleFilter() ?? initialRole ?? "all");
+  const [search, setSearch] = useState("");
+  const [copiedPresetID, setCopiedPresetID] = useState("");
+
+  useEffect(() => {
+    if (initialRole) setRole(initialRole);
+  }, [initialRole]);
+
+  useEffect(() => {
+    const pending = consumePluginRoleFilter();
+    if (pending) setRole(pending);
+    return subscribePluginRoleFilter((nextRole) => {
+      consumePluginRoleFilter();
+      setRole(nextRole);
+    });
+  }, []);
+
+  const inventory = useQuery({
+    queryKey: ["extensions", selectedRunID, selectedWorkspaceID],
+    enabled: typeof client.extensionInventory === "function",
+    queryFn: ({ signal }) =>
+      selectedWorkspaceID
+        ? client.extensionInventory(selectedRunID, signal, selectedWorkspaceID)
+        : client.extensionInventory(selectedRunID, signal),
+  });
+
+  const codeIntelWorkspaceID =
+    selectedWorkspaceID || (selectedRunID ? inventory.data?.workspace_id ?? "" : "");
+  const codeIntel = useQuery({
+    queryKey: ["code-intel", codeIntelWorkspaceID],
+    enabled:
+      typeof client.codeIntelInventory === "function" &&
+      (selectedRunID === "" || codeIntelWorkspaceID !== ""),
+    queryFn: ({ signal }) => client.codeIntelInventory(codeIntelWorkspaceID, signal),
+  });
+
+  const skills = useQuery({
+    queryKey: ["skill-package-registry", false],
+    enabled:
+      Boolean(client.hasSkillInstallation) && typeof client.listSkillPackages === "function",
+    queryFn: ({ signal }) => client.listSkillPackages({ includeRemoved: false }, signal),
+    refetchOnWindowFocus: false,
+  });
+
+  const classified = useMemo(
+    () =>
+      classifyExtensionCatalog({
+        mcpServers: inventory.data?.mcp_servers,
+        plugins: inventory.data?.plugins,
+        codeIntelServers: codeIntel.data?.servers,
+        codeIntelConfigurations: codeIntel.data?.configurations,
+        skills: skills.data?.items,
+      }),
+    [inventory.data, codeIntel.data, skills.data],
+  );
+
+  const counts = useMemo(() => countToolsByRole(classified), [classified]);
+  const filtered = useMemo(
+    () => filterClassifiedTools(classified, role, search),
+    [classified, role, search],
+  );
+
+  const activeRoleMeta = PLUGIN_TOOL_ROLES.find((item) => item.id === role) ?? PLUGIN_TOOL_ROLES[0]!;
+  const matchingPresets = useMemo(
+    () =>
+      role === "all"
+        ? ROLE_TEMPLATE_PRESETS.slice(0, 3)
+        : ROLE_TEMPLATE_PRESETS.filter((preset) => preset.role === role),
+    [role],
+  );
+
+  const copyPresetHint = async (presetID: string, value: string) => {
+    try {
+      await navigator?.clipboard?.writeText?.(value);
+    } catch {
+      // Clipboard may be unavailable in restricted contexts
+    }
+    setCopiedPresetID(presetID);
+    window.setTimeout(() => {
+      setCopiedPresetID((current) => (current === presetID ? "" : current));
+    }, 1800);
+  };
+
+  return (
+    <section
+      aria-label={t("按角色筛选工具", "Filter tools by role")}
+      className="v2-plugin-role-hub"
+    >
+      <div className="v2-plugin-role-hub-top">
+        <div className="v2-plugin-role-hub-title">
+          <strong>
+            <Sparkles aria-hidden="true" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />
+            {t("按角色一键筛选工具", "One-Click Role Tool Filter")}
+          </strong>
+          <small>
+            {isZh ? activeRoleMeta.description.zh : activeRoleMeta.description.en}
+          </small>
+        </div>
+
+        <div aria-label={t("搜索工具与能力", "Search tools and capabilities")} role="search">
+          <label className="v2-plugin-role-search" htmlFor={searchId}>
+            <Search aria-hidden="true" size={14} />
+            <input
+              autoCapitalize="none"
+              autoCorrect="off"
+              id={searchId}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t("搜索插件、MCP、LSP 或能力…", "Search plugins, MCP, LSP, or skills…")}
+              spellCheck={false}
+              type="search"
+              value={search}
+            />
+            {(search || role !== "all") && (
+              <button
+                aria-label={t("重置工具筛选", "Reset tool filters")}
+                className="v2-plugin-rec-dismiss"
+                onClick={() => {
+                  setRole("all");
+                  setSearch("");
+                }}
+                type="button"
+              >
+                <X aria-hidden="true" size={13} />
+              </button>
+            )}
+          </label>
+        </div>
+      </div>
+
+      <div
+        aria-label={t("工具角色分类", "Tool role categories")}
+        className="v2-plugin-role-pills"
+        role="group"
+      >
+        {PLUGIN_TOOL_ROLES.map((item) => (
+          <button
+            aria-pressed={role === item.id}
+            className="v2-plugin-role-pill"
+            key={item.id}
+            onClick={() => setRole(item.id)}
+            type="button"
+          >
+            <span>{isZh ? item.label.zh : item.label.en}</span>
+            <span className="v2-plugin-role-count">{counts[item.id]}</span>
+          </button>
+        ))}
+      </div>
+
+      {(classified.length > 0 || role !== "all" || Boolean(search.trim())) &&
+        (filtered.length > 0 ? (
+          <div
+            aria-label={t("匹配的角色工具列表", "Matched role tools")}
+            className="v2-plugin-role-grid"
+          >
+            {filtered.map((entry) => (
+              <article className="v2-plugin-role-card" key={entry.id}>
+                <div className="v2-plugin-role-card-head">
+                  <strong>{entry.name}</strong>
+                  <span className="v2-plugin-kind-badge">{entry.kind}</span>
+                </div>
+                <small style={{ color: "var(--v2-muted)", fontSize: 12 }}>
+                  {entry.subtitle} ·{" "}
+                  {entry.enabled
+                    ? t("已启用", "Enabled")
+                    : entry.needsSetup
+                      ? t("待审查/启用", "Needs review")
+                      : t("已停用", "Disabled")}
+                </small>
+                {entry.description && (
+                  <p style={{ margin: 0, fontSize: 12 }}>{entry.description}</p>
+                )}
+                <div className="v2-plugin-role-tags">
+                  {entry.roles.map((r) => {
+                    const meta = PLUGIN_TOOL_ROLES.find((def) => def.id === r);
+                    return (
+                      <span className="v2-plugin-role-tag" key={r}>
+                        {meta ? (isZh ? meta.shortLabel.zh : meta.shortLabel.en) : r}
+                      </span>
+                    );
+                  })}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="v2-plugin-role-empty" role="status">
+            <strong>
+              {t(
+                `当前「${isZh ? activeRoleMeta.label.zh : activeRoleMeta.label.en}」角色暂无已接入工具`,
+                `No tools configured yet for "${activeRoleMeta.label.en}"`,
+              )}
+            </strong>
+            <small style={{ color: "var(--v2-muted)" }}>
+              {t(
+                "可参考下方推荐预设，在下方 MCP / Plugin / LSP 面板快速登记并启用：",
+                "Use a recommended preset below to register an MCP server, Plugin, or Skill:",
+              )}
+            </small>
+            {matchingPresets.map((preset) => (
+              <div className="v2-plugin-preset-card" key={preset.id}>
+                <div>
+                  <strong>{isZh ? preset.name.zh : preset.name.en}</strong>{" "}
+                  <span className="v2-plugin-kind-badge">{preset.kindLabel}</span>
+                  <p style={{ margin: "2px 0 4px", fontSize: 12, color: "var(--v2-muted)" }}>
+                    {isZh ? preset.summary.zh : preset.summary.en}
+                  </p>
+                  <code>
+                    {preset.suggestedServerID} · {preset.suggestedTargetHint}
+                  </code>
+                </div>
+                <button
+                  className="settings-action"
+                  onClick={() => void copyPresetHint(preset.id, preset.suggestedTargetHint)}
+                  type="button"
+                >
+                  {copiedPresetID === preset.id ? (
+                    <>
+                      <Check aria-hidden="true" size={13} />
+                      {t("已复制地址", "Copied")}
+                    </>
+                  ) : (
+                    <>
+                      <Copy aria-hidden="true" size={13} />
+                      {t("复制推荐地址", "Copy preset URI")}
+                    </>
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
+        ))}
+    </section>
+  );
+}
+
+export function V2ExtensionSettings({ client, threadID, workspaces = [], onOpenTask, initialRole }: {
+  client: APIClient;
+  threadID: string;
+  workspaces?: WorkspaceView[];
+  onOpenTask?: (workspaceID?: string) => void;
+  initialRole?: PluginToolRole;
 }) {
   const { t } = useLocale();
   const [workspaceID, setWorkspaceID] = useState("");
@@ -32,6 +296,7 @@ export function V2ExtensionSettings({ client, threadID, workspaces = [], onOpenT
       {t("无法确定当前任务的扩展范围。", "Unable to determine the extension scope for the current task.")}<button className="v2-setting-link" onClick={() => void thread.refetch()}
         type="button">{t("重试", "Retry")}</button></p>}
   </>;
+  const resolvedWorkspaceID = threadID ? thread.data?.thread.workspace_id : workspaceID;
   return <div className="v2-shared-settings">
     {!threadID && <label className="extension-scope-picker">{t("接入工作区", "Workspace to connect")}
       <select aria-label={t("接入工作区", "Workspace to connect")} value={workspaceID} onChange={(event) => setWorkspaceID(event.target.value)}>
@@ -40,8 +305,14 @@ export function V2ExtensionSettings({ client, threadID, workspaces = [], onOpenT
       </select>
       {onOpenTask && <button className="settings-action" onClick={() => onOpenTask(workspaceID || undefined)} type="button">{t("打开新任务输入区", "Open new task composer")}</button>}
     </label>}
+    <V2RoleToolDirectory
+      client={client}
+      initialRole={initialRole}
+      selectedRunID={runID ?? ""}
+      selectedWorkspaceID={resolvedWorkspaceID}
+    />
     <ExtensionSettings client={client} key={`${runID ?? "global"}/${workspaceID}`} onOpenTask={onOpenTask}
-      selectedRunID={runID ?? ""} selectedWorkspaceID={threadID ? thread.data?.thread.workspace_id : workspaceID} />
+      selectedRunID={runID ?? ""} selectedWorkspaceID={resolvedWorkspaceID} />
   </div>;
 }
 
