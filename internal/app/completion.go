@@ -98,16 +98,71 @@ func (a *App) completeCommand(args []string) error {
 	return nil
 }
 
-// completionCandidates resolves candidate command names for the current
-// position. v1 completes the top-level command position and the argument
-// of 'help'; deeper positions return no candidates so the shell never
-// offers a word the CLI would reject.
+// commandSubcommands lists the first-level dispatch vocabulary for commands
+// that take a static subcommand, verified against each command's dispatch
+// switch (several entries are absent from the help text). Entries are
+// sorted; deeper levels are not completed yet.
+var commandSubcommands = map[string][]string{
+	"analyzer":       {"execute"},
+	"api":            {"openapi", "serve"},
+	"approval":       {"approve-for-thread", "approve-once", "deny", "grant", "list", "show"},
+	"artifact":       {"list", "read", "show", "verify"},
+	"code-intel":     {"qualify", "status"},
+	"completion":     {"bash", "zsh"},
+	"context":        {"compact", "instructions", "memory", "show"},
+	"ctf":            {"analyze", "init", "writeup"},
+	"debug":          {"query"},
+	"doctor":         {"browser-network-probe", "browser-network-review", "browser-readiness", "bundle", "portable", "snapshot"},
+	"drydock":        {"checkpoint", "cleanup", "create", "deliver", "fork", "gc", "reconcile", "rewind", "status", "undo", "use"},
+	"edit":           {"apply", "approve", "deny", "list", "propose", "review-approve", "review-deny", "show"},
+	"git-advanced":   {"discover-hunks", "preview", "run", "status"},
+	"git-op":         {"commit", "create-branch", "stage", "switch-branch", "unstage"},
+	"git-remote":     {"create-pr", "fetch", "pull", "push-branch", "update-pr"},
+	"github-review":  {"configure", "credential", "evidence", "fetch", "login", "qualify", "recover", "status", "write"},
+	"headless":       {"events"},
+	"learn":          {"ask"},
+	"mcp":            {"client", "credential", "serve"},
+	"model":          {"list", "set"},
+	"note":           {"archive", "create", "get", "list", "restore", "show", "update"},
+	"once-command":   {"proposals"},
+	"plugin":         {"import-git", "import-url", "list", "review", "revoke-publisher", "rollback", "show", "stage", "stage-mcp", "trust-publisher"},
+	"project-config": {"show", "validate"},
+	"provider":       {"list", "price-import", "price-list", "qualify", "test"},
+	"report":         {"check", "finding", "show"},
+	"run":            {"adapt-task", "browser-cdp-permission", "cancel", "capability-readiness", "checkpoint", "command-execute", "command-plan", "command-proposal", "create", "delegation", "delegations", "delivery", "events", "execute", "execution-interaction", "execution-permission", "execution-profile", "fail", "fanout", "fanouts", "finish", "graph", "host-execute", "lease", "list", "mode", "pause", "phase", "plan", "plans", "project-action", "resume", "sandbox", "schedule", "show", "specialist-step", "standard-code", "start", "steer", "step", "usage", "wake"},
+	"sandbox":        {"local-readiness", "template", "validate"},
+	"script":         {"new", "run"},
+	"session":        {"checkpoint", "create", "fork", "history", "list", "resume", "send", "tree"},
+	"skill":          {"candidate", "candidates", "catalog", "discover", "external-selection", "import", "import-dir", "import-git", "import-url", "installed", "list", "package", "remove", "select", "select-external", "selection", "show", "validate"},
+	"thread":         {"archive", "compact", "compactions", "create", "delete", "export", "history", "list", "pin", "rename", "restore", "send", "show"},
+	"todo":           {"block", "cancel", "complete", "create", "list", "reopen", "show", "start", "unblock", "update"},
+	"tool":           {"approve", "deny", "invoke", "list", "schema", "show"},
+	"ui-evidence":    {"artifact", "list", "show"},
+	"web-evidence":   {"list"},
+	"workspace":      {"checkpoint", "init", "list", "read", "show", "tree"},
+}
+
+// completionCandidates resolves candidate names for the current position.
+// The top-level command position and the argument of 'help' complete
+// command names; the first argument of a command with a known static
+// subcommand vocabulary completes those subcommands; deeper positions
+// return no candidates so the shell never offers a word the CLI would
+// reject.
 func completionCandidates(context []string, prefix string) []string {
-	if len(context) > 1 || (len(context) == 1 && context[0] != "help") {
-		return nil
+	if len(context) == 0 || (len(context) == 1 && context[0] == "help") {
+		return matchedNames(commandNames(), prefix)
 	}
+	if len(context) == 1 {
+		if spec, ok := findCommandSpec(context[0]); ok {
+			return matchedNames(commandSubcommands[spec.name], prefix)
+		}
+	}
+	return nil
+}
+
+func matchedNames(pool []string, prefix string) []string {
 	var matched []string
-	for _, name := range commandNames() {
+	for _, name := range pool {
 		if strings.HasPrefix(name, prefix) {
 			matched = append(matched, name)
 		}
