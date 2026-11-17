@@ -53,7 +53,7 @@ var commandTable = []commandSpec{
 	{"sandbox", "Validate sandbox templates and local readiness", "cyberagent sandbox validate|template|local-readiness"},
 	{"script", "Create and record local script templates and runs", "cyberagent script new|run"},
 	{"session", "Manage run-local sessions, checkpoints, forks, and resumes", "cyberagent session create|list|send|history|tree|checkpoint|fork|resume"},
-	{"skill", "Manage packaged skills, candidates, and selections", "cyberagent skill list|show|validate|package|import|installed|remove|candidate|candidates|select|selection|select-external|external-selection"},
+	{"skill", "Manage packaged skills, candidates, selections, and workspace discovery", "cyberagent skill list|discover|show|validate|package|import|installed|remove|candidate|candidates|select|selection|select-external|external-selection"},
 	{"thread", "Create and manage persistent task threads", "cyberagent thread create|list|show|send|history|rename|pin|archive|restore|delete|export"},
 	{"todo", "Create and manage run todo items", "cyberagent todo create|list|show|update|start|block|reopen|complete|cancel"},
 	{"tool", "Inspect, invoke, approve, and deny gateway tools", "cyberagent tool schema|invoke|list|show|approve|deny"},
