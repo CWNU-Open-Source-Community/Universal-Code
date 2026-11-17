@@ -409,7 +409,7 @@ describe("useRunEventStream browser SSE", () => {
     expect(hook.result.current.frames).toBe(frames);
     await act(async () => { connections[1]!.resolve(); });
     expect(hook.result.current.status).toBe("reconnecting");
-    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
     expect(streamRunEvents).toHaveBeenCalledTimes(3);
     expect(connections[2]!.options.cursor).toBe("cursor-replay");
     hook.unmount();

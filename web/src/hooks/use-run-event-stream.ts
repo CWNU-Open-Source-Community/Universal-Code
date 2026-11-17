@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { APIRequestError, type APIClient } from "../api/client";
+import { APIRequestError, StreamProtocolError, type APIClient } from "../api/client";
 import type { RunEventStreamView } from "../api/types";
 import { desktopRuntimeActive } from "../lib/desktop-bridge";
 import { useConnectionStore } from "../state/connection";
@@ -7,6 +7,7 @@ import { useConnectionStore } from "../state/connection";
 export type StreamStatus = "connecting" | "live" | "reconnecting" | "stopped";
 
 const reconnectDelayMs = 1_000;
+const maxReconnectDelayMs = 8_000;
 const desktopCaughtUpDelayMs = 250;
 const maxImmediateDesktopPages = 4;
 const maxLiveFrames = 500;
@@ -139,6 +140,7 @@ export function useRunEventStream(client: APIClient, runID: string) {
       let cursor = remembered?.cursor ?? "";
       let currentFrames = remembered?.frames ?? [];
       let cursorResetUsed = false;
+      let retryDelay = reconnectDelayMs;
       setFrames(currentFrames);
       const poll = async () => {
         publishConnection("connecting");
@@ -155,6 +157,7 @@ export function useRunEventStream(client: APIClient, runID: string) {
               return;
             }
             cursor = page.cursor;
+            retryDelay = reconnectDelayMs;
             if (page.frames.length) {
               const merged = mergeFrames(currentFrames, page.frames);
               if (merged !== currentFrames) {
@@ -182,6 +185,22 @@ export function useRunEventStream(client: APIClient, runID: string) {
               currentFrames = [];
               if (cacheKey) rememberedDesktopRuns.delete(cacheKey);
               setFrames([]);
+              retryDelay = reconnectDelayMs;
+              publishConnection("connecting");
+              continue;
+            }
+            // A protocol-invalid payload would otherwise replay the identical
+            // bytes every second forever: give it the same one-shot full
+            // replay the rejected cursor gets, then back off like the public
+            // model stream. Transport failures keep the confirmed cursor.
+            if (caught instanceof StreamProtocolError && cursor !== "" && !cursorResetUsed) {
+              cursorResetUsed = true;
+              cursor = "";
+              currentFrames = [];
+              if (cacheKey) rememberedDesktopRuns.delete(cacheKey);
+              setFrames([]);
+              retryDelay = reconnectDelayMs;
+              publishConnection("connecting");
               continue;
             }
             const message = caught instanceof Error ? caught.message : "Event polling disconnected";
@@ -190,7 +209,8 @@ export function useRunEventStream(client: APIClient, runID: string) {
               return;
             }
             publishConnection("reconnecting", message);
-            await delay(controller.signal);
+            await delay(controller.signal, retryDelay);
+            retryDelay = Math.min(retryDelay * 2, maxReconnectDelayMs);
             continue;
           }
           await delay(controller.signal, desktopCaughtUpDelayMs);
@@ -205,6 +225,7 @@ export function useRunEventStream(client: APIClient, runID: string) {
     setFrames((current) => current.length ? [] : current);
     let cursor = "";
     let cursorResetUsed = false;
+    let retryDelay = reconnectDelayMs;
     const run = async () => {
       publishConnection("connecting");
       while (!controller.signal.aborted) {
@@ -218,6 +239,7 @@ export function useRunEventStream(client: APIClient, runID: string) {
             onFrame: (frame) => {
               if (controller.signal.aborted) return;
               cursor = frame.cursor;
+              retryDelay = reconnectDelayMs;
               publishConnection("live");
               const merged = mergeFrames(currentFrames, [frame]);
               if (merged !== currentFrames) {
@@ -228,7 +250,8 @@ export function useRunEventStream(client: APIClient, runID: string) {
           });
           if (!controller.signal.aborted) {
             publishConnection("reconnecting");
-            await delay(controller.signal);
+            await delay(controller.signal, retryDelay);
+            retryDelay = Math.min(retryDelay * 2, maxReconnectDelayMs);
           }
         } catch (caught) {
           if (controller.signal.aborted) {
@@ -241,6 +264,20 @@ export function useRunEventStream(client: APIClient, runID: string) {
             cursor = "";
             currentFrames = [];
             setFrames([]);
+            retryDelay = reconnectDelayMs;
+            publishConnection("connecting");
+            continue;
+          }
+          if (caught instanceof StreamProtocolError && cursor !== "" && !cursorResetUsed) {
+            // As with a rejected cursor, a frame that fails parsing would be
+            // replayed identically forever: replay once from scratch, then
+            // back off like the public model stream.
+            cursorResetUsed = true;
+            cursor = "";
+            currentFrames = [];
+            setFrames([]);
+            retryDelay = reconnectDelayMs;
+            publishConnection("connecting");
             continue;
           }
           const message = caught instanceof Error ? caught.message : "Event stream disconnected";
@@ -249,7 +286,8 @@ export function useRunEventStream(client: APIClient, runID: string) {
             return;
           }
           publishConnection("reconnecting", message);
-          await delay(controller.signal);
+          await delay(controller.signal, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, maxReconnectDelayMs);
         }
       }
     };

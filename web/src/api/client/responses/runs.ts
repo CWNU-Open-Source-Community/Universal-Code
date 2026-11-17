@@ -1,5 +1,5 @@
 import { creationBudgetMatches } from "../../task-configuration";
-import { APIRequestError } from "../protocol";
+import { APIRequestError, StreamProtocolError } from "../protocol";
 import {
   boundedIdentity,
   boundedText,
@@ -31,9 +31,11 @@ import type {
   RunLifecycleControlView,
 } from "../../types";
 
+
+
 export function parseStreamFrame(value: unknown, expectedRunID: string, expectedRequestID = ""): RunEventStreamView {
   if (typeof value !== "object" || value === null) {
-    throw new Error("SSE frame is not an object");
+    throw new StreamProtocolError("SSE frame is not an object");
   }
   const frame = value as Partial<RunEventStreamView>;
   if (frame.version !== "run-events.v1" || frame.run_id !== expectedRunID ||
@@ -48,30 +50,30 @@ export function parseStreamFrame(value: unknown, expectedRunID: string, expected
     typeof frame.event.type !== "string" || frame.event.type === "" ||
     typeof frame.event.source !== "string" || frame.event.source === "" ||
     typeof frame.event.created_at !== "string") {
-    throw new Error("SSE frame does not match run-events.v1");
+    throw new StreamProtocolError("SSE frame does not match run-events.v1");
   }
   return frame as RunEventStreamView;
 }
 
 export function parseEventPoll(value: unknown, expectedRunID: string, requestID: string): RunEventPollView {
   if (typeof value !== "object" || value === null) {
-    throw new Error("Event poll response is not an object");
+    throw new StreamProtocolError("Event poll response is not an object");
   }
   const poll = value as Partial<RunEventPollView>;
   if (poll.version !== "run-event-poll.v1" || poll.run_id !== expectedRunID ||
     typeof poll.cursor !== "string" || poll.cursor === "" || poll.cursor.length > 512 ||
     !Array.isArray(poll.frames) || typeof poll.has_more !== "boolean" ||
     (poll.has_more && poll.frames.length === 0) || poll.frames.length > 100) {
-    throw new Error("Event poll response does not match run-event-poll.v1");
+    throw new StreamProtocolError("Event poll response does not match run-event-poll.v1");
   }
   const frames = poll.frames.map((frame) => parseStreamFrame(frame, expectedRunID, requestID));
   for (let index = 1; index < frames.length; index++) {
     if (frames[index]!.sequence !== frames[index - 1]!.sequence + 1) {
-      throw new Error("Event poll response contains a sequence gap");
+      throw new StreamProtocolError("Event poll response contains a sequence gap");
     }
   }
   if (frames.length > 0 && frames[frames.length - 1]!.cursor !== poll.cursor) {
-    throw new Error("Event poll response cursor does not match its final frame");
+    throw new StreamProtocolError("Event poll response cursor does not match its final frame");
   }
   return { ...poll, frames } as RunEventPollView;
 }

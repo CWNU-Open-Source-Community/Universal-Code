@@ -10,6 +10,12 @@ import type { ErrorEnvelope, Page, SuccessEnvelope, ThreadTurnFailureReferenceVi
 
 export type QueryValue = boolean | number | string | undefined;
 
+// StreamProtocolError marks a run-event payload that arrived but failed
+// protocol validation — distinct from transport failures, so the stream hook
+// can replay the run from scratch once (the cursor itself may be stale after
+// a server change) instead of retrying the identical bytes forever.
+export class StreamProtocolError extends Error {}
+
 export class APIRequestError extends Error {
   constructor(
     message: string,
