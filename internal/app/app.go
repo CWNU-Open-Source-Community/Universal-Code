@@ -305,7 +305,7 @@ func (a *App) dispatch(ctx context.Context, args []string) error {
 	case "help", "-h", "--help":
 		a.printHelp()
 		return nil
-	case "version":
+	case "version", "-v", "--version":
 		fmt.Fprintf(a.out, "%s cyberagent %s\n", Name, Version)
 		return nil
 	case "doctor":
@@ -385,8 +385,70 @@ func (a *App) dispatch(ctx context.Context, args []string) error {
 	case "tui":
 		return a.tuiCommand(ctx, args[1:])
 	default:
-		return fmt.Errorf("unknown command %q", args[0])
+		return fmt.Errorf("%w", a.unknownCommandError(args[0]))
 	}
+}
+
+var knownCommands = []string{
+	"help", "version", "doctor", "debug", "workspace", "script", "ctf",
+	"learn", "provider", "model", "skill", "context", "thread", "session",
+	"tool", "edit", "approval", "sandbox", "artifact", "ui-evidence",
+	"web-evidence", "analyzer", "report", "api", "mcp", "plugin",
+	"code-intel", "project-config", "once-command", "git-op", "git-remote",
+	"git-advanced", "drydock", "github-review", "headless", "exec", "run",
+	"todo", "note", "tui",
+}
+
+func suggestCommands(input string) []string {
+	var suggestions []string
+	for _, command := range knownCommands {
+		if levenshtein(input, command) <= 2 && len(input) > 1 {
+			suggestions = append(suggestions, command)
+			if len(suggestions) >= 3 {
+				break
+			}
+		}
+	}
+	return suggestions
+}
+
+func levenshtein(a, b string) int {
+	if a == b {
+		return 0
+	}
+	la, lb := len(a), len(b)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+	prev := make([]int, lb+1)
+	curr := make([]int, lb+1)
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		curr[0] = i
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min(curr[j-1]+1, min(prev[j]+1, prev[j-1]+cost))
+		}
+		prev, curr = curr, prev
+	}
+	return prev[lb]
+}
+
+func (a *App) unknownCommandError(input string) error {
+	suggestions := suggestCommands(input)
+	if len(suggestions) > 0 {
+		return fmt.Errorf("unknown command %q; did you mean one of: %s?\nRun 'cyberagent help' for the full command list.",
+			input, strings.Join(suggestions, ", "))
+	}
+	return fmt.Errorf("unknown command %q\nRun 'cyberagent help' for the full command list.", input)
 }
 
 func (a *App) printHelp() {
