@@ -6,7 +6,7 @@ import type { NarrativeEntry } from "../projection/narrative";
 import { AgentOrb } from "./agent-orb";
 import "./voice-call-mode.css";
 
-export const voicePreferencesStorageKey = "universal-code.voice-preferences.v1";
+export const voicePreferencesStorageKey = "universal-code:voice-preferences-store";
 const voicePreferencesChangedEvent = "universal-code:voice-preferences";
 
 export interface VoicePreferences {
