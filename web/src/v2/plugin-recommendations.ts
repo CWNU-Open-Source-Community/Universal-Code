@@ -573,7 +573,7 @@ export function filterClassifiedTools(
 }
 
 // Navigation pre-filter handoff between in-chat recommendation card and Plugins settings page
-const ROLE_FILTER_STORAGE_KEY = "uc.v2.pending-plugin-role.v1";
+const ROLE_FILTER_STORAGE_KEY = "uc-v2:pending-plugin-role";
 let pendingRoleFilterMemory: PluginToolRole | null = null;
 const roleFilterListeners = new Set<(role: PluginToolRole) => void>();
 
@@ -614,7 +614,7 @@ export function subscribePluginRoleFilter(listener: (role: PluginToolRole) => vo
 }
 
 // Per-thread dismiss persistence
-const DISMISS_STORAGE_KEY = "uc.v2.dismissed-plugin-recommendations.v1";
+const DISMISS_STORAGE_KEY = "uc-v2:dismissed-plugin-recommendations";
 const dismissMemoryFallback = new Map<string, Set<string>>();
 
 function readDismissMap(): Record<string, string[]> {
