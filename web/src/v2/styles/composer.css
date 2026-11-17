@@ -1,0 +1,16 @@
+/* Integrated Composer & Parallel Side Chat layout hooks for V2Composer. */
+
+.v2-composer-surface.has-integrated-bar {
+  display: flex;
+  flex-direction: column;
+}
+
+.v2-composer-surface.has-integrated-bar > textarea,
+.v2-composer-surface.has-integrated-bar > .v2-markdown-input {
+  padding-top: 10px;
+}
+
+.v2-composer[data-side-chat-open="true"] .v2-side-chat-trigger {
+  border-color: color-mix(in srgb, var(--v2-accent) 42%, var(--v2-border));
+  color: var(--v2-accent);
+}

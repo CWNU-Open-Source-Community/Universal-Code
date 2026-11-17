@@ -28,6 +28,24 @@ import { V2MCPReferenceChips, V2MCPReferencePicker, useV2MCPReferences } from ".
 import { MarkdownInput, composerPlainTextKey, readComposerPlainText, type MarkdownInputHandle } from "./markdown-input";
 import { v2AttachmentImportKey } from "../attachment-keys";
 import { usePromptHistory } from "../use-prompt-history";
+import type { V2WorkPhase } from "./phase-picker";
+import {
+  V2ComposerIntegratedBar,
+  formatComposerExecutionDirective,
+  resolveComposerDispatchContext,
+  useV2ComposerIntegratedState,
+  type V2ComposerDispatchContext,
+} from "./composer-integrated-bar";
+import {
+  V2SideConversation,
+  useV2SideChatHistory,
+  type V2SideChatAskRequest,
+  type V2SideConversationContext,
+} from "./side-conversation";
+import "../styles/composer.css";
+
+export type { V2ComposerDispatchContext } from "./composer-integrated-bar";
+export type { V2SideChatAskRequest, V2SideConversationContext } from "./side-conversation";
 
 const maximumContentBytes = 16 * 1024;
 
@@ -38,7 +56,9 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   projectID, allowProjectless = false,
   placeholder, newThreadControls, threadControls, runActive = false, onManageModels,
   pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, onStop, draft, onDraftChange, onStartNextMessage,
-  fileReferenceUnavailableReason, confirmedSubmission, presentedSubmissionErrors = [] }: {
+  fileReferenceUnavailableReason, confirmedSubmission, presentedSubmissionErrors = [],
+  busy, phase, onPhaseChange, approvalMode, onOpenTaskConfiguration,
+  onIntegratedDispatch, sideConversationContext, onSideChatAsk }: {
   client: APIClient;
   threadID: string;
   runID?: string;
@@ -64,6 +84,14 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   fileReferenceUnavailableReason?: string;
   confirmedSubmission?: V2TurnInput | null;
   presentedSubmissionErrors?: ReadonlyArray<Pick<V2TurnInput, "threadID" | "workspaceID" | "operationKey">>;
+  busy?: boolean;
+  phase?: V2WorkPhase;
+  onPhaseChange?: (phase: V2WorkPhase) => void;
+  approvalMode?: "ask" | "auto" | "full";
+  onOpenTaskConfiguration?: () => void;
+  onIntegratedDispatch?: (context: V2ComposerDispatchContext) => Promise<void> | void;
+  sideConversationContext?: V2SideConversationContext;
+  onSideChatAsk?: (request: V2SideChatAskRequest) => Promise<string>;
 }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
@@ -106,6 +134,40 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const pasteGesture = useRef<{ handled: boolean; plain: boolean } | null>(null);
   const composing = useRef(false);
   const attachmentPicker = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const sideChatTriggerRef = useRef<HTMLButtonElement>(null);
+  const [sideChatOpen, setSideChatOpen] = useState(false);
+  const [integratedState, setIntegratedState] = useV2ComposerIntegratedState(workspaceID, threadID);
+  const [resolvedRepoBranch, setResolvedRepoBranch] = useState("main");
+  const sideChatHistory = useV2SideChatHistory(threadID, workspaceID);
+  const effectiveBusy = busy ?? runActive;
+  useEffect(() => {
+    const onGlobalKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        !event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        !(event.code === "KeyS" || event.key.toLowerCase() === "s")
+      ) {
+        return;
+      }
+      if (formRef.current?.closest("[inert]")) return;
+      event.preventDefault();
+      setSideChatOpen((current) => {
+        const next = !current;
+        if (!next) {
+          requestAnimationFrame(() => sideChatTriggerRef.current?.focus());
+        }
+        return next;
+      });
+    };
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  }, []);
   const addTriggerRef = useRef<HTMLButtonElement>(null);
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
   const slashStorage = useRef<Storage | undefined>(getSafeLocalStorage());
@@ -281,17 +343,50 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     setError(null);
     const submittedContent = content;
     try {
+      const dispatchContext = resolveComposerDispatchContext(integratedState, resolvedRepoBranch, normalized);
+      let payloadContent = normalized;
+      if (dispatchContext.hasOverrides) {
+        await onIntegratedDispatch?.(dispatchContext);
+        if (
+          dispatchContext.environment === "cloud" &&
+          runID &&
+          client.hasStandardCodePreset &&
+          typeof client.configureStandardCode === "function"
+        ) {
+          await client
+            .configureStandardCode(
+              runID,
+              "configure",
+              {
+                version: "standard_code_preset.v1",
+                backend_intent: dispatchContext.sandboxBackend === "docker" ? "docker" : "sbx",
+                confirm_workspace_trust: false,
+              },
+              `v2-composer-env-${globalThis.crypto.randomUUID()}`,
+            )
+            .catch(() => undefined);
+        }
+        const directive = formatComposerExecutionDirective(dispatchContext, t);
+        if (directive && normalized) {
+          const decorated = `${directive}\n\n${normalized}`;
+          if (new TextEncoder().encode(decorated).byteLength <= maximumContentBytes) {
+            payloadContent = decorated;
+          }
+        } else if (directive && !normalized) {
+          payloadContent = directive;
+        }
+      }
       let result: V2ComposerSubmitResult;
       if (managedDraft) {
         const version = requireV2DraftVersion(managedDraft, { text: content, files: submittedFiles, images: submittedImages, attachments: submittedAttachments, mcpReferences: submittedMCP });
-        result = submittedMCP.length ? await onSubmit(normalized, submittedFiles, submittedImages, version, submittedAttachments, submittedMCP)
-          : await onSubmit(normalized, submittedFiles, submittedImages, version, submittedAttachments);
+        result = submittedMCP.length ? await onSubmit(payloadContent, submittedFiles, submittedImages, version, submittedAttachments, submittedMCP)
+          : await onSubmit(payloadContent, submittedFiles, submittedImages, version, submittedAttachments);
       }
-      else if (submittedMCP.length) result = await onSubmit(normalized, submittedFiles, submittedImages, undefined, submittedAttachments, submittedMCP);
-      else if (submittedAttachments.length) result = await onSubmit(normalized, submittedFiles, submittedImages, undefined, submittedAttachments);
-      else if (submittedImages.length) result = await onSubmit(normalized, submittedFiles, submittedImages);
-      else if (submittedFiles.length) result = await onSubmit(normalized, submittedFiles);
-      else result = await onSubmit(normalized);
+      else if (submittedMCP.length) result = await onSubmit(payloadContent, submittedFiles, submittedImages, undefined, submittedAttachments, submittedMCP);
+      else if (submittedAttachments.length) result = await onSubmit(payloadContent, submittedFiles, submittedImages, undefined, submittedAttachments);
+      else if (submittedImages.length) result = await onSubmit(payloadContent, submittedFiles, submittedImages);
+      else if (submittedFiles.length) result = await onSubmit(payloadContent, submittedFiles);
+      else result = await onSubmit(payloadContent);
       if (result === v2ComposerNotSubmitted) return;
       if (!managedDraft) {
         references.update((current) => current.filter(({ id }) => !submittedFiles.some((file) => file.id === id)));
@@ -390,7 +485,23 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     detail: t("切换输入方式，保留当前草稿", "Change the editor and keep your draft"),
     icon: <SquarePen aria-hidden="true" size={18} />, disabled, onSelect: () => toggleEditorMode(addTriggerRef.current) });
 
-  return <form className="v2-composer" data-empty={!hasUnsentDraft} data-editor-expanded={editorExpanded}
+  const canUploadFromProjectTools = Boolean(
+    client.hasThreadControl && workspaceID && !disabled && !importStatus.busy && !images.uploading && !attachments.uploading,
+  );
+  const canReferenceFromProjectTools = Boolean(
+    workspaceID && client.hasEvidenceAttachment && !disabled && !fileReferenceUnavailableReason,
+  );
+  const canUseMCPFromProjectTools = Boolean(
+    workspaceID &&
+      client.hasExtensionControl &&
+      client.hasThreadControl &&
+      !disabled &&
+      !fileReferenceUnavailableReason &&
+      mcp.references.length < maximumMCPReferences,
+  );
+
+  return <><form ref={formRef} className="v2-composer" data-empty={!hasUnsentDraft} data-editor-expanded={editorExpanded}
+    data-side-chat-open={sideChatOpen || undefined}
     onSubmit={(event) => void submit(event)} onKeyDownCapture={(event) => {
       // A running turn takes precedence over Tiptap's native Escape binding.
       stopFromInput(event); onKeyDown(event);
@@ -413,7 +524,51 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     if (files.length) { event.preventDefault(); event.stopPropagation(); void addFiles(files); }
   }} onDragOver={images.onDragOver}>
     {images.notice}
-    <div className="v2-composer-surface">
+    <div className="v2-composer-surface has-integrated-bar">
+      <V2ComposerIntegratedBar
+        approvalMode={approvalMode}
+        busy={effectiveBusy}
+        canReferenceFiles={canReferenceFromProjectTools}
+        canUploadAttachment={canUploadFromProjectTools}
+        canUseMCP={canUseMCPFromProjectTools}
+        client={client}
+        disabled={disabled}
+        draftText={content}
+        onOpenFileReference={
+          workspaceID && client.hasEvidenceAttachment
+            ? () => setReferencePickerOpen(true)
+            : undefined
+        }
+        onOpenMCPPrompt={
+          workspaceID && client.hasExtensionControl && client.hasThreadControl
+            ? () => setMCPPicker("prompt")
+            : undefined
+        }
+        onOpenMCPResource={
+          workspaceID && client.hasExtensionControl && client.hasThreadControl
+            ? () => setMCPPicker("resource")
+            : undefined
+        }
+        onOpenTaskConfiguration={onOpenTaskConfiguration}
+        onPhaseChange={onPhaseChange}
+        onResolvedBranchChange={setResolvedRepoBranch}
+        onStateChange={setIntegratedState}
+        onToggleEditorMode={toggleEditorMode}
+        onToggleSideChat={() => setSideChatOpen((current) => !current)}
+        onUploadAttachment={
+          client.hasThreadControl ? () => attachmentPicker.current?.click() : undefined
+        }
+        phase={phase}
+        plainText={plainText}
+        runID={runID}
+        sideChatOpen={sideChatOpen}
+        sideChatTriggerRef={sideChatTriggerRef}
+        sideChatTurnCount={sideChatHistory.userTurnCount}
+        state={integratedState}
+        threadID={threadID}
+        workspaceID={workspaceID}
+        workspaces={workspaces}
+      />
       <button className="v2-composer-compact-trigger" type="button" aria-label={t("展开消息编辑器", "Expand message editor")} disabled={disabled}
         onClick={() => { setEditorExpanded(true); requestAnimationFrame(() => inputRef.current?.focus()); }}>{inputPlaceholder}</button>
       <V2MCPReferenceChips references={mcp.references} disabled={disabled} pendingIDs={[
@@ -541,5 +696,31 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     {error && !presentedSubmissionErrors.some((input) => input.threadID === threadID &&
       input.workspaceID === workspaceID && input.operationKey === error.operationKey) &&
       <p className="v2-composer-error" role="alert">{localUIMessage(error.message, t)}</p>}
-  </form>;
+  </form>
+  <V2SideConversation
+    busy={effectiveBusy}
+    client={client}
+    context={sideConversationContext}
+    draftText={content}
+    messages={sideChatHistory.messages}
+    onClose={() => setSideChatOpen(false)}
+    onInsertToComposer={(inserted) => {
+      const currentText = currentContentRef.current;
+      const next = currentText.trim() ? `${currentText}\n\n${inserted}` : inserted;
+      promptHistory.cancel();
+      setContent(next);
+      setError(null);
+      setEditorExpanded(true);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }}
+    onMessagesChange={sideChatHistory.setMessages}
+    onSideChatAsk={onSideChatAsk}
+    open={sideChatOpen}
+    pendingModelRoute={pendingModelRoute}
+    referencedFilePaths={references.files.map((item) => item.path)}
+    returnFocusRef={sideChatTriggerRef}
+    threadID={threadID}
+    workspaceID={workspaceID}
+    workspaces={workspaces}
+  /></>;
 }

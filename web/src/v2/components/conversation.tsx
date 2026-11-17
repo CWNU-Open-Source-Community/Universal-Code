@@ -1277,7 +1277,18 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         fileReferenceUnavailableReason={fileReferenceUnavailableReason}
         key={threadID}
         onManageModels={onManageModels} onSubmit={send} onWorkspaceChange={() => undefined}
-        placeholder={t("输入消息…", "Type a message…")} runActive={runActive}
+        placeholder={t("输入消息…", "Type a message…")} runActive={runActive} busy={working || runActive}
+        sideConversationContext={{
+          workspaceName: workspace?.name ?? "",
+          threadTitle: detail.thread.title,
+          goal: detail.mission?.goal ?? detail.thread.title,
+          runStatus: currentRun.status,
+          stepSummary: agentActivity?.label ?? "",
+          turns: visibleNarrative
+            .filter((entry): entry is Extract<NarrativeEntry, { kind: "user" | "assistant" }> => entry.kind === "user" || entry.kind === "assistant")
+            .slice(-12)
+            .map((entry) => ({ role: entry.kind, text: entry.text })),
+        }}
         runID={currentRun.id} threadID={threadID} workspaceID={detail.thread.workspace_id ?? ""}
         workspaces={workspaces} />
       <V2ComposerStats key={`statistics:${threadID}`} statistics={detail.statistics} />

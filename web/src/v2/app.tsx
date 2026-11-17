@@ -267,6 +267,9 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
       onManageModels={onManageModels} onPendingModelRouteChange={(route) =>
         onOptionsChange({ ...options, modelRoute: route })}
       pendingModelRoute={modelRoute}
+      phase={phase} onPhaseChange={onPhaseChange}
+      approvalMode={approval?.mode ?? "ask"}
+      onOpenTaskConfiguration={onOpenTaskConfiguration}
       newThreadControls={<><button aria-label={t("任务预算与项目配置", "Task budget and project configuration")} className="v2-composer-chip v2-composer-task-config"
         title={t("任务预算与项目配置", "Task budget and project configuration")}
         onClick={onOpenTaskConfiguration} type="button"><SlidersHorizontal aria-hidden="true" size={14} /><span className="v2-composer-optional-label">{t("任务配置", "Task configuration")}{budget ? t(" · 自定义", " · Custom") : ""}</span></button>
