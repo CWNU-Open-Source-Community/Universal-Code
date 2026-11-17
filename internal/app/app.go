@@ -303,11 +303,18 @@ func (a *App) dispatch(ctx context.Context, args []string) error {
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
+		if args[0] == "help" && len(args) > 1 && !strings.HasPrefix(args[1], "-") {
+			return a.printCommandHelp(args[1])
+		}
 		a.printHelp()
 		return nil
 	case "version", "-v", "--version":
 		fmt.Fprintf(a.out, "%s cyberagent %s\n", Name, Version)
 		return nil
+	case "__complete":
+		return a.completeCommand(args[1:])
+	case "completion":
+		return a.completionCommand(args[1:])
 	case "doctor":
 		return a.doctorCommand(ctx, args[1:])
 	case "debug":
@@ -389,19 +396,9 @@ func (a *App) dispatch(ctx context.Context, args []string) error {
 	}
 }
 
-var knownCommands = []string{
-	"help", "version", "doctor", "debug", "workspace", "script", "ctf",
-	"learn", "provider", "model", "skill", "context", "thread", "session",
-	"tool", "edit", "approval", "sandbox", "artifact", "ui-evidence",
-	"web-evidence", "analyzer", "report", "api", "mcp", "plugin",
-	"code-intel", "project-config", "once-command", "git-op", "git-remote",
-	"git-advanced", "drydock", "github-review", "headless", "exec", "run",
-	"todo", "note", "tui",
-}
-
 func suggestCommands(input string) []string {
 	var suggestions []string
-	for _, command := range knownCommands {
+	for _, command := range commandNames() {
 		if levenshtein(input, command) <= 2 && len(input) > 1 {
 			suggestions = append(suggestions, command)
 			if len(suggestions) >= 3 {

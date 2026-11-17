@@ -20,8 +20,10 @@ func TestSuggestCommandsRejectsShortInput(t *testing.T) {
 }
 
 func TestSuggestCommandsCapsAtThree(t *testing.T) {
-	got := suggestCommands("run")
-	if len(got) > 3 {
+	// "to" is within two edits of ctf, todo, tool, and tui; the cap must
+	// keep the result at exactly three suggestions.
+	got := suggestCommands("to")
+	if len(got) != 3 {
 		t.Fatalf("suggestions must cap at 3: %v", got)
 	}
 }
