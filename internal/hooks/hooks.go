@@ -520,9 +520,19 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 		if result.Denied {
 			break
 		}
-		if postOccurrenceEvent(input.Event) && capObservationOutput(&result) {
+		// Observation output is capped on every event: annotations and the
+		// executed list are plugin-controlled observation data that never
+		// carry authority or alter the decision, so an overflow — reachable
+		// by a valid registry, since one script hook alone may emit the full
+		// annotation count — degrades the observation instead of failing the
+		// boundary. On pre-occurrence events a hard failure here would fail
+		// every remaining tool call of the run for as long as the registry
+		// stays configured.
+		if capObservationOutput(&result) {
 			_ = e.record(context.WithoutCancel(ctx), registration, input, "output_capped", false)
 		}
+		// Defense in depth: the cap guarantees both bounds; these checks
+		// remain a hard stop in case a future cap regression slips through.
 		if len(result.Annotations) > MaxAnnotations {
 			return Result{}, errors.New("hook annotation output exceeds its limit")
 		}
@@ -540,18 +550,9 @@ func (e *Engine) Execute(ctx context.Context, input Input) (Result, error) {
 	return result, nil
 }
 
-// Post-occurrence observations cannot retroactively fail completed work.
-func postOccurrenceEvent(event Event) bool {
-	switch event {
-	case PostTool, PostToolFailure, RunCompleted, SessionClosed, TurnEnd, PostCompaction:
-		return true
-	default:
-		return false
-	}
-}
-
-// Cap hook-produced output. Payload has its own input bound and remains intact
-// so later script hooks observe the same input after an earlier hook is capped.
+// Cap hook-produced output on every event. Payload has its own input bound and
+// remains intact — pre-occurrence boundaries consume it as the tool input, and
+// later script hooks observe the same input after an earlier hook is capped.
 func capObservationOutput(result *Result) bool {
 	capped := false
 	if len(result.Annotations) > MaxAnnotations {

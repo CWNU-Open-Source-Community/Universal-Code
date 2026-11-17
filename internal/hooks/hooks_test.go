@@ -361,13 +361,72 @@ func TestSessionClosedPreservesIndependentlyBoundedPayload(t *testing.T) {
 	}
 }
 
-func TestPreOccurrenceAnnotationOverflowStillFailsClosed(t *testing.T) {
-	engine := NewEngine(nil)
-	if err := engine.Replace(annotateRegistrations(PreTool, MaxAnnotations+4, 0)); err != nil {
+func TestPreOccurrenceAnnotationOverflowCapsInsteadOfFailing(t *testing.T) {
+	sink := &recordingHookAuditSink{}
+	engine := NewEngine(sink)
+	total := MaxAnnotations + 4
+	if err := engine.Replace(annotateRegistrations(PreTool, total, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := engine.Execute(context.Background(), Input{Event: PreTool, ToolName: "shell"}); err == nil {
-		t.Fatal("pre-occurrence annotation overflow must keep failing closed")
+	result, err := engine.Execute(context.Background(), Input{Event: PreTool, ToolName: "shell"})
+	if err != nil {
+		t.Fatalf("pre-occurrence annotation overflow failed the boundary: %v", err)
+	}
+	if len(result.Annotations) != MaxAnnotations || len(result.Executed) != total {
+		t.Fatalf("annotations were not capped: %d annotations, %d executed", len(result.Annotations), len(result.Executed))
+	}
+	capped := 0
+	for _, outcome := range sink.outcomes {
+		if outcome == "output_capped" {
+			capped++
+		}
+	}
+	if capped == 0 {
+		t.Fatal("no audit row recorded the cap drop")
+	}
+}
+
+func TestPreOccurrenceCappingKeepsNarrowedPayloadIntact(t *testing.T) {
+	engine := NewEngine(nil)
+	fingerprint := testHookDigest("plugin")
+	values := []Registration{{PluginID: "plugin-a", PluginFingerprint: fingerprint,
+		Declaration: Declaration{ProtocolVersion: ProtocolVersion, ID: "narrow",
+			Event: PreTool, Action: ActionNarrow, FailurePolicy: FailureDeny,
+			TimeoutMillis: 100, RemoveFields: []string{"secret"}}}}
+	values = append(values, annotateRegistrations(PreTool, MaxAnnotations+1, 0)...)
+	if err := engine.Replace(values); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(context.Background(), Input{Event: PreTool,
+		ToolName: "mcp_tool_call", Payload: json.RawMessage(`{"path":"a","secret":"x"}`)})
+	if err != nil {
+		t.Fatalf("narrow plus annotation overflow failed the boundary: %v", err)
+	}
+	if string(result.Payload) != `{"path":"a"}` {
+		t.Fatalf("narrowed payload did not survive capping: %s", result.Payload)
+	}
+	if len(result.Annotations) != MaxAnnotations {
+		t.Fatalf("annotations were not capped alongside a narrow hook: %d", len(result.Annotations))
+	}
+}
+
+func TestPreOccurrenceHookProducedOverflowCapsInsteadOfFailing(t *testing.T) {
+	engine := NewEngine(nil)
+	if err := engine.Replace(annotateRegistrations(PreTool, MaxAnnotations, MaxAnnotationBytes)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Execute(context.Background(), Input{Event: PreTool, ToolName: "shell"})
+	if err != nil {
+		t.Fatalf("pre-occurrence hook-produced overflow failed the boundary: %v", err)
+	}
+	hookProduced := result
+	hookProduced.Payload = nil
+	encoded, err := json.Marshal(hookProduced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) > MaxOutputBytes || len(result.Annotations) == MaxAnnotations {
+		t.Fatalf("hook-produced output was not capped: %d bytes, %d annotations", len(encoded), len(result.Annotations))
 	}
 }
 

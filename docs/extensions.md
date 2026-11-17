@@ -145,7 +145,7 @@ cyberagent plugin show <new-installation-id>
 | `subagent` | 经操作者授权的 Specialist schedule 获取执行租约前 |
 | `checkpoint` | 连续性或手工 Workspace Checkpoint 写入前 |
 
-同一事件按 event、Plugin ID、Hook ID 稳定排序。每条声明有最大 2 秒超时，输入 256 KiB、输出 16 KiB、注释 16 条的上限；`failure_policy=deny` 失败关闭，`continue` 只记录失败并继续。每个结果写 metadata-only audit，不保存 Hook 输入、注释正文或工具 payload。
+同一事件按 event、Plugin ID、Hook ID 稳定排序。每条声明有最大 2 秒超时，输入 256 KiB、输出 16 KiB、注释 16 条的上限；超出上限的观察输出（注释与 executed 列表）在所有事件上就地裁剪并记录 `output_capped` 审计行，而不是使边界失败——注释是纯观察数据，裁剪不影响 deny 判定与工具输入。`failure_policy=deny` 失败关闭，`continue` 只记录失败并继续。每个结果写 metadata-only audit，不保存 Hook 输入、注释正文或工具 payload。
 
 工具事件的过滤器二选一：`tool_names`（精确列表）或 `tool_pattern`（一条 Go 正则，非锚定匹配工具名，长度上限 256 字节；Go regexp 为线性时间引擎，不存在灾难性回溯）。两条路径的 deny/annotate/narrow 语义完全一致，声明改变 pattern 会推进注册表 generation。
 
