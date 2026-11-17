@@ -4,7 +4,6 @@ import (
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
-	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/session"
 	"cyberagent-workbench/internal/store"
 	"encoding/json"
@@ -51,7 +50,7 @@ func TestThreadFileEffectsSurviveFailureCompactionAndRestart(t *testing.T) {
 			newService := func() *application.ThreadTurnService {
 				router := llm.NewRouter(llm.ModelRef{Provider: p.Name(), Model: "model"})
 				router.RegisterProvider(p)
-				return application.NewThreadTurnService(st, application.NewRunLifecycleControlService(st), application.NewRunExecutionHandoffService(st, router, policy.NewDefaultChecker()).WithGeneratedContextCompaction(generated))
+				return application.NewThreadTurnService(st, application.NewRunLifecycleControlService(st), application.NewRunExecutionHandoffService(st, router, &fileOperationPolicy{review: true}).WithGeneratedContextCompaction(generated))
 			}
 			service := newService()
 			input := application.ExecuteThreadTurnRequest{Version: domain.ThreadMessageProtocolVersion, ThreadID: domain.InitialThreadID(run.ID), Content: "Propose three files for review", OperationKey: "file-effect-failed-first", RequestedBy: "test_operator"}

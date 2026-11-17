@@ -29,6 +29,16 @@ func TestSchemaV238PreservesCommandJobsAndExactWorkingDirectories(t *testing.T) 
 	}
 	actors := legacyFixtureRows(t, state, "command_runtime_job_agents")
 	beforeSchema := commandScopeV189Schema(t, state)
+	// Verify v238's exact isolated schema change before Open applies subsequent migrations.
+	if err := state.applyMigration(ctx, migrationPlan()[237]); err != nil {
+		t.Fatal(err)
+	}
+	afterV238Schema := commandScopeV189Schema(t, state)
+	delete(beforeSchema, "table:command_runtime_jobs")
+	delete(afterV238Schema, "table:command_runtime_jobs")
+	if !maps.Equal(beforeSchema, afterV238Schema) {
+		t.Fatal("migration changed unrelated schema, including command authorization triggers")
+	}
 	if err := state.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -45,12 +55,6 @@ func TestSchemaV238PreservesCommandJobsAndExactWorkingDirectories(t *testing.T) 
 	var rowID int
 	if err := state.db.QueryRowContext(ctx, "SELECT rowid FROM command_runtime_jobs WHERE id=?", job.ID).Scan(&rowID); err != nil || rowID != 73 {
 		t.Fatalf("historical rowid=%d: %v", rowID, err)
-	}
-	afterSchema := commandScopeV189Schema(t, state)
-	delete(beforeSchema, "table:command_runtime_jobs")
-	delete(afterSchema, "table:command_runtime_jobs")
-	if !maps.Equal(beforeSchema, afterSchema) {
-		t.Fatal("migration changed unrelated schema, including command authorization triggers")
 	}
 	const exact = " checks "
 	if err := cloneCommandScopeV189(t, state, job.ID, 238, map[string]any{

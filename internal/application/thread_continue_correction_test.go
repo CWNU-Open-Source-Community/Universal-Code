@@ -1,6 +1,7 @@
 package application_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -10,27 +11,33 @@ import (
 )
 
 func TestThreadConsumedContinuationCorrectionReachesNextSegmentWithoutReplay(t *testing.T) {
-	provider := &scriptedToolProvider{responses: []*llm.ChatResponse{
+	responses := []*llm.ChatResponse{
 		toolResponse("one", "note_create", `{"title":"One","content":"actual first effect"}`),
 		textResponse(`{"version":"root_lifecycle.v1","action":"continue","message":"Next note is still needed."}`),
-		toolResponse("two", "note_create", `{"title":"Two","content":"actual second effect"}`),
-		toolResponse("three", "note_create", `{"title":"Three","content":"actual third effect"}`),
-		toolResponse("four", "note_create", `{"title":"Four","content":"actual fourth effect"}`),
+	}
+	for round := 2; round <= domain.MaxSupervisorToolRounds; round++ {
+		responses = append(responses, toolResponse(fmt.Sprintf("note-%d", round), "note_create",
+			fmt.Sprintf(`{"title":"Note %d","content":"actual effect %d"}`, round, round)))
+	}
+	wantNotes := domain.MaxSupervisorToolRounds + 1
+	wantCalls := domain.MaxSupervisorToolRounds + 4
+	responses = append(responses,
 		textResponse(`{"version":"root_lifecycle.v1","action":"continue","message":"One more note is needed in the next segment."}`),
-		toolResponse("five", "note_create", `{"title":"Five","content":"actual fifth effect"}`),
-		textResponse(`{"version":"root_lifecycle.v1","action":"finish","message":"Saved five notes.","summary":"Five durable notes saved."}`),
-	}}
+		toolResponse("final-segment-note", "note_create", fmt.Sprintf(`{"title":"Note %d","content":"actual final effect"}`, wantNotes)),
+		textResponse(fmt.Sprintf(`{"version":"root_lifecycle.v1","action":"finish","message":"Saved %d notes.","summary":"Durable notes saved."}`, wantNotes)),
+	)
+	provider := &scriptedToolProvider{responses: responses}
 	st, turns, request := threadControlFixture(t, provider)
-	request.Content = "Save five notes and verify the count."
+	request.Content = fmt.Sprintf("Save %d notes and verify the count.", wantNotes)
 	result, err := turns.Execute(t.Context(), request)
-	if err != nil || len(provider.Requests()) != 8 {
+	if err != nil || len(provider.Requests()) != wantCalls {
 		t.Fatalf("calls=%d result=%+v err=%v", len(provider.Requests()), result, err)
 	}
 	notes, err := st.ListNotes(t.Context(), domain.NoteFilter{RunID: result.Submission.Run.ID})
-	if err != nil || len(notes) != 5 {
+	if err != nil || len(notes) != wantNotes {
 		t.Fatalf("notes=%d err=%v", len(notes), err)
 	}
-	boundary := provider.Requests()[5]
+	boundary := provider.Requests()[domain.MaxSupervisorToolRounds+1]
 	if len(boundary.Tools) != 0 || boundary.Metadata["protocol_repair"] != "1" ||
 		!strings.Contains(boundary.Messages[len(boundary.Messages)-1].Content, "Return continue") {
 		t.Fatal("consumed correction did not reach the normal no-tool scheduling boundary")
@@ -40,7 +47,7 @@ func TestThreadConsumedContinuationCorrectionReachesNextSegmentWithoutReplay(t *
 		countEventType(list, events.SupervisorRunCompletedEvent) != 0 {
 		t.Fatal("single repair or resumable Run state changed")
 	}
-	if _, err := turns.Execute(t.Context(), request); err != nil || len(provider.Requests()) != 8 {
+	if _, err := turns.Execute(t.Context(), request); err != nil || len(provider.Requests()) != wantCalls {
 		t.Fatal("same-key replay repeated the completed work")
 	}
 }

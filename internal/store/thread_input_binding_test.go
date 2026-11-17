@@ -155,9 +155,21 @@ func TestThreadInputBindingRejectsUnrelatedRowsAndReceiptClaims(t *testing.T) {
 	if err != nil || stats.Turns != 3 {
 		t.Fatalf("unrelated inputs were merged: %+v %v", stats, err)
 	}
-	sources, err := st.ListThreadTranscriptSourceBefore(t.Context(), threadID, 0, 0, 101)
-	if err != nil {
-		t.Fatal(err)
+	var sources []threadtranscript.Source
+	for ordinal, sequence := int64(0), int64(0); ; {
+		page, err := st.ListThreadTranscriptSourceBefore(t.Context(), threadID, ordinal, sequence, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		sources = append(sources, page...)
+		last := page[len(page)-1]
+		if last.Sequence == 0 {
+			break
+		}
+		ordinal, sequence = last.Ordinal, last.Sequence
 	}
 	for _, source := range sources {
 		if source.Event != nil && source.Event.Type == events.SessionMessageEvent {
@@ -210,9 +222,27 @@ func TestThreadInputBindingRetainsConsumedInputAfterRunTermination(t *testing.T)
 				if err != nil || stats.Turns != want {
 					t.Fatalf("terminal input count=%d want=%d err=%v", stats.Turns, want, err)
 				}
-				sources, err := st.ListThreadTranscriptSourceBefore(t.Context(), threadID, 0, 0, 101)
-				if err != nil {
-					t.Fatal(err)
+				var sources []threadtranscript.Source
+				var items []threadtranscript.Item
+				for ordinal, sequence := int64(0), int64(0); ; {
+					page, err := st.ListThreadTranscriptSourceBefore(t.Context(), threadID, ordinal, sequence, 64)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(page) == 0 {
+						break
+					}
+					projected, err := threadtranscript.Build(threadID, page)
+					if err != nil {
+						t.Fatal(err)
+					}
+					sources = append(sources, page...)
+					items = append(items, projected...)
+					last := page[len(page)-1]
+					if last.Sequence == 0 {
+						break
+					}
+					ordinal, sequence = last.Ordinal, last.Sequence
 				}
 				userRows := 0
 				for _, source := range sources {
@@ -234,10 +264,6 @@ func TestThreadInputBindingRetainsConsumedInputAfterRunTermination(t *testing.T)
 				}
 				if int64(userRows) != want {
 					t.Fatalf("terminal projection invented user rows=%d want=%d", userRows, want)
-				}
-				items, err := threadtranscript.Build(threadID, sources)
-				if err != nil {
-					t.Fatal(err)
 				}
 				inputs := 0
 				for _, item := range items {

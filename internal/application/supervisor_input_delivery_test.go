@@ -39,27 +39,27 @@ func assertInternalInputDelivery(t *testing.T, request llm.ChatRequest, original
 }
 
 func TestToolBoundaryInputDeliveryDistinguishesSameTextNewSubmission(t *testing.T) {
-	st, _, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	st, _, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 	input.Content = "Navigate in a new browser session, then add a row and check it. Preserve all original constraints."
 	provider := &boundaryJourneyProvider{}
 	provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
 		switch {
-		case index <= 4:
+		case index <= domain.MaxSupervisorToolRounds:
 			if request.Metadata["input_delivery"] != "" || request.Messages[len(request.Messages)-1].Content == "" {
 				t.Fatal("first submission acquired an internal-continuation identity")
 			}
 			return boundaryRead(fmt.Sprintf("initial-read-%d", index), 1), nil
-		case index == 5:
+		case index == domain.MaxSupervisorToolRounds+1:
 			assertBoundaryPrompt(t, request)
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Only the remaining check needs doing", "", "")), nil
-		case index == 6:
+		case index == domain.MaxSupervisorToolRounds+2:
 			assertInternalInputDelivery(t, request, input.Content)
 			boundaryContextText(t, request)
 			return boundaryRead("remaining-check", 1), nil
-		case index == 7:
+		case index == domain.MaxSupervisorToolRounds+3:
 			assertInternalInputDelivery(t, request, input.Content)
 			return textResponse(rootActionResponse(domain.RootActionFinish, "Check complete", "done", "")), nil
-		case index == 8:
+		case index == domain.MaxSupervisorToolRounds+4:
 			if request.Metadata["input_delivery"] != "" {
 				t.Fatal("a new submission with the same text inherited a prior continuation")
 			}
@@ -84,13 +84,13 @@ func TestToolBoundaryInputDeliveryDistinguishesSameTextNewSubmission(t *testing.
 	if _, err := service.Execute(t.Context(), input); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.Requests()) != 8 {
+	if len(provider.Requests()) != domain.MaxSupervisorToolRounds+4 {
 		t.Fatal("input labeling changed scheduling or repeated a provider request")
 	}
 }
 
 func TestToolBoundaryInputDeliverySurvivesSteeringAndContextRebuild(t *testing.T) {
-	st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 	for index := 0; index < 6; index++ {
 		role := "user"
 		if index%2 != 0 {
@@ -104,16 +104,16 @@ func TestToolBoundaryInputDeliverySurvivesSteeringAndContextRebuild(t *testing.T
 	correction := "Keep the live page; the row is already added. Only collapse and inspect."
 	provider := &boundaryJourneyProvider{}
 	provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		if index <= 4 {
+		if index <= domain.MaxSupervisorToolRounds {
 			return boundaryRead(fmt.Sprintf("prepared-read-%d", index), 1), nil
 		}
-		if index == 5 {
+		if index == domain.MaxSupervisorToolRounds+1 {
 			assertBoundaryPrompt(t, request)
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Final check remains", "", "")), nil
 		}
 		assertInternalInputDelivery(t, request, input.Content)
 		switch index {
-		case 6:
+		case domain.MaxSupervisorToolRounds + 2:
 			if _, err := application.NewSessionMessageSubmissionService(st).Submit(ctx, application.SubmitSessionMessageRequest{
 				Version: domain.SessionMessageSubmissionProtocolVersion, SessionID: run.SessionID,
 				Content: correction, OperationKey: "input-delivery-steering", RequestedBy: "test_operator",
@@ -122,7 +122,7 @@ func TestToolBoundaryInputDeliverySurvivesSteeringAndContextRebuild(t *testing.T
 				t.Fatal(err)
 			}
 			return boundaryRead("steering-read", 1), nil
-		case 7:
+		case domain.MaxSupervisorToolRounds + 3:
 			if request.Metadata["pending_user_instructions"] != "1" {
 				t.Fatal("rebuild lost the later accepted user correction")
 			}
@@ -130,7 +130,7 @@ func TestToolBoundaryInputDeliverySurvivesSteeringAndContextRebuild(t *testing.T
 			// input without replaying the preceding completed tool.
 			return nil, &llm.ProviderError{Kind: llm.OutcomePermanent, Reason: llm.ProviderFailureContextLimit,
 				Provider: provider.Name(), Message: "bounded context limit"}
-		case 8:
+		case domain.MaxSupervisorToolRounds + 4:
 			if request.Metadata["pending_user_instructions"] != "1" || request.Metadata["context_summary_id"] == "" {
 				t.Fatal("context recovery did not compact actual history or lost the accepted correction")
 			}
@@ -143,10 +143,10 @@ func TestToolBoundaryInputDeliverySurvivesSteeringAndContextRebuild(t *testing.T
 		t.Fatal(err)
 	}
 	requests := provider.Requests()
-	if len(requests) != 8 {
+	if len(requests) != domain.MaxSupervisorToolRounds+4 {
 		t.Fatalf("requests=%d", len(requests))
 	}
-	for _, request := range requests[6:] {
+	for _, request := range requests[domain.MaxSupervisorToolRounds+2:] {
 		found := false
 		for _, message := range request.Messages {
 			if strings.HasPrefix(message.Content, "Harness input delivery:") {

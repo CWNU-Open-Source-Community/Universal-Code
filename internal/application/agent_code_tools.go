@@ -203,7 +203,7 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 			return toolgateway.AgentCodeExecutionResult{JSON: string(encoded),
 				Metadata: metadata, Replayed: true}, err
 		}
-		if result.Status == fileedit.StatusApproved && result.Operation != fileedit.OperationDelete && (!replayed || autoAuthorized) {
+		if scope.SpecialistToolCallID == "" && scope.Role != domain.AgentRoleSpecialist && result.Status == fileedit.StatusApproved && result.Operation != fileedit.OperationDelete && (!replayed || autoAuthorized) {
 			applied, baseline, err := e.autoApplyChange(ctx, scope, result, pathPolicy)
 			if err != nil {
 				return toolgateway.AgentCodeExecutionResult{}, err
