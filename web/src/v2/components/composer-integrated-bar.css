@@ -2,10 +2,11 @@
   align-items: center;
   border-bottom: 1px solid color-mix(in srgb, var(--v2-border) 62%, transparent);
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
-  min-height: 40px;
-  padding: 7px 12px 6px;
+  min-height: 36px;
+  min-width: 0;
+  padding: 5px 12px;
   position: relative;
   z-index: 8;
 }
@@ -13,7 +14,8 @@
 .v2-integrated-group {
   align-items: center;
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-shrink: 1;
+  flex-wrap: nowrap;
   gap: 5px;
   min-width: 0;
 }
@@ -448,6 +450,22 @@
   }
 }
 
+@container composer (max-width: 780px) {
+  .v2-side-chat-busy-text {
+    clip-path: inset(50%);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
+  .v2-side-chat-busy-badge {
+    padding: 2px;
+  }
+}
+
 @container composer (max-width: 640px) {
   .v2-integrated-optional,
   .v2-side-chat-kbd {
@@ -463,6 +481,39 @@
   .v2-integrated-popover,
   .v2-integrated-popover.is-wide {
     width: min(320px, calc(100cqw - 20px));
+  }
+}
+
+@container composer (max-width: 440px) {
+  .v2-composer-integrated-bar {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+  .v2-integrated-narrow-sr,
+  .v2-integrated-sep {
+    clip-path: inset(50%);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
+  .v2-branch-trigger {
+    max-width: 112px;
+  }
+}
+
+@media (max-height: 620px) {
+  .v2-composer-integrated-bar {
+    min-height: 28px;
+    padding-block: 2px;
+  }
+  .v2-integrated-pill,
+  .v2-env-segment {
+    min-block-size: 22px;
+    padding-block: 1px;
   }
 }
 

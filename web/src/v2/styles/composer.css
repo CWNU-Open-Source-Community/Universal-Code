@@ -10,6 +10,34 @@
   padding-top: 10px;
 }
 
+.v2-composer-dock:has(.v2-context-pin-card)
+  .v2-composer[data-empty="true"][data-editor-expanded="false"]
+  .v2-composer-surface.has-integrated-bar {
+  align-items: center;
+  flex-direction: row;
+}
+
+.v2-composer-dock:has(.v2-context-pin-card)
+  .v2-composer[data-empty="true"][data-editor-expanded="false"]
+  .v2-composer-integrated-bar {
+  display: none;
+}
+
+@media (max-height: 620px) {
+  .v2-composer-surface.has-integrated-bar {
+    min-height: 82px;
+  }
+  .v2-composer-surface.has-integrated-bar > textarea,
+  .v2-composer-surface.has-integrated-bar > .v2-markdown-input {
+    min-height: 30px;
+    padding-top: 5px;
+  }
+  .v2-composer-surface.has-integrated-bar > .v2-composer-footer {
+    min-height: 40px;
+    padding-block: 4px 8px;
+  }
+}
+
 .v2-composer[data-side-chat-open="true"] .v2-side-chat-trigger {
   border-color: color-mix(in srgb, var(--v2-accent) 42%, var(--v2-border));
   color: var(--v2-accent);

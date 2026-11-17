@@ -687,7 +687,7 @@ export function V2ComposerIntegratedBar({
           type="button"
         >
           <FolderGit2 aria-hidden="true" size={13} />
-          <span>{t("独立工作树", "Worktree")}</span>
+          <span className="v2-integrated-optional">{t("独立工作树", "Worktree")}</span>
         </button>
 
         {state.worktreeEnabled && (
@@ -777,7 +777,7 @@ export function V2ComposerIntegratedBar({
           type="button"
         >
           <Laptop aria-hidden="true" size={13} />
-          <span>{t("本地环境", "Local")}</span>
+          <span className="v2-integrated-narrow-sr">{t("本地环境", "Local")}</span>
         </button>
         <button
           aria-pressed={state.environment === "cloud"}
@@ -792,7 +792,7 @@ export function V2ComposerIntegratedBar({
           type="button"
         >
           <Cloud aria-hidden="true" size={13} />
-          <span>{t("云端环境", "Cloud")}</span>
+          <span className="v2-integrated-narrow-sr">{t("云端环境", "Cloud")}</span>
         </button>
       </div>
 
@@ -1077,7 +1077,7 @@ export function V2ComposerIntegratedBar({
           <span>{t("支线问答", "Side Chat")}</span>
           {busy ? (
             <em className="v2-side-chat-busy-badge">
-              {t("主任务运行中", "Busy · Parallel")}
+              <span className="v2-side-chat-busy-text">{t("主任务运行中", "Busy · Parallel")}</span>
             </em>
           ) : sideChatTurnCount > 0 ? (
             <em className="v2-integrated-badge">{sideChatTurnCount}</em>
