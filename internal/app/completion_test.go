@@ -128,45 +128,12 @@ func TestCommandSubcommandsIntegrity(t *testing.T) {
 	}
 }
 
-// subcommandHelpExceptions lists dispatch-verified subcommands that neither
-// the generated help text nor the table usage line mentions yet; each was
-// read from the command's dispatch switch or its own usage error.
-var subcommandHelpExceptions = map[string][]string{
-	"doctor":   {"browser-network-probe", "browser-network-review"},
-	"edit":     {"apply"},
-	"note":     {"get"},
-	"plugin":   {"import-git", "import-url"},
-	"provider": {"price-import", "price-list"},
-	"run":      {"browser-cdp-permission", "command-proposal", "specialist-step"},
-	"skill":    {"catalog", "import-dir", "import-git", "import-url"},
-	"thread":   {"compactions"},
-	"todo":     {"unblock"},
-}
-
 func TestCommandSubcommandsDocumented(t *testing.T) {
 	var out bytes.Buffer
 	(&App{out: &out}).printHelp()
 	help := out.String()
-	for name, spec := range commandSubcommands {
-		mapped := make(map[string]bool, len(spec))
-		for _, sub := range spec {
-			mapped[sub] = true
-		}
-		for _, sub := range subcommandHelpExceptions[name] {
-			if !mapped[sub] {
-				t.Errorf("stale exception %q for command %q is not in the subcommand map", sub, name)
-			}
-		}
-	}
 	for _, spec := range commandTable {
-		exceptions := make(map[string]bool)
-		for _, sub := range subcommandHelpExceptions[spec.name] {
-			exceptions[sub] = true
-		}
 		for _, sub := range commandSubcommands[spec.name] {
-			if exceptions[sub] {
-				continue
-			}
 			if !strings.Contains(help, sub) && !strings.Contains(spec.usage, sub) {
 				t.Errorf("subcommand %q of %q is documented nowhere; document it or verify it against the dispatch switch", sub, spec.name)
 			}
@@ -243,9 +210,7 @@ func TestCommandSubcommandsMatchDispatch(t *testing.T) {
 // usageNotInHelp lists commands whose canonical usage line is not printed
 // by printHelp: their usage lives in the command's own error output.
 var usageNotInHelp = map[string]bool{
-	"help": true, "completion": true, "exec": true,
-	"project-config": true, "once-command": true,
-	"git-op": true, "git-remote": true,
+	"help": true, "completion": true,
 }
 
 func TestCommandTableUsageMatchesHelp(t *testing.T) {
