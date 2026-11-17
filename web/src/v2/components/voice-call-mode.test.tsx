@@ -455,7 +455,9 @@ describe("V2Conversation Voice Call lifecycle & Full History restoration", () =>
     expect(screen.getByText("通话已结束 · 完整对话记录已展开")).toBeInTheDocument();
     expect(screen.getByText("第一轮提问：检查路由配置")).toBeInTheDocument();
     expect(screen.getByText("第一轮完整回复：路由配置检查完毕，未发现冲突。")).toBeInTheDocument();
-    expect(screen.getByText(/npm test/)).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) => element?.tagName === "CODE" && (element.textContent ?? "").includes("npm test")),
+    ).toBeInTheDocument();
 
     // Dismiss post-call banner
     await user.click(screen.getByRole("button", { name: "关闭通话结束提示" }));
