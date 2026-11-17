@@ -103,6 +103,143 @@ func TestCommandTableIntegrity(t *testing.T) {
 	}
 }
 
+func TestCommandSubcommandsIntegrity(t *testing.T) {
+	table := make(map[string]bool, len(commandTable))
+	for _, spec := range commandTable {
+		table[spec.name] = true
+	}
+	for name, subcommands := range commandSubcommands {
+		if !table[name] {
+			t.Fatalf("subcommand map key %q is not a registered command", name)
+		}
+		if len(subcommands) == 0 {
+			t.Fatalf("command %q has an empty subcommand list; remove the entry", name)
+		}
+		previous := ""
+		for _, sub := range subcommands {
+			if sub == "" {
+				t.Fatalf("command %q has an empty subcommand", name)
+			}
+			if previous != "" && sub <= previous {
+				t.Fatalf("subcommands of %q must stay sorted and unique: %q after %q", name, sub, previous)
+			}
+			previous = sub
+		}
+	}
+}
+
+// subcommandHelpExceptions lists dispatch-verified subcommands that neither
+// the generated help text nor the table usage line mentions yet; each was
+// read from the command's dispatch switch or its own usage error.
+var subcommandHelpExceptions = map[string][]string{
+	"doctor":   {"browser-network-probe", "browser-network-review"},
+	"edit":     {"apply"},
+	"note":     {"get"},
+	"plugin":   {"import-git", "import-url"},
+	"provider": {"price-import", "price-list"},
+	"run":      {"browser-cdp-permission", "command-proposal", "specialist-step"},
+	"skill":    {"catalog", "import-dir", "import-git", "import-url"},
+	"thread":   {"compactions"},
+	"todo":     {"unblock"},
+}
+
+func TestCommandSubcommandsDocumented(t *testing.T) {
+	var out bytes.Buffer
+	(&App{out: &out}).printHelp()
+	help := out.String()
+	for name, spec := range commandSubcommands {
+		mapped := make(map[string]bool, len(spec))
+		for _, sub := range spec {
+			mapped[sub] = true
+		}
+		for _, sub := range subcommandHelpExceptions[name] {
+			if !mapped[sub] {
+				t.Errorf("stale exception %q for command %q is not in the subcommand map", sub, name)
+			}
+		}
+	}
+	for _, spec := range commandTable {
+		exceptions := make(map[string]bool)
+		for _, sub := range subcommandHelpExceptions[spec.name] {
+			exceptions[sub] = true
+		}
+		for _, sub := range commandSubcommands[spec.name] {
+			if exceptions[sub] {
+				continue
+			}
+			if !strings.Contains(help, sub) && !strings.Contains(spec.usage, sub) {
+				t.Errorf("subcommand %q of %q is documented nowhere; document it or verify it against the dispatch switch", sub, spec.name)
+			}
+		}
+	}
+}
+
+// commandFunctionBody locates the source body of the dispatch function for
+// one command by matching its normalized name, so the completion vocabulary
+// cannot drift from the dispatch switch without failing a test.
+func commandFunctionBody(t *testing.T, name string) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate test source file")
+	}
+	dir := filepath.Dir(thisFile)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read app package sources: %v", err)
+	}
+	want := strings.ToLower(strings.ReplaceAll(name, "-", "")) + "command"
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+		src := string(raw)
+		marker := "func (a *App) "
+		for searchFrom := 0; ; searchFrom++ {
+			relative := strings.Index(src[searchFrom:], marker)
+			if relative < 0 {
+				break
+			}
+			position := searchFrom + relative
+			searchFrom = position
+			offset := position + len(marker)
+			end := strings.Index(src[offset:], "(")
+			if end < 0 {
+				continue
+			}
+			function := src[offset : offset+end]
+			if !strings.HasSuffix(function, "Command") {
+				continue
+			}
+			if strings.ToLower(strings.ReplaceAll(function, "-", "")) != want {
+				continue
+			}
+			bodyStart := offset + end
+			if next := strings.Index(src[bodyStart:], "\nfunc "); next >= 0 {
+				return src[bodyStart : bodyStart+next]
+			}
+			return src[bodyStart:]
+		}
+	}
+	t.Fatalf("dispatch function for command %q not found in package sources", name)
+	return ""
+}
+
+func TestCommandSubcommandsMatchDispatch(t *testing.T) {
+	for name, subcommands := range commandSubcommands {
+		body := commandFunctionBody(t, name)
+		for _, sub := range subcommands {
+			if !strings.Contains(body, sub) {
+				t.Errorf("subcommand %q of %q does not appear in its dispatch source; the vocabulary drifted", sub, name)
+			}
+		}
+	}
+}
+
 // usageNotInHelp lists commands whose canonical usage line is not printed
 // by printHelp: their usage lives in the command's own error output.
 var usageNotInHelp = map[string]bool{
@@ -169,11 +306,36 @@ func TestCompleteCompletesHelpArgument(t *testing.T) {
 	}
 }
 
+func TestCompleteSecondLevelSubcommands(t *testing.T) {
+	out, err := dispatchForOutput(t, "__complete", "workspace", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := strings.Split(strings.TrimSuffix(out, "\n"), "\n"); len(got) != len(commandSubcommands["workspace"]) {
+		t.Fatalf("workspace must complete its full subcommand set, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "run", "st")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := strings.Fields(out); len(got) != 4 || got[0] != "standard-code" || got[1] != "start" || got[2] != "steer" || got[3] != "step" {
+		t.Fatalf("'run st' must complete the four st-subcommands sorted, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "completion", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := strings.Fields(out); len(got) != 2 || got[0] != "bash" || got[1] != "zsh" {
+		t.Fatalf("'completion ' must complete bash and zsh, got %v", got)
+	}
+}
+
 func TestCompleteDeeperPositionsOfferNothing(t *testing.T) {
 	for _, args := range [][]string{
-		{"__complete", "workspace", ""},
+		{"__complete", "workspace", "init", ""},
 		{"__complete", "help", "workspace", ""},
 		{"__complete", "not-a-command", ""},
+		{"__complete", "exec", ""}, // exec takes a prompt, not a subcommand
 	} {
 		out, err := dispatchForOutput(t, args...)
 		if err != nil {
