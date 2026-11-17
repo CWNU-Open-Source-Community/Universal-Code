@@ -6,7 +6,7 @@ export type V2RunPane = "context" | "checkpoints" | "tools" | "ui-evidence";
 export type V2Route = { kind: "initial" | "new" | "thread" | "history" | "run" | "session" | "automations" | "invalid";
   threadID?: string; messageID?: string; section?: V2SettingsSection;
   panel?: "records"; resourceID?: string; pane?: V2RunPane };
-const sections: string[] = ["general", "models", "permissions", "appearance", "records", "archived",
+const sections: string[] = ["general", "models", "permissions", "appearance", "voice", "records", "archived",
   "extensions", "skills", "advanced-models", "about", "shortcuts", "connections", "task-configuration", "environment", "configuration", "usage"];
 
 // Fragments work with both the loopback UI and the existing Desktop asset

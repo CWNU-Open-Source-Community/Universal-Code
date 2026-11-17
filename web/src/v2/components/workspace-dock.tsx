@@ -60,6 +60,10 @@ import {
   type ThreadWorkspaceState,
   type WorkspaceTab,
 } from "../workspace-tabs";
+import type { AgentBrowserStatus } from "../../api/agent-browser";
+import type { SharedBrowserState } from "../../lib/desktop-shared-browser";
+import type { BrowserCollaborationState } from "../use-auto-browser-dock";
+import { V2AgentBrowser } from "./agent-browser";
 import { V2IdentityDisclosure } from "./identity-disclosure";
 import { V2LazySurface } from "./lazy-surface";
 import { sharedWorkspaceTabKey, V2SharedBrowser } from "./shared-browser";
@@ -225,6 +229,9 @@ export function V2WorkspaceDock({
   recordsContent,
   onOpenRecordRun,
   onOpenRecordUIEvidence,
+  browserCollaboration,
+  onSharedBrowserStateChange,
+  onAgentBrowserStatusChange,
 }: {
   client: APIClient;
   threadID: string;
@@ -254,6 +261,9 @@ export function V2WorkspaceDock({
   recordsContent?: ReactNode;
   onOpenRecordRun?: () => void;
   onOpenRecordUIEvidence?: () => void;
+  browserCollaboration?: BrowserCollaborationState;
+  onSharedBrowserStateChange?: (state: SharedBrowserState | null) => void;
+  onAgentBrowserStatusChange?: (status: AgentBrowserStatus | undefined) => void;
 }) {
   const { t } = useLocale();
   const scopeKey = workspaceScopeKey(threadID);
@@ -804,8 +814,15 @@ export function V2WorkspaceDock({
           announcements (e.g. composer vs preview startup banner). State continuity (targets,
           runIDs, review memory) is maintained at the conversation parent level.
         */}
-        {state.tabs.some((tab) => tab.kind === "browser") && <div className="v2-workspace-tabpanel" hidden={!panelVisible || activeTab.id !== "browser"}>
+        {state.tabs.some((tab) => tab.kind === "browser") && <div
+          aria-labelledby={!browserAvailable ? tabButtonID(threadID, "browser") : undefined}
+          className="v2-workspace-tabpanel"
+          hidden={!panelVisible || activeTab.id !== "browser"}
+          id={!browserAvailable ? tabPanelID(threadID, "browser") : undefined}
+          role={!browserAvailable ? "tabpanel" : undefined}
+        >
           {browserAvailable ? <V2SharedBrowser workspaceID={detail.thread.workspace_id ?? ""} threadID={threadID} runID={currentRunID}
+            collaboration={browserCollaboration} onBrowserStateChange={onSharedBrowserStateChange}
             tabBarTarget={browserTabTarget} active={panelVisible && activeTab.id === "browser"} onActivate={() => handleSelectTab("browser")}
             tools={[
               { id: "files", label: t("文件", "Files"), icon: <FolderTree size={20} aria-hidden="true" />, onOpen: () => addWorkspaceFileTab(threadID, currentRunID) },
@@ -822,6 +839,12 @@ export function V2WorkspaceDock({
                 browserFullViewBeforeFullscreen.current = null;
               }
             }} />
+            : currentRunID ? <V2AgentBrowser client={client} runID={currentRunID} running={working}
+                collaboration={browserCollaboration} onStatusChange={onAgentBrowserStatusChange}
+                onClose={() => {
+                  const browserTab = state.tabs.find((tab) => tab.kind === "browser");
+                  if (browserTab) handleCloseTab(browserTab);
+                }} />
             : <p role="status">{t("此连接未提供交互浏览器。", "The interactive browser is unavailable on this connection.")}</p>}
         </div>}
         {panelVisible && activeTab.id === "preview" && (

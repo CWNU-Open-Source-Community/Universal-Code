@@ -7,6 +7,8 @@ import { useLocale } from "../../lib/locale";
 import { hideUnclaimedSharedBrowser, useSharedBrowserSurface } from "./shared-browser-surface";
 import { draftSharedBrowserAdoption, rememberDraftSharedBrowser } from "../shared-browser-session";
 import { useConnectionStore } from "../../state/connection";
+import type { BrowserCollaborationState } from "../use-auto-browser-dock";
+import { V2BrowserCollabBar, V2BrowserCursorHud, V2BrowserStepTrail } from "./browser-collab-bar";
 import "./shared-browser.css";
 
 export interface SharedBrowserTool { id: string; label: string; icon: ReactNode; onOpen: () => void }
@@ -22,9 +24,10 @@ export function sharedWorkspaceTabKey(event: KeyboardEvent<HTMLButtonElement>) {
   tabs[next]?.click(); tabs[next]?.focus();
 }
 
-export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChange, tabBarTarget, active = true, onActivate, tools = [] }: {
+export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChange, tabBarTarget, active = true, onActivate, tools = [], collaboration, onBrowserStateChange }: {
   workspaceID: string; threadID?: string; runID?: string; onFullscreenChange?: (fullscreen: boolean) => void;
   tabBarTarget?: HTMLElement | null; active?: boolean; onActivate?: () => void; tools?: SharedBrowserTool[];
+  collaboration?: BrowserCollaborationState; onBrowserStateChange?: (state: SharedBrowserState | null) => void;
 }) {
   const { t } = useLocale();
   const panelID = useId();
@@ -42,6 +45,8 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
   const fullscreenExitRequested = useRef(false);
   const fullscreenChange = useRef(onFullscreenChange);
   fullscreenChange.current = onFullscreenChange;
+  const browserStateChange = useRef(onBrowserStateChange);
+  browserStateChange.current = onBrowserStateChange;
   useEffect(() => {
     if (!state || state.fullscreen === lastFullscreen.current) return;
     lastFullscreen.current = state.fullscreen;
@@ -58,7 +63,7 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
   const accept = useCallback((next: SharedBrowserState) => {
     const previous = current.current;
     if (previous && (previous.session_id !== next.session_id || previous.revision > next.revision)) return;
-    current.current = next; setState(next);
+    current.current = next; setState(next); browserStateChange.current?.(next);
     if (!next.fullscreen) fullscreenExitRequested.current = false;
   }, []);
   useEffect(() => {
@@ -163,8 +168,10 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
         aria-label={state?.fullscreen ? t("退出全屏", "Exit fullscreen") : t("全屏浏览器", "Fullscreen browser")}
         onClick={() => void command(state?.fullscreen ? "exit_fullscreen" : "enter_fullscreen")}>{state?.fullscreen ? <Shrink size={17} aria-hidden="true" /> : <Expand size={17} aria-hidden="true" />}</button>
     </div>
+    {collaboration && collaboration.steps.length > 0 && <V2BrowserStepTrail steps={collaboration.steps} />}
     {visibleError && <div className="v2-browser-error" role="alert">{visibleError}<button type="button" onClick={() => setRetry((value) => value + 1)}>{t("重试", "Retry")}</button></div>}
     <div className={`v2-browser-native-surface${isStartPage ? " is-start-page" : ""}`} ref={surfaceRef} role="region" aria-label={t("网页内容", "Web page content")}>
+      {collaboration && <V2BrowserCursorHud cursor={collaboration.cursor} manualTakeover={collaboration.manualTakeover} />}
       {!state && !error && <span role="status">{t("正在打开浏览器…", "Opening browser…")}</span>}
       {state?.state === "failed" && <span role="alert">{state.error || t("浏览器启动失败。", "Browser failed to start.")}</span>}
       {state?.state === "ready" && isStartPage && <section className="v2-browser-start" aria-label={t("新标签页", "New tab")}>
@@ -179,5 +186,24 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
         </section>}
       </section>}
     </div>
+    {collaboration && (collaboration.hasBrowserActivity || collaboration.agentOperating || collaboration.manualTakeover) && (
+      <V2BrowserCollabBar
+        agentOperating={collaboration.agentOperating}
+        manualTakeover={collaboration.manualTakeover}
+        steps={collaboration.steps}
+        onStopAndTakeOver={async () => {
+          if (current.current?.state === "ready" && current.current.control_owner === "agent") {
+            void command("take_control");
+          }
+          await collaboration.triggerStopAndTakeOver();
+        }}
+        onResumeAgent={() => {
+          if (current.current?.state === "ready" && activeTab && current.current.run_id) {
+            void command("release_control", { tab_id: activeTab.tab_id });
+          }
+          collaboration.resumeWithAgent();
+        }}
+      />
+    )}
   </div>;
 }

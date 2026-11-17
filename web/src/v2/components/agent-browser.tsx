@@ -6,10 +6,19 @@ import type { APIClient } from "../../api/client";
 import { agentBrowserAPIAbsent, agentBrowserQueryKey, closeAgentBrowser, readAgentBrowser,
   type AgentBrowserScreencastFrame, type AgentBrowserStatus } from "../../api/agent-browser";
 import { V2ImageViewer } from "./image-viewer";
+import type { BrowserCollaborationState } from "../use-auto-browser-dock";
+import { V2BrowserCollabBar, V2BrowserCursorHud, V2BrowserStepTrail } from "./browser-collab-bar";
 import "./image-input.css";
 import "./agent-browser.css";
 
-export function V2AgentBrowser(props: { client: APIClient; runID: string; running: boolean; onClose?: () => void }) {
+export function V2AgentBrowser(props: {
+  client: APIClient;
+  runID: string;
+  running: boolean;
+  onClose?: () => void;
+  collaboration?: BrowserCollaborationState;
+  onStatusChange?: (status: AgentBrowserStatus | undefined) => void;
+}) {
   return <AgentBrowserView key={JSON.stringify([props.client.baseURL, props.runID])} {...props} />;
 }
 
@@ -48,7 +57,14 @@ function screenshotPath(runID: string, status: AgentBrowserStatus): string {
   })}`;
 }
 
-function AgentBrowserView({ client, runID, running, onClose }: { client: APIClient; runID: string; running: boolean; onClose?: () => void }) {
+function AgentBrowserView({ client, runID, running, onClose, collaboration, onStatusChange }: {
+  client: APIClient;
+  runID: string;
+  running: boolean;
+  onClose?: () => void;
+  collaboration?: BrowserCollaborationState;
+  onStatusChange?: (status: AgentBrowserStatus | undefined) => void;
+}) {
   const { t } = useLocale();
   const queries = useQueryClient();
   const key = agentBrowserQueryKey(client.baseURL, runID);
@@ -60,6 +76,9 @@ function AgentBrowserView({ client, runID, running, onClose }: { client: APIClie
   const status = useQuery({ queryKey: key, queryFn: ({ signal }) => readAgentBrowser(client, runID, signal), retry: false,
     refetchOnMount: "always", refetchInterval: (query) => running && !query.state.error ? 3000 : false });
   const current = status.data;
+  const statusChangeRef = useRef(onStatusChange);
+  statusChangeRef.current = onStatusChange;
+  useEffect(() => { statusChangeRef.current?.(current); }, [current]);
   const close = useMutation({ retry: false, mutationFn: (sessionID: string) => closeAgentBrowser(client, runID, sessionID),
     onSuccess: (next, sessionID) => {
       queries.setQueryData<AgentBrowserStatus>(key, (observed) =>
@@ -82,31 +101,55 @@ function AgentBrowserView({ client, runID, running, onClose }: { client: APIClie
     return () => { abort.abort(); if (objectURL) URL.revokeObjectURL(objectURL); };
   }, [client, imageBinding, runID, imageRetry]);
 
+  const showCollabFooter = Boolean(collaboration && (collaboration.hasBrowserActivity || collaboration.agentOperating || collaboration.manualTakeover));
   const dismissButton = onClose && <button className="v2-agent-browser-dismiss" type="button" aria-label={t("收起浏览器", "Close browser view")} title={t("收起浏览器", "Close browser view")}
     onClick={onClose}><X size={18} aria-hidden="true" /></button>;
   if (status.isPending || status.isError) return <section className="v2-agent-browser" aria-label={t("浏览器画面", "Browser view")}><header><strong>{t("浏览器", "Browser")}</strong>
     <div className="v2-agent-browser-actions">{status.isError && <button type="button" onClick={() => status.refetch()}><RefreshCw size={15} />{t("重新读取", "Reload")}</button>}{dismissButton}</div></header>
-    <div className="v2-agent-browser-body"><p role={status.isError ? "alert" : "status"}>{status.isPending
+    {collaboration && collaboration.steps.length > 0 && <V2BrowserStepTrail steps={collaboration.steps} />}
+    <div className="v2-agent-browser-body">
+      {collaboration?.cursor && <div className="v2-agent-browser-viewport-stage">
+        <div className="v2-agent-browser-collab-placeholder">{collaboration.activeTitle || collaboration.activeUrl || t("实时浏览器协同画面", "Live browser collaboration surface")}</div>
+        <V2BrowserCursorHud cursor={collaboration.cursor} manualTakeover={collaboration.manualTakeover} />
+      </div>}
+      <p role={status.isError ? "alert" : "status"}>{status.isPending
       ? t("正在读取浏览器…", "Loading browser…") : agentBrowserAPIAbsent(status.error)
         ? t("当前连接不支持浏览器。", "This connection does not support the browser.")
-        : t("无法读取浏览器状态。", "Could not read browser status.")}</p></div></section>;
+        : t("无法读取浏览器状态。", "Could not read browser status.")}</p></div>
+    {showCollabFooter && collaboration && <V2BrowserCollabBar agentOperating={collaboration.agentOperating}
+      manualTakeover={collaboration.manualTakeover} steps={collaboration.steps}
+      onStopAndTakeOver={collaboration.triggerStopAndTakeOver} onResumeAgent={collaboration.resumeWithAgent} />}
+  </section>;
   if (!current) return null;
   const canClose = Boolean(current.session_id) && ["starting", "ready", "loading", "busy", "waiting_user", "failed"].includes(current.state);
   const active = canClose || current.state === "closing" || current.state === "cleanup_pending";
+  const hasVisualViewport = Boolean((current.headless && active && current.session_id) || image?.binding === imageBinding);
   return <section className="v2-agent-browser" aria-label={t("浏览器画面", "Browser view")}>
     <header><div className="v2-agent-browser-heading"><strong>{t("浏览器", "Browser")}</strong>
       {current.unavailable_code !== "browser_network_off" && <span className={`v2-agent-browser-state state-${current.state}`}>{stateText(current, t)}</span>}</div>
       <div className="v2-agent-browser-actions">{canClose && <button type="button" disabled={close.isPending} onClick={() => close.mutate(current.session_id!)}>{t("停止浏览器", "Stop browser")}</button>}{dismissButton}</div></header>
+    {collaboration && collaboration.steps.length > 0 && <V2BrowserStepTrail steps={collaboration.steps} />}
     <div className="v2-agent-browser-body">
     {!current.available && unavailableText(current.unavailable_code, t) && <p className="v2-agent-browser-note" role="status">{unavailableText(current.unavailable_code, t)}</p>}
     {current.available && current.declared_origins && current.declared_origins.length > 0 && <p className="v2-agent-browser-note">{t("已声明的导航来源：", "Declared navigation origins: ")}{current.declared_origins.join(", ")}</p>}
-    {current.headless && active && current.session_id && <AgentBrowserLiveView key={current.session_id}
-      client={client} runID={runID} sessionID={current.session_id} onLiveChange={setLiveSessionID} />}
+    {collaboration ? <div className="v2-agent-browser-viewport-stage">
+      {current.headless && active && current.session_id && <AgentBrowserLiveView key={current.session_id}
+        client={client} runID={runID} sessionID={current.session_id} onLiveChange={setLiveSessionID} />}
+      {image?.binding === imageBinding && <BrowserScreenshot key={imageBinding} url={image.url} blob={image.blob}
+        compact={liveSessionID === current.session_id}
+        name={`agent-browser-${current.screenshot!.sha256.slice(0, 12)}.png`}
+        alt={t(`Agent 浏览器页面：${current.title || current.url || "当前页面"}`, `Agent browser page: ${current.title || current.url || "Current page"}`)} />}
+      {!hasVisualViewport && <div className="v2-agent-browser-collab-placeholder">{current.title || current.url || t("实时浏览器协同画面", "Live browser collaboration surface")}</div>}
+      <V2BrowserCursorHud cursor={collaboration.cursor} manualTakeover={collaboration.manualTakeover} />
+    </div> : <>
+      {current.headless && active && current.session_id && <AgentBrowserLiveView key={current.session_id}
+        client={client} runID={runID} sessionID={current.session_id} onLiveChange={setLiveSessionID} />}
+    </>}
     {(current.title || current.url) && <div className="v2-agent-browser-page">
       {current.title && <strong>{current.title}</strong>}
       {current.url && <a href={current.url} target="_blank" rel="noreferrer">{current.url}<ExternalLink size={14} /></a>}
     </div>}
-    {image?.binding === imageBinding && <BrowserScreenshot key={imageBinding} url={image.url} blob={image.blob}
+    {!collaboration && image?.binding === imageBinding && <BrowserScreenshot key={imageBinding} url={image.url} blob={image.blob}
       compact={liveSessionID === current.session_id}
       name={`agent-browser-${current.screenshot!.sha256.slice(0, 12)}.png`}
       alt={t(`Agent 浏览器页面：${current.title || current.url || "当前页面"}`, `Agent browser page: ${current.title || current.url || "Current page"}`)} />}
@@ -118,6 +161,9 @@ function AgentBrowserView({ client, runID, running, onClose }: { client: APIClie
       {current.cleanup_pending && <p>{t("浏览器进程或临时资料仍在清理。", "Browser processes or temporary data are still being cleaned up.")}</p>}
     {message && <p role="alert">{message}</p>}
     </div>
+    {showCollabFooter && collaboration && <V2BrowserCollabBar agentOperating={collaboration.agentOperating}
+      manualTakeover={collaboration.manualTakeover} steps={collaboration.steps}
+      onStopAndTakeOver={collaboration.triggerStopAndTakeOver} onResumeAgent={collaboration.resumeWithAgent} />}
   </section>;
 }
 

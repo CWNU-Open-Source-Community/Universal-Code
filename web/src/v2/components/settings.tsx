@@ -45,6 +45,7 @@ import { useLocale } from "../../lib/locale";
 import type { ProjectSkillChoice } from "../../api/project-skills";
 import { ModelAvailabilitySettings } from "../../components/model-availability-dialog";
 import { V2AboutSettings, V2ExtensionSettings, V2RecordPreferences, V2SkillSettings } from "./advanced-settings";
+import { V2VoiceSettings } from "./voice-call-mode";
 import "./settings.css";
 
 const TaskConfigurationSettings = lazy(() => import("./task-configuration-settings").then((module) => ({ default: module.TaskConfigurationSettings })));
@@ -526,6 +527,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
         <V2AdvancedPermissionSettings client={client} threadID={threadID} workspaces={workspaces}
           draftWorkspaceID={draftWorkspaceID} onOpenModelSettings={() => onSelectSection("models")} /></>}
       {section === "appearance" && <AppearanceSettings />}
+      {section === "voice" && <V2VoiceSettings />}
       {section === "usage" && <Suspense fallback={<p role="status">{t("正在加载用量统计…", "Loading usage…")}</p>}>
         <UsageSettings client={client} threadID={threadID} onOpenThread={onOpenThread} />
       </Suspense>}
@@ -552,7 +554,7 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
         <V2KeyboardSettings />
       </div>}
       {section === "records" && <V2RecordPreferences onOpenHistory={onOpenHistory} />}
-      {!(["general", "permissions", "appearance", "archived", "models", "records", "extensions", "plugins",
+      {!(["general", "permissions", "appearance", "voice", "archived", "models", "records", "extensions", "plugins",
         "skills", "advanced-models", "about", "shortcuts", "keyboard", "connections", "task-configuration", "environment", "configuration", "usage"] as V2SettingsSection[])
         .includes(section) && <p role="alert">{t("设置项不可用。", "This setting is unavailable.")}</p>}
     </div></div>

@@ -9,6 +9,7 @@ import { ThreadProjectDialog, threadProjectID } from "./thread-project-dialog";
 import { ProjectHeader } from "./project-header";
 import { ThreadActions } from "./thread-actions";
 import { useV2PersistentState } from "../recovery-storage";
+import { Volume2 } from "lucide-react";
 import "./project-sidebar.css";
 
 function projectPinIDs(value: unknown): string[] {
@@ -311,6 +312,7 @@ const settingsGroups: Array<{ label: [string, string]; items: Array<{
     { id: "general", label: ["常规", "General"], icon: Settings },
     { id: "configuration", label: ["配置", "Configuration"], icon: Settings },
     { id: "appearance", label: ["外观", "Appearance"], icon: Palette },
+    { id: "voice", label: ["语音交互", "Voice interaction"], icon: Volume2, keywords: "语音 通话 朗读 麦克风 静音 voice call speech tts mic mute" },
     { id: "usage", label: ["用量统计", "Usage"], icon: ChartNoAxesCombined },
     { id: "shortcuts", label: ["快捷键", "Shortcuts"], icon: Keyboard },
     { id: "about", label: ["关于", "About"], icon: Info },

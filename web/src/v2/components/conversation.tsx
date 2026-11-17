@@ -69,6 +69,11 @@ import {
 } from "../workspace-tabs";
 import { V2FileWorkspaceContent, V2WorkspaceDock } from "./workspace-dock";
 import { V2ThreadExport } from "./thread-export";
+import { PhoneCall } from "lucide-react";
+import type { AgentBrowserStatus } from "../../api/agent-browser";
+import type { SharedBrowserState } from "../../lib/desktop-shared-browser";
+import { useAutoBrowserDock } from "../use-auto-browser-dock";
+import { V2VoiceCallStage, V2VoicePostCallBanner } from "./voice-call-mode";
 
 export { parseProjectFileLink, type FileLinkTarget } from "./narrative";
 
@@ -585,6 +590,47 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       refreshTimer.current = null;
     }
   }, [streamRunID, threadID]);
+  const [voiceCallThreadID, setVoiceCallThreadID] = useState<string | null>(null);
+  const [postCallBannerThreadID, setPostCallBannerThreadID] = useState<string | null>(null);
+  const [sharedBrowserState, setSharedBrowserState] = useState<SharedBrowserState | null>(null);
+  const [agentBrowserStatus, setAgentBrowserStatus] = useState<AgentBrowserStatus | undefined>(undefined);
+  const voiceCallActive = voiceCallThreadID === threadID;
+  const postCallBannerOpen = postCallBannerThreadID === threadID;
+  const collabRunID = detailQuery.data?.active_run?.id ?? detailQuery.data?.last_run.id ?? "";
+  const collabRunActive = executionQuery.data ? executionQuery.data.state !== "idle" : streamEnabled;
+  const isBrowserPaneOpen = workspaceVisible && activeWorkspaceTab?.kind === "browser";
+  const cancelRunForBrowserTakeover = useCallback(async () => {
+    const maybeCancelRun = (client as unknown as { cancelRun?: (runID: string) => Promise<unknown> }).cancelRun;
+    if (typeof maybeCancelRun === "function" && collabRunID) {
+      await maybeCancelRun.call(client, collabRunID);
+    }
+    const stopBtn = stopButtonRef.current;
+    if (stopBtn && !stopBtn.disabled) {
+      stopBtn.click();
+      return;
+    }
+    const executionID = executionQuery.data?.execution_id;
+    if (executionID && client.hasThreadControl && client.hasRunExecution && typeof client.interruptThread === "function") {
+      const state = await client.interruptThread(threadID, executionID, `v2-browser-takeover-${executionID}`);
+      queryClient.setQueryData(v2QueryKeys.execution(threadID), state);
+      void queryClient.invalidateQueries({ queryKey: v2QueryKeys.thread(threadID) });
+    }
+  }, [client, collabRunID, executionQuery.data?.execution_id, queryClient, threadID]);
+  const browserCollaboration = useAutoBrowserDock({
+    threadID,
+    runID: collabRunID,
+    runActive: collabRunActive,
+    enabled: detailQuery.isSuccess && !voiceCallActive,
+    isBrowserOpen: isBrowserPaneOpen,
+    transcriptItems: transcriptQuery.items,
+    liveSnapshot,
+    eventFrames: eventStream.frames,
+    agentBrowserStatus,
+    sharedBrowserState,
+    onAutoOpenBrowser: () => openSingletonSurface("browser"),
+    onCancelRun: cancelRunForBrowserTakeover,
+    onResumeAgent: () => setComposerFocusRequest({ threadID }),
+  });
   const previousStream = useRef<{ threadID: string; runID: string; enabled: boolean;
     events: string; finalizing: boolean } | null>(null);
   useEffect(() => {
@@ -959,6 +1005,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   };
   const handleCollapseWorkspace = () => {
     const focusInsideDock = Boolean(workbenchSlot.current?.contains(document.activeElement));
+    if (activeWorkspaceTab?.kind === "browser") {
+      browserCollaboration.notifyManualClose();
+    }
     setCompactPaneOpen(false);
     collapseWorkspacePanel(threadID);
     if (docked && focusInsideDock) {
@@ -1021,6 +1070,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       threadID={threadID}
       working={working}
       workspaceName={workspace?.name ?? t("本地工作区", "Local workspace")}
+      browserCollaboration={browserCollaboration}
+      onSharedBrowserStateChange={setSharedBrowserState}
+      onAgentBrowserStatusChange={setAgentBrowserStatus}
     />
   );
   return <section className="v2-conversation" ref={conversationRef}>
@@ -1031,6 +1083,29 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       <div className="v2-header-actions">
         <V2ThreadExecutionControl client={client} execution={executionQuery.data}
           threadID={threadID} stopButtonRef={stopButtonRef} />
+        <button
+          aria-label={t("语音通话", "Voice Call")}
+          aria-pressed={voiceCallActive}
+          className="v2-voice-call-trigger"
+          onClick={() => {
+            if (voiceCallActive) {
+              setVoiceCallThreadID(null);
+              setPostCallBannerThreadID(threadID);
+              followLatestRef.current = true;
+              requestAnimationFrame(() => {
+                if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+              });
+            } else {
+              setPostCallBannerThreadID(null);
+              setVoiceCallThreadID(threadID);
+            }
+          }}
+          title={t("进入精简实时语音通话视图", "Enter streamlined live voice call mode")}
+          type="button"
+        >
+          <PhoneCall aria-hidden="true" size={14} />
+          <span className="v2-voice-call-trigger-label">{t("语音通话", "Voice Call")}</span>
+        </button>
         <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label={t("对话操作", "Conversation actions")}
           onClick={() => setMenuOpen((value) => !value)} ref={menuTriggerRef} type="button">
           <CircleEllipsis aria-hidden="true" size={18} />
@@ -1094,7 +1169,10 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           terminalReturnFocus.current = terminalTrigger.current;
           toggleSingletonSurface("terminal");
         }} ref={terminalTrigger} type="button"><SquareTerminal aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("终端", "Terminal")}</span></button>
-        {desktopSharedBrowserEnabled() && <button aria-label={t("浏览器", "Browser")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "browser"} onClick={() => toggleSingletonSurface("browser")}
+        {(desktopSharedBrowserEnabled() || browserCollaboration.hasBrowserActivity) && <button aria-label={t("浏览器", "Browser")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "browser"} onClick={() => {
+          if (workspaceVisible && activeWorkspaceTab?.kind === "browser") browserCollaboration.notifyManualClose();
+          toggleSingletonSurface("browser");
+        }}
           ref={browserTrigger} title={t("浏览器", "Browser")} type="button"><Globe aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("浏览器", "Browser")}</span></button>}
         <button aria-label={t("应用预览", "App preview")} aria-pressed={workspaceVisible && activeWorkspaceTab?.kind === "preview"} onClick={() => toggleSingletonSurface("preview")}
           ref={previewTrigger} title={t("应用预览", "App preview")} type="button"><PanelTop aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("应用预览", "App preview")}</span></button>
@@ -1125,6 +1203,26 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </div>
     </nav>
     </header>
+    {postCallBannerOpen && !voiceCallActive && (
+      <V2VoicePostCallBanner onDismiss={() => setPostCallBannerThreadID(null)} />
+    )}
+    {voiceCallActive ? (
+      <V2VoiceCallStage
+        activityHeadline={agentActivity?.label}
+        disabled={!client.hasThreadControl || detail.thread.status !== "active"}
+        entries={visibleNarrative}
+        onEndCall={() => {
+          setVoiceCallThreadID(null);
+          setPostCallBannerThreadID(threadID);
+          followLatestRef.current = true;
+          requestAnimationFrame(() => {
+            if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          });
+        }}
+        onSubmitPrompt={(text) => send(text)}
+        working={working}
+      />
+    ) : <>
     <div className="v2-conversation-scroll" ref={scrollRef} onScroll={(event) => {
       const element = event.currentTarget;
       const size = scrollSizeRef.current;
@@ -1284,6 +1382,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </div>
       </div>
     </div>
+    </>}
     </div>
     {!modalVisible && <div
       aria-hidden={!dockVisible}
