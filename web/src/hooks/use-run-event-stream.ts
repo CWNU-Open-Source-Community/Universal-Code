@@ -250,7 +250,8 @@ export function useRunEventStream(client: APIClient, runID: string) {
           });
           if (!controller.signal.aborted) {
             publishConnection("reconnecting");
-            await delay(controller.signal);
+            await delay(controller.signal, retryDelay);
+            retryDelay = Math.min(retryDelay * 2, maxReconnectDelayMs);
           }
         } catch (caught) {
           if (controller.signal.aborted) {

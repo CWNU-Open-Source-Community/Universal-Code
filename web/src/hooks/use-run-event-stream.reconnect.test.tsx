@@ -188,4 +188,55 @@ describe("useRunEventStream browser SSE protocol recovery", () => {
     expect(hook.result.current.frames.map((item) => item.sequence)).toEqual([1]);
     hook.unmount();
   });
+
+  it("backs off across repeated clean closes without frames, then resets once frames flow", async () => {
+    const { client, connections } = streamClient();
+    const hook = renderHook(() => useRunEventStream(client, "run-clean-close"));
+    await flushMicrotasks();
+    expect(connections.length).toBe(1);
+
+    await act(async () => {
+      connections[0]!.options.onOpen?.();
+      connections[0]!.resolve();
+    });
+    await flushMicrotasks();
+    expect(hook.result.current.status).toBe("reconnecting");
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(connections.length).toBe(1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(connections.length).toBe(2);
+
+    await act(async () => {
+      connections[1]!.options.onOpen?.();
+      connections[1]!.resolve();
+    });
+    await flushMicrotasks();
+    await act(async () => vi.advanceTimersByTimeAsync(1_999));
+    expect(connections.length).toBe(2);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(connections.length).toBe(3);
+
+    await act(async () => {
+      connections[2]!.options.onOpen?.();
+      connections[2]!.resolve();
+    });
+    await flushMicrotasks();
+    await act(async () => vi.advanceTimersByTimeAsync(3_999));
+    expect(connections.length).toBe(3);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(connections.length).toBe(4);
+
+    await act(async () => {
+      connections[3]!.options.onOpen?.();
+      connections[3]!.options.onFrame(frame(1, "cursor-1"));
+      connections[3]!.resolve();
+    });
+    await flushMicrotasks();
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(connections.length).toBe(4);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(connections.length).toBe(5);
+    expect(connections[4]!.options.cursor).toBe("cursor-1");
+    hook.unmount();
+  });
 });
