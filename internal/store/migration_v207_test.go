@@ -42,8 +42,10 @@ func TestSchemaV207PreservesPopulatedV205ProjectHookHistory(t *testing.T) {
 	var lastOrigin domain.ProjectHookCallOrigin
 	var lastCallID string
 	// Record one native round and the full host-owned physical sequence through
-	// round 21. These are pending command-list receipts; no process is executed.
-	for round := 2; round <= domain.MaxSupervisorExecutionRounds; round++ {
+	// round 21 (the v205 schema bound). These are pending command-list receipts;
+	// no process is executed.
+	const v205MaxExecutionRounds = 21
+	for round := 2; round <= v205MaxExecutionRounds; round++ {
 		key := runmutation.SupervisorToolOperationKey(cp.RunID, cp.NextTurn, string(toolgateway.CommandRuntimeTool), string(payload))
 		callID, err := runmutation.SupervisorToolCallID(key, round)
 		if err != nil {
@@ -100,11 +102,11 @@ func TestSchemaV207PreservesPopulatedV205ProjectHookHistory(t *testing.T) {
 		FROM run_supervisor_tool_calls c JOIN run_supervisor_tool_rounds r
 		ON r.run_id=c.run_id AND r.turn=c.turn AND r.attempt_id=c.attempt_id AND r.round=c.round
 		WHERE c.run_id=? AND c.call_id=?`, cp.RunID, lastCallID).Scan(&rowID, &physicalRound, &origin); err != nil ||
-		physicalRound != domain.MaxSupervisorExecutionRounds || rowID != int64(7000+physicalRound) || origin != "project_hook" {
+		physicalRound != v205MaxExecutionRounds || rowID != int64(7000+physicalRound) || origin != "project_hook" {
 		t.Fatalf("last historical hook lost source/round/rowid: rowid=%d round=%d origin=%q err=%v", rowID, physicalRound, origin, err)
 	}
 	call, found, err := st.GetProjectHookCall(t.Context(), cp.RunID, lastOrigin.TriggerKey)
-	if err != nil || !found || call.Round != domain.MaxSupervisorExecutionRounds ||
+	if err != nil || !found || call.Round != v205MaxExecutionRounds ||
 		call.ProjectHook == nil || *call.ProjectHook != lastOrigin {
 		t.Fatalf("historical project hook no longer resolves its exact call: found=%t call=%+v err=%v", found, call, err)
 	}
@@ -112,7 +114,7 @@ func TestSchemaV207PreservesPopulatedV205ProjectHookHistory(t *testing.T) {
 	if err := st.db.QueryRowContext(t.Context(), `SELECT count(*) FROM run_supervisor_tool_call_agents a
 		JOIN run_supervisor_tool_calls c ON c.run_id=a.run_id AND c.turn=a.turn AND c.attempt_id=a.attempt_id AND c.call_id=a.call_id
 		WHERE a.run_id=? AND a.agent_id=? AND a.agent_attempt_id=?`, cp.RunID, f.turn.Agent.ID, cp.AttemptID).Scan(&actors); err != nil ||
-		actors != domain.MaxSupervisorExecutionRounds {
+		actors != v205MaxExecutionRounds {
 		t.Fatalf("historical actor references lost: count=%d err=%v", actors, err)
 	}
 	for _, table := range []string{"project_hook_calls", "run_supervisor_tool_call_agents"} {

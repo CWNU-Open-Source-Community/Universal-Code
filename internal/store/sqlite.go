@@ -528,7 +528,8 @@ func migrationPlan() []migration {
 		migration{Version: 235, Name: "Preserve exact workspace evidence paths", Statements: exactWorkspaceEvidencePathStatements},
 		migration{Version: 236, Name: "Preserve exact workspace snapshot paths", Statements: exactWorkspaceSnapshotPathStatements(), DisableForeignKeys: true},
 		migration{Version: 237, Name: "Preserve exact file edit apply paths", Statements: exactFileEditApplyPathStatements(), DisableForeignKeys: true},
-		migration{Version: 238, Name: "Preserve exact command working directories", Statements: exactCommandWorkingDirectoryStatements(), DisableForeignKeys: true})
+		migration{Version: 238, Name: "Preserve exact command working directories", Statements: exactCommandWorkingDirectoryStatements(), DisableForeignKeys: true},
+		migration{Version: 239, Name: "Widen supervisor tool batch position and round limits", Statements: supervisorToolThroughputMigrationStatements(), DisableForeignKeys: true})
 }
 
 func (s *SQLiteStore) SaveWorkspace(ctx context.Context, rec WorkspaceRecord) error {

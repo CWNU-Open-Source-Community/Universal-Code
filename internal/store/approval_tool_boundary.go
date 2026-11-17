@@ -24,7 +24,7 @@ func (s *SQLiteStore) approvalToolBoundaryContextCalls(ctx context.Context, chec
 	 WHERE event.run_id=? AND event.type=? AND event.source='run_supervisor' AND call.turn<? AND call.status!='pending'
 	 AND json_extract(event.payload_json,'$.tool_round_boundary')=1 AND json_extract(event.payload_json,'$.approval_continuation_handoff_id')=?
 	 AND json_extract(event.payload_json,'$.operator_message_id')=?
-	 ORDER BY call.turn DESC,call.round DESC,call.position LIMIT 32`, checkpoint.RunID, events.AgentTurnCompletedEvent, checkpoint.NextTurn, value.Handoff.Operation.ID, value.Handoff.Items[0].MessageID)
+	 ORDER BY call.turn DESC,call.round DESC,call.position LIMIT ?`, checkpoint.RunID, events.AgentTurnCompletedEvent, checkpoint.NextTurn, value.Handoff.Operation.ID, value.Handoff.Items[0].MessageID, domain.MaxSupervisorBoundaryContextCalls)
 	if err != nil {
 		return nil, true, err
 	}

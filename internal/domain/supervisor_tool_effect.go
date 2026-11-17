@@ -87,12 +87,14 @@ func ObservedSupervisorToolEffect(call SupervisorToolCall) *SupervisorToolEffect
 	if hash, err := hex.DecodeString(result.ProposedSHA256); err == nil && len(hash) == sha256.Size {
 		effect.ProposedSHA256 = result.ProposedSHA256
 	}
-	if call.ToolName == "workspace_change" || (call.ToolName == "workspace_delete" && result.FileWritten == nil) {
-		if result.FileWritten != nil && *result.FileWritten {
-			return unknown
-		}
+	if (call.ToolName == "workspace_change" || call.ToolName == "workspace_delete") && result.FileWritten == nil {
 		// This tool only returns a proposal, even when an idempotent replay
 		// observes the edit's later status. It cannot prove a new write.
+		effect.Effect = "proposal_only"
+		effect.ApplyAuthorized, effect.ReviewRequired = result.ApplyAuthorized, result.ReviewRequired
+		return effect
+	}
+	if call.ToolName == "workspace_change" && (result.Status == "proposed" || result.Status == "approved") && !*result.FileWritten {
 		effect.Effect = "proposal_only"
 		effect.ApplyAuthorized, effect.ReviewRequired = result.ApplyAuthorized, result.ReviewRequired
 		return effect
