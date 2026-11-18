@@ -241,7 +241,7 @@ describe("V2 saved conversation search", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "搜索" }));
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     await screen.findByRole("button", { name: current.title });
-    expect(screen.getByRole("region", { name: `项目 ${workspace.name}` })).toContainElement(
+    expect(screen.getByRole("region", { name: "空闲" })).toContainElement(
       screen.getByRole("button", { name: current.title }));
     expect(screen.queryByText(/搜索全部已保存/)).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "包含已归档对话" })).not.toBeInTheDocument();
