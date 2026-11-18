@@ -143,6 +143,7 @@ export interface ThreadActivityDescriptor {
   pulse: boolean;
   label: string;
   detail?: string;
+  accessibleDetail?: string;
   executionState: CanonicalExecutionState;
   executionLabel: string;
   executionDescription: string;
@@ -277,13 +278,23 @@ export function deriveThreadActivityStatus(
       detail = t("待确认授权", "Awaiting approval");
     }
 
+    const waitingLabel = t("等待回复", "Waiting for input");
+    const hasEnrichedWaitingSignal =
+      pendingApprovals > 0 ||
+      signals?.pendingActionKind === "file_edit_review" ||
+      thread.composer_state === "successor_required" ||
+      !["waiting_approval", "paused", "stop_failed"].includes(canonical.state);
+
     return {
       kind: "waiting_input",
       bucket: "needs_input",
       tone: "amber",
       pulse: false,
-      label: t("等待回复", "Waiting for input"),
+      label: waitingLabel,
       detail,
+      accessibleDetail: hasEnrichedWaitingSignal
+        ? (detail ? `${waitingLabel} · ${detail}` : waitingLabel)
+        : undefined,
       executionState: canonical.state,
       executionLabel: canonical.label,
       executionDescription: canonical.description,
@@ -295,45 +306,49 @@ export function deriveThreadActivityStatus(
     canonical.state === "stopping" ||
     signals?.streamSnapshot?.cancel_requested === true
   ) {
+    const stoppingLabel = t("正在停止", "Stopping");
     return {
       kind: "stopping",
       bucket: "running",
       tone: "amber",
       pulse: true,
-      label: t("正在停止", "Stopping"),
+      label: stoppingLabel,
+      accessibleDetail: canonical.state !== "stopping" ? stoppingLabel : undefined,
       executionState: canonical.state,
       executionLabel: canonical.label,
       executionDescription: canonical.description,
     };
   }
 
-  const confirmedIdleByLiveExecution = liveExecState === "idle";
   const confirmedTerminalByRun = effectiveRunStatus !== undefined &&
     ["completed", "failed", "cancelled"].includes(effectiveRunStatus);
-  const explicitLiveActivity = !confirmedIdleByLiveExecution && !confirmedTerminalByRun && (
+  const explicitTurnActivity = !confirmedTerminalByRun && (
     Boolean(signals?.activeTool) ||
     signals?.streamStatus === "live" ||
     signals?.streamStatus === "connecting" ||
-    effectiveRunStatus === "running" ||
-    effectiveRunStatus === "preparing" ||
     liveExecState === "running"
   );
-  const isActivelyRunning = explicitLiveActivity || (
-    !confirmedIdleByLiveExecution &&
-    !confirmedTerminalByRun &&
-    canonical.state === "running"
-  );
+  const runContainerActive = !confirmedTerminalByRun &&
+    liveExecState !== "idle" && (
+      effectiveRunStatus === "running" ||
+      effectiveRunStatus === "preparing" ||
+      canonical.state === "running"
+    );
+  const isActivelyRunning = explicitTurnActivity || runContainerActive;
 
   if (isActivelyRunning) {
     const streamKind = signals?.streamSnapshot?.content_kind;
     if (signals?.activeTool || streamKind === "tool_call" || streamKind === "command") {
+      const commandLabel = t("执行命令", "Running command");
+      const commandDetail = signals?.activeTool ? describeActiveTool(signals.activeTool, t) : undefined;
       return {
         kind: "running_command",
         bucket: "running",
         tone: "cyan",
         pulse: true,
-        label: t("执行命令", "Running command"),
-        detail: signals?.activeTool ? describeActiveTool(signals.activeTool, t) : undefined,
+        label: commandLabel,
+        detail: commandDetail,
+        accessibleDetail: commandDetail ? `${commandLabel} · ${commandDetail}` : commandLabel,
         executionState: canonical.state,
         executionLabel: canonical.label,
         executionDescription: canonical.description,
@@ -351,13 +366,19 @@ export function deriveThreadActivityStatus(
       thinkingDetail = t(`队列 ${signals!.execution!.queued_messages} 条`, `${signals!.execution!.queued_messages} queued`);
     }
 
+    const thinkingLabel = t("思考中", "Thinking");
     return {
       kind: "thinking",
       bucket: "running",
       tone: "indigo",
       pulse: true,
-      label: t("思考中", "Thinking"),
+      label: thinkingLabel,
       detail: thinkingDetail,
+      accessibleDetail: thinkingDetail
+        ? `${thinkingLabel} · ${thinkingDetail}`
+        : canonical.state !== "running"
+          ? thinkingLabel
+          : undefined,
       executionState: canonical.state,
       executionLabel: canonical.label,
       executionDescription: canonical.description,
@@ -384,13 +405,15 @@ export function deriveThreadActivityStatus(
   }
 
   if (canonical.state === "failed" || effectiveRunStatus === "failed") {
+    const failedLabel = t("执行失败", "Failed");
     return {
       kind: "failed",
       bucket: "idle",
       tone: "danger",
       pulse: false,
-      label: t("执行失败", "Failed"),
+      label: failedLabel,
       detail: formatShortUpdatedAt(thread.updated_at, locale),
+      accessibleDetail: canonical.state !== "failed" ? failedLabel : undefined,
       executionState: canonical.state,
       executionLabel: canonical.label,
       executionDescription: canonical.description,
@@ -492,10 +515,43 @@ export function extractCachedThreadSignals(
   readFailed: boolean,
   extra?: ThreadLiveSignals,
 ): ThreadLiveSignals {
-  const execution = queryClient.getQueryData<ThreadExecutionView>(v2QueryKeys.execution(thread.id));
+  const listedRunID = thread.active_run_id || thread.last_run_id || "";
   const detail = queryClient.getQueryData<ThreadDetailView>(v2QueryKeys.thread(thread.id));
-  const activeRun = detail?.active_run ?? detail?.last_run ?? null;
-  const runID = activeRun?.id || thread.active_run_id || thread.last_run_id;
+  const detailCandidateRun = detail?.active_run ?? detail?.last_run ?? null;
+  const cachedRunMismatch = Boolean(detailCandidateRun && listedRunID && detailCandidateRun.id !== listedRunID);
+  const activeRun = detailCandidateRun && !cachedRunMismatch ? detailCandidateRun : null;
+  const resolvedRun = extra?.run !== undefined ? extra.run : activeRun;
+  const runID = extra?.run !== undefined ? (extra.run?.id || "") : (listedRunID || activeRun?.id || "");
+
+  const executionQuery = queryClient.getQueryCache().find({ queryKey: v2QueryKeys.execution(thread.id) });
+  const rawExecution = queryClient.getQueryData<ThreadExecutionView>(v2QueryKeys.execution(thread.id));
+  const threadUpdatedAtMs = Date.parse(thread.updated_at);
+  const executionOlderThanThread =
+    Number.isFinite(threadUpdatedAtMs) &&
+    executionQuery !== undefined &&
+    threadUpdatedAtMs > executionQuery.state.dataUpdatedAt;
+  const staleIdleExecution =
+    rawExecution?.state === "idle" &&
+    (cachedRunMismatch ||
+      executionOlderThanThread ||
+      executionQuery?.state.isInvalidated === true ||
+      thread.execution_state === "running" ||
+      ((executionQuery?.getObserversCount() ?? 0) === 0 &&
+        !["idle", "completed", "cancelled"].includes(thread.execution_state ?? "")));
+  const execution = staleIdleExecution ? null : rawExecution;
+
+  // In Universal-Code, an open multi-turn Thread keeps `active_run.status === "running"`
+  // between turns while `thread.execution_state` / `execution.state` is `"idle"`.
+  // Only propagate cached `activeRun.status === "running"` when the thread is not idle between turns.
+  const cachedIdleBetweenTurns =
+    extra?.run === undefined &&
+    extra?.runStatus === undefined &&
+    activeRun?.status === "running" &&
+    (execution?.state === "idle" ||
+      (execution?.state !== "running" &&
+        ["idle", "completed", "cancelled"].includes(thread.execution_state ?? "")));
+  const effectiveCachedRunStatus = cachedIdleBetweenTurns ? undefined : resolvedRun?.status;
+
   const approvals = runID ? queryClient.getQueryData<ApprovalQueueView>(v2QueryKeys.approvals(runID)) : undefined;
   const transcriptData = queryClient.getQueryData<{ pages?: Array<{ items?: ThreadTranscriptItemView[] }> }>(
     v2QueryKeys.transcript(thread.id),
@@ -537,8 +593,8 @@ export function extractCachedThreadSignals(
     pendingApprovals: extra?.pendingApprovals ?? approvals?.items.length,
     pendingActionKind: extra?.pendingActionKind,
     hasBlockedTool: extra?.hasBlockedTool ?? (hasBlockedTool || undefined),
-    run: extra?.run !== undefined ? extra.run : activeRun,
-    runStatus: extra?.runStatus ?? activeRun?.status,
+    run: cachedIdleBetweenTurns ? null : resolvedRun,
+    runStatus: extra?.runStatus ?? effectiveCachedRunStatus,
     execution: extra?.execution !== undefined ? extra.execution : (execution ?? null),
     activeTool: extra?.activeTool !== undefined ? extra.activeTool : activeTool,
     streamSnapshot: extra?.streamSnapshot,

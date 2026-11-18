@@ -2,8 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { APIClient } from "../../api/client";
-import type { ApprovalQueueView, ThreadDetailView, ThreadTranscriptItemView, ThreadView, WorkspaceView } from "../../api/types";
+import type { ApprovalQueueView, ThreadDetailView, ThreadExecutionView, ThreadTranscriptItemView, ThreadView, WorkspaceView } from "../../api/types";
 import { LocaleProvider, useLocale } from "../../lib/locale";
 import { v2QueryKeys } from "../query-keys";
 import { V2RecoveryProvider, resetV2RecoveryStorageMemory } from "../recovery-storage";
@@ -518,5 +520,157 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
     expect(screen.queryByText("思考中")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "空闲" })).not.toBeInTheDocument();
     expect(screen.getByText("已按边栏设置隐藏 7 条会话")).toBeInTheDocument();
+  });
+
+  it("ignores stale cached idle execution state and mismatched cached runs when a thread starts a new run", () => {
+    const queryClient = new QueryClient();
+    const runningThread = makeThread({
+      id: "t-stale-cache",
+      title: "New running turn",
+      active_run_id: "run-B",
+      last_run_id: "run-B",
+      execution_state: "running",
+      updated_at: "2099-01-01T00:00:00Z",
+    });
+
+    // Previous turn left an unobserved idle execution state and completed run-A in QueryClient cache
+    queryClient.setQueryData<ThreadExecutionView>(v2QueryKeys.execution(runningThread.id), {
+      version: "thread_execution.v1",
+      thread_id: runningThread.id,
+      state: "idle",
+      queued_messages: 0,
+      capability_grant: false,
+    });
+    queryClient.setQueryData<ThreadDetailView>(v2QueryKeys.thread(runningThread.id), {
+      thread: { ...runningThread, active_run_id: "run-A", last_run_id: "run-A", execution_state: "completed" },
+      active_run: { id: "run-A", status: "completed" } as ThreadDetailView["active_run"],
+    } as ThreadDetailView);
+    queryClient.setQueryData<ApprovalQueueView>(v2QueryKeys.approvals("run-A"), {
+      protocol_version: "approval_queue.v1",
+      run_id: "run-A",
+      truncated: false,
+      capability_grant: false,
+      process_execution_enabled: true,
+      session_grant_created: false,
+      items: [{ id: "stale-approval" } as ApprovalQueueView["items"][number]],
+    });
+
+    const signals = extractCachedThreadSignals(queryClient, runningThread, false, false);
+    expect(signals.execution).toBeNull();
+    expect(signals.run).toBeNull();
+    expect(signals.runStatus).toBeUndefined();
+    expect(signals.pendingApprovals).toBeUndefined();
+    expect(classifyThreadPriorityBucket(runningThread, signals)).toBe("running");
+
+    // Also verify explicit extra.run override uses extra.run.status instead of terminal cached run status
+    const matchedThread = makeThread({
+      id: "t-override",
+      title: "Override run status",
+      active_run_id: "run-A",
+      last_run_id: "run-A",
+      execution_state: "completed",
+    });
+    queryClient.setQueryData<ThreadDetailView>(v2QueryKeys.thread(matchedThread.id), {
+      thread: matchedThread,
+      last_run: { id: "run-A", status: "completed" } as ThreadDetailView["last_run"],
+    } as ThreadDetailView);
+    const overridden = extractCachedThreadSignals(queryClient, matchedThread, false, false, {
+      run: { id: "run-live-override", status: "running" },
+    });
+    expect(overridden.runStatus).toBe("running");
+    expect(classifyThreadPriorityBucket(matchedThread, overridden)).toBe("running");
+
+    // Multi-turn open session between turns keeps active_run.status="running" while execution.state="idle";
+    // it must stay in "idle" unless a live tool/stream or running turn is active.
+    const idleOpenSession = makeThread({
+      id: "t-open-idle",
+      title: "Open multi-turn session",
+      active_run_id: "run-open",
+      last_run_id: "run-open",
+      execution_state: "idle",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    queryClient.setQueryData<ThreadDetailView>(v2QueryKeys.thread(idleOpenSession.id), {
+      thread: idleOpenSession,
+      active_run: { id: "run-open", status: "running" } as ThreadDetailView["active_run"],
+    } as ThreadDetailView);
+    queryClient.setQueryData<ThreadExecutionView>(v2QueryKeys.execution(idleOpenSession.id), {
+      version: "thread_execution.v1",
+      thread_id: idleOpenSession.id,
+      state: "idle",
+      queued_messages: 0,
+      capability_grant: false,
+    });
+    const idleBetweenTurns = extractCachedThreadSignals(queryClient, idleOpenSession, false, false);
+    expect(classifyThreadPriorityBucket(idleOpenSession, idleBetweenTurns)).toBe("idle");
+    expect(
+      deriveThreadActivityStatus(idleOpenSession, {
+        ...idleBetweenTurns,
+        activeTool: { activityType: "execute", command: "go test ./..." },
+      }).bucket,
+    ).toBe("running");
+  });
+
+  it("clears active project filter when its project is unpinned via header or picker, while preserving unrelated filters", async () => {
+    const user = userEvent.setup();
+    const threads = [
+      makeThread({ id: "alpha-chat", title: "前端任务", project_workspace_id: "ws-alpha", execution_state: "idle" }),
+      makeThread({ id: "beta-chat", title: "后端任务", project_workspace_id: "ws-beta", execution_state: "idle" }),
+    ];
+
+    renderSidebar({ threads });
+
+    // Pin both projects and filter to ws-beta
+    await user.click(screen.getByLabelText("管理置顶项目"));
+    await user.click(screen.getByRole("button", { name: "前端工作台" }));
+    await user.click(screen.getByRole("button", { name: "核心引擎" }));
+
+    const pinnedBar = screen.getByRole("region", { name: "置顶项目" });
+    await user.click(within(pinnedBar).getByRole("button", { name: "筛选项目 核心引擎" }));
+    expect(screen.queryByRole("button", { name: "前端任务" })).not.toBeInTheDocument();
+
+    // Unpinning unrelated ws-alpha keeps ws-beta filter active
+    await user.click(within(pinnedBar).getByRole("button", { name: "取消置顶栏中的 前端工作台" }));
+    expect(screen.queryByRole("button", { name: "前端任务" })).not.toBeInTheDocument();
+
+    // Switch to Project view and unpin active ws-beta via ProjectHeader pin button
+    await user.click(screen.getByRole("button", { name: "按项目" }));
+    expect(screen.queryByRole("region", { name: "项目 前端工作台" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "取消置顶项目 核心引擎" }));
+
+    // Filter clears automatically so other projects reappear
+    expect(screen.getByRole("region", { name: "项目 前端工作台" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "项目 核心引擎" })).toBeInTheDocument();
+  });
+
+  it("exposes accessible activity descriptions on thread rows and collapsed project headers, and uses zero hex literals in CSS", async () => {
+    const user = userEvent.setup();
+    const threads = [
+      makeThread({ id: "t-approvals", title: "审批阻塞任务", project_workspace_id: "ws-alpha", execution_state: "running" }),
+      makeThread({ id: "t-cmd", title: "命令执行任务", project_workspace_id: "ws-alpha", execution_state: "running" }),
+      makeThread({ id: "t-unread", title: "未读完成任务", project_workspace_id: "ws-alpha", execution_state: "completed" }),
+    ];
+
+    renderSidebar({
+      threads,
+      unreadThreadIDs: new Set(["t-unread"]),
+      liveSignalsByThread: {
+        "t-approvals": { pendingApprovals: 2 },
+        "t-cmd": { activeTool: { activityType: "execute", command: "npm test" } },
+      },
+    });
+
+    expect(screen.getByRole("button", { name: "审批阻塞任务" })).toHaveAccessibleDescription("执行中 等待回复 · 2 项待审批");
+    expect(screen.getByRole("button", { name: "命令执行任务" })).toHaveAccessibleDescription("执行中 执行命令 · npm test");
+
+    await user.click(screen.getByRole("button", { name: "按项目" }));
+    const projectRegion = screen.getByRole("region", { name: "项目 前端工作台" });
+    const projectToggle = within(projectRegion).getByRole("button", { name: "前端工作台" });
+    await user.click(projectToggle);
+    expect(projectToggle).toHaveAttribute("aria-expanded", "false");
+    expect(projectToggle).toHaveAccessibleDescription("1 项需用户输入，1 项运行中，1 项未读");
+
+    const css = readFileSync(resolve(import.meta.dirname, "./project-sidebar.css"), "utf8");
+    expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useReducer, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, CalendarClock, ChevronDown, Cpu, FolderInput, MessagesSquare, MoreHorizontal, Pin, RefreshCw,
   Info, Keyboard, PackageSearch, Palette, PlugZap, Search, Settings, ShieldCheck, SquarePen, X } from "lucide-react";
@@ -28,6 +28,7 @@ import {
   type ThreadLiveSignals,
 } from "./sidebar-smart-groups";
 import { useV2PersistentState } from "../recovery-storage";
+import { v2QueryKeys } from "../query-keys";
 import "./project-sidebar.css";
 
 function projectPinIDs(value: unknown): string[] {
@@ -171,16 +172,25 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
 
   const [savedProjectPins, setProjectPins] = useV2PersistentState<unknown>("pinned-projects", []);
   const pinnedProjects = useMemo(() => new Set(projectPinIDs(savedProjectPins)), [savedProjectPins]);
-  const toggleProjectPin = (id: string) => setProjectPins((previous: unknown) => {
-    const ids = projectPinIDs(previous);
-    return ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id];
-  });
+  const toggleProjectPin = (id: string) => {
+    setProjectPins((previous: unknown) => {
+      const ids = projectPinIDs(previous);
+      const unpinning = ids.includes(id);
+      if (unpinning) {
+        setActiveProjectFilter((current) => (current === id ? null : current));
+      }
+      return unpinning ? ids.filter((value) => value !== id) : [...ids, id];
+    });
+  };
 
   useEffect(() => {
-    if (activeProjectFilter !== null && !workspaces.some(({ id }) => id === activeProjectFilter)) {
+    if (
+      activeProjectFilter !== null &&
+      (!workspaces.some(({ id }) => id === activeProjectFilter) || !pinnedProjects.has(activeProjectFilter))
+    ) {
       setActiveProjectFilter(null);
     }
-  }, [activeProjectFilter, workspaces]);
+  }, [activeProjectFilter, pinnedProjects, workspaces]);
 
   const pinsQuery = useInfiniteQuery({
     queryKey: ["v2", "threads", "active", "pinned", executionFilter],
@@ -224,6 +234,32 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     for (const thread of threads) if (!map.has(thread.id)) map.set(thread.id, thread);
     return [...map.values()];
   }, [pinnedThreads, threads]);
+
+  const observedRunIDsRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    const seen = observedRunIDsRef.current;
+    const currentIDs = new Set<string>();
+    for (const thread of allKnownThreads) {
+      currentIDs.add(thread.id);
+      const runID = thread.active_run_id || thread.last_run_id || "";
+      const previousRunID = seen.get(thread.id);
+      if (previousRunID !== undefined && previousRunID !== runID) {
+        const execKey = v2QueryKeys.execution(thread.id);
+        const existing = queryClient.getQueryCache().find({ queryKey: execKey });
+        if (existing) {
+          if (existing.getObserversCount() > 0) {
+            void queryClient.invalidateQueries({ queryKey: execKey });
+          } else {
+            queryClient.removeQueries({ queryKey: execKey, exact: true });
+          }
+        }
+      }
+      seen.set(thread.id, runID);
+    }
+    for (const id of [...seen.keys()]) {
+      if (!currentIDs.has(id)) seen.delete(id);
+    }
+  }, [allKnownThreads, queryClient]);
 
   const projectCounts = useMemo(() => {
     void cacheVersion;
@@ -294,15 +330,22 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     const canMove = Boolean(onMoveThread && !movingThreadID && thread.project_assignment_version &&
       thread.status === "active" && ["idle", "completed", "failed", "cancelled"].includes(activity.executionState));
     const statusID = `v2-thread-state-${thread.id}`;
+    const activityID = `v2-thread-activity-${thread.id}`;
     const unread = unreadThreadIDs?.has(thread.id) === true;
     const workspaceID = threadProjectID(thread);
     const workspaceBadgeLabel = resolveWorkspaceLabel(workspaceID);
     const showWorkspaceBadge = !searchOpen && customPrefs.showWorkspaceBadge && (showPriorityView || Boolean(thread.pinned));
     const showActivitySubtitle = !searchOpen && customPrefs.showActivitySubtitle;
     const showSubline = showActivitySubtitle || showWorkspaceBadge;
+    const accessibleActivityText = showActivitySubtitle ? activity.accessibleDetail : undefined;
+    const describedBy = [
+      statusID,
+      accessibleActivityText ? activityID : "",
+      unread ? `unread-${thread.id}` : "",
+    ].filter(Boolean).join(" ");
 
     return <div className={`v2-thread-row-shell${selectedThreadID === thread.id ? " is-selected" : ""}`} key={thread.id}>
-      <button aria-current={selectedThreadID === thread.id ? "page" : undefined} aria-describedby={`${statusID}${unread ? ` unread-${thread.id}` : ""}`}
+      <button aria-current={selectedThreadID === thread.id ? "page" : undefined} aria-describedby={describedBy}
         className={`v2-thread-row${onMoveThread ? " has-project-control" : ""}${showSubline ? " has-subline" : ""}`}
         data-activity-kind={activity.kind}
         data-priority-bucket={activity.bucket}
@@ -327,7 +370,10 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           {showSubline && (
             <span aria-hidden="true" className="v2-thread-subline">
               {showActivitySubtitle && (
-                <span className={`v2-thread-activity-pill tone-${activity.tone}${activity.pulse ? " is-pulsing" : ""}`}>
+                <span
+                  className={`v2-thread-activity-pill tone-${activity.tone}${activity.pulse ? " is-pulsing" : ""}`}
+                  id={accessibleActivityText ? activityID : undefined}
+                >
                   {activity.label}{activity.detail ? ` · ${activity.detail}` : ""}
                 </span>
               )}

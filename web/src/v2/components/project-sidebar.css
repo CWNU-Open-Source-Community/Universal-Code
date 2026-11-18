@@ -43,19 +43,12 @@
 
 /* Smart Sidebar Grouping, Live Agent Status, Pinned Projects & Customization */
 .v2-sidebar {
-  --v2-status-amber: var(--prayu-warning, #d97706);
-  --v2-status-cyan: #0891b2;
-  --v2-status-indigo: #4f46e5;
-  --v2-status-blue: var(--prayu-focus, #2563eb);
-  --v2-status-danger: var(--v2-danger);
+  --v2-status-amber: var(--v2-ink);
+  --v2-status-cyan: var(--v2-ink);
+  --v2-status-indigo: var(--prayu-focus);
+  --v2-status-blue: var(--prayu-focus);
+  --v2-status-danger: var(--prayu-danger);
   --v2-status-neutral: var(--v2-muted);
-}
-
-:where([data-prayu-theme="dark"]) .v2-sidebar {
-  --v2-status-amber: var(--prayu-warning, #f59e0b);
-  --v2-status-cyan: #22d3ee;
-  --v2-status-indigo: #818cf8;
-  --v2-status-blue: var(--prayu-focus, #60a5fa);
 }
 
 /* Mode switcher bar */
@@ -848,6 +841,12 @@
 :where([data-prayu-theme="glass"]) .v2-sidebar-customize-popover {
   background: var(--dsh-glass-popover, var(--prayu-surface-solid));
   border-color: var(--dsh-glass-rim, var(--v2-border-strong));
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .v2-sidebar-customize-popover {
+    backdrop-filter: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

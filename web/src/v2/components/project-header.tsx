@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronRight, Copy, Folder, FolderOpen, MessageCircle, MoreHorizontal, Pin, Settings, SquarePen } from "lucide-react";
@@ -38,6 +38,20 @@ export function ProjectHeader({ workspace, label, expanded, onToggle, onNewChat,
   activitySummary?: { needsInput: number; running: number; unread: number };
 }) {
   const { t } = useLocale();
+  const summaryID = useId();
+  const activityParts: string[] = [];
+  if (activitySummary) {
+    if (activitySummary.needsInput > 0) {
+      activityParts.push(t(`${activitySummary.needsInput} 项需用户输入`, `${activitySummary.needsInput} needing input`));
+    }
+    if (activitySummary.running > 0) {
+      activityParts.push(t(`${activitySummary.running} 项运行中`, `${activitySummary.running} running`));
+    }
+    if (activitySummary.unread > 0) {
+      activityParts.push(t(`${activitySummary.unread} 项未读`, `${activitySummary.unread} unread`));
+    }
+  }
+  const activityDescription = activityParts.join(t("，", ", "));
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
   const row = useRef<HTMLElement>(null);
@@ -90,7 +104,7 @@ export function ProjectHeader({ workspace, label, expanded, onToggle, onNewChat,
   return <header className={`v2-project-row${open ? " is-open" : ""}${pinned ? " is-pinned" : ""}`} ref={row}
     onMouseEnter={() => { clearTimer(); timer.current = setTimeout(() => setOpen(true), 350); }}
     onMouseLeave={scheduleClose} onBlur={(event) => leaveFocus(event.relatedTarget)}>
-    <button className="v2-project-title" aria-expanded={expanded} onClick={onToggle} type="button" title={label}>
+    <button className="v2-project-title" aria-describedby={activityDescription ? summaryID : undefined} aria-expanded={expanded} onClick={onToggle} type="button" title={label}>
       <FolderOpen aria-hidden="true" className="v2-project-folder" size={17} />
       <ChevronRight aria-hidden="true" className={`v2-project-chevron${expanded ? " is-expanded" : ""}`} size={16} />
       <span>{label}</span>
@@ -105,6 +119,7 @@ export function ProjectHeader({ workspace, label, expanded, onToggle, onNewChat,
         </span>
       )}
     </button>
+    {activityDescription && <span className="v2-thread-state-description" id={summaryID}>{activityDescription}</span>}
     <div className="v2-project-row-actions">
       {onTogglePin && <button
         aria-label={pinned ? t(`取消置顶项目 ${label}`, `Unpin project ${label}`) : t(`置顶项目 ${label}`, `Pin project ${label}`)}
