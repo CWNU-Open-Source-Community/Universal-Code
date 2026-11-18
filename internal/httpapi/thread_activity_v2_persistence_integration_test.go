@@ -178,7 +178,7 @@ func TestThreadActivityV2PersistsTypedDetailsAndRecordedAgent(t *testing.T) {
 		RequestedBy: "run_supervisor", PolicyDecision: toolgateway.Decision{Allowed: true,
 			Approval: toolgateway.ApprovalAutomatic, Risk: "low", Reason: "integration test"},
 	}
-	agentCodeExecutor := application.NewAgentCodeToolExecutor(state, policy.NewDefaultChecker()).
+	agentCodeExecutor := application.NewAgentCodeToolExecutor(state, httpAlwaysReviewPolicy{base: policy.NewDefaultChecker()}).
 		WithExecutionPermissionCapabilities(capabilities)
 	proposedResult, err := agentCodeExecutor.ExecuteAgentCode(ctx, agentCodeScope,
 		toolgateway.WorkspaceChangeTool, mustActivityJSON(t, toolgateway.WorkspaceChangePayload{

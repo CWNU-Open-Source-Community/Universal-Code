@@ -50,7 +50,7 @@ func beforeFileBoundaryFixture(t *testing.T) (*store.SQLiteStore, domain.Run, st
 		toolResponse("create", "workspace_change", `{"version":"agent-code-tools.v1","action":"create","path":"test/example.mjs","expected_sha256":"missing","content":"export const answer = 42;\n"}`),
 		textResponse(rootActionResponse(domain.RootActionWait, "Ready for review", "", "review")),
 	}}
-	if _, err := toolBoundaryService(st, st, p).Execute(t.Context(), input); err != nil {
+	if _, err := toolBoundaryServiceWithPolicy(st, st, p, &fileOperationPolicy{review: true}).Execute(t.Context(), input); err != nil {
 		t.Fatal(err)
 	}
 	edit := approveBoundaryEdit(t, st, run)

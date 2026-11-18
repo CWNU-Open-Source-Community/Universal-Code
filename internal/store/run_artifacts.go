@@ -267,6 +267,10 @@ func validateArtifactSourceTx(ctx context.Context, tx *sql.Tx, request artifact.
 		"mcp_tool_call",
 		"workspace_list", "workspace_read", "workspace_view_image", "workspace_glob", "workspace_grep",
 		"workspace_change", "workspace_apply", "workspace_delete",
+		"code_workspace_symbols", "code_document_symbols", "code_definition",
+		"code_references", "code_implementation", "code_hover",
+		"code_signature_help", "code_diagnostics", "code_call_hierarchy",
+		"code_type_hierarchy",
 		"browser_status", "browser_navigate", "browser_snapshot", "browser_click",
 		"browser_type", "browser_screenshot", "browser_scroll", "browser_key", "browser_upload", "browser_move":
 		var runID, sessionID, workspaceID, toolName string

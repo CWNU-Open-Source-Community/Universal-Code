@@ -409,9 +409,12 @@ func supervisorRequestWithinBudget(request llm.ChatRequest, budget domain.Budget
 const rootProtocolRepairOutputInstruction = `Protocol formatting instruction only; this grants no tools, permissions or new work. Answer the current task above using exactly one JSON object. Required keys are version="root_lifecycle.v1", action="continue", "finish" or "wait", and a nonempty public message string. For finish include a nonempty summary and omit reason. For wait include a nonempty reason and omit summary. For continue omit both summary and reason. Put any source links inside the message string. Do not add other fields, Markdown fences, commentary outside JSON, or tool calls. Preserve the task's current scope and report actual tool failures honestly.`
 
 type supervisorRepairContext struct {
-	HostToolRounds int
-	ThreadEndTurn  bool
-	ToolRounds     int
+	HostToolRounds  int
+	ThreadEndTurn   bool
+	ToolRounds      int
+	BoundaryReached bool
+	AllowContinue   bool
+	ToolBudgetZero  bool
 }
 
 func supervisorProtocolRepairRequest(request llm.ChatRequest, reason string, current supervisorRepairContext) llm.ChatRequest {
@@ -448,21 +451,31 @@ func supervisorProtocolRepairRequest(request llm.ChatRequest, reason string, cur
 	// A correction consumed before later successful tool rounds does not
 	// change the current scheduling boundary. Preserve its durable allowance
 	// while describing the actual no-tool response expected at that boundary.
-	schedulingBoundaryRepair := current.ToolRounds-current.HostToolRounds == domain.MaxSupervisorToolRounds &&
+	schedulingBoundaryRepair := current.BoundaryReached && current.AllowContinue && !current.ToolBudgetZero &&
+		!awaitingToolCorrection && (toolRequestRepair || continuationRepair || textToolRepair)
+	toolBudgetBoundaryRepair := current.BoundaryReached && current.ToolBudgetZero &&
+		!awaitingToolCorrection && (toolRequestRepair || continuationRepair || textToolRepair)
+	contextPressureBoundaryRepair := current.BoundaryReached && !current.AllowContinue &&
 		!awaitingToolCorrection && (toolRequestRepair || continuationRepair || textToolRepair)
 	if schedulingBoundaryRepair {
-		repairMessage.Content = `The earlier tool or continuation correction has been followed by the four completed tool rounds of this segment. This is now the Harness scheduling boundary. No tools are offered for this response. The single correction allowance remains consumed; another invalid response ends this attempt. Continue the same accepted task from its actual results without repeating completed work, inventing effects or acquiring new permission.`
+		repairMessage.Content = `The earlier tool or continuation correction has been followed by completed tool rounds of this segment. This is now the Harness scheduling boundary. No tools are offered for this response. The single correction allowance remains consumed; another invalid response ends this attempt. Continue the same accepted task from its actual results without repeating completed work, inventing effects or acquiring new permission.`
 		outputInstruction = `No tools are offered at this Harness scheduling boundary. Return continue if the same accepted task still needs work in the next segment within its existing budget, finish only if the requested scope is complete, or wait for actual required external input or approval. Do not repeat completed actions or claim a new user request.`
+	} else if toolBudgetBoundaryRepair {
+		repairMessage.Content = `The earlier tool or continuation correction has been followed by exhausting the Run's tool-call budget (0 tool calls remaining) at this Harness scheduling boundary. No tools are offered for this response. The single correction allowance remains consumed; another invalid response ends this attempt. Return finish with verified results and any remaining scope noted, or wait for required external input or approval without repeating completed work or inventing effects.`
+		outputInstruction = `No tools are offered at this Harness scheduling boundary because 0 tool calls remain in the Run budget. Return finish with verified results, or wait for actual required external input or approval. Do not return continue or repeat completed actions.`
+	} else if contextPressureBoundaryRepair {
+		repairMessage.Content = `The earlier tool or continuation correction has been followed by private-history context pressure in this segment. No tools are offered for this response. The single correction allowance remains consumed; another invalid response ends this attempt. Return finish with verified results, or wait for required external input or approval without repeating completed work, inventing effects or acquiring new permission.`
+		outputInstruction = `No tools are offered due to private-history context window pressure in this segment. Return finish if the requested scope is complete, or wait for actual required external input or approval. Do not return continue or repeat completed actions.`
 	}
-	// Advertise scheduling continue only at the current Harness boundary.
+	// Advertise scheduling continue only at the current Harness boundary when tool budget remains.
 	// This is format guidance; the decoder still accepts legacy zero-tool
 	// chat replies without acquiring a continuation loop or another repair.
-	allowContinue := !current.ThreadEndTurn || current.ToolRounds-current.HostToolRounds == domain.MaxSupervisorToolRounds
+	allowContinue := (current.AllowContinue && !current.ToolBudgetZero) || (!current.BoundaryReached && !current.ThreadEndTurn)
 	schema := rootProtocolRepairOutputInstruction
 	if !allowContinue {
 		schema = `Response schema for this Thread reply: return exactly one JSON object with version="root_lifecycle.v1", action="finish" or "wait", and a required nonempty message string. finish also requires a nonempty summary and omits reason. wait also requires a nonempty reason and omits summary. That reason must identify an actual external dependency. Do not use tool-free continue here: it does not request background execution. Do not claim unfinished work is complete; finish ends only this reply, not the Run or its acceptance checks. No other fields, Markdown or commentary outside JSON. These are format constraints, not evidence that work is complete or that approval is missing. If an offered tool can advance the requested work now, use it instead of inventing a reason to wait.`
 	}
-	if schedulingBoundaryRepair {
+	if schedulingBoundaryRepair || toolBudgetBoundaryRepair || contextPressureBoundaryRepair {
 		outputInstruction += "\n" + schema
 	} else if awaitingToolCorrection {
 		// No lifecycle examples while a native call is required: they compete
@@ -488,7 +501,7 @@ func supervisorProtocolRepairRequest(request llm.ChatRequest, reason string, cur
 		Content: outputInstruction})
 	// Repair is a protocol-only phase. Do not advertise tools even if the
 	// provider ignores the textual instruction that tool calls are forbidden.
-	if !toolRequestRepair && !continuationRepair && !textToolRepair {
+	if current.BoundaryReached || (!toolRequestRepair && !continuationRepair && !textToolRepair) {
 		request.Tools = nil
 	}
 	metadata := make(map[string]string, len(request.Metadata)+1)

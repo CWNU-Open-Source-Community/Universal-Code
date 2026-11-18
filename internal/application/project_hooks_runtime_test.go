@@ -44,13 +44,6 @@ func TestProjectHookReadProposeApplyFormatAndFinishTest(t *testing.T) {
 		case 1:
 			name = "workspace_change"
 			payload = toolgateway.WorkspaceChangePayload{Version: toolgateway.AgentCodeRegistryVersion, Action: "replace", Path: "value.go", ExpectedSHA256: fileedit.HashText(before), Content: after}
-		case 2:
-			edits, err := f.st.ListFileEdits(t.Context(), fileedit.ListFilter{SessionID: f.turn.Run.SessionID})
-			if err != nil || len(edits) != 1 {
-				t.Fatalf("proposal missing: %+v %v", edits, err)
-			}
-			name = "workspace_apply"
-			payload = toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion, EditID: edits[0].ID, ExpectedAction: "replace", ExpectedOriginalSHA256: edits[0].OriginalHash, ExpectedProposedSHA256: edits[0].ProposedHash}
 		default:
 			content, err := os.ReadFile(filepath.Join(f.root, "value.go"))
 			if err != nil || !strings.Contains(string(content), "var Answer = 2") {
@@ -76,10 +69,10 @@ func TestProjectHookReadProposeApplyFormatAndFinishTest(t *testing.T) {
 		t.Fatalf("full hook chain failed: %+v %v", result, err)
 	}
 	rounds, err := f.st.ListSupervisorToolRounds(t.Context(), f.turn.Checkpoint)
-	if err != nil || len(rounds) < 6 || supervisorNativeToolRounds(rounds) != 3 || len(provider.requests) < 5 {
+	if err != nil || len(rounds) < 4 || supervisorNativeToolRounds(rounds) != 2 || len(provider.requests) < 3 {
 		t.Fatalf("rounds=%+v requests=%d err=%v", rounds, len(provider.requests), err)
 	}
-	if rounds[3].Calls[0].ProjectHook.Slot != "format" || rounds[4].Calls[0].ProjectHook.Slot != "test" || !projectHookCommandPassed(rounds[len(rounds)-1].Calls[0]) {
+	if rounds[2].Calls[0].ProjectHook.Slot != "format" || rounds[3].Calls[0].ProjectHook.Slot != "test" || !projectHookCommandPassed(rounds[len(rounds)-1].Calls[0]) {
 		t.Fatal("host ordering or verification failed")
 	}
 	for _, request := range provider.requests {
@@ -505,31 +498,21 @@ func TestProjectHookFailedTestRepairsAcrossNativeRoundBoundary(t *testing.T) {
 		case 1:
 			name = "workspace_change"
 			payload = toolgateway.WorkspaceChangePayload{Version: toolgateway.AgentCodeRegistryVersion, Action: "replace", Path: "value.go", ExpectedSHA256: fileedit.HashText(before), Content: after}
-		case 2, 6:
-			edits, err := f.st.ListFileEdits(t.Context(), fileedit.ListFilter{SessionID: f.turn.Run.SessionID})
-			if err != nil || len(edits) != map[int]int{2: 1, 6: 2}[index] {
-				t.Fatalf("proposal missing: %+v %v", edits, err)
-			}
-			name = "workspace_apply"
-			payload = toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion, EditID: edits[0].ID, ExpectedAction: "replace", ExpectedOriginalSHA256: edits[0].OriginalHash, ExpectedProposedSHA256: edits[0].ProposedHash}
-		case 4:
+		case 2:
+			return &llm.ChatResponse{Provider: provider.Name(), Model: "fixture", Text: `{"version":"root_lifecycle.v1","action":"finish","message":"verify","summary":"verify"}`}, nil
+		case 3:
 			content, err := os.ReadFile(filepath.Join(f.root, "value.go"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			name = "workspace_change"
 			payload = toolgateway.WorkspaceChangePayload{Version: toolgateway.AgentCodeRegistryVersion, Action: "replace", Path: "value.go", ExpectedSHA256: fileedit.HashText(string(content)), Content: "package hooksfixture\nvar Answer=  1\n"}
-		case 5:
-			if len(request.Tools) != 0 {
-				t.Fatal("native fourth round did not close tool dispatch")
-			}
-			return &llm.ChatResponse{Provider: provider.Name(), Model: "fixture", Text: `{"version":"root_lifecycle.v1","action":"continue","message":"Apply the prepared repair in the next turn."}`}, nil
 		default:
-			if index > 8 {
+			if index > 5 {
 				t.Fatal("unexpected model loop")
 			}
 			content, err := os.ReadFile(filepath.Join(f.root, "value.go"))
-			if err != nil || !strings.Contains(string(content), map[bool]string{true: "var Answer = 2", false: "var Answer = 1"}[index == 3]) {
+			if err != nil || !strings.Contains(string(content), "var Answer = 1") {
 				t.Fatalf("finish observed unformatted file: %q %v", content, err)
 			}
 			return &llm.ChatResponse{Provider: provider.Name(), Model: "fixture", Text: `{"version":"root_lifecycle.v1","action":"finish","message":"verified","summary":"verified"}`}, nil
@@ -549,20 +532,27 @@ func TestProjectHookFailedTestRepairsAcrossNativeRoundBoundary(t *testing.T) {
 	}
 
 	result, err := f.supervisor.stepWithLease(t.Context(), lease, "")
-	if err != nil || result.Status != LifecycleTurnCompleted || result.Action.Kind != domain.RootActionContinue {
-		t.Fatalf("failed verification boundary: %+v %v", result, err)
+	if err != nil || result.Status != LifecycleTurnCompleted || result.Action.Kind != domain.RootActionFinish {
+		t.Fatalf("repair failed: %+v %v", result, err)
 	}
 	rounds, err := f.st.ListSupervisorToolRounds(t.Context(), f.turn.Checkpoint)
-	if err != nil || supervisorNativeToolRounds(rounds) != 4 || len(rounds) != 7 || projectHookCommandPassed(rounds[5].Calls[0]) {
-		t.Fatalf("native cap/failing test lost: %+v %v", rounds, err)
+	if err != nil || supervisorNativeToolRounds(rounds) != 3 || len(rounds) < 7 || !projectHookCommandPassed(rounds[len(rounds)-1].Calls[0]) {
+		t.Fatalf("native repair/hook sequence invalid: %+v %v", rounds, err)
 	}
-	result, err = f.supervisor.stepWithLease(t.Context(), lease, "")
-	if err != nil || result.Status != LifecycleTurnCompleted || result.Action.Kind != domain.RootActionFinish {
-		t.Fatalf("repair continuation failed: %+v %v", result, err)
+	firstTestFailed := false
+	for _, r := range rounds {
+		for _, c := range r.Calls {
+			if c.ProjectHook != nil && c.ProjectHook.Slot == "test" && !projectHookCommandPassed(c) {
+				firstTestFailed = true
+			}
+		}
+	}
+	if !firstTestFailed {
+		t.Fatalf("expected failed test hook round before repair: %+v", rounds)
 	}
 	jobs, err := f.st.ListCommandRuntimeJobs(t.Context(), runner.CommandRuntimeListFilter{RunID: f.turn.Run.ID, Limit: 10})
-	if err != nil || len(jobs) != 4 || provider.calls != 9 {
-		t.Fatalf("repair did not format and retest once: jobs=%+v calls=%d err=%v", jobs, provider.calls, err)
+	if err != nil || len(jobs) != 4 || provider.calls != 6 {
+		t.Fatalf("repair did not format and retest once: jobs=%d calls=%d err=%v", len(jobs), provider.calls, err)
 	}
 }
 

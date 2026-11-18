@@ -43,7 +43,7 @@ func (*imageBoundaryProvider) DescribeVision(string) llm.VisionCapability {
 func TestPureImageInputSurvivesApprovalAndToolBoundary(t *testing.T) {
 	for _, approval := range []bool{true, false} {
 		t.Run(fmt.Sprintf("approval_%t", approval), func(t *testing.T) {
-			st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+			st, run, _, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 			pixels := threadImagePNG(t, 96)
 			image, err := st.SaveWorkspaceImage(t.Context(), "ws-tool-boundary", "pure-image-boundary-upload", "image/png", "input.png", pixels)
 			if err != nil {
@@ -53,7 +53,7 @@ func TestPureImageInputSurvivesApprovalAndToolBoundary(t *testing.T) {
 			input.Images = []domain.ImageReference{{ID: image.ID, SHA256: image.SHA256}}
 			p := &imageBoundaryProvider{}
 			p.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-				if !approval && index >= 6 {
+				if !approval && index >= domain.MaxSupervisorToolRounds+2 {
 					assertBoundaryDeliveredImage(t, request, pixels, image.SHA256, "")
 				} else {
 					assertRequestImage(t, request, pixels, image.SHA256, "")
@@ -68,15 +68,15 @@ func TestPureImageInputSurvivesApprovalAndToolBoundary(t *testing.T) {
 						return textResponse(rootActionResponse(domain.RootActionFinish, "Review decision recorded", "done", "")), nil
 					}
 				} else {
-					switch index {
-					case 1, 2, 3, 4:
-						return boundaryRead(fmt.Sprintf("pure-image-read-%d", index), index), nil
-					case 5:
+					switch {
+					case index <= domain.MaxSupervisorToolRounds:
+						return boundaryRead(fmt.Sprintf("pure-image-read-%d", index), 1), nil
+					case index == domain.MaxSupervisorToolRounds+1:
 						assertBoundaryPrompt(t, request)
 						return textResponse(rootActionResponse(domain.RootActionContinue, "Continue the bounded read", "", "")), nil
-					case 6:
-						return boundaryRead("pure-image-read-5", 5), nil
-					case 7:
+					case index == domain.MaxSupervisorToolRounds+2:
+						return boundaryRead("pure-image-read-next", 1), nil
+					case index == domain.MaxSupervisorToolRounds+3:
 						return textResponse(rootActionResponse(domain.RootActionFinish, "Read complete", "done", "")), nil
 					}
 				}
@@ -99,7 +99,7 @@ func TestPureImageInputSurvivesApprovalAndToolBoundary(t *testing.T) {
 				if resume.State != "completed" || !resume.ModelCalled || resume.ToolCalled || len(p.Requests()) != 3 {
 					t.Fatalf("pure-image review did not resume exactly once: %#v", resume)
 				}
-			} else if len(p.Requests()) != 7 {
+			} else if len(p.Requests()) != domain.MaxSupervisorToolRounds+3 {
 				t.Fatalf("boundary requests=%d", len(p.Requests()))
 			}
 			message, err := st.GetOperatorSteering(t.Context(), result.Submission.Message.ID)

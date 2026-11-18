@@ -50,7 +50,8 @@
     "openapi-typescript": "7.13.0",
     "typescript": "5.9.3",
     "vite": "8.3.8",
-    "vitest": "5.1.0"
+    "vitest": "5.1.0",
+    "picomatch": "file:./vendor/picomatch"
   },
   "overrides": {
     "@redocly/openapi-core": {
@@ -60,6 +61,7 @@
     "dompurify": "3.4.17",
     "nanoid": "3.3.18",
     "postcss": "8.5.25",
-    "undici": "8.12.4"
+    "undici": "8.12.4",
+    "picomatch": "$picomatch"
   }
 }

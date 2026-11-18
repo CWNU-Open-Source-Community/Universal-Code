@@ -230,7 +230,9 @@ func TestGitAdvancedServiceRequiresApprovalCheckpointAndExactHunk(t *testing.T) 
 	if !strings.Contains(staged, "TWO") || strings.Contains(staged, "NINETEEN") {
 		t.Fatalf("approved exact hunk was not preserved: %s", staged)
 	}
-	names, err := exec.Command("git", "-C", fixture.root, "diff", "--cached", "--name-only", "-z").Output()
+	diffCmd := exec.Command("git", "-C", fixture.root, "diff", "--cached", "--name-only", "-z")
+	hideSubprocessWindow(diffCmd)
+	names, err := diffCmd.Output()
 	if err != nil || string(names) != relative+"\x00" {
 		t.Fatalf("approval staged a different path: %q (%v)", names, err)
 	}

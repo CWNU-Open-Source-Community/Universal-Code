@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -182,3 +183,63 @@ func TestSupervisorBrowserMoveRequiresDurableAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSupervisorToolThroughputBoundsAndConstants(t *testing.T) {
+	if MaxSupervisorToolCallsPerRound != 8 {
+		t.Fatalf("MaxSupervisorToolCallsPerRound = %d, want 8", MaxSupervisorToolCallsPerRound)
+	}
+	if MaxSupervisorToolRounds != 24 {
+		t.Fatalf("MaxSupervisorToolRounds = %d, want 24", MaxSupervisorToolRounds)
+	}
+	if MaxSupervisorExecutionRounds != 217 {
+		t.Fatalf("MaxSupervisorExecutionRounds = %d, want 217", MaxSupervisorExecutionRounds)
+	}
+	if MaxSupervisorBoundaryContextCalls != 256 {
+		t.Fatalf("MaxSupervisorBoundaryContextCalls = %d, want 256", MaxSupervisorBoundaryContextCalls)
+	}
+
+	now := time.Now().UTC()
+	calls := make([]SupervisorToolCall, 0, MaxSupervisorToolCallsPerRound)
+	for pos := 1; pos <= MaxSupervisorToolCallsPerRound; pos++ {
+		call := SupervisorToolCall{
+			RunID: "run-throughput", Turn: 1, AttemptID: "attempt-1", Round: MaxSupervisorExecutionRounds,
+			Position: pos, ModelAttempt: 1, CallID: fmt.Sprintf("toolu_pos_%d", pos),
+			ToolName: "note_create", PayloadJSON: `{}`, Status: SupervisorToolPending, CreatedAt: now,
+		}
+		if err := call.Validate(); err != nil {
+			t.Fatalf("position %d at round %d rejected: %v", pos, MaxSupervisorExecutionRounds, err)
+		}
+		calls = append(calls, call)
+	}
+	round := SupervisorToolRound{
+		RunID: "run-throughput", Turn: 1, AttemptID: "attempt-1", Round: MaxSupervisorExecutionRounds,
+		ModelAttempt: 1, Calls: calls, CreatedAt: now,
+	}
+	if err := round.Validate(); err != nil {
+		t.Fatalf("8-call round at max execution round rejected: %v", err)
+	}
+
+	tooHighPos := calls[0]
+	tooHighPos.Position = MaxSupervisorToolCallsPerRound + 1
+	if err := tooHighPos.Validate(); err == nil {
+		t.Fatalf("position %d unexpectedly accepted", tooHighPos.Position)
+	}
+
+	tooManyCalls := append(append([]SupervisorToolCall(nil), calls...), SupervisorToolCall{
+		RunID: "run-throughput", Turn: 1, AttemptID: "attempt-1", Round: MaxSupervisorExecutionRounds,
+		Position: MaxSupervisorToolCallsPerRound + 1, ModelAttempt: 1, CallID: "toolu_pos_9",
+		ToolName: "note_create", PayloadJSON: `{}`, Status: SupervisorToolPending, CreatedAt: now,
+	})
+	tooLargeRound := round
+	tooLargeRound.Calls = tooManyCalls
+	if err := tooLargeRound.Validate(); err == nil {
+		t.Fatal("9-call round unexpectedly accepted")
+	}
+
+	tooHighRound := calls[0]
+	tooHighRound.Round = MaxSupervisorExecutionRounds + 1
+	if err := tooHighRound.Validate(); err == nil {
+		t.Fatalf("round %d unexpectedly accepted", tooHighRound.Round)
+	}
+}
+

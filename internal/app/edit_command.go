@@ -114,10 +114,16 @@ func (a *App) editReview(ctx context.Context, action application.FileEditReviewA
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "file edit %s %s\nrun: %s\naction: %s\nreplayed: %t\nfile_written: false\n",
-		result.Edit.ID, result.Edit.Status, fs.Arg(0), result.Action, result.Replayed)
-	return a.continueReviewedFileEdit(ctx, fs.Arg(0), result.Edit.ID,
+	continueErr := a.continueReviewedFileEdit(ctx, fs.Arg(0), result.Edit.ID,
 		cliExecutionPermissionCapabilities(*enablePermission, *enableFull), *confirmFull)
+	edit := result.Edit
+	if latest, lookupErr := a.store.GetFileEdit(ctx, result.Edit.ID); lookupErr == nil {
+		edit = latest
+	}
+	fileWritten := !result.Replayed && result.Action == application.FileEditApproveIntent && edit.Status == fileedit.StatusApplied
+	fmt.Fprintf(a.out, "file edit %s %s\nrun: %s\naction: %s\nreplayed: %t\nfile_written: %t\n",
+		edit.ID, edit.Status, fs.Arg(0), result.Action, result.Replayed, fileWritten)
+	return continueErr
 }
 
 func (a *App) editPropose(ctx context.Context, manager fileEditManager, args []string) error {

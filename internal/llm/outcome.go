@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/redact"
 )
 
@@ -393,8 +394,8 @@ func (a ModelAttempt) ValidateStarted() error {
 		return errors.New("model protocol repair number must be zero or one")
 	}
 	// Root physical execution sequence includes Go-owned hooks; the Store
-	// separately enforces four native model tool batches.
-	maxToolRounds := 21
+	// separately enforces MaxSupervisorToolRounds native model tool batches.
+	maxToolRounds := domain.MaxSupervisorExecutionRounds
 	if a.SpecialistAttemptID != "" {
 		maxToolRounds = 16
 	}

@@ -411,6 +411,7 @@ func TestWorkspaceCheckpointServiceForkCreatesIndependentWorktreeAndRun(t *testi
 		t.Fatalf("forked binary=%v err=%v", binary, err)
 	}
 	branchOutput := exec.Command("git", "-C", destination, "branch", "--show-current")
+	hideSubprocessWindow(branchOutput)
 	branch, err := branchOutput.Output()
 	if err != nil || strings.TrimSpace(string(branch)) != forkRequest.Branch {
 		t.Fatalf("fork branch=%q err=%v", branch, err)
@@ -571,8 +572,10 @@ func TestWorkspaceCheckpointServiceReconcilesForkBeforeRunRegistration(t *testin
 	if _, err = os.Stat(destination); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("interrupted fork worktree was not removed: %v", err)
 	}
-	if err = exec.Command("git", "-C", fixture.root, "show-ref", "--verify",
-		"refs/heads/"+branch).Run(); err == nil {
+	verifyCmd := exec.Command("git", "-C", fixture.root, "show-ref", "--verify",
+		"refs/heads/"+branch)
+	hideSubprocessWindow(verifyCmd)
+	if err = verifyCmd.Run(); err == nil {
 		t.Fatal("interrupted fork branch was not removed")
 	}
 	stored, found, err := fixture.state.GetWorkspaceCheckpointTransaction(t.Context(),
@@ -804,6 +807,7 @@ func newWorkspaceCheckpointApplicationRepository(t *testing.T) string {
 func runWorkspaceCheckpointApplicationGit(t *testing.T, root string, args ...string) {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	hideSubprocessWindow(command)
 	command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, output)
@@ -824,6 +828,7 @@ func copyWorkspaceCheckpointApplicationIndex(t *testing.T, sourceRoot, targetRoo
 	t.Helper()
 	indexPath := func(root string) string {
 		command := exec.Command("git", "-C", root, "rev-parse", "--git-path", "index")
+		hideSubprocessWindow(command)
 		command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
 		output, err := command.CombinedOutput()
 		if err != nil {

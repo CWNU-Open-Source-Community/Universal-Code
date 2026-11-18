@@ -161,7 +161,7 @@ func TestRootFullPermissionColdProcessStopsBeforeModelAndReconfirmationRecoversF
 func TestRootAskAndAutoRequestToolsRemainVisibleAcrossSchedulingBoundary(t *testing.T) {
 	for _, mode := range []string{"ask", "auto"} {
 		t.Run(mode, func(t *testing.T) {
-			st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+			st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 			if mode == "auto" {
 				if _, err := application.NewRunExecutionPermissionService(st, domain.ExecutionPermissionRuntimeCapabilities{}).Change(t.Context(), application.ChangeRunExecutionPermissionRequest{RunID: run.ID, Mode: mode, OperationKey: "auto-tool-exposure", RequestedBy: "test_operator", Reason: "Auto request tools"}); err != nil {
 					t.Fatal(err)
@@ -170,7 +170,7 @@ func TestRootAskAndAutoRequestToolsRemainVisibleAcrossSchedulingBoundary(t *test
 			provider := &boundaryJourneyProvider{}
 			provider.respond = func(_ context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
 				assertRootToolExposure(t, request, root)
-				if index == 5 {
+				if index == domain.MaxSupervisorToolRounds+1 {
 					assertBoundaryPrompt(t, request)
 					content := request.Messages[len(request.Messages)-1].Content
 					if !strings.Contains(content, "previously offered") || !strings.Contains(content, "workspace_read") || !strings.Contains(content, "revalidate") {
@@ -183,10 +183,10 @@ func TestRootAskAndAutoRequestToolsRemainVisibleAcrossSchedulingBoundary(t *test
 						t.Fatalf("%s request %d lost %s", mode, index, name)
 					}
 				}
-				if index <= 4 {
+				if index <= domain.MaxSupervisorToolRounds {
 					return boundaryRead(fmt.Sprintf("exposure-read-%d", index), 1), nil
 				}
-				if index == 6 {
+				if index == domain.MaxSupervisorToolRounds+2 {
 					return textResponse(rootActionResponse(domain.RootActionFinish, "Read the file", "done", "")), nil
 				}
 				return nil, fmt.Errorf("unexpected request %d", index)
@@ -194,7 +194,7 @@ func TestRootAskAndAutoRequestToolsRemainVisibleAcrossSchedulingBoundary(t *test
 			if _, err := toolBoundaryService(st, st, provider).Execute(t.Context(), input); err != nil {
 				t.Fatal(err)
 			}
-			if len(provider.Requests()) != 6 {
+			if len(provider.Requests()) != domain.MaxSupervisorToolRounds+2 {
 				t.Fatalf("expected tools to return in the next segment, got %d requests", len(provider.Requests()))
 			}
 		})

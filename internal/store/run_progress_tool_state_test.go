@@ -11,10 +11,12 @@ import (
 
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/toolgateway"
+	"cyberagent-workbench/internal/tools"
 	"cyberagent-workbench/internal/workspace"
 )
 
@@ -241,7 +243,7 @@ func TestRunProgressGuardPendingAndNotDispatchedDoNotInventProgress(t *testing.T
 }
 
 func TestRunProgressGuardRealWorkspaceApplyResetsCounters(t *testing.T) {
-	f := newProgressToolFixture(t)
+	f := newProgressToolFixtureWithChecker(t, progressApprovalRequiredChecker{policy.NewDefaultChecker()})
 	for turn := 1; turn < domain.RunProgressRepeatThreshold; turn++ {
 		completeProgressTurn(t, t.Context(), f.st, f.lease, "continue accepted task")
 	}
@@ -264,6 +266,12 @@ func TestRunProgressGuardRealWorkspaceApplyResetsCounters(t *testing.T) {
 			Proposed string `json:"proposed_sha256"`
 		}
 		if err := json.Unmarshal([]byte(proposed.JSON), &edit); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := application.NewFileEditReviewService(f.st).Review(t.Context(), application.ReviewFileEditRequest{
+			Version: application.FileEditReviewProtocolVersion, RunID: f.run.ID,
+			EditID: edit.EditID, Action: application.FileEditApproveIntent,
+		}); err != nil {
 			t.Fatal(err)
 		}
 		payload := progressJSON(t, toolgateway.WorkspaceApplyPayload{
@@ -321,7 +329,7 @@ func TestRunProgressGuardRealWorkspaceApplyResetsCounters(t *testing.T) {
 }
 
 func TestRunProgressGuardReplaceApplyAliasIsObserved(t *testing.T) {
-	f := newProgressToolFixture(t)
+	f := newProgressToolFixtureWithChecker(t, progressApprovalRequiredChecker{policy.NewDefaultChecker()})
 	f.writeFile(t, "replace.txt", "before\n")
 	for turn := 1; turn < domain.RunProgressRepeatThreshold; turn++ {
 		completeProgressTurn(t, t.Context(), f.st, f.lease, "continue accepted task")
@@ -340,6 +348,12 @@ func TestRunProgressGuardReplaceApplyAliasIsObserved(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(proposed.JSON), &result); err != nil || result.ApplyArguments.ExpectedAction != "replace" {
 		t.Fatalf("replace apply contract=%+v err=%v", result, err)
+	}
+	if _, err := application.NewFileEditReviewService(f.st).Review(t.Context(), application.ReviewFileEditRequest{
+		Version: application.FileEditReviewProtocolVersion, RunID: f.run.ID,
+		EditID: result.ApplyArguments.EditID, Action: application.FileEditApproveIntent,
+	}); err != nil {
+		t.Fatal(err)
 	}
 	payload := progressJSON(t, result.ApplyArguments)
 	cp, callID := f.beginCall(t, "workspace_apply", payload)
@@ -363,6 +377,119 @@ func TestRunProgressGuardReplaceApplyAliasIsObserved(t *testing.T) {
 	}
 }
 
+func TestRunProgressGuardOneStepWorkspaceChangeResetsCountersAndExcludesProposals(t *testing.T) {
+	f := newProgressToolFixture(t)
+	var prevFingerprint string
+	runOneStep := func(payload toolgateway.WorkspaceChangePayload, opKeyOverride string) (completedProgressTurn, domain.RunProgressGuard, string) {
+		t.Helper()
+		raw := progressJSON(t, payload)
+		cp, callID := f.beginCall(t, "workspace_change", raw)
+		if started, err := f.st.RecordSupervisorToolExecutionStarted(t.Context(), cp, callID); err != nil || !started {
+			t.Fatalf("one-step start=%t err=%v", started, err)
+		}
+		scope := f.scope
+		scope.InvocationID = callID
+		if opKeyOverride != "" {
+			scope.OperationKey = opKeyOverride
+		} else {
+			scope.OperationKey = runmutation.SupervisorToolOperationKey(f.run.ID, cp.NextTurn, "workspace_change", string(raw))
+		}
+		res, err := f.executor.ExecuteAgentCode(t.Context(), scope, toolgateway.WorkspaceChangeTool, raw)
+		if err != nil {
+			t.Fatalf("ExecuteAgentCode(%s) err=%v", payload.Action, err)
+		}
+		f.recordResult(t, cp, callID, domain.SupervisorToolCompleted, "", f.envelope(t, "workspace_change", res.JSON, res.Metadata))
+		completed := f.finishCall(t, cp, "continue accepted task")
+		return completed, f.guard(t), res.JSON
+	}
+
+	// Execute StagnantThreshold+2 turns of genuine 1-step workspace_change writes
+	// (create, replace, propose_patch, move, and more creates). None may trigger livelock_detected.
+	steps := []toolgateway.WorkspaceChangePayload{
+		{Version: toolgateway.AgentCodeRegistryVersion, Action: "create", Path: "step1.txt", ExpectedSHA256: "missing", Content: "v1\n"},
+		{Version: toolgateway.AgentCodeRegistryVersion, Action: "replace", Path: "step1.txt", ExpectedSHA256: fileedit.HashText("v1\n"), Content: "v2\n"},
+		{Version: toolgateway.AgentCodeRegistryVersion, Action: "propose_patch", Path: "step1.txt", ExpectedSHA256: fileedit.HashText("v2\n"),
+			Replacements: []toolgateway.WorkspaceReplacement{{OldText: "v2", NewText: "v3", ExpectedOccurrences: 1}}},
+		{Version: toolgateway.AgentCodeRegistryVersion, Action: "move", Path: "step1.txt", ExpectedSHA256: fileedit.HashText("v3\n"),
+			DestinationPath: "step1-moved.txt", DestinationExpectedSHA256: "missing"},
+		{Version: toolgateway.AgentCodeRegistryVersion, Action: "create", Path: "step5.txt", ExpectedSHA256: "missing", Content: "five\n"},
+		{Version: toolgateway.AgentCodeRegistryVersion, Action: "create", Path: "step6.txt", ExpectedSHA256: "missing", Content: "six\n"},
+		{Version: toolgateway.AgentCodeRegistryVersion, Action: "create", Path: "step7.txt", ExpectedSHA256: "missing", Content: "seven\n"},
+	}
+	if len(steps) <= domain.RunProgressStagnantThreshold {
+		t.Fatalf("expected > %d steps to cross stagnant threshold", domain.RunProgressStagnantThreshold)
+	}
+	var lastOpKey string
+	var lastPayload toolgateway.WorkspaceChangePayload
+	for i, step := range steps {
+		completed, guard, out := runOneStep(step, "")
+		if !strings.Contains(out, `"status":"applied"`) || !strings.Contains(out, `"file_written":true`) {
+			t.Fatalf("step %d (%s) was not 1-step applied: %s", i, step.Action, out)
+		}
+		if completed.run.Status != domain.RunRunning || guard.Status != domain.RunProgressObserving ||
+			guard.RepeatedActionCount != 1 || guard.StagnantTurnCount != 1 || guard.StateFingerprint == prevFingerprint {
+			t.Fatalf("step %d (%s) failed to advance progress: run=%s guard=%+v prevFP=%s", i, step.Action, completed.run.Status, guard, prevFingerprint)
+		}
+		prevFingerprint = guard.StateFingerprint
+		lastPayload = step
+		lastOpKey = runmutation.SupervisorToolOperationKey(f.run.ID, completed.checkpoint.NextTurn, "workspace_change", string(progressJSON(t, step)))
+	}
+
+	// Idempotent replay of the last applied workspace_change (same operation key -> file_written:false, replayed:true)
+	// must NOT advance StateFingerprint.
+	_, replayGuard, replayOut := runOneStep(lastPayload, lastOpKey)
+	if !strings.Contains(replayOut, `"file_written":false`) || !strings.Contains(replayOut, `"replayed":true`) {
+		t.Fatalf("expected idempotent replay, got %s", replayOut)
+	}
+	if replayGuard.StateFingerprint != prevFingerprint || replayGuard.StagnantTurnCount != 2 {
+		t.Fatalf("replayed workspace_change invented progress: prevFP=%s guard=%+v", prevFingerprint, replayGuard)
+	}
+
+	// Proposal-only workspace_change calls (status="proposed", no file_written) must NOT count as progress
+	// and must still pause at RunProgressRepeatThreshold.
+	fProp := newProgressToolFixtureWithChecker(t, progressApprovalRequiredChecker{policy.NewDefaultChecker()})
+	completeProgressTurn(t, t.Context(), fProp.st, fProp.lease, "continue accepted task")
+	propBaselineFP := fProp.guard(t).StateFingerprint
+	for count := 2; count <= domain.RunProgressRepeatThreshold; count++ {
+		raw := progressJSON(t, toolgateway.WorkspaceChangePayload{
+			Version: toolgateway.AgentCodeRegistryVersion, Action: "create",
+			Path: fmt.Sprintf("proposal-only-%d.txt", count), ExpectedSHA256: "missing", Content: "pending\n",
+		})
+		cp, callID := fProp.beginCall(t, "workspace_change", raw)
+		if started, err := fProp.st.RecordSupervisorToolExecutionStarted(t.Context(), cp, callID); err != nil || !started {
+			t.Fatalf("proposal start=%t err=%v", started, err)
+		}
+		scope := fProp.scope
+		scope.InvocationID = callID
+		scope.OperationKey = runmutation.SupervisorToolOperationKey(fProp.run.ID, cp.NextTurn, "workspace_change", string(raw))
+		res, err := fProp.executor.ExecuteAgentCode(t.Context(), scope, toolgateway.WorkspaceChangeTool, raw)
+		if err != nil || !strings.Contains(res.JSON, `"status":"proposed"`) || strings.Contains(res.JSON, `"file_written":true`) {
+			t.Fatalf("expected proposal-only result, got %s err=%v", res.JSON, err)
+		}
+		fProp.recordResult(t, cp, callID, domain.SupervisorToolCompleted, "", fProp.envelope(t, "workspace_change", res.JSON, res.Metadata))
+		completed := fProp.finishCall(t, cp, "continue accepted task")
+		guard := fProp.guard(t)
+		if guard.StateFingerprint != propBaselineFP || guard.RepeatedActionCount != count {
+			t.Fatalf("proposal-only workspace_change invented progress: count=%d baseline=%s guard=%+v", count, propBaselineFP, guard)
+		}
+		if count == domain.RunProgressRepeatThreshold && completed.run.Status != domain.RunPaused {
+			t.Fatalf("proposal-only loop did not pause at repeat threshold: run=%s guard=%+v", completed.run.Status, guard)
+		}
+	}
+}
+
+type progressApprovalRequiredChecker struct {
+	policy.Checker
+}
+
+func (c progressApprovalRequiredChecker) CheckToolCall(call tools.Call) policy.Decision {
+	decision := c.Checker.CheckToolCall(call)
+	if decision.Allowed && (call.Name == "create_file" || call.Name == "replace_file" || call.Name == "move_file") {
+		decision.NeedsApproval = true
+	}
+	return decision
+}
+
 type progressToolFixture struct {
 	st        *SQLiteStore
 	run       domain.Run
@@ -375,6 +502,10 @@ type progressToolFixture struct {
 }
 
 func newProgressToolFixture(t *testing.T) *progressToolFixture {
+	return newProgressToolFixtureWithChecker(t, policy.NewDefaultChecker())
+}
+
+func newProgressToolFixtureWithChecker(t *testing.T, checker policy.Checker) *progressToolFixture {
 	t.Helper()
 	f := &progressToolFixture{root: t.TempDir(), path: filepath.Join(t.TempDir(), "progress-tools.db")}
 	f.st = openCurrentTestDatabase(t, f.path)
@@ -450,7 +581,7 @@ func newProgressToolFixture(t *testing.T) *progressToolFixture {
 		ModeRevision: mode.Revision, PermissionRevision: selected.Permission.Revision,
 		CapabilityGeneration: authority.CapabilityGeneration, LeaseID: f.lease.LeaseID, LeaseGeneration: f.lease.Generation,
 		RequestedBy: "run_supervisor", PolicyDecision: toolgateway.Decision{Allowed: true, Approval: toolgateway.ApprovalAutomatic, Risk: "low", Reason: "test allowed"}}
-	f.executor = application.NewAgentCodeToolExecutor(f.st, policy.NewDefaultChecker()).WithExecutionPermissionCapabilities(capabilities)
+	f.executor = application.NewAgentCodeToolExecutor(f.st, checker).WithExecutionPermissionCapabilities(capabilities)
 	return f
 }
 

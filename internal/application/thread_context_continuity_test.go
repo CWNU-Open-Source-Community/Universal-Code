@@ -217,7 +217,7 @@ func TestThreadContextContinuityPreservesOriginalIntentAndEvidenceAfterCompactio
 }
 
 func TestThreadContextContinuityCompactsWindowPressureWithoutSilentHistoryLoss(t *testing.T) {
-	for _, windowTokens := range []int{8192, 10000} {
+	for _, windowTokens := range []int{8192, 10240} {
 		t.Run(fmt.Sprintf("window_%d", windowTokens), func(t *testing.T) {
 			verifyThreadContextWindowPressure(t, windowTokens)
 		})
@@ -267,7 +267,7 @@ func verifyThreadContextWindowPressure(t *testing.T, windowTokens int) {
 	if err != nil {
 		t.Fatal("provider request lacked actual input estimate")
 	}
-	// Both fixtures exert actual window pressure. 10000 also fits the complete
+	// Both fixtures exert actual window pressure. 10240 also fits the complete
 	// committed summary; 8192 must reject once that summary becomes mandatory.
 	inputLimit := windowTokens - 512 - 128
 	if historyEstimate <= inputLimit {

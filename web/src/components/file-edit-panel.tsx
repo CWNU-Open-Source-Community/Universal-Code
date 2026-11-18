@@ -373,6 +373,7 @@ function FileReviewDrawer({ applyEnabled, applying, client, diff, edit, onApply,
       <time dateTime={edit.updated_at}>{formatDate(edit.updated_at)}</time>
     </div>
     <UnifiedDiffView diff={diff} />
+    {edit.reason && <p role={edit.status === "failed" ? "alert" : "status"}>{edit.reason}</p>}
     {inverse && <p role={edit.status === "failed" ? "alert" : "status"}>{t(...inverseGuidance[edit.status])}</p>}
     {edit.status === "applied" && <p>{edit.operation === "move" || edit.secrets_redacted
       ? t("此记录涉及移动或脱敏内容，暂不支持生成单文件撤销提案。", "Revert proposals are unavailable for moves or redacted content.")
@@ -389,7 +390,7 @@ function FileReviewDrawer({ applyEnabled, applying, client, diff, edit, onApply,
     <footer>
       <span>{!currentTarget ? t("保留原目录的历史记录", "Historical record in its original directory") : onRequestChange ? edit.apply_enabled ? t("可应用到文件", "Ready to apply")
         : edit.status === "applied" ? t("写入已记录；后续检查须使用同一执行目录", "Write recorded; subsequent checks must use the same execution directory")
-          : edit.status === "proposed" ? t("批准后可应用", "Approve before applying") : t("尚不能应用", "Not ready to apply")
+          : edit.status === "proposed" ? t("批准并直接应用", "Approve to apply") : t("尚不能应用", "Not ready to apply")
         : <>{t("应用权限", "Apply authority")}: {edit.apply_enabled ? t("就绪", "ready") : t("禁用", "disabled")}</>}</span>
       <div>
         {edit.status === "applied" && <button className="compact-command" disabled={!client.hasFileEditReview || reverting ||
@@ -416,13 +417,13 @@ function FileReviewDrawer({ applyEnabled, applying, client, diff, edit, onApply,
             {onRequestChange && t("应用修改", "Apply changes")}
           </button>}
         {currentTarget && client.hasFileEditReview && edit.allowed_actions.includes("approve_intent") &&
-          <button aria-label={t(`批准编辑意图 ${edit.path}`, `Approve intent ${edit.path}`)} className="icon-button"
+          <button aria-label={t(`批准并应用 ${edit.path}`, `Approve and apply ${edit.path}`)} className="icon-button"
             disabled={reviewing} onClick={() => onReview("approve_intent")}
-            title={t("批准意图但暂不写入文件", "Approve intent without writing the file")} type="button">
+            title={t("批准并应用文件编辑", "Approve and apply file edit")} type="button">
             {reviewing && reviewAction === "approve_intent"
               ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
               : <Check aria-hidden="true" size={15} />}
-            {onRequestChange && t("批准编辑意图", "Approve intent")}
+            {onRequestChange && t("批准并应用", "Approve & apply")}
           </button>}
         {currentTarget && client.hasFileEditReview && edit.allowed_actions.includes("deny") &&
           <button aria-label={t(`拒绝 ${edit.path}`, `Deny ${edit.path}`)} className="icon-button"

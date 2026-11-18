@@ -55,7 +55,8 @@ func TestFileEffectReceiptSurvivesBoundaryAndSegmentBudget(t *testing.T) {
 func TestProtocolRepairMatchesInteractiveToolBoundary(t *testing.T) {
 	for _, rounds := range []int{0, 2, domain.MaxSupervisorToolRounds} {
 		request := llm.ChatRequest{Tools: []llm.ToolSpec{{Name: "workspace_change"}}, Messages: []llm.Message{{Role: "system", Content: "policy"}}}
-		repaired := supervisorProtocolRepairRequest(request, "missing required message", supervisorRepairContext{ThreadEndTurn: true, ToolRounds: rounds})
+		atBoundary := rounds == domain.MaxSupervisorToolRounds
+		repaired := supervisorProtocolRepairRequest(request, "missing required message", supervisorRepairContext{ThreadEndTurn: true, ToolRounds: rounds, BoundaryReached: atBoundary, AllowContinue: atBoundary})
 		last := repaired.Messages[len(repaired.Messages)-1].Content
 		if len(repaired.Tools) != 0 {
 			t.Fatal("format repair gained tools")

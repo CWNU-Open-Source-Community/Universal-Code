@@ -10,16 +10,17 @@ import (
 )
 
 const (
-	MaxSupervisorToolRounds = 4
-	// Reserve 4 native batches + 16 possible per-call formats + 1 finish test.
+	MaxSupervisorToolRounds = 24
+	// Reserve 24 native batches + 192 possible per-call formats + 1 finish test.
 	// Repairs share this fixed execution sequence; native batches and Run
 	// budgets remain unchanged. Exhaustion stops instead of adding capacity.
-	MaxSupervisorExecutionRounds    = MaxSupervisorToolRounds*(MaxSupervisorToolCallsPerRound+1) + 1
-	MaxSupervisorToolCallsPerRound  = 4
-	MaxSupervisorToolPayloadBytes   = 96 * 1024
-	MaxSupervisorToolResultBytes    = 384 * 1024
-	MaxSupervisorToolAuthorityBytes = 4 * 1024
-	MaxSupervisorToolIdentityRunes  = 256
+	MaxSupervisorExecutionRounds      = MaxSupervisorToolRounds*(MaxSupervisorToolCallsPerRound+1) + 1
+	MaxSupervisorToolCallsPerRound    = 8
+	MaxSupervisorBoundaryContextCalls = 256
+	MaxSupervisorToolPayloadBytes     = 96 * 1024
+	MaxSupervisorToolResultBytes      = 384 * 1024
+	MaxSupervisorToolAuthorityBytes   = 4 * 1024
+	MaxSupervisorToolIdentityRunes    = 256
 )
 
 type SupervisorToolCallStatus string

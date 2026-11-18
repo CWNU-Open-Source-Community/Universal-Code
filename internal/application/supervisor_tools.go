@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -839,6 +840,16 @@ func supervisorToolOperationKey(runID string, turn int, name toolgateway.ToolNam
 	return runmutation.SupervisorToolOperationKey(runID, turn, string(name), string(payload))
 }
 
+type preparedSupervisorSubBatchItem struct {
+	call            domain.SupervisorToolCall
+	agentBrowser    bool
+	superseded      bool
+	immediateResult *domain.SupervisorToolResult
+	dispatchable    bool
+	result          domain.SupervisorToolResult
+	err             error
+}
+
 func (s *AgentRunner) resumeSupervisorToolsRaw(ctx context.Context, turn domain.SupervisorTurn,
 	rounds []domain.SupervisorToolRound, standardCode ...*standardCodeSupervisorTurn,
 ) ([]domain.SupervisorToolRound, bool, error) {
@@ -847,147 +858,32 @@ func (s *AgentRunner) resumeSupervisorToolsRaw(ctx context.Context, turn domain.
 		completion = standardCode[0]
 	}
 	for _, round := range rounds {
-		for _, call := range round.Calls {
-			if call.Status != domain.SupervisorToolPending {
+		for _, subBatch := range partitionSupervisorToolSubBatches(round.Calls) {
+			slice := round.Calls[subBatch.start:subBatch.end]
+			if !subBatch.readOnly && len(slice) == 1 && slice[0].Status != domain.SupervisorToolPending {
 				if completion != nil {
-					if err := completion.ObserveCall(ctx, call); err != nil {
+					if err := completion.ObserveCall(ctx, slice[0]); err != nil {
 						return rounds, false, apperror.Normalize(err)
 					}
 				}
 				continue
 			}
-			disabledHook, hookErr := s.checkPendingProjectHook(ctx, call)
-			if hookErr != nil {
-				return rounds, false, hookErr
-			}
-			if disabledHook {
-				denied := commandPreflightResult(call, "policy_denied", "Project automatic actions were disabled; this hook was not dispatched.", domain.SupervisorToolDenied)
-				stored, _, err := s.store.RecordSupervisorToolResult(ctx, turn.Checkpoint, denied)
-				if err != nil {
-					return rounds, false, apperror.Normalize(err)
-				}
-				if completion != nil {
-					if err := completion.ObserveCall(ctx, stored); err != nil {
-						return rounds, false, apperror.Normalize(err)
-					}
-				}
-				continue
-			}
-			if fence, ok := s.store.(interface {
-				SupersedeSupervisorToolIfSteeringChanged(context.Context, domain.SupervisorCheckpoint, string) (bool, error)
-			}); ok {
-				superseded, err := fence.SupersedeSupervisorToolIfSteeringChanged(ctx, turn.Checkpoint, call.CallID)
-				if err != nil {
-					return rounds, false, apperror.Normalize(err)
-				}
-				if superseded {
-					continue
-				}
-			}
-			decision := standardCodeCallDecision{Allowed: true}
-			var err error
-			if completion != nil {
-				decision, err = completion.Authorize(ctx, call)
-				if err != nil {
-					return rounds, false, apperror.Normalize(err)
-				}
-			}
-			agentBrowserCall := toolgateway.IsBrowserActionTool(toolgateway.ToolName(call.ToolName)) && toolgateway.IsAgentBrowserPayload(json.RawMessage(call.PayloadJSON))
-			preflightStopped := false
-			if agentBrowserCall && decision.Allowed {
-				waiting, denial, preflightErr := s.preflightAgentBrowserApproval(ctx, call)
-				if preflightErr != nil {
-					return rounds, false, preflightErr
-				}
-				if waiting {
-					return rounds, true, nil
-				}
-				if denial != nil {
-					decision.Allowed = false
-					decision.Result = denial
-					preflightStopped = true
-				}
-			}
-			if toolgateway.ToolName(call.ToolName) == toolgateway.MCPToolCallTool && decision.Allowed {
-				waiting, denial, preflightErr := s.preflightMCPApproval(ctx, call)
-				if preflightErr != nil {
-					return rounds, false, preflightErr
-				}
-				if waiting {
-					return rounds, true, nil
-				}
-				if denial != nil {
-					decision.Allowed, decision.Result, preflightStopped = false, denial, true
-				}
-			}
-			if toolgateway.IsCommandExecutionTool(toolgateway.ToolName(call.ToolName)) && decision.Allowed {
-				waiting, denial, preflightErr := s.preflightCommandApproval(ctx, call)
-				if preflightErr != nil {
-					return rounds, false, preflightErr
-				}
-				if waiting {
-					return rounds, true, nil
-				}
-				if denial != nil {
-					decision.Allowed, decision.Result, preflightStopped = false, denial, true
-				}
-			}
-			fresh := true
-			if !preflightStopped {
-				var startedErr error
-				if fence, ok := s.store.(interface {
-					RecordSupervisorToolExecutionStartedWithSteering(context.Context, domain.SupervisorCheckpoint, string) (bool, bool, error)
-				}); ok {
-					var superseded bool
-					fresh, superseded, startedErr = fence.RecordSupervisorToolExecutionStartedWithSteering(ctx, turn.Checkpoint, call.CallID)
-					if superseded {
-						continue
-					}
-				} else {
-					fresh, startedErr = s.store.RecordSupervisorToolExecutionStarted(ctx, turn.Checkpoint, call.CallID)
-				}
-				if startedErr != nil {
-					return rounds, false, apperror.Normalize(startedErr)
-				}
-			}
-			var result domain.SupervisorToolResult
-			if agentBrowserCall && !fresh {
-				result = agentBrowserStoppedResult(call, "outcome_unknown", "A prior browser dispatch started without a completed receipt. Do not automatically repeat the action.", domain.SupervisorToolFailed)
-			} else if toolgateway.ToolName(call.ToolName) == toolgateway.MCPToolCallTool && !fresh {
-				result = mcpStoppedResult(call, "outcome_unknown", "A prior MCP dispatch started without a completed receipt. Inspect existing call evidence; do not automatically repeat the action.", nil)
-			} else if commandCallOutcomeUnknown(call) && !fresh {
-				result = commandPreflightResult(call, "outcome_unknown", "A prior command dispatch started without a completed receipt. Inspect the existing Run-owned jobs; do not repeat the command or stdin action.", domain.SupervisorToolFailed)
-			} else if decision.Allowed {
-				result, err = s.invokeSupervisorTool(ctx, turn, call)
-				if err != nil {
-					if errors.Is(err, errSupervisorWaitingApproval) {
-						return rounds, true, nil
-					}
-					return rounds, false, err
-				}
-			} else if decision.Result != nil {
-				result = *decision.Result
-			} else {
-				return rounds, false, apperror.New(apperror.CodeFailedPrecondition,
-					"Standard Code Supervisor denial omitted its durable result")
-			}
-			if agentBrowserCall && result.Status == domain.SupervisorToolCompleted {
-				a, checkErr := toolgateway.DecodeAgentBrowserAuthority(json.RawMessage(call.AuthorityJSON))
-				if checkErr == nil {
-					checkErr = s.agentBrowser.check(ctx, a)
-				}
-				if checkErr != nil {
-					result = agentBrowserStoppedResult(call, "authority_changed", "Browser authority changed before persistence; no success is reported.", domain.SupervisorToolFailed)
-				}
-			}
-			stored, _, err := s.store.RecordSupervisorToolResult(ctx, turn.Checkpoint, result)
+			items, waiting, err := s.prepareSupervisorSubBatch(ctx, turn, slice, completion)
 			if err != nil {
-				return rounds, false, apperror.Normalize(err)
+				return rounds, false, err
 			}
-			if completion != nil {
-				if err := completion.ObserveCall(ctx, stored); err != nil {
-					return rounds, false, apperror.Normalize(err)
-				}
+			if waiting {
+				return rounds, true, nil
+			}
+			if err := s.dispatchSupervisorSubBatch(ctx, turn, subBatch.readOnly, items); err != nil {
+				return rounds, false, err
+			}
+			waiting, err = s.commitSupervisorSubBatch(ctx, turn, items, completion)
+			if err != nil {
+				return rounds, false, err
+			}
+			if waiting {
+				return rounds, true, nil
 			}
 		}
 	}
@@ -1003,6 +899,257 @@ func (s *AgentRunner) resumeSupervisorToolsRaw(ctx context.Context, turn domain.
 		}
 	}
 	return stored, false, nil
+}
+
+func (s *AgentRunner) prepareSupervisorSubBatch(ctx context.Context, turn domain.SupervisorTurn,
+	calls []domain.SupervisorToolCall, completion *standardCodeSupervisorTurn,
+) ([]preparedSupervisorSubBatchItem, bool, error) {
+	items := make([]preparedSupervisorSubBatchItem, len(calls))
+	for i, call := range calls {
+		items[i].call = call
+		disabledHook, hookErr := s.checkPendingProjectHook(ctx, call)
+		if hookErr != nil {
+			return nil, false, hookErr
+		}
+		if disabledHook {
+			denied := commandPreflightResult(call, "policy_denied", "Project automatic actions were disabled; this hook was not dispatched.", domain.SupervisorToolDenied)
+			items[i].immediateResult = &denied
+			continue
+		}
+		if fence, ok := s.store.(interface {
+			SupersedeSupervisorToolIfSteeringChanged(context.Context, domain.SupervisorCheckpoint, string) (bool, error)
+		}); ok {
+			superseded, err := fence.SupersedeSupervisorToolIfSteeringChanged(ctx, turn.Checkpoint, call.CallID)
+			if err != nil {
+				return nil, false, apperror.Normalize(err)
+			}
+			if superseded {
+				items[i].superseded = true
+				continue
+			}
+		}
+		decision := standardCodeCallDecision{Allowed: true}
+		var err error
+		if completion != nil {
+			decision, err = completion.Authorize(ctx, call)
+			if err != nil {
+				return nil, false, apperror.Normalize(err)
+			}
+		}
+		agentBrowserCall := toolgateway.IsBrowserActionTool(toolgateway.ToolName(call.ToolName)) && toolgateway.IsAgentBrowserPayload(json.RawMessage(call.PayloadJSON))
+		items[i].agentBrowser = agentBrowserCall
+		preflightStopped := false
+		if agentBrowserCall && decision.Allowed {
+			waiting, denial, preflightErr := s.preflightAgentBrowserApproval(ctx, call)
+			if preflightErr != nil {
+				return nil, false, preflightErr
+			}
+			if waiting {
+				return nil, true, nil
+			}
+			if denial != nil {
+				decision.Allowed = false
+				decision.Result = denial
+				preflightStopped = true
+			}
+		}
+		if toolgateway.ToolName(call.ToolName) == toolgateway.MCPToolCallTool && decision.Allowed {
+			waiting, denial, preflightErr := s.preflightMCPApproval(ctx, call)
+			if preflightErr != nil {
+				return nil, false, preflightErr
+			}
+			if waiting {
+				return nil, true, nil
+			}
+			if denial != nil {
+				decision.Allowed, decision.Result, preflightStopped = false, denial, true
+			}
+		}
+		if toolgateway.IsCommandExecutionTool(toolgateway.ToolName(call.ToolName)) && decision.Allowed {
+			waiting, denial, preflightErr := s.preflightCommandApproval(ctx, call)
+			if preflightErr != nil {
+				return nil, false, preflightErr
+			}
+			if waiting {
+				return nil, true, nil
+			}
+			if denial != nil {
+				decision.Allowed, decision.Result, preflightStopped = false, denial, true
+			}
+		}
+		fresh := true
+		if !preflightStopped {
+			var startedErr error
+			if fence, ok := s.store.(interface {
+				RecordSupervisorToolExecutionStartedWithSteering(context.Context, domain.SupervisorCheckpoint, string) (bool, bool, error)
+			}); ok {
+				var superseded bool
+				fresh, superseded, startedErr = fence.RecordSupervisorToolExecutionStartedWithSteering(ctx, turn.Checkpoint, call.CallID)
+				if superseded {
+					items[i].superseded = true
+					continue
+				}
+			} else {
+				fresh, startedErr = s.store.RecordSupervisorToolExecutionStarted(ctx, turn.Checkpoint, call.CallID)
+			}
+			if startedErr != nil {
+				return nil, false, apperror.Normalize(startedErr)
+			}
+		}
+		if agentBrowserCall && !fresh {
+			res := agentBrowserStoppedResult(call, "outcome_unknown", "A prior browser dispatch started without a completed receipt. Do not automatically repeat the action.", domain.SupervisorToolFailed)
+			items[i].immediateResult = &res
+		} else if toolgateway.ToolName(call.ToolName) == toolgateway.MCPToolCallTool && !fresh {
+			res := mcpStoppedResult(call, "outcome_unknown", "A prior MCP dispatch started without a completed receipt. Inspect existing call evidence; do not automatically repeat the action.", nil)
+			items[i].immediateResult = &res
+		} else if commandCallOutcomeUnknown(call) && !fresh {
+			res := commandPreflightResult(call, "outcome_unknown", "A prior command dispatch started without a completed receipt. Inspect the existing Run-owned jobs; do not repeat the command or stdin action.", domain.SupervisorToolFailed)
+			items[i].immediateResult = &res
+		} else if decision.Allowed {
+			items[i].dispatchable = true
+		} else if decision.Result != nil {
+			res := *decision.Result
+			items[i].immediateResult = &res
+		} else {
+			return nil, false, apperror.New(apperror.CodeFailedPrecondition,
+				"Standard Code Supervisor denial omitted its durable result")
+		}
+	}
+	return items, false, nil
+}
+
+func (s *AgentRunner) dispatchSupervisorSubBatch(ctx context.Context, turn domain.SupervisorTurn,
+	readOnly bool, items []preparedSupervisorSubBatchItem,
+) error {
+	dispatchIndices := make([]int, 0, len(items))
+	for i := range items {
+		if items[i].dispatchable {
+			dispatchIndices = append(dispatchIndices, i)
+		}
+	}
+	if len(dispatchIndices) == 0 {
+		return nil
+	}
+	if !readOnly || len(dispatchIndices) == 1 {
+		for _, idx := range dispatchIndices {
+			res, err := s.invokeSupervisorTool(ctx, turn, items[idx].call)
+			if ctx.Err() != nil {
+				return apperror.Normalize(ctx.Err())
+			}
+			items[idx].result = res
+			items[idx].err = err
+		}
+		return nil
+	}
+
+	dispatchCtx, cancelDispatch := context.WithCancel(ctx)
+	defer cancelDispatch()
+
+	ready := make([]chan struct{}, len(dispatchIndices)+1)
+	for i := range ready {
+		ready[i] = make(chan struct{})
+	}
+	close(ready[0])
+
+	slotCtxs := make([]context.Context, len(dispatchIndices))
+	releases := make([]func(), len(dispatchIndices))
+	for slot := range dispatchIndices {
+		slotCtxs[slot], releases[slot] = toolgateway.WithOrderedBudgetTurnstile(dispatchCtx, ready[slot], ready[slot+1])
+	}
+
+	sem := make(chan struct{}, SupervisorReadOnlyPoolSize)
+	var wg sync.WaitGroup
+	spawned := 0
+dispatchLoop:
+	for slot, idx := range dispatchIndices {
+		select {
+		case sem <- struct{}{}:
+		case <-dispatchCtx.Done():
+			break dispatchLoop
+		}
+		if dispatchCtx.Err() != nil {
+			<-sem
+			break dispatchLoop
+		}
+		wg.Add(1)
+		spawned = slot + 1
+		go func(slot int, idx int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			defer releases[slot]()
+			res, err := s.invokeSupervisorTool(slotCtxs[slot], turn, items[idx].call)
+			items[idx].result = res
+			items[idx].err = err
+			if err != nil {
+				cancelDispatch()
+			}
+		}(slot, idx)
+	}
+	wg.Wait()
+	for slot := spawned; slot < len(dispatchIndices); slot++ {
+		releases[slot]()
+		idx := dispatchIndices[slot]
+		if items[idx].err == nil {
+			items[idx].err = apperror.Normalize(dispatchCtx.Err())
+		}
+	}
+	if ctx.Err() != nil {
+		return apperror.Normalize(ctx.Err())
+	}
+	return nil
+}
+
+func (s *AgentRunner) commitSupervisorSubBatch(ctx context.Context, turn domain.SupervisorTurn,
+	items []preparedSupervisorSubBatchItem, completion *standardCodeSupervisorTurn,
+) (bool, error) {
+	for i := range items {
+		if items[i].superseded {
+			continue
+		}
+		var result domain.SupervisorToolResult
+		if items[i].immediateResult != nil {
+			result = *items[i].immediateResult
+		} else if items[i].dispatchable {
+			if items[i].err != nil {
+				if errors.Is(items[i].err, errSupervisorWaitingApproval) {
+					return true, nil
+				}
+				if apperror.CodeOf(items[i].err) == apperror.CodeCancelled && ctx.Err() == nil {
+					for j := i + 1; j < len(items); j++ {
+						if items[j].err != nil && apperror.CodeOf(items[j].err) != apperror.CodeCancelled {
+							if errors.Is(items[j].err, errSupervisorWaitingApproval) {
+								return true, nil
+							}
+							return false, items[j].err
+						}
+					}
+				}
+				return false, items[i].err
+			}
+			result = items[i].result
+			if items[i].agentBrowser && result.Status == domain.SupervisorToolCompleted {
+				a, checkErr := toolgateway.DecodeAgentBrowserAuthority(json.RawMessage(items[i].call.AuthorityJSON))
+				if checkErr == nil {
+					checkErr = s.agentBrowser.check(ctx, a)
+				}
+				if checkErr != nil {
+					result = agentBrowserStoppedResult(items[i].call, "authority_changed", "Browser authority changed before persistence; no success is reported.", domain.SupervisorToolFailed)
+				}
+			}
+		} else {
+			continue
+		}
+		stored, _, err := s.store.RecordSupervisorToolResult(ctx, turn.Checkpoint, result)
+		if err != nil {
+			return false, apperror.Normalize(err)
+		}
+		if completion != nil {
+			if err := completion.ObserveCall(ctx, stored); err != nil {
+				return false, apperror.Normalize(err)
+			}
+		}
+	}
+	return false, nil
 }
 
 func (s *AgentRunner) invokeSupervisorTool(ctx context.Context, turn domain.SupervisorTurn,
@@ -1242,7 +1389,7 @@ func (s *AgentRunner) invokeSupervisorToolWithTimeout(ctx context.Context, turn 
 	}
 	if errors.Is(toolContextErr, context.DeadlineExceeded) {
 		committedApply := false
-		if name == toolgateway.WorkspaceApplyTool && (err == nil ||
+		if (name == toolgateway.WorkspaceApplyTool || name == toolgateway.WorkspaceChangeTool) && (err == nil ||
 			errors.Is(err, context.DeadlineExceeded) ||
 			apperror.CodeOf(err) == apperror.CodeDeadlineExceeded) {
 			var receiptErr error
@@ -1279,7 +1426,7 @@ func (s *AgentRunner) invokeSupervisorToolWithTimeout(ctx context.Context, turn 
 		}
 		code := apperror.CodeOf(apperror.Normalize(err))
 		if !recoverableSupervisorToolError(name, code) {
-			if name == toolgateway.WorkspaceApplyTool && code == apperror.CodeInternal {
+			if (name == toolgateway.WorkspaceApplyTool || name == toolgateway.WorkspaceChangeTool) && code == apperror.CodeInternal {
 				// Retain the actual failure text without claiming uncertain file
 				// effects settled. M examines the apply/checkpoint journals later.
 				if _, recordErr := s.store.FailSupervisorTurn(ctx, turn.Checkpoint, boundedSupervisorToolMessage(err.Error()), 0); recordErr != nil {

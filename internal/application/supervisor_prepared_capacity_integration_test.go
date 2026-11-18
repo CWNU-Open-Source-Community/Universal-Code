@@ -206,12 +206,12 @@ func TestSupervisorExhaustedRecoveryRestartRejectsBeforeSummary(t *testing.T) {
 }
 
 func TestSupervisorBoundaryOnlyRechecksRemainingTotalBudget(t *testing.T) {
-	st, _, _, request := toolBoundaryFixture(t, domain.Budget{MaxTurns: 3, MaxToolCalls: 8, MaxTokens: 1000})
+	st, _, _, request := toolBoundaryFixture(t, domain.Budget{MaxTurns: 3, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 8), MaxTokens: 1000})
 	provider := &scriptedToolProvider{respond: func(req llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		if index < 4 {
+		if index < domain.MaxSupervisorToolRounds {
 			return toolResponse(fmt.Sprint("item-", index), "work_item_create", fmt.Sprintf(`{"title":"Observed %d","priority":"high"}`, index)), nil
 		}
-		if index == 4 {
+		if index == domain.MaxSupervisorToolRounds {
 			assertBoundaryPrompt(t, req)
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Continue the same accepted task.", "", "")), nil
 		}
@@ -219,23 +219,23 @@ func TestSupervisorBoundaryOnlyRechecksRemainingTotalBudget(t *testing.T) {
 		return nil, nil
 	}}
 	_, err := toolBoundaryService(st, st, provider).Execute(t.Context(), request)
-	if apperror.CodeOf(err) != apperror.CodeResourceExhausted || len(provider.Requests()) != 5 {
+	if apperror.CodeOf(err) != apperror.CodeResourceExhausted || len(provider.Requests()) != domain.MaxSupervisorToolRounds+1 {
 		t.Fatalf("boundary budget: requests=%d err=%v", len(provider.Requests()), err)
 	}
 }
 
 func TestSupervisorBoundaryTransportRetryRechecksChargedUsage(t *testing.T) {
-	st, run, _, request := toolBoundaryFixture(t, domain.Budget{MaxTurns: 3, MaxToolCalls: 8, MaxTokens: 60000})
+	st, run, _, request := toolBoundaryFixture(t, domain.Budget{MaxTurns: 3, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 8), MaxTokens: 60000})
 	provider := &receiptRetryUsageProvider{}
 	provider.respond = func(req llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		if index < 4 {
+		if index < domain.MaxSupervisorToolRounds {
 			return toolResponse(fmt.Sprint("item-", index), "work_item_create", fmt.Sprintf(`{"title":"Observed %d","priority":"high"}`, index)), nil
 		}
-		if index == 4 {
+		if index == domain.MaxSupervisorToolRounds {
 			assertBoundaryPrompt(t, req)
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Continue the same accepted task.", "", "")), nil
 		}
-		if index == 5 {
+		if index == domain.MaxSupervisorToolRounds+1 {
 			if req.Metadata["context_boundary_receipts"] == "" || req.Metadata["context_segment_receipted_rounds"] != "" {
 				t.Fatal("fixture was not boundary-only")
 			}
@@ -250,7 +250,7 @@ func TestSupervisorBoundaryTransportRetryRechecksChargedUsage(t *testing.T) {
 		return nil, nil
 	}
 	_, err := toolBoundaryService(st, st, provider).Execute(t.Context(), request)
-	if apperror.CodeOf(err) != apperror.CodeResourceExhausted || len(provider.Requests()) != 6 {
+	if apperror.CodeOf(err) != apperror.CodeResourceExhausted || len(provider.Requests()) != domain.MaxSupervisorToolRounds+2 {
 		t.Fatalf("boundary retry budget: requests=%d err=%v", len(provider.Requests()), err)
 	}
 	cp, found, err := st.GetSupervisorCheckpoint(t.Context(), run.ID)

@@ -3,7 +3,9 @@ package application
 import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
+	"cyberagent-workbench/internal/toolbudget"
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -405,4 +407,309 @@ func TestDynamicBoundaryPreservesPagesClaimsFailuresAndRecallScope(t *testing.T)
 			}
 		}
 	})
+}
+
+func TestBoundaryReceiptAcceptsFortyEightCallsAndEnforcesDomainBound(t *testing.T) {
+	calls := actualBoundaryCalls(t)
+	var readTemplate domain.SupervisorToolCall
+	for _, c := range calls {
+		if c.ToolName == "workspace_read" {
+			readTemplate = c
+			break
+		}
+	}
+	if readTemplate.CallID == "" {
+		t.Fatal("fixture lacks workspace_read call")
+	}
+	makeBatch := func(count int) []domain.SupervisorToolCall {
+		out := make([]domain.SupervisorToolCall, 0, count)
+		for i := 0; i < count; i++ {
+			c := readTemplate
+			c.Turn = 1
+			c.AttemptID = "attempt-seg1"
+			c.Round = (i / domain.MaxSupervisorToolCallsPerRound) + 1
+			c.Position = (i % domain.MaxSupervisorToolCallsPerRound) + 1
+			c.ModelAttempt = c.Round
+			c.CallID = fmt.Sprintf("call-%03d", i+1)
+			out = append(out, c)
+		}
+		return out
+	}
+	plan, err := minimalSupervisorBoundaryReceipt(makeBatch(48), "cap-session", "attempt-seg2")
+	if err != nil || plan.Returned != 48 || len(plan.Calls) != 48 {
+		t.Fatalf("expected 48-call boundary receipt to succeed (>32 legacy cap), plan=%+v err=%v", plan, err)
+	}
+	over := makeBatch(domain.MaxSupervisorBoundaryContextCalls + 1)
+	if _, err := minimalSupervisorBoundaryReceipt(over, "cap-session", "attempt-seg2"); err == nil {
+		t.Fatalf("expected error when boundary calls exceed %d", domain.MaxSupervisorBoundaryContextCalls)
+	}
+}
+
+func TestEvaluateSupervisorSegmentBoundaryPredicate(t *testing.T) {
+	if s := evaluateSupervisorSegmentBoundary(0, 0, toolbudget.Usage{Limit: 1, Remaining: 0}, true, true); s.Reached || s.AllowsContinue() {
+		t.Fatalf("zero-round turn must not trigger boundary: %+v", s)
+	}
+	if s := evaluateSupervisorSegmentBoundary(12, 12, toolbudget.Usage{Limit: 40, Remaining: 28}, false, true); s.Reached || s.AllowsContinue() {
+		t.Fatalf("mid-segment below 24 rounds without private history must stay open: %+v", s)
+	}
+	if s := evaluateSupervisorSegmentBoundary(domain.MaxSupervisorToolRounds, domain.MaxSupervisorToolRounds, toolbudget.Usage{Limit: 0, Remaining: -1}, false, false); !s.Reached || !s.MaxRoundsReached || !s.AllowsContinue() {
+		t.Fatalf("24 native rounds must reach boundary and allow continue: %+v", s)
+	}
+	if s := evaluateSupervisorSegmentBoundary(2, 2, toolbudget.Usage{Limit: 5, Remaining: 0}, false, false); !s.Reached || !s.ToolBudgetZero || !s.AllowsContinue() {
+		t.Fatalf("Remaining==0 after completed round must reach boundary and allow continue: %+v", s)
+	}
+	if s := evaluateSupervisorSegmentBoundary(3, 3, toolbudget.Usage{Limit: 20, Remaining: 17}, true, true); !s.Reached || !s.ContextPressure || s.AllowsContinue() {
+		t.Fatalf("private-history context pressure alone must withdraw tools without allowing continue: %+v", s)
+	}
+	if s := evaluateSupervisorSegmentBoundary(domain.MaxSupervisorToolRounds, domain.MaxSupervisorToolRounds, toolbudget.Usage{Limit: 20, Remaining: 0}, true, true); !s.Reached || !s.MaxRoundsReached || !s.ToolBudgetZero || !s.ContextPressure || !s.AllowsContinue() {
+		t.Fatalf("combined MaxRoundsReached/ToolBudgetZero with ContextPressure must preserve AllowsContinue: %+v", s)
+	}
+}
+
+func TestBoundaryReceiptTokenTreeMatchesAuthoritativeEstimator(t *testing.T) {
+	calls := actualBoundaryCalls(t)
+	// Include non-ASCII claims and special JSON escaping characters.
+	cite := calls[0]
+	cite.CallID = "unicode-cite"
+	cite.ToolName = "web_citation"
+	cite.ResultJSON = stringMustMarshal(supervisorToolResultEnvelope{
+		Version: supervisorToolResultVersion, Tool: "web_citation", Status: "completed",
+		Stdout: stringMustMarshal(map[string]any{
+			"citation": map[string]any{
+				"citation_id": "c-1", "snapshot_id": "s-1",
+				"claim": "中文\\\"\\🙂 trailing  spaces ", "partial": true,
+			},
+		}),
+	})
+	all := append(calls, cite)
+	plan, err := minimalSupervisorBoundaryReceipt(all, "monoid-session", "monoid-attempt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sizer, err := newBoundaryTokenSizer(plan, plan.Entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := supervisorBoundaryReceiptTokens(plan, plan.Content)
+	got := sizer.totalTokens()
+	if got != want {
+		t.Fatalf("token tree mismatch on baseline: got=%d want=%d", got, want)
+	}
+	// Mutate an entry and check exact parity after update.
+	updated := cloneBoundaryReceiptEntry(plan.Entries[0])
+	updated["result"] = map[string]any{"claim": "中文更新 \"quote\" \\slash 🙂", "ok": true}
+	if _, ok := sizer.trySet(0, updated, want+5000); !ok {
+		t.Fatal("expected updated entry to fit")
+	}
+	rendered := sizer.render(plan)
+	wantAfter := supervisorBoundaryReceiptTokens(plan, rendered)
+	gotAfter := sizer.totalTokens()
+	if gotAfter != wantAfter {
+		t.Fatalf("token tree mismatch after update: got=%d want=%d", gotAfter, wantAfter)
+	}
+}
+
+func TestBoundaryReceiptFolds192And256CallsInsideDefault32KWindow(t *testing.T) {
+	calls := actualBoundaryCalls(t)
+	var readTemplate, changeTemplate domain.SupervisorToolCall
+	for _, c := range calls {
+		if c.ToolName == "workspace_read" && readTemplate.CallID == "" {
+			readTemplate = c
+		}
+		if c.ToolName == "workspace_change" && changeTemplate.CallID == "" {
+			changeTemplate = c
+		}
+	}
+	for _, total := range []int{192, domain.MaxSupervisorBoundaryContextCalls} {
+		t.Run(fmt.Sprintf("%d_calls", total), func(t *testing.T) {
+			var priorityCall domain.SupervisorToolCall
+			batch := make([]domain.SupervisorToolCall, 0, total)
+			for i := 0; i < total; i++ {
+				c := readTemplate
+				if i == total-1 {
+					// Put a priority workspace_change in the batch to verify its full apply_arguments contract is retained over tier2 reads.
+					c = changeTemplate
+				}
+				c.Turn = 1
+				c.AttemptID = "attempt-seg1"
+				c.Round = (i / domain.MaxSupervisorToolCallsPerRound) + 1
+				c.Position = (i % domain.MaxSupervisorToolCallsPerRound) + 1
+				c.ModelAttempt = c.Round
+				c.CallID = fmt.Sprintf("call-%03d", i+1)
+				if i == total-1 {
+					priorityCall = c
+				}
+				batch = append(batch, c)
+			}
+			plan, err := minimalSupervisorBoundaryReceipt(batch, "fold-session", "attempt-seg2")
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := llm.ChatRequest{
+				MaxTokens: 4096,
+				Messages: []llm.Message{
+					{Role: "system", Content: strings.Repeat("system policy ", 400)},
+					toolBoundaryEvidenceMessage(plan.SessionID, plan.AttemptID, plan.Content),
+				},
+				Tools: []llm.ToolSpec{{Name: "workspace_read", Parameters: json.RawMessage(`{"type":"object"}`)}},
+			}
+			limit, err := supervisorReceiptInputLimit(request, llm.DefaultContextWindow(), domain.Budget{}, domain.SupervisorCheckpoint{}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fit, err := fitSupervisorReceiptViews(request, supervisorSegmentReceipt{}, plan, plan.SessionID, plan.AttemptID, limit, nil)
+			if err != nil {
+				t.Fatalf("fit failed for %d calls: %v", total, err)
+			}
+			if gotTokens := estimateModelRequestTokens(fit); gotTokens > limit {
+				t.Fatalf("fitted request %d exceeds inputLimit %d", gotTokens, limit)
+			}
+			var record struct {
+				Content string `json:"content"`
+			}
+			if err := json.Unmarshal([]byte(strings.SplitN(fit.Messages[1].Content, "\n", 2)[1]), &record); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(record.Content, fmt.Sprintf("%d returned receipts", total)) {
+				t.Fatalf("folded receipt lost returned count %d: %s", total, record.Content)
+			}
+			if !strings.Contains(record.Content, `"omitted_receipt_summary":true`) {
+				t.Fatalf("expected compact omission summary in folded receipt")
+			}
+			// Oldest priority workspace_change should retain both its identity and complete apply_arguments contract.
+			if _, ok := boundaryBudgetEntries(t, record.Content)[priorityCall.CallID]; !ok {
+				t.Fatalf("expected priority workspace_change %s to be retained", priorityCall.CallID)
+			}
+			if got := boundaryCompleteContracts(t, record.Content, []domain.SupervisorToolCall{priorityCall}); got != 1 {
+				t.Fatalf("expected priority workspace_change %s to retain complete apply_arguments contract, got %d/1", priorityCall.CallID, got)
+			}
+		})
+	}
+}
+
+func TestSegmentReceiptFolds192PlusCallsRetainingPriorityContract(t *testing.T) {
+	calls := actualBoundaryCalls(t)
+	var readTemplate, changeTemplate domain.SupervisorToolCall
+	for _, c := range calls {
+		if c.ToolName == "workspace_read" && readTemplate.CallID == "" {
+			readTemplate = c
+		}
+		if c.ToolName == "workspace_change" && changeTemplate.CallID == "" {
+			changeTemplate = c
+		}
+	}
+	if readTemplate.CallID == "" || changeTemplate.CallID == "" {
+		t.Fatal("fixture lacks required workspace_read / workspace_change calls")
+	}
+
+	const totalRounds = 52 // 51 receipted rounds (204 calls > 192) + 1 native round (4 calls)
+	rounds := make([]domain.SupervisorToolRound, 0, totalRounds)
+	var priorityCall domain.SupervisorToolCall
+	seq := 0
+	for r := 0; r < totalRounds; r++ {
+		roundCalls := make([]domain.SupervisorToolCall, 0, domain.MaxSupervisorToolCallsPerRound)
+		for p := 0; p < domain.MaxSupervisorToolCallsPerRound; p++ {
+			seq++
+			c := readTemplate
+			if r == 0 && p == 0 {
+				// Place the priority pending workspace_change in the oldest round so tier2 reads would crowd it out without reservation.
+				c = changeTemplate
+			}
+			c.Turn = 1
+			c.AttemptID = "attempt-seg1-fold"
+			c.Round = r + 1
+			c.Position = p + 1
+			c.ModelAttempt = r + 1
+			c.CallID = fmt.Sprintf("seg-call-%03d", seq)
+			if r == 0 && p == 0 {
+				priorityCall = c
+			}
+			roundCalls = append(roundCalls, c)
+		}
+		rounds = append(rounds, domain.SupervisorToolRound{
+			RunID:        readTemplate.RunID,
+			Turn:         1,
+			AttemptID:    "attempt-seg1-fold",
+			Round:        r + 1,
+			ModelAttempt: r + 1,
+			CreatedAt:    readTemplate.CreatedAt,
+			CompletedAt:  readTemplate.CompletedAt,
+			Calls:        roundCalls,
+		})
+	}
+
+	minimal, err := minimalSupervisorSegmentReceiptPlan(rounds, totalRounds-1, "seg-fold-session", "attempt-seg1-fold")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := supervisorRequestWithSegmentReceipt(llm.ChatRequest{
+		MaxTokens: 4096,
+		Messages: []llm.Message{
+			{Role: "system", Content: strings.Repeat("system policy ", 400)},
+		},
+		Tools: []llm.ToolSpec{{Name: "workspace_apply", Parameters: json.RawMessage(`{"type":"object"}`)}},
+	}, minimal, "seg-fold-session", "attempt-seg1-fold")
+	if err != nil {
+		t.Fatal(err)
+	}
+	limit, err := supervisorReceiptInputLimit(request, llm.DefaultContextWindow(), domain.Budget{}, domain.SupervisorCheckpoint{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if estimateModelRequestTokens(request) <= limit {
+		t.Fatalf("expected 204 receipted calls to overflow default 32K input limit %d (got %d)", limit, estimateModelRequestTokens(request))
+	}
+
+	fit, err := fitSupervisorSegmentReceiptStage(request, minimal, "seg-fold-session", "attempt-seg1-fold", limit, false)
+	if err != nil {
+		t.Fatalf("segment receipt fit failed: %v", err)
+	}
+	if gotTokens := estimateModelRequestTokens(fit); gotTokens > limit {
+		t.Fatalf("fitted segment request %d exceeds inputLimit %d", gotTokens, limit)
+	}
+
+	var record struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(strings.SplitN(fit.Messages[1].Content, "\n", 2)[1]), &record); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(record.Content, `"omitted_receipt_summary":true`) {
+		t.Fatalf("expected compact omission summary in folded segment receipt")
+	}
+
+	var env supervisorToolResultEnvelope
+	_ = json.Unmarshal([]byte(priorityCall.ResultJSON), &env)
+	var rawResult map[string]any
+	_ = json.Unmarshal([]byte(env.Stdout), &rawResult)
+	wantArgs, _ := json.Marshal(rawResult["apply_arguments"])
+
+	foundPriorityContract := false
+	body := strings.TrimPrefix(record.Content, supervisorSegmentReceiptPrefix)
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var roundEntry supervisorSegmentReceiptRound
+		if json.Unmarshal([]byte(line), &roundEntry) != nil || roundEntry.Round != priorityCall.Round {
+			continue
+		}
+		for _, c := range roundEntry.Calls {
+			if c.CallID != priorityCall.CallID {
+				continue
+			}
+			if c.DetailsOmitted {
+				t.Fatalf("priority call %s lost details (DetailsOmitted=true)", priorityCall.CallID)
+			}
+			resultMap, _ := c.Result.(map[string]any)
+			gotArgs, _ := json.Marshal(resultMap["apply_arguments"])
+			if string(gotArgs) != string(wantArgs) {
+				t.Fatalf("priority call %s apply_arguments mismatch: got=%s want=%s", priorityCall.CallID, gotArgs, wantArgs)
+			}
+			foundPriorityContract = true
+		}
+	}
+	if !foundPriorityContract {
+		t.Fatalf("expected oldest priority workspace_change %s to retain apply_arguments contract after segment folding", priorityCall.CallID)
+	}
 }

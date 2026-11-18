@@ -13,15 +13,16 @@ import (
 // authorization or a statement about the current filesystem. In particular a
 // proposal replay can return an already-applied edit without writing anything.
 type SupervisorToolEffect struct {
-	Effect          string `json:"effect"`
-	EditStatus      string `json:"edit_status,omitempty"`
-	EditID          string `json:"edit_id,omitempty"`
-	Path            string `json:"path,omitempty"`
-	ProposedSHA256  string `json:"proposed_sha256,omitempty"`
-	FileWritten     *bool  `json:"file_written,omitempty"`
-	Replayed        *bool  `json:"replayed,omitempty"`
-	ApplyAuthorized *bool  `json:"apply_authorized_at_observation,omitempty"`
-	ReviewRequired  *bool  `json:"review_required_at_observation,omitempty"`
+	Effect                    string `json:"effect"`
+	EditStatus                string `json:"edit_status,omitempty"`
+	EditID                    string `json:"edit_id,omitempty"`
+	Path                      string `json:"path,omitempty"`
+	ProposedSHA256            string `json:"proposed_sha256,omitempty"`
+	DestinationProposedSHA256 string `json:"destination_proposed_sha256,omitempty"`
+	FileWritten               *bool  `json:"file_written,omitempty"`
+	Replayed                  *bool  `json:"replayed,omitempty"`
+	ApplyAuthorized           *bool  `json:"apply_authorized_at_observation,omitempty"`
+	ReviewRequired            *bool  `json:"review_required_at_observation,omitempty"`
 }
 
 // ObservedSupervisorToolEffect deliberately recognizes only Go-owned file
@@ -60,16 +61,17 @@ func ObservedSupervisorToolEffect(call SupervisorToolCall) *SupervisorToolEffect
 		return unknown
 	}
 	var result struct {
-		Version         string `json:"version"`
-		Status          string `json:"status"`
-		EditID          string `json:"edit_id"`
-		Path            string `json:"path"`
-		Operation       string `json:"operation"`
-		ProposedSHA256  string `json:"proposed_sha256"`
-		FileWritten     *bool  `json:"file_written"`
-		Replayed        *bool  `json:"replayed"`
-		ApplyAuthorized *bool  `json:"apply_authorized"`
-		ReviewRequired  *bool  `json:"review_required"`
+		Version                   string `json:"version"`
+		Status                    string `json:"status"`
+		EditID                    string `json:"edit_id"`
+		Path                      string `json:"path"`
+		Operation                 string `json:"operation"`
+		ProposedSHA256            string `json:"proposed_sha256"`
+		DestinationProposedSHA256 string `json:"destination_proposed_sha256"`
+		FileWritten               *bool  `json:"file_written"`
+		Replayed                  *bool  `json:"replayed"`
+		ApplyAuthorized           *bool  `json:"apply_authorized"`
+		ReviewRequired            *bool  `json:"review_required"`
 	}
 	if json.Unmarshal([]byte(envelope.Stdout), &result) != nil || result.Version != "agent-code-tools.v1" {
 		return unknown
@@ -84,25 +86,36 @@ func ObservedSupervisorToolEffect(call SupervisorToolCall) *SupervisorToolEffect
 		return unknown
 	}
 	effect := &SupervisorToolEffect{Effect: "unknown", EditStatus: result.Status, EditID: result.EditID, Path: result.Path}
-	if hash, err := hex.DecodeString(result.ProposedSHA256); err == nil && len(hash) == sha256.Size {
+	if hasSHA256Digest(result.ProposedSHA256) {
 		effect.ProposedSHA256 = result.ProposedSHA256
 	}
-	if call.ToolName == "workspace_change" || (call.ToolName == "workspace_delete" && result.FileWritten == nil) {
-		if result.FileWritten != nil && *result.FileWritten {
-			return unknown
-		}
+	if result.Operation == "move" && hasSHA256Digest(result.DestinationProposedSHA256) {
+		effect.DestinationProposedSHA256 = result.DestinationProposedSHA256
+	}
+	if (call.ToolName == "workspace_change" || call.ToolName == "workspace_delete") && result.FileWritten == nil {
 		// This tool only returns a proposal, even when an idempotent replay
 		// observes the edit's later status. It cannot prove a new write.
 		effect.Effect = "proposal_only"
 		effect.ApplyAuthorized, effect.ReviewRequired = result.ApplyAuthorized, result.ReviewRequired
 		return effect
 	}
+	if call.ToolName == "workspace_change" && (result.Status == "proposed" || result.Status == "approved") && !*result.FileWritten {
+		effect.Effect = "proposal_only"
+		effect.ApplyAuthorized, effect.ReviewRequired = result.ApplyAuthorized, result.ReviewRequired
+		return effect
+	}
 	effect.FileWritten, effect.Replayed = result.FileWritten, result.Replayed
-	if result.Status == "applied" && effect.ProposedSHA256 != "" && result.FileWritten != nil && result.Replayed != nil &&
+	hasProposedDigest := effect.ProposedSHA256 != "" || (result.Operation == "move" && effect.DestinationProposedSHA256 != "")
+	if result.Status == "applied" && hasProposedDigest && result.FileWritten != nil && result.Replayed != nil &&
 		(*result.FileWritten || *result.Replayed) {
 		effect.Effect = "recorded_applied"
 	}
 	return effect
+}
+
+func hasSHA256Digest(value string) bool {
+	hash, err := hex.DecodeString(value)
+	return err == nil && len(hash) == sha256.Size
 }
 
 func boundedToolEffectIdentity(value string) bool {

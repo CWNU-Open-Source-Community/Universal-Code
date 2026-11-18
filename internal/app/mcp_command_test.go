@@ -43,6 +43,7 @@ func TestMCPServeCLIUsesPersistedWorkspaceForReadTools(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	process := exec.CommandContext(ctx, executable, "-test.run=^TestMCPServeCLIHelper$", "--", runID, workspaceID)
+	hideSubprocessWindow(process)
 	// The process working directory is deliberately not the Workspace root.
 	process.Dir = t.TempDir()
 	process.Env = append(os.Environ(), "CYBERAGENT_MCP_CLI_HELPER=1")

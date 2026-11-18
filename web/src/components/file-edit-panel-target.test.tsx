@@ -43,7 +43,7 @@ it.each(["run-current", "run-history"])("reads the precise target in %s before o
   await screen.findByText("Reading the requested file proposal…");
   expect(fileEdit).toHaveBeenCalledWith(runID, "requested", expect.any(AbortSignal));
   expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Approve intent same.txt" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Approve and apply same.txt" })).not.toBeInTheDocument();
   await act(async () => finish(targetEdit));
   const drawer = await screen.findByRole("complementary", { name: "Review same.txt" });
   expect(within(drawer).getByText("requested")).toBeInTheDocument();
@@ -51,9 +51,9 @@ it.each(["run-current", "run-history"])("reads the precise target in %s before o
   expect(screen.getByRole("button", { name: "Close review" })).toHaveFocus();
   if (runID === "run-history") {
     expect(within(drawer).getByText(/historical edit in its original directory/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Approve intent same.txt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve and apply same.txt" })).not.toBeInTheDocument();
   } else {
-    expect(screen.getByRole("button", { name: "Approve intent same.txt" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Approve and apply same.txt" })).toBeEnabled();
   }
   expectNoMutation(client);
   await userEvent.click(screen.getByRole("button", { name: "Close review" }));
@@ -69,7 +69,7 @@ it.each(["missing", "wrong-id", "wrong-workspace"])("does not substitute another
   setup(client, { runID: "run-current", editID: "requested", workspaceID: "workspace-current" });
   expect(await screen.findByText(/The requested file proposal could not be confirmed and has not been opened/)).toBeInTheDocument();
   expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Approve intent same.txt" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Approve and apply same.txt" })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Retry proposal" }));
   await waitFor(() => expect(fileEdit).toHaveBeenCalledTimes(2));
   expect(fileEdit.mock.calls.every(([runID, editID]) => runID === "run-current" && editID === "requested")).toBe(true);
@@ -106,7 +106,7 @@ it("does not read a target through a different run or expose authority on a read
   const target = { runID: "run-old", editID: "requested", workspaceID: "workspace-current" };
   const view = setup(client, target);
   expect(await screen.findByRole("complementary", { name: "Review same.txt" })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Approve intent same.txt" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Approve and apply same.txt" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Apply same.txt" })).not.toBeInTheDocument();
   view.rerender(view.component("run-new", target));
   expect(await screen.findByText(/belongs to another execution. Open it from that execution/)).toBeInTheDocument();

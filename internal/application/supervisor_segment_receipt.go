@@ -9,6 +9,7 @@ import (
 
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
+	"cyberagent-workbench/internal/redact"
 	"cyberagent-workbench/internal/session"
 )
 
@@ -155,22 +156,45 @@ func supervisorSegmentReceiptContent(receipted []domain.SupervisorToolRound,
 func supervisorSegmentReceiptContentStage(receipted []domain.SupervisorToolRound,
 	nativeRounds []domain.SupervisorToolRound, tokenBudget int, attemptID string, contractsOnly bool, sessionIDs ...string,
 ) (string, int, error) {
+	return supervisorSegmentReceiptContentStageWithSummary(receipted, nativeRounds, tokenBudget, attemptID, contractsOnly, nil, sessionIDs...)
+}
+
+func supervisorSegmentReceiptContentStageWithSummary(receipted []domain.SupervisorToolRound,
+	nativeRounds []domain.SupervisorToolRound, tokenBudget int, attemptID string, contractsOnly bool, summaryLines []string, sessionIDs ...string,
+) (string, int, error) {
 	entries, err := supervisorSegmentReceiptEntries(receipted)
 	if err != nil {
 		return "", 0, err
 	}
-	render := func() (string, error) { return renderSupervisorSegmentReceipt(entries, len(nativeRounds)) }
-	receiptTokens := func(content string) int {
-		return supervisorSegmentReceiptTokens(content, attemptID, sessionIDs...)
+	sessionID := segmentReceiptBudgetSessionID
+	if len(sessionIDs) > 0 {
+		sessionID = sessionIDs[0]
 	}
-	content, err := render()
-	if err != nil {
-		return "", 0, err
+	suffix := "\nNo native tool call or result pairs of this segment remain in this request."
+	if len(nativeRounds) > 0 {
+		suffix = fmt.Sprintf("\nThe %d most recent tool round(s) of this segment remain below as native call and result pairs.", len(nativeRounds))
 	}
-	baseline := receiptTokens(content)
+	rawLines := make([]string, len(entries))
+	for i, entry := range entries {
+		encoded, marshalErr := json.Marshal(entry)
+		if marshalErr != nil {
+			return "", 0, marshalErr
+		}
+		rawLines[i] = string(encoded)
+	}
+	sourceRef := fmt.Sprintf("tool-segment-receipt-%s", attemptID)
+	sizer := newReceiptTokenTree(sourceRef, sessionID, supervisorSegmentReceiptPrefix, suffix, summaryLines, rawLines)
+	baseline := sizer.totalTokens()
 	if baseline > tokenBudget {
 		return "", 0, fmt.Errorf("segment receipt of %d supervisor tool rounds needs %d tokens; receipt budget is %d",
 			len(receipted), baseline, tokenBudget)
+	}
+	tryUpdateRound := func(index int) bool {
+		encoded, marshalErr := json.Marshal(entries[index])
+		if marshalErr != nil {
+			return false
+		}
+		return sizer.trySetLine(index, string(encoded), tokenBudget)
 	}
 	// Complete latest proposal contracts precede optional file bodies. This is
 	// historical evidence selection, never an authorization or an apply request.
@@ -190,7 +214,7 @@ func supervisorSegmentReceiptContentStage(receipted []domain.SupervisorToolRound
 			entries[index].Calls[position].Result = projection
 			entries[index].Calls[position].ResultExcerpted = true
 			entries[index].Calls[position].DetailsOmitted = false
-			if updated, renderErr := render(); renderErr != nil || receiptTokens(updated) > tokenBudget {
+			if !tryUpdateRound(index) {
 				entries[index].Calls[position] = previous
 			} else {
 				whole[call.CallID] = true
@@ -198,8 +222,7 @@ func supervisorSegmentReceiptContentStage(receipted []domain.SupervisorToolRound
 		}
 	}
 	if contractsOnly {
-		content, err = render()
-		return content, receiptTokens(content), err
+		return sizer.renderWith(supervisorSegmentReceiptPrefix, suffix, summaryLines), sizer.totalTokens(), nil
 	}
 	// Identity receipts remain mandatory; a page either fits whole or is omitted.
 	pages := map[string]bool{}
@@ -220,14 +243,30 @@ func supervisorSegmentReceiptContentStage(receipted []domain.SupervisorToolRound
 			continue
 		}
 		previous := make([]supervisorSegmentReceiptCall, len(group.needed))
+		seenRounds := map[int]bool{}
+		var roundIndices []int
 		for i, page := range group.needed {
 			at := locations[page.index]
 			previous[i] = entries[at[0]].Calls[at[1]]
 			entries[at[0]].Calls[at[1]].Result = page.page
 			entries[at[0]].Calls[at[1]].DetailsOmitted = false
 			entries[at[0]].Calls[at[1]].ContentOmitted = false
+			if !seenRounds[at[0]] {
+				seenRounds[at[0]] = true
+				roundIndices = append(roundIndices, at[0])
+			}
 		}
-		if updated, renderErr := render(); renderErr != nil || receiptTokens(updated) > tokenBudget {
+		roundLines := make([]string, len(roundIndices))
+		marshalOK := true
+		for j, rIdx := range roundIndices {
+			encoded, marshalErr := json.Marshal(entries[rIdx])
+			if marshalErr != nil {
+				marshalOK = false
+				break
+			}
+			roundLines[j] = string(encoded)
+		}
+		if !marshalOK || !sizer.trySetBatchLines(roundIndices, roundLines, tokenBudget) {
 			for i, page := range group.needed {
 				at := locations[page.index]
 				entries[at[0]].Calls[at[1]] = previous[i]
@@ -252,7 +291,7 @@ func supervisorSegmentReceiptContentStage(receipted []domain.SupervisorToolRound
 			entries[index].Calls[position].Result = page
 			entries[index].Calls[position].DetailsOmitted = false
 			entries[index].Calls[position].ContentOmitted = false
-			if updated, renderErr := render(); renderErr != nil || receiptTokens(updated) > tokenBudget {
+			if !tryUpdateRound(index) {
 				entries[index].Calls[position] = previous
 			} else {
 				pages[key] = true
@@ -278,16 +317,205 @@ func supervisorSegmentReceiptContentStage(receipted []domain.SupervisorToolRound
 			entry := previous
 			entry.Result, entry.ResultExcerpted, entry.DetailsOmitted = projection, receipted[index].Calls[position].ToolName != "mcp_tool_search", false
 			entries[index].Calls[position] = entry
-			if updated, renderErr := render(); renderErr != nil || receiptTokens(updated) > tokenBudget {
+			if !tryUpdateRound(index) {
 				entries[index].Calls[position] = previous
 			}
 		}
 	}
-	content, err = render()
-	if err != nil {
-		return "", 0, err
+	return sizer.renderWith(supervisorSegmentReceiptPrefix, suffix, summaryLines), sizer.totalTokens(), nil
+}
+
+func foldSupervisorSegmentReceiptRounds(receipted []domain.SupervisorToolRound,
+	nativeRounds []domain.SupervisorToolRound, tokenBudget int, attemptID, sessionID string,
+) ([]domain.SupervisorToolRound, []string, bool) {
+	if len(receipted) == 0 || tokenBudget <= 0 {
+		return nil, nil, false
 	}
-	return content, receiptTokens(content), nil
+	entries, err := supervisorSegmentReceiptEntries(receipted)
+	if err != nil {
+		return nil, nil, false
+	}
+	suffix := "\nNo native tool call or result pairs of this segment remain in this request."
+	if len(nativeRounds) > 0 {
+		suffix = fmt.Sprintf("\nThe %d most recent tool round(s) of this segment remain below as native call and result pairs.", len(nativeRounds))
+	}
+	sourceRef := fmt.Sprintf("tool-segment-receipt-%s", attemptID)
+	priority := supervisorReceiptApplyPriority(receipted, nativeRounds)
+	n := len(receipted)
+	tier1 := make([]bool, n)
+	var tier1Idx, tier2Idx []int
+	for r := n - 1; r >= 0; r-- {
+		hasPriorityOrEffect := false
+		for _, c := range entries[r].Calls {
+			if priority.Priority[c.CallID] || c.Observation != nil {
+				hasPriorityOrEffect = true
+				break
+			}
+		}
+		if hasPriorityOrEffect {
+			tier1[r] = true
+			tier1Idx = append(tier1Idx, r)
+		} else {
+			tier2Idx = append(tier2Idx, r)
+		}
+	}
+
+	buildSummary := func(omitted []int) []string {
+		if len(omitted) == 0 {
+			return nil
+		}
+		tools := map[string]int{}
+		statuses := map[string]int{}
+		minRound, maxRound, callCount, omittedEffects := 0, 0, 0, 0
+		for k, r := range omitted {
+			round := receipted[r]
+			if k == 0 || round.Round < minRound {
+				minRound = round.Round
+			}
+			if k == 0 || round.Round > maxRound {
+				maxRound = round.Round
+			}
+			for _, c := range entries[r].Calls {
+				callCount++
+				tools[c.Tool]++
+				statuses[c.Status]++
+				if c.Observation != nil {
+					omittedEffects++
+				}
+			}
+		}
+		summary := map[string]any{
+			"omitted_receipt_summary": true,
+			"omitted_rounds":          len(omitted),
+			"omitted_round_range":     []int{minRound, maxRound},
+			"omitted_calls":           callCount,
+			"tools":                   tools,
+			"statuses":                statuses,
+		}
+		if omittedEffects > 0 {
+			summary["omitted_file_effects"] = omittedEffects
+		}
+		encoded, _ := json.Marshal(summary)
+		return []string{string(encoded)}
+	}
+
+	allIdx := make([]int, n)
+	for i := range allIdx {
+		allIdx[i] = i
+	}
+	maxSummary := buildSummary(allIdx)
+	if newReceiptTokenTree(sourceRef, sessionID, supervisorSegmentReceiptPrefix, suffix, maxSummary, nil).totalTokens() > tokenBudget {
+		return nil, nil, false
+	}
+
+	rawLines := make([]string, n)
+	reservedLines := make([]string, n)
+	for r, entry := range entries {
+		encoded, marshalErr := json.Marshal(entry)
+		if marshalErr != nil {
+			return nil, nil, false
+		}
+		rawLines[r] = string(encoded)
+		reservedLines[r] = string(encoded)
+	}
+	envPrefix, envSuffix := receiptEnvelopeFrameMonoids(sourceRef, sessionID)
+	headMonoid := concatTokenMonoid(envPrefix, measureTokenMonoid(jsonEscapeString(redact.String(supervisorSegmentReceiptPrefix))))
+	tailReserve := concatTokenMonoid(
+		measureTokenMonoid(jsonEscapeString(redact.String("\n"+maxSummary[0]+suffix))),
+		envSuffix,
+	)
+
+	kept := make([]bool, n)
+	var keptOrder []int
+	curBody := tokenMonoid{}
+	fitsReserve := func(extra tokenMonoid) bool {
+		return 5+evalTokenMonoid(concatTokenMonoid(headMonoid, concatTokenMonoid(extra, tailReserve))) <= tokenBudget
+	}
+	for _, r := range tier1Idx {
+		projEntry := entries[r]
+		projEntry.Calls = append([]supervisorSegmentReceiptCall(nil), entries[r].Calls...)
+		var bestLine string
+		var bestLeaf tokenMonoid
+		hasProjected := false
+		for position := len(projEntry.Calls) - 1; position >= 0; position-- {
+			call := receipted[r].Calls[position]
+			if !priority.Priority[call.CallID] {
+				continue
+			}
+			projection, ok := supervisorSegmentReceiptProjection(call)
+			if !ok {
+				continue
+			}
+			prev := projEntry.Calls[position]
+			projEntry.Calls[position].Result = projection
+			projEntry.Calls[position].ResultExcerpted = true
+			projEntry.Calls[position].DetailsOmitted = false
+			if encoded, marshalErr := json.Marshal(projEntry); marshalErr == nil {
+				line := string(encoded)
+				leaf := measureTokenMonoid(jsonEscapeString(redact.String(line) + "\n"))
+				if fitsReserve(concatTokenMonoid(curBody, leaf)) {
+					bestLine = line
+					bestLeaf = leaf
+					hasProjected = true
+					continue
+				}
+			}
+			projEntry.Calls[position] = prev
+		}
+		if hasProjected {
+			kept[r] = true
+			keptOrder = append(keptOrder, r)
+			curBody = concatTokenMonoid(curBody, bestLeaf)
+			reservedLines[r] = bestLine
+			continue
+		}
+		leaf := measureTokenMonoid(jsonEscapeString(redact.String(rawLines[r]) + "\n"))
+		next := concatTokenMonoid(curBody, leaf)
+		if fitsReserve(next) {
+			kept[r] = true
+			keptOrder = append(keptOrder, r)
+			curBody = next
+		}
+	}
+	for _, r := range tier2Idx {
+		leaf := measureTokenMonoid(jsonEscapeString(redact.String(rawLines[r]) + "\n"))
+		next := concatTokenMonoid(curBody, leaf)
+		if !fitsReserve(next) {
+			break
+		}
+		kept[r] = true
+		keptOrder = append(keptOrder, r)
+		curBody = next
+	}
+
+	for {
+		var keptRounds []domain.SupervisorToolRound
+		var keptLines []string
+		var omitted []int
+		for r := 0; r < n; r++ {
+			if kept[r] {
+				keptRounds = append(keptRounds, receipted[r])
+				keptLines = append(keptLines, reservedLines[r])
+			} else {
+				omitted = append(omitted, r)
+			}
+		}
+		summaryLines := buildSummary(omitted)
+		tree := newReceiptTokenTree(sourceRef, sessionID, supervisorSegmentReceiptPrefix, suffix, summaryLines, keptLines)
+		if tree.totalTokens() <= tokenBudget {
+			return keptRounds, summaryLines, true
+		}
+		if len(keptOrder) == 0 {
+			return nil, nil, false
+		}
+		popIdx := keptOrder[len(keptOrder)-1]
+		if reservedLines[popIdx] != rawLines[popIdx] {
+			reservedLines[popIdx] = rawLines[popIdx]
+			continue
+		}
+		keptOrder = keptOrder[:len(keptOrder)-1]
+		kept[popIdx] = false
+	}
 }
 
 // supervisorSegmentReceiptProjection reuses the exact model-bound projection

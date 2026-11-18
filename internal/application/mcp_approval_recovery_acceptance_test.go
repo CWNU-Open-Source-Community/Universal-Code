@@ -192,7 +192,7 @@ func newMCPRecoveryAcceptanceRuntime(t *testing.T, mode domain.RunExecutionPermi
 		t.Fatal(err)
 	}
 	_, f.run, err = NewRunService(f.st).Create(t.Context(), CreateRunRequest{Goal: "Review exact MCP actions without repeating effects", Profile: "review", Surface: "cyber", Phase: "plan", WorkspaceID: workspace.ID, Interactive: true,
-		ModelRoute: "mcp-recovery-acceptance/fixture", Budget: domain.Budget{MaxTurns: 8, MaxTokens: 50000, MaxToolCalls: 20}})
+		ModelRoute: "mcp-recovery-acceptance/fixture", Budget: domain.Budget{MaxTurns: 8, MaxTokens: 50000, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 20)}})
 	if err != nil {
 		t.Fatal(err)
 	}

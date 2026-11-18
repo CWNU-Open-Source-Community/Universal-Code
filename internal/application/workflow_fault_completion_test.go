@@ -224,6 +224,7 @@ func TestWorkflowFaultCompletionProcessExitRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	child := exec.CommandContext(t.Context(), testBinary, "-test.run=^TestWorkflowFaultCompletionCrashChild$", "-test.v")
+	hideSubprocessWindow(child)
 	child.Env = append(os.Environ(), "UC_WORKFLOW_FAULT_COMPLETION_CHILD_DB="+path, "UC_WORKFLOW_FAULT_COMPLETION_CHILD_ID="+execution.ID)
 	output, err := child.CombinedOutput()
 	exit, ok := err.(*exec.ExitError)

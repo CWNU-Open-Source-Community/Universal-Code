@@ -155,6 +155,16 @@ func TestModelAttemptValidation(t *testing.T) {
 	if err := stream.ValidateStarted(); err == nil {
 		t.Fatal("model attempt accepted negative stream counters")
 	}
+	maxRound := base
+	maxRound.ToolRound = 217
+	if err := maxRound.ValidateStarted(); err != nil {
+		t.Fatalf("model attempt rejected root max tool round 217: %v", err)
+	}
+	overRound := base
+	overRound.ToolRound = 218
+	if err := overRound.ValidateStarted(); err == nil {
+		t.Fatal("model attempt accepted root tool round 218 above MaxSupervisorExecutionRounds")
+	}
 }
 
 func TestModelContextAuditValidation(t *testing.T) {
