@@ -18,13 +18,13 @@ export function V2WorkspaceStart({ client, onSelect, variant = "composer" }: {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
+  const label = variant === "sidebar" ? t("添加项目", "Add project") : t("接入项目", "Connect project");
   return <div className="v2-workspace-start">
     <button className={variant === "sidebar" ? "v2-project-add" : "v2-composer-chip"}
-      aria-label={variant === "sidebar" ? t("添加项目", "Add project") : undefined}
-      title={variant === "sidebar" ? t("添加项目", "Add project") : undefined}
+      aria-label={label} title={label}
       onClick={() => setOpen(true)} ref={trigger} type="button">
       {variant === "sidebar" ? <Plus aria-hidden="true" size={18} /> : <FolderOpen aria-hidden="true" size={15} />}
-      {variant !== "sidebar" && t("接入项目", "Connect project")}
+      {variant !== "sidebar" && <span>{label}</span>}
     </button>
     {open && <ProjectDialog client={client} onClose={() => setOpen(false)} onSaved={onSelect} returnFocusRef={trigger} />}
   </div>;

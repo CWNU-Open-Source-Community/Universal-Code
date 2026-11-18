@@ -165,7 +165,8 @@ function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, us
     : copied === "error" ? t("复制失败", "Copy failed") : user ? t("复制消息", "Copy message") : t("复制回复", "Copy response");
   const branchLabel = branching ? t("正在创建新聊天…", "Creating new chat…") : t("分支到新聊天", "Branch into new chat");
 
-  return <><div className={`v2-assistant-actions${user ? " v2-user-actions" : ""}`}>
+  return <><div aria-label={user ? t("消息操作", "Message actions") : t("回复操作", "Response actions")}
+    className={`v2-assistant-actions${user ? " v2-user-actions" : ""}`} role="group">
     <button
       aria-label={copyLabel}
       className={`v2-assistant-action-btn${copied === "success" ? " is-copied" : copied === "error" ? " is-error" : ""}`}
@@ -258,7 +259,7 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
         <V2FileAttachments client={client} attachments={entry.attachments ?? []} /></div>
     </details></li>;
   if (entry.kind === "user") return <li className="v2-user-turn" data-conv-entry-key={entry.id} data-message-ids={entry.id} tabIndex={-1}>
-    <div><div className="v2-user-markdown"><MessageMarkdown entry={entry} onOpenFile={onOpenFile} /></div><V2ImagePreview client={client} images={entry.images ?? []} />
+    <div className="v2-user-bubble"><div className="v2-user-markdown"><MessageMarkdown entry={entry} onOpenFile={onOpenFile} /></div><V2ImagePreview client={client} images={entry.images ?? []} />
       <V2FileAttachments client={client} attachments={entry.attachments ?? []} />{entry.status === "cancelled" &&
       <small className="v2-message-status">{t("已取消，不会继续处理", "Cancelled; will not be processed")}</small>}
       {entry.status === "pending" && <small className="v2-message-status">{t("已接收", "Received")}</small>}
@@ -273,7 +274,7 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
       }} />}</li>;
   if (entry.kind === "assistant") return <li aria-live={entry.provisional ? "polite" : undefined}
     data-conv-entry-key={entry.id} data-message-ids={(entry.messageIDs ?? [entry.id]).join(" ")} tabIndex={-1}
-    hidden={hidden} className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}${presentation === "process" || !entry.task ? " is-task-progress" : ""}`}>
+    hidden={hidden} className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}${presentation === "process" ? " is-task-progress" : ""}`}>
     <MessageMarkdown entry={entry} onOpenFile={onOpenFile} />
   </li>;
   if (entry.kind === "activity") return <li hidden={hidden} className="v2-activity-turn" data-conv-entry-key={entry.id} tabIndex={-1}>

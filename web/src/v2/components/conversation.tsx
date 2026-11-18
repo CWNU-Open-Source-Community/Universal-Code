@@ -2,7 +2,7 @@ import { fullPermissionNotReadyMessage, localUIMessage } from "../../lib/local-u
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpen, ChevronDown, CircleEllipsis, Download, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, Globe, ShieldCheck, PanelTop, SquareTerminal, X } from "lucide-react";
+import { Archive, BookOpen, ChevronDown, Ellipsis, Download, FileDiff, FolderTree, LoaderCircle, MessageSquare, MessagesSquare, Microscope, RefreshCw, Globe, PanelTop, SquareTerminal, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
@@ -75,6 +75,11 @@ import { V2NavigatorRail } from "./navigator-rail";
 export { parseProjectFileLink, type FileLinkTarget } from "./narrative";
 
 const V2ExecutionRecords = lazy(() => import("./execution-records").then((module) => ({ default: module.V2ExecutionRecords })));
+
+function conversationMenuItems(menu: HTMLElement | null) {
+  return Array.from(menu?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
+    .filter((item) => getComputedStyle(item).display !== "none");
+}
 
 export function V2FileDrawer({
   client,
@@ -498,7 +503,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     },
   };
   const menuRef = useRef<HTMLDivElement>(null);
-  const firstMenuItemRef = useRef<HTMLButtonElement>(null);
+  const focusLastMenuItem = useRef(false);
+  const tabbingFromMenu = useRef(false);
   const olderScrollAnchorRef = useRef<{ threadID: string; height: number; top: number; pages: number;
     row?: HTMLElement; offset?: number } | null>(null);
   const locatedMessageRef = useRef<{ key: string; row: HTMLElement } | null>(null);
@@ -760,7 +766,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   }, [stageFullView]);
   useEffect(() => {
     if (!menuOpen) return;
-    firstMenuItemRef.current?.focus();
+    tabbingFromMenu.current = false;
+    const actions = conversationMenuItems(menuRef.current);
+    (focusLastMenuItem.current ? actions.at(-1) : actions[0])?.focus();
     const closeForOutsideClick = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Node) || menuRef.current?.contains(target) ||
@@ -1006,36 +1014,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     <div className={`v2-conversation-stage${stageFullView ? " is-full-view" : ""}`}>
     <div className="v2-conversation-main-column" ref={mainColumnRef} aria-hidden={stageFullView || undefined} inert={stageFullView}>
     <header className="v2-conversation-header">
-      <div><Folder aria-hidden="true" size={17} /><strong>{detail.thread.title}</strong></div>
-      <div className="v2-header-actions">
-        <V2ThreadExecutionControl client={client} execution={executionQuery.data}
-          threadID={threadID} stopButtonRef={stopButtonRef} />
-        <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label={t("对话操作", "Conversation actions")}
-          onClick={() => setMenuOpen((value) => !value)} ref={menuTriggerRef} type="button">
-          <CircleEllipsis aria-hidden="true" size={18} />
-        </button>
-        {menuOpen && <div className="v2-thread-menu" ref={menuRef} role="menu">
-          <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} onClick={() => {
-            setMenuOpen(false);
-            menuTriggerRef.current?.focus();
-            onArchive(detail.thread);
-          }} ref={firstMenuItemRef} role="menuitem" type="button">
-            <Archive aria-hidden="true" size={15} />{t("归档对话", "Archive conversation")}</button>
-          <button onClick={() => { setMenuOpen(false); setExportThreadID(threadID); }} role="menuitem" type="button">
-            <Download aria-hidden="true" size={15} />{t("导出对话", "Export conversation")}</button>
-          <button className="v2-task-compact-action" onClick={() => {
-            setMenuOpen(false); setReviewFileTarget(undefined); setReviewToolTarget(undefined);
-            reviewReturnFocus.current = menuTriggerRef.current; openSingletonSurface("review");
-          }} role="menuitem" type="button"><FileDiff aria-hidden="true" size={15} />{t("审阅改动", "Review changes")}</button>
-          <button className="v2-task-compact-action" onClick={() => {
-            setMenuOpen(false); contextReturnFocus.current = menuTriggerRef.current; setContextOpen(true);
-          }} role="menuitem" type="button"><BookOpen aria-hidden="true" size={15} />{t("查看上下文", "View context")}</button>
-          <button onClick={() => {
-            setMenuOpen(false); recordsReturnFocus.current = menuTriggerRef.current; openSingletonSurface("records");
-          }} role="menuitem" type="button">
-            <Microscope aria-hidden="true" size={15} />{t("执行记录", "Execution records")}</button>
-        </div>}
-      </div>
+      <div className="v2-chat-heading"><MessageSquare aria-hidden="true" size={16} /><h1 title={detail.thread.title}>{detail.thread.title}</h1></div>
     <nav className="v2-task-navigation" aria-label={t("任务工作区", "Task workspace")}>
       <div className="v2-task-workbench" role="group" aria-label={t("对话与工作台", "Conversation and workbench")}>
         <button aria-pressed={!workspaceVisible && !contextOpen}
@@ -1103,6 +1082,55 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <Microscope aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("执行记录", "Execution records")}</span></button>
       </div>
     </nav>
+      <div className="v2-header-actions">
+        <V2ThreadExecutionControl client={client} execution={executionQuery.data}
+          threadID={threadID} stopButtonRef={stopButtonRef} />
+        <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label={t("对话操作", "Conversation actions")}
+          onClick={() => { focusLastMenuItem.current = false; setMenuOpen((value) => !value); }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            event.preventDefault();
+            focusLastMenuItem.current = event.key === "ArrowUp";
+            setMenuOpen(true);
+          }} ref={menuTriggerRef} title={t("对话操作", "Conversation actions")} type="button">
+          <Ellipsis aria-hidden="true" size={18} />
+        </button>
+        {menuOpen && <div aria-label={t("对话操作", "Conversation actions")} className="v2-thread-menu" ref={menuRef} role="menu"
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget) &&
+              (event.relatedTarget !== menuTriggerRef.current || tabbingFromMenu.current)) setMenuOpen(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Tab") { tabbingFromMenu.current = true; return; }
+            if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const items = conversationMenuItems(event.currentTarget);
+            const current = items.indexOf(document.activeElement as HTMLButtonElement);
+            const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+              : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+            items[next]?.focus();
+          }}>
+          <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} onClick={() => {
+            setMenuOpen(false);
+            menuTriggerRef.current?.focus();
+            onArchive(detail.thread);
+          }} role="menuitem" tabIndex={-1} type="button">
+            <Archive aria-hidden="true" size={15} />{t("归档对话", "Archive conversation")}</button>
+          <button onClick={() => { setMenuOpen(false); setExportThreadID(threadID); }} role="menuitem" tabIndex={-1} type="button">
+            <Download aria-hidden="true" size={15} />{t("导出对话", "Export conversation")}</button>
+          <button className="v2-task-compact-action" onClick={() => {
+            setMenuOpen(false); setReviewFileTarget(undefined); setReviewToolTarget(undefined);
+            reviewReturnFocus.current = menuTriggerRef.current; openSingletonSurface("review");
+          }} role="menuitem" tabIndex={-1} type="button"><FileDiff aria-hidden="true" size={15} />{t("审阅改动", "Review changes")}</button>
+          <button className="v2-task-compact-action" onClick={() => {
+            setMenuOpen(false); contextReturnFocus.current = menuTriggerRef.current; setContextOpen(true);
+          }} role="menuitem" tabIndex={-1} type="button"><BookOpen aria-hidden="true" size={15} />{t("查看上下文", "View context")}</button>
+          <button onClick={() => {
+            setMenuOpen(false); recordsReturnFocus.current = menuTriggerRef.current; openSingletonSurface("records");
+          }} role="menuitem" tabIndex={-1} type="button">
+            <Microscope aria-hidden="true" size={15} />{t("执行记录", "Execution records")}</button>
+        </div>}
+      </div>
     </header>
     <div className="v2-conversation-viewport">
     <div className="v2-conversation-scroll" ref={scrollRef} onScroll={scrollMemory.onScroll}>
@@ -1139,8 +1167,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <button onClick={() => void executionQuery.refetch()} type="button">{t("刷新执行状态", "Refresh execution status")}</button>
         </div>}
         {!transcriptQuery.isLoading && !transcriptQuery.isError && narrative.length === 0 && <div className="v2-transcript-empty">
-          <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
-            ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
+          <MessageSquare aria-hidden="true" size={19} /><p>{detail.thread.status === "archived"
+            ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("还没有消息。", "No messages yet.")}</p></div>}
         <V2Narrative client={client} entries={visibleNarrative} locatedMessageID={messageID} threadID={threadID} workspaceID={detail.thread.workspace_id ?? ""} onOpenFile={openFile}
           onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread}
           onCompose={client.hasThreadControl && onDraftChange && detail.thread.status !== "archived" ? composeMessage : undefined} />

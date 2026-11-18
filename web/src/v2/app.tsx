@@ -1,6 +1,7 @@
 import { lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { QueryClient, QueryClientProvider, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Brain, Folder, SlidersHorizontal } from "lucide-react";
+import { Brain, MessageSquare, SlidersHorizontal } from "lucide-react";
+import { PrayuBrand } from "../components/prayu-brand";
 import type { APIClient } from "../api/client";
 import type { ProviderDefinitionView, TaskBudgetSettings, ThreadDetailView, ThreadSearchResultView, ThreadView, WorkspaceView } from "../api/types";
 import { normalizedTaskBudget } from "../api/task-configuration";
@@ -244,20 +245,28 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
     { id: "task-configuration", label: t("任务配置", "Task configuration"), icon: <SlidersHorizontal size={20} aria-hidden="true" />, onOpen: onOpenTaskConfiguration },
     { id: "models", label: t("模型", "Models"), icon: <Brain size={20} aria-hidden="true" />, onOpen: () => onManageModels(true) },
   ]}>{(browserTrigger) => <section className="v2-new-conversation">
-    <header><Folder aria-hidden="true" size={17} /><strong>{t("新对话", "New conversation")}</strong>
-      <V2WorkspaceStart client={client} onSelect={(workspace) => onImported(workspace, draft)} />{moreProjects}{browserTrigger}</header>
-    <div className="v2-new-conversation-body"><div className="v2-new-copy">
-      <span className="v2-orb" aria-hidden="true"><i /><i /></span>
-      <h1>{t("接下来要做什么？", "What would you like to do next?")}</h1><p>{workspaceID || client.hasProjectlessWorkspaces ? t("描述目标，随时查看进展、补充消息或停止。", "Describe your goal. Check progress, add messages, or stop at any time.")
-        : t("先接入项目。你也可以先写下需求，选择项目后继续。", "Connect a project to get started. You can write your request first and continue after selecting a project.")}</p>
-    </div></div>
-    {workspaceNotice}
-    {creationRecovery.notice}
-    {modelCatalogError && <div className="v2-notice" role="alert">{modelCatalogError}</div>}
-    {!webAccessValid && <div className="v2-notice" role="alert">{t("保存的网页限制需要更新。", "Saved web restrictions need updating.")}
-      <button onClick={onOpenWebSettings} type="button">{t("修正网页限制", "Fix web restrictions")}</button></div>}
-    {!configurationValid && <div className="v2-notice" role="alert">{t("任务配置需要修正或重新核对，草稿已保留。", "Task configuration needs correction or review. Your draft has been kept.")}
-      <button onClick={onOpenTaskConfiguration} type="button">{t("修正任务配置", "Fix task configuration")}</button></div>}
+    <header>
+      <div className="v2-chat-heading"><MessageSquare aria-hidden="true" size={16} /><strong>{t("新对话", "New conversation")}</strong></div>
+      <div className="v2-new-tools">
+        <V2WorkspaceStart client={client} onSelect={(workspace) => onImported(workspace, draft)} />{moreProjects}{browserTrigger}
+      </div>
+    </header>
+    <div className="v2-new-conversation-body">
+      <div className="v2-new-copy">
+        <PrayuBrand variant="icon" />
+        <h1>{t("接下来要做什么？", "What would you like to do next?")}</h1>
+        {!workspaceID && !client.hasProjectlessWorkspaces && <p>{t("先接入项目。你也可以先写下需求，选择项目后继续。", "Connect a project to get started. You can write your request first and continue after selecting a project.")}</p>}
+      </div>
+      <div className="v2-new-notices">
+        {workspaceNotice}
+        {creationRecovery.notice}
+        {modelCatalogError && <div className="v2-notice" role="alert">{modelCatalogError}</div>}
+        {!webAccessValid && <div className="v2-notice" role="alert">{t("保存的网页限制需要更新。", "Saved web restrictions need updating.")}
+          <button onClick={onOpenWebSettings} type="button">{t("修正网页限制", "Fix web restrictions")}</button></div>}
+        {!configurationValid && <div className="v2-notice" role="alert">{t("任务配置需要修正或重新核对，草稿已保留。", "Task configuration needs correction or review. Your draft has been kept.")}
+          <button onClick={onOpenTaskConfiguration} type="button">{t("修正任务配置", "Fix task configuration")}</button></div>}
+      </div>
+    </div>
     <div className="v2-composer-dock">
       {managedDraft && <V2DraftConflict key={workspaceID} client={client} workspaceID={workspaceID} state={managedDraft.state}
         onResolve={(token, ref) => { managedDraft.document.resolve(managedDraft.scope, token, ref); }} />}
@@ -267,10 +276,10 @@ function NewConversation({ client, workspaces, workspaceID, projectID, workspace
       onManageModels={onManageModels} onPendingModelRouteChange={(route) =>
         onOptionsChange({ ...options, modelRoute: route })}
       pendingModelRoute={modelRoute}
-      newThreadControls={<><button aria-label={t("任务预算与项目配置", "Task budget and project configuration")} className="v2-composer-chip v2-composer-task-config"
+      projectControls={<button aria-label={t("任务预算与项目配置", "Task budget and project configuration")} className="v2-composer-chip"
         title={t("任务预算与项目配置", "Task budget and project configuration")}
-        onClick={onOpenTaskConfiguration} type="button"><SlidersHorizontal aria-hidden="true" size={14} /><span className="v2-composer-optional-label">{t("任务配置", "Task configuration")}{budget ? t(" · 自定义", " · Custom") : ""}</span></button>
-      <V2PhasePicker phase={phase} onChange={onPhaseChange}
+        onClick={onOpenTaskConfiguration} type="button"><SlidersHorizontal aria-hidden="true" size={14} /><span>{t("任务配置", "Task configuration")}{budget ? t(" · 自定义", " · Custom") : ""}</span></button>}
+      newThreadControls={<><V2PhasePicker phase={phase} onChange={onPhaseChange}
         disabled={!client.hasThreadControl} planAvailable={client.hasPlanDelivery} />
       <V2ApprovalModeControl selectionOnly mode={approval?.mode ?? "ask"}
         fullActivation={approval?.confirmed ? "active" : "inactive"} pending={applyingApproval}

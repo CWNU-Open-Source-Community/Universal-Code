@@ -1,7 +1,7 @@
 import { fullPermissionNotReadyMessage, localUIMessage } from "../../lib/local-ui-message";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command, SquarePen } from "lucide-react";
+import { ArrowUp, ChevronDown, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command, SquarePen } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { WorkspaceView } from "../../api/types";
@@ -36,7 +36,7 @@ export type V2ComposerSubmitResult = void | typeof v2ComposerNotSubmitted;
 
 export function V2Composer({ client, threadID, workspaceID, runID, workspaces, disabled = false, submitDisabled = false,
   projectID, allowProjectless = false,
-  placeholder, newThreadControls, threadControls, runActive = false, onManageModels,
+  placeholder, projectControls, newThreadControls, threadControls, runActive = false, onManageModels,
   pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, onStop, draft, onDraftChange, onStartNextMessage,
   fileReferenceUnavailableReason, confirmedSubmission, presentedSubmissionErrors = [] }: {
   client: APIClient;
@@ -49,6 +49,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   disabled?: boolean;
   submitDisabled?: boolean;
   placeholder?: string;
+  projectControls?: ReactNode;
   newThreadControls?: ReactNode;
   threadControls?: (hasUnsentDraft: boolean) => ReactNode;
   runActive?: boolean;
@@ -363,34 +364,33 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   };
   const addActions: ComposerAddAction[] = [];
   if (client.hasThreadControl) addActions.push({ id: "upload", label: t("添加图片或文件", "Add images or files"),
-    detail: !workspaceID ? t("先选择项目，再添加附件", "Select a project before adding attachments") : t("从电脑选择，也可直接粘贴或拖入", "Choose from your computer, paste, or drag files here"),
+    detail: !workspaceID ? t("先选择项目，再添加附件", "Select a project before adding attachments") : undefined,
     icon: <Paperclip aria-hidden="true" size={18} />,
     disabled: disabled || !workspaceID || importStatus.busy || images.uploading || attachments.uploading,
     onSelect: () => attachmentPicker.current?.click() });
   if (workspaceID && client.hasEvidenceAttachment) addActions.push({ id: "reference", label: t("引用项目文件", "Reference project files"),
-    detail: fileReferenceUnavailableReason || t("选择项目中已有的文件作为参考", "Choose existing project files as references"),
+    detail: fileReferenceUnavailableReason,
     icon: <FolderOpen aria-hidden="true" size={18} />, disabled: disabled || Boolean(fileReferenceUnavailableReason),
     onSelect: () => setReferencePickerOpen(true) });
   if (workspaceID && client.hasExtensionControl && client.hasThreadControl) {
     let unavailable = "";
     if (fileReferenceUnavailableReason) unavailable = t("当前任务结束并处理待批准操作后可引用 MCP 内容", "MCP references are available after the task and pending approvals are complete");
     else if (mcp.references.length >= maximumMCPReferences) unavailable = t("每条消息最多 4 个 MCP 引用", "Up to 4 MCP references per message");
-    addActions.push({ id: "mcp-resource", label: t("引用 MCP 资源", "Reference MCP resources"), detail: unavailable || t("选择服务器资源或填写资源模板", "Choose server resources or fill in a resource template"),
+    addActions.push({ id: "mcp-resource", label: t("引用 MCP 资源", "Reference MCP resources"), detail: unavailable,
       icon: <Database aria-hidden="true" size={18} />, disabled: disabled || Boolean(unavailable), onSelect: () => setMCPPicker("resource") },
-    { id: "mcp-prompt", label: t("使用 MCP Prompt", "Use MCP prompt"), detail: unavailable || t("选择 Prompt 并填写参数", "Choose a prompt and fill in its arguments"),
+    { id: "mcp-prompt", label: t("使用 MCP Prompt", "Use MCP prompt"), detail: unavailable,
       icon: <Command aria-hidden="true" size={18} />, disabled: disabled || Boolean(unavailable), onSelect: () => setMCPPicker("prompt") });
   }
   if (client.hasThreadControl && desktopClipboardFilesAvailable()) addActions.push({ id: "paste", label: t("粘贴文件", "Paste files"),
-    detail: t("添加从资源管理器复制的文件 · Ctrl+V", "Add files copied from File Explorer · Ctrl+V"),
+    detail: !workspaceID ? t("先选择项目，再粘贴文件", "Select a project before pasting files") : undefined,
     icon: <ClipboardPaste aria-hidden="true" size={18} />,
     disabled: disabled || !workspaceID || nativeClipboard.busy || nativeClipboard.pending,
     onSelect: () => void nativeClipboard.onPasteFallback() });
   addActions.push({ id: "editor-mode", compactOnly: true,
     label: plainText ? t("切换为 Markdown 编辑", "Switch to Markdown editing") : t("切换为纯文本编辑", "Switch to plain text editing"),
-    detail: t("切换输入方式，保留当前草稿", "Change the editor and keep your draft"),
     icon: <SquarePen aria-hidden="true" size={18} />, disabled, onSelect: () => toggleEditorMode(addTriggerRef.current) });
 
-  return <form className="v2-composer" data-empty={!hasUnsentDraft} data-editor-expanded={editorExpanded}
+  return <form aria-label={t("消息编辑器", "Message composer")} className="v2-composer" data-empty={!hasUnsentDraft} data-editor-expanded={editorExpanded}
     onSubmit={(event) => void submit(event)} onKeyDownCapture={(event) => {
       // A running turn takes precedence over Tiptap's native Escape binding.
       stopFromInput(event); onKeyDown(event);
@@ -479,17 +479,6 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
           onClick={() => void convertTextToAttachment()}>{attachments.uploading ? t("正在保存…", "Saving…") : t("转为文本附件", "Convert to text attachment")}</button>
       </div>}
       <div className="v2-composer-footer">
-        {!threadID && <label className="v2-workspace-picker">
-          <FolderOpen aria-hidden="true" size={14} />
-          <span className="sr-only">{t("工作区", "Workspace")}</span>
-          <select aria-label={t("选择工作区", "Select workspace")} disabled={submitting || (!allowProjectless && workspaces.length === 0)}
-            onChange={(event) => onWorkspaceChange(event.target.value)} value={projectID ?? workspaceID}>
-            {allowProjectless && <option value="">{t("本地聊天", "Local chats")}</option>}
-            {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>
-              {workspace.name}
-            </option>)}
-          </select>
-        </label>}
         <div className="v2-composer-tools">
           <V2ComposerAddMenu actions={addActions} disabled={attachmentsDisabled} key={scope} triggerRef={addTriggerRef} />
           <button className="v2-composer-mode-toggle" type="button" disabled={disabled}
@@ -515,6 +504,19 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
         </div>
       </div>
     </div>
+    {!threadID && <div className="v2-composer-project">
+      <label className="v2-workspace-picker">
+        <FolderOpen aria-hidden="true" size={15} />
+        <select aria-label={t("选择工作区", "Select workspace")} disabled={submitting || (!allowProjectless && workspaces.length === 0)}
+          onChange={(event) => onWorkspaceChange(event.target.value)} value={projectID ?? workspaceID}>
+          {allowProjectless && <option value="">{t("本地聊天", "Local chats")}</option>}
+          {!allowProjectless && !workspaceID && <option value="" disabled>{t("选择工作区", "Select workspace")}</option>}
+          {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+        </select>
+        <ChevronDown aria-hidden="true" size={12} />
+      </label>
+      {projectControls}
+    </div>}
     {promptHistory.notice && <p className={promptHistory.notice.error ? "v2-composer-error" : "v2-composer-caption"}
       role={promptHistory.notice.error ? "alert" : "status"}>{promptHistory.notice.text}</p>}
     {workspaceID && references.files.length > 0 && fileReferenceUnavailableReason &&
