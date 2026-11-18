@@ -134,8 +134,11 @@ func TestCommandSubcommandsDocumented(t *testing.T) {
 	help := out.String()
 	for _, spec := range commandTable {
 		for _, sub := range commandSubcommands[spec.name] {
-			if !strings.Contains(help, sub) && !strings.Contains(spec.usage, sub) {
-				t.Errorf("subcommand %q of %q is documented nowhere; document it or verify it against the dispatch switch", sub, spec.name)
+			if !strings.Contains(spec.usage, sub) {
+				t.Errorf("subcommand %q of %q is missing from commandTable usage %q", sub, spec.name, spec.usage)
+			}
+			if !usageNotInHelp[spec.name] && !strings.Contains(help, sub) {
+				t.Errorf("subcommand %q of %q is missing from printHelp output", sub, spec.name)
 			}
 		}
 	}
@@ -367,6 +370,38 @@ func TestCompletionCommandEmitsZshScript(t *testing.T) {
 	}
 	if !strings.Contains(out, "__complete") {
 		t.Fatalf("zsh script must delegate to __complete: %q", out)
+	}
+	if !strings.Contains(out, `"${(@)words[2,CURRENT]}"`) || strings.Contains(out, "words[2,-1]") {
+		t.Fatalf("zsh script must slice words up to CURRENT so trailing arguments do not suppress mid-line completion: %q", out)
+	}
+	// Simulates Zsh passing ${(@)words[2,CURRENT]} when the cursor sits after
+	// "wo" in `cyberagent wo list` (CURRENT=2) and at end-of-line `cyberagent workspace in` (CURRENT=3).
+	midLine, err := dispatchForOutput(t, "__complete", "wo")
+	if err != nil || strings.TrimSpace(midLine) != "workspace" {
+		t.Fatalf("mid-line cursor slice must complete workspace, got %q (err=%v)", midLine, err)
+	}
+	endOfLine, err := dispatchForOutput(t, "__complete", "workspace", "in")
+	if err != nil || strings.TrimSpace(endOfLine) != "init" {
+		t.Fatalf("end-of-line cursor slice must complete init, got %q (err=%v)", endOfLine, err)
+	}
+}
+
+func TestPrintCommandHelpListsFullDoctorAndRunVocabularies(t *testing.T) {
+	doctorOut, err := dispatchForOutput(t, "help", "doctor")
+	if err != nil {
+		t.Fatalf("dispatch help doctor: %v", err)
+	}
+	for _, sub := range commandSubcommands["doctor"] {
+		if !strings.Contains(doctorOut, sub) {
+			t.Fatalf("help doctor missing subcommand %q: %q", sub, doctorOut)
+		}
+	}
+	runOut, err := dispatchForOutput(t, "help", "run")
+	if err != nil {
+		t.Fatalf("dispatch help run: %v", err)
+	}
+	if !strings.Contains(runOut, "standard-code") {
+		t.Fatalf("help run missing standard-code: %q", runOut)
 	}
 }
 

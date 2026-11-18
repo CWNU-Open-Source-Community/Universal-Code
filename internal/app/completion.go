@@ -30,7 +30,7 @@ var commandTable = []commandSpec{
 	{"context", "Compact context and manage instructions and memory", "cyberagent context compact|show|instructions|memory"},
 	{"ctf", "Scaffold CTF challenge workspaces, analysis worksheets, and writeups", "cyberagent ctf init|analyze|writeup"},
 	{"debug", "Run bounded debug queries against a run", "cyberagent debug query --run <run-id> [bounded filters] [--json]"},
-	{"doctor", "Diagnose installation, runtime readiness, and run health", "cyberagent doctor portable [--json]"},
+	{"doctor", "Diagnose installation, runtime readiness, and run health", "cyberagent doctor portable|snapshot|bundle|browser-readiness|browser-network-probe|browser-network-review"},
 	{"drydock", "Manage deterministic run checkpoints, rewind, fork, and cleanup", "cyberagent drydock status|create|use|checkpoint|rewind|undo|fork|deliver|cleanup|reconcile|gc"},
 	{"edit", "Propose and review workspace file edits", "cyberagent edit propose|list|show|review-approve|review-deny|approve|apply|deny"},
 	{"exec", "Start a one-shot agent run and print its result", `cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--instructions <text>] [--timeout 30m] [--json] [--continue <thread-id>]`},
@@ -49,7 +49,7 @@ var commandTable = []commandSpec{
 	{"project-config", "Show and validate the narrowing-only project configuration", "cyberagent project-config show|validate <path> [--profile <p> --max-turns <n> --max-tool-calls <n>]"},
 	{"provider", "List, test, and qualify model providers and import pricing", "cyberagent provider list|test|qualify|price-import|price-list"},
 	{"report", "Show reports, findings, and checks", "cyberagent report show|finding|check"},
-	{"run", "Create, inspect, and drive execution runs", "cyberagent run create|adapt-task|list|show|mode|phase|execution-profile|execution-interaction|execution-permission|browser-cdp-permission|capability-readiness|command-plan|command-execute|host-execute|project-action|command-proposal|events|usage|start|step|execute|checkpoint|graph|lease|finish|fail|pause|resume|cancel|delegations|delegation|specialist-step|plans|plan|delivery|steer|fanouts|fanout|sandbox|wake|schedule"},
+	{"run", "Create, inspect, and drive execution runs", "cyberagent run create|adapt-task|list|show|mode|phase|execution-profile|execution-interaction|execution-permission|browser-cdp-permission|capability-readiness|command-plan|command-execute|host-execute|project-action|command-proposal|events|usage|start|step|execute|checkpoint|graph|lease|finish|fail|pause|resume|cancel|delegations|delegation|specialist-step|plans|plan|delivery|steer|fanouts|fanout|sandbox|standard-code|wake|schedule"},
 	{"sandbox", "Validate sandbox templates and local readiness", "cyberagent sandbox validate|template|local-readiness"},
 	{"script", "Create and record local script templates and runs", "cyberagent script new|run"},
 	{"session", "Manage run-local sessions, checkpoints, forks, and resumes", "cyberagent session create|list|send|history|tree|checkpoint|fork|resume"},
@@ -230,7 +230,7 @@ const zshCompletionScript = `#compdef cyberagent
 
 _cyberagent() {
   local -a candidates
-  candidates=(${(f)"$(command cyberagent __complete "${(@)words[2,-1]}" 2>/dev/null)"})
+  candidates=(${(f)"$(command cyberagent __complete "${(@)words[2,CURRENT]}" 2>/dev/null)"})
   if ((${#candidates[@]})); then
     _describe -t cyberagent-commands 'cyberagent command' candidates
   fi
