@@ -4,8 +4,7 @@
 .v2-usage-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 20px; margin-bottom: 34px; }
 .v2-usage-heading h1 { font-size: 24px; font-weight: 600; line-height: 1.4; margin: 0 0 6px; }
 .v2-usage-heading p { color: var(--v2-muted); font-size: 13px; line-height: 1.6; margin: 0; }
-.v2-usage-controls { display: flex; align-items: center; gap: 10px; }
-.v2-usage-controls .v2-setting-segmented { flex-shrink: 0; }
+.v2-usage-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0; }
 .v2-usage-controls .v2-setting-segmented button { min-height: 34px; padding-inline: 12px; white-space: nowrap; }
 .v2-usage-refresh { align-items: center; display: flex; justify-content: center; background: none; color: var(--v2-muted); border: 1px solid transparent; border-radius: 8px; padding: 8px; cursor: pointer; }
 .v2-usage-refresh:hover { background: var(--v2-control-hover); color: var(--v2-ink); }
@@ -87,11 +86,11 @@
 .v2-usage-method p { max-width: 76ch; line-height: 1.8; margin: 10px 0; }
 .v2-usage-message { margin: 36px 0; color: var(--v2-muted); font-size: 14px; line-height: 1.7; }
 .v2-usage button:focus-visible, .v2-usage summary:focus-visible, .v2-usage-daily-details > div:focus-visible { outline: 2px solid var(--prayu-focus); outline-offset: 3px; }
-@media (max-width: 1050px) {
+@container secondary-page (max-width: 800px) {
   .v2-usage-lists { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .v2-usage-lists > section + section { border-top: 1px solid var(--v2-border); padding-top: 24px; }
 }
-@media (max-width: 600px) {
+@container secondary-page (max-width: 600px) {
   .v2-settings-content.v2-usage-content { padding-top: 24px; }
   .v2-usage-heading { margin-bottom: 26px; }
   .v2-usage-controls .v2-setting-segmented button { padding-inline: 8px; }

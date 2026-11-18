@@ -15,10 +15,8 @@
 .v2-shared-settings .extension-facts dd,
 .v2-shared-settings .model-route-row,
 .v2-shared-settings .provider-credential-row { overflow-wrap: anywhere; min-width: 0; }
-.v2-shared-settings .settings-action,
-.v2-setting-segmented button { border: 1px solid var(--v2-border); border-radius: 8px; background: var(--v2-control); color: var(--v2-ink); min-height: 34px; padding: 6px 12px; font: inherit; cursor: pointer; }
-.v2-shared-settings .settings-action:hover,
-.v2-setting-segmented button:hover { background: var(--v2-control-hover); color: var(--v2-ink); }
+.v2-shared-settings .settings-action { border: 1px solid var(--v2-border); border-radius: 9px; background: var(--v2-control); color: var(--v2-ink); min-height: 34px; padding: 6px 12px; font: inherit; cursor: pointer; text-align: center; }
+.v2-shared-settings .settings-action:hover { background: var(--v2-control-hover); color: var(--v2-ink); }
 .v2-shared-settings .settings-action.danger { color: var(--v2-danger); }
 .v2-shared-settings .settings-action:disabled { opacity: .5; cursor: default; }
 .v2-shared-settings .settings-web-skill,
@@ -35,8 +33,6 @@
 .v2-record-preferences > .settings-action { justify-self: start; }
 .v2-record-preferences > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .v2-record-preferences strong { overflow-wrap: anywhere; }
-.v2-setting-segmented { display: flex; flex-wrap: wrap; gap: 6px; }
-.v2-setting-segmented button[aria-pressed="true"] { border-color: var(--v2-accent); background: color-mix(in srgb, var(--v2-accent) 10%, var(--v2-control)); }
 .v2-settings-diagnostics { margin-top: 24px; border-top: 1px solid var(--v2-border); padding-top: 16px; }
 .v2-settings-diagnostics > summary { cursor: pointer; }
 .v2-shared-settings .settings-row-list > div,
@@ -52,7 +48,7 @@
 .v2-shared-settings .run-execution-control textarea { width: 100%; min-width: 0; font-size: 13px; line-height: 1.6; }
 .v2-shared-settings .provider-credential-row { grid-template-columns: minmax(0, 1fr) auto; }
 .v2-shared-settings .shortcut-list kbd { font-size: 13px; }
-@media (max-width: 760px) {
+@container secondary-page (max-width: 660px) {
   .v2-skill-settings-card,
   .v2-record-preferences { padding: 16px; }
   .v2-record-preferences > div { align-items: flex-start; flex-direction: column; gap: 10px; }

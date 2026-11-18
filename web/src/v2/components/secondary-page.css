@@ -1,0 +1,85 @@
+.v2-page-scroll {
+  container: secondary-page / inline-size;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.v2-page-column {
+  margin-inline: auto;
+  max-width: var(--v2-content-width);
+  min-width: 0;
+  padding-block: 48px 64px;
+  width: calc(100% - clamp(32px, 8%, 64px));
+}
+
+.v2-page-column > h1,
+.v2-page-column > .v2-shared-settings > h1 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  line-height: 1.3;
+  margin: 0 0 28px;
+}
+
+:is(.v2-page-segments, .v2-setting-segmented, .v2-automations-page .automation-mode-picker) {
+  align-items: center;
+  background: var(--v2-control);
+  border: 1px solid var(--v2-border);
+  border-radius: 12px;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px;
+  width: fit-content;
+}
+
+:is(.v2-page-segments, .v2-setting-segmented, .v2-automations-page .automation-mode-picker) > button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--prayu-radius-inner);
+  color: var(--v2-muted);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  justify-content: center;
+  line-height: 1.4;
+  min-height: 28px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 4px 10px;
+  text-align: center;
+  white-space: normal;
+}
+
+:is(.v2-page-segments, .v2-setting-segmented) > button:disabled { cursor: default; opacity: .55; }
+
+:is(.v2-page-segments, .v2-setting-segmented, .v2-automations-page .automation-mode-picker) > button:hover:not(:disabled) {
+  background: var(--v2-control-hover);
+  color: var(--v2-ink);
+}
+
+:is(.v2-page-segments, .v2-setting-segmented, .v2-automations-page .automation-mode-picker) > button[aria-pressed="true"] {
+  background: var(--prayu-surface-solid);
+  border-color: var(--v2-border);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--v2-ink) 8%, transparent);
+  color: var(--v2-ink);
+  font-weight: 600;
+}
+
+.v2-page-segments svg { flex: none; }
+
+@container secondary-page (max-width: 580px) {
+  .v2-page-column { padding-block: 28px 44px; }
+  .v2-page-column > h1, .v2-page-column > .v2-shared-settings > h1 { margin-bottom: 22px; }
+}
+
+@media (forced-colors: active) {
+  :is(.v2-page-segments, .v2-setting-segmented, .v2-automations-page .automation-mode-picker) > button[aria-pressed="true"] {
+    border-color: Highlight;
+  }
+}

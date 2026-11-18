@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore, ArrowRight, BookOpen, Search, Trash2, X } from "lucide-react";
@@ -45,6 +45,7 @@ import { useLocale } from "../../lib/locale";
 import type { ProjectSkillChoice } from "../../api/project-skills";
 import { ModelAvailabilitySettings } from "../../components/model-availability-dialog";
 import { V2AboutSettings, V2ExtensionSettings, V2RecordPreferences, V2SkillSettings } from "./advanced-settings";
+import "./secondary-page.css";
 import "./settings.css";
 
 const TaskConfigurationSettings = lazy(() => import("./task-configuration-settings").then((module) => ({ default: module.TaskConfigurationSettings })));
@@ -71,8 +72,7 @@ function ConnectionsSettings({ client, threadID, sourceRunID, onSelect, onOpenGi
     : detail?.active_run ?? detail?.last_run;
   return <><h1>{t("连接与环境", "Connections & environment")}</h1>
     <section className="v2-connection-task" aria-label={t("当前任务", "Current task")}>
-      <div><strong>{threadID ? detail?.thread.title || t("当前任务", "Current task") : t("从一个任务开始", "Start with a task")}</strong>
-        <p>{threadID ? t("在下面调整连接与选项，完成后继续对话。", "Adjust connections and options below, then continue the conversation.") : t("打开项目，选好模型，在对话中描述你想完成的工作。", "Open a project, choose a model, and describe what you want to do.")}</p></div>
+      <strong>{threadID ? detail?.thread.title || t("当前任务", "Current task") : t("当前未打开任务", "No task is open")}</strong>
       {onOpenTask && <button onClick={() => onOpenTask()} type="button">
         {threadID ? t("返回任务", "Return to task") : t("开始任务", "Start a task")}<ArrowRight aria-hidden="true" size={15} /></button>}
     </section>
@@ -167,7 +167,7 @@ function GeneralSettings({ client, threadID, workspaces, onPermissions }: {
   const [saveError, setSaveError] = useState(false);
   return <>
     <h1>{t("常规", "General")}</h1>
-    <section className="v2-settings-section"><h2>{t("常规", "General")}</h2>
+    <section className="v2-settings-section" aria-label={t("常规", "General")}>
       <div className="v2-settings-card">
         <SettingRow detail={t("新对话中选择项目；桌面应用可直接打开本机文件夹", "Choose a project in a new conversation. The desktop app can open local folders directly.")} title={t("项目", "Projects")}>
           <span>{t(`${workspaces.length} 个已加载项目`, `Loaded projects: ${workspaces.length}`)}</span>
@@ -456,16 +456,16 @@ function ArchivedSettings({ client, onOpenThread }: { client: APIClient; onOpenT
         ? query.fetchNextPage() : query.refetch())} type="button">{t("重试归档列表", "Retry archived chats")}</button></p>}
       {!query.isLoading && !query.isError && threads.length === 0 && <div className="v2-archive-empty">
         {normalized ? t("已加载的标题中没有匹配项", "No matching titles in the loaded chats") : t("暂无已归档的聊天", "No archived chats yet")}</div>}
-      {threads.map((thread) => <article key={thread.id}><div><strong>{onOpenThread
+      {threads.map((thread) => <article key={thread.id}><div className="v2-archive-title"><strong>{onOpenThread
         ? <button className="link-button" aria-label={t(`打开 ${thread.title}`, `Open ${thread.title}`)} onClick={() => onOpenThread(thread.id)}
           type="button">{thread.title}</button> : thread.title}</strong>
         <span>{thread.archived_at ? new Date(thread.archived_at).toLocaleString(locale) : t("已归档", "Archived")}</span></div>
-        <button disabled={!client.hasThreadControl || transition.isPending}
+        <div className="v2-archive-actions"><button disabled={!client.hasThreadControl || transition.isPending}
           onClick={() => transition.mutate({ thread, action: "restore" })} type="button">
           <ArchiveRestore aria-hidden="true" size={15} />{t("取消归档", "Unarchive")}</button>
         <button aria-label={t(`删除 ${thread.title}`, `Delete ${thread.title}`)} className="danger"
           disabled={!client.hasThreadControl || transition.isPending}
-          onClick={() => setDeleteCandidate(thread)} type="button"><Trash2 aria-hidden="true" size={15} />{t("删除", "Delete")}</button>
+          onClick={() => setDeleteCandidate(thread)} type="button"><Trash2 aria-hidden="true" size={15} />{t("删除", "Delete")}</button></div>
       </article>)}</div>
     {query.hasNextPage && <button className="v2-load-history" disabled={query.isFetchingNextPage}
       onClick={() => void query.fetchNextPage()} type="button">
@@ -512,8 +512,13 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
   desktop?: boolean;
 }) {
   const { t } = useLocale();
-  return <main className="v2-settings-main"><div className="v2-settings-toolbar" />
-    <div className="v2-settings-scroll"><div className={`v2-settings-content${section === "usage" ? " v2-usage-content" : ""}`}>
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [section]);
+
+  return <main className="v2-settings-main"><div aria-hidden="true" className="v2-settings-toolbar" />
+    <div className="v2-settings-scroll v2-page-scroll" ref={scrollRef}><div className={`v2-settings-content v2-page-column${section === "usage" ? " v2-usage-content" : ""}`}>
       {section === "general" && <GeneralSettings client={client} onPermissions={() => onSelectSection("permissions")}
         threadID={threadID} workspaces={workspaces} />}
       {section === "configuration" && <V2WebAccessSettings mode={defaultWebAccessMode} targets={defaultWebAccessTargets}

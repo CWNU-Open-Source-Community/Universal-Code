@@ -1,12 +1,13 @@
 import { useLocale } from "../../lib/locale";
 import { useMemo, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { ChevronRight, ListChecks, MessagesSquare, Search } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { RunView, SessionView } from "../../api/types";
 import { LifecycleStatusLabel } from "../../components/lifecycle-status";
 import { formatDate } from "../../lib/format";
 import { v2QueryKeys } from "../query-keys";
+import "./secondary-page.css";
 import "./history-page.css";
 
 type RecordKind = "run" | "session";
@@ -18,9 +19,13 @@ export function HistoryRecordBrowser({ client, onOpen }: {
   const { t } = useLocale();
   const [kind, setKind] = useState<RecordKind | null>(null);
   return <section className="v2-record-browser" aria-label={t("全部运行与会话", "All runs and sessions")}>
-    <div className="v2-record-kinds" role="group" aria-label={t("记录类型", "Record type")}>
-      <button aria-pressed={kind === "run"} onClick={() => setKind("run")} type="button">{t("运行记录", "Run records")}</button>
-      <button aria-pressed={kind === "session"} onClick={() => setKind("session")} type="button">{t("会话记录", "Session records")}</button>
+    <div className={kind ? "v2-page-segments" : "v2-history-collections"} role="group" aria-label={t("记录类型", "Record type")}>
+      <button aria-pressed={kind === "run"} onClick={() => setKind("run")} type="button">
+        <ListChecks aria-hidden="true" size={16} />{t("运行记录", "Run records")}{!kind && <ChevronRight aria-hidden="true" size={14} />}
+      </button>
+      <button aria-pressed={kind === "session"} onClick={() => setKind("session")} type="button">
+        <MessagesSquare aria-hidden="true" size={16} />{t("会话记录", "Session records")}{!kind && <ChevronRight aria-hidden="true" size={14} />}
+      </button>
     </div>
     {kind && <RecordList client={client} key={kind} kind={kind} onOpen={onOpen} />}
   </section>;
@@ -51,9 +56,7 @@ function RecordList({ client, kind, onOpen }: {
       <input aria-label={t(`搜索${label}`, `Search ${label}`)} onChange={(event) => setSearch(event.target.value)} type="search"
         placeholder={kind === "run" ? t("搜索已加载的运行 ID", "Search loaded run IDs") : t("搜索已加载的会话标题或 ID", "Search loaded session titles or IDs")} value={search} />
     </label>
-    <p className="v2-record-search-scope">{t(`搜索 ${loaded.length} 条已加载${kind === "run" ? "运行 ID" : "会话标题和 ID"}，不含消息正文。`, `Search ${loaded.length} loaded ${kind === "run" ? "run IDs" : "session titles and IDs"}; message text is excluded.`)}
-      {query.isPending ? t("正在读取记录。", "Loading records.") : query.isError ? t("加载未完成，请重试。", "Loading did not finish. Retry.")
-        : query.hasNextPage ? t("还有更早记录可加载。", "Earlier records are available.") : t("当前列表已加载完毕。", "All records in this list are loaded.")}</p>
+    <p className="v2-record-search-scope">{t(`搜索 ${loaded.length} 条已加载${kind === "run" ? "运行 ID" : "会话标题和 ID"}，不含消息正文。`, `Search ${loaded.length} loaded ${kind === "run" ? "run IDs" : "session titles and IDs"}. Message text is excluded.`)}</p>
     {query.isPending && <p role="status">{t(`正在读取${label}…`, `Loading ${label.toLowerCase()}…`)}</p>}
     {query.isError && <p role="alert">{t(`${label}加载失败，已加载记录仍可打开。`, `Could not load ${label.toLowerCase()}. Previously loaded records remain available.`)}
       <button onClick={() => void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch())}
@@ -62,10 +65,11 @@ function RecordList({ client, kind, onOpen }: {
       {normalized ? t("已加载记录中没有匹配项", "No matches in loaded records") : t(`暂无${label}`, `No ${label.toLowerCase()} yet`)}</p>}
     <ul className="v2-record-list">{visible.map((record) => <li key={record.id}>
       <button aria-label={t(`打开${label} ${record.id}`, `Open ${label.toLowerCase()} ${record.id}`)} onClick={() => onOpen(kind, record.id)} type="button">
-        <span><strong>{"title" in record && record.title ? record.title : record.id}</strong>
+        <span className="v2-record-name"><strong>{"title" in record && record.title ? record.title : record.id}</strong>
           {"title" in record && record.title && <code>{record.id}</code>}</span>
-        <small><span aria-label={kind === "run" ? t("执行记录状态", "Run record status") : t("上下文记录状态", "Context record status")} className={`v2-record-status${record.status === "failed" ? " is-failed" : record.status === "waiting_approval" ? " is-pending" : ""}`}>
-          <LifecycleStatusLabel status={record.status} kind={kind} /></span> · {formatDate(record.updated_at)}</small>
+        <span aria-label={kind === "run" ? t("执行记录状态", "Run record status") : t("上下文记录状态", "Context record status")} className={`v2-record-status${record.status === "failed" ? " is-failed" : record.status === "waiting_approval" ? " is-pending" : ""}`}>
+          <LifecycleStatusLabel status={record.status} kind={kind} /></span>
+        <time dateTime={record.updated_at}>{formatDate(record.updated_at)}</time>
       </button>
     </li>)}</ul>
     {query.hasNextPage && !query.isFetchNextPageError && <button className="v2-record-load-more" disabled={query.isFetchingNextPage}

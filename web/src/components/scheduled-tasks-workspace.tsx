@@ -189,11 +189,11 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
     running: t("运行中", "Running"), waiting_approval: t("等待审批", "Waiting for approval"), blocked: t("等待处理", "Blocked") }[value] || value);
 
   return <section className="utility-workspace scheduled-tasks-workspace">
-    <header><CalendarClock aria-hidden="true" size={18} /><div><h1>{t("自动化", "Automations")}</h1><small>{workerLabel}{scopeLabel && " · " + scopeLabel}</small></div>
+    <header><div><h1>{t("自动化", "Automations")}</h1><small>{workerLabel}{scopeLabel && " · " + scopeLabel}</small></div>
       <button aria-label={t("刷新自动化", "Refresh automations")} className="compact-command" disabled={list.isFetching}
         onClick={() => { void list.refetch(); void health.refetch(); }} type="button"><RefreshCw aria-hidden="true" className={list.isFetching ? "spin" : ""} size={14} />{t("刷新", "Refresh")}</button></header>
-    <p>{t("按时间继续已有任务、运行已保存工作流，或跟进 PR 与 CI。应用运行时自动推进；需要审批时在原任务中等待处理。",
-      "Continue an existing task on a schedule, run a saved workflow, or follow PR and CI feedback. Automations advance while the app is open and wait in the source task when approval is needed.")}</p>
+    <p>{t("自动化在应用运行时推进。需要审批时，请打开原任务。",
+      "Automations run while the app is open. Open the source task when approval is needed.")}</p>
     <div className="automation-mode-picker" role="group" aria-label={t("自动化方式", "Automation type")}>
       {([ ["thread", t("定时执行任务", "Scheduled task")], ["workflow", t("定时运行工作流", "Scheduled workflow")], ["pr", t("PR 与 CI 反馈", "PR and CI feedback")], ["observation", t("只读观察", "Read-only observation")] ] as const).map(([value, label]) =>
         <button type="button" key={value} aria-pressed={mode === value} onClick={() => { setMode(value); create.reset(); }}>{label}</button>)}
@@ -213,7 +213,7 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
     {mode === "pr" ? threadID ? <AutomationPRFollowup key={threadID} client={client} threadID={threadID} />
       : <p className="utility-empty-state">{t("选择任务，设置 PR 与 CI 的持续跟进。", "Select a task to follow its PR and CI feedback.")}</p> : <>
       <form className="scheduled-create-form" onSubmit={submit}>
-        <div className="scheduled-form-heading"><Plus aria-hidden="true" size={15} /><strong>{mode === "observation" ? t("新建观察计划", "Create an observation schedule") : t("新建自动化", "Create an automation")}</strong></div>
+        <h2 className="scheduled-form-heading">{mode === "observation" ? t("新建观察计划", "Create an observation schedule") : t("新建自动化", "Create an automation")}</h2>
         {mode === "thread" && <label className="automation-wide-field">{t("执行要求", "Instructions")}<textarea required rows={3} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={t("例如：检查新增审阅意见，完成修复并运行相关测试", "For example: address new review feedback and run the relevant tests")} /></label>}
         {mode === "workflow" && <><label className="automation-wide-field">{t("已保存工作流", "Saved workflow")}<select value={workflowID} onChange={(event) => setWorkflowID(event.target.value)}><option value="">{t("选择工作流", "Select a workflow")}</option>{definitions.data?.map((item) => <option key={item.id} value={item.id}>{item.spec.name}</option>)}</select></label>
           {definitions.isSuccess && !definitions.data.length && <p className="automation-wide-field">{t("还没有已保存工作流。可在任务的“运行与工具”中创建。", "No saved workflows yet. Create one in the task’s Run and tools workspace.")}</p>}
@@ -233,19 +233,20 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
       {mode !== "observation" && !canExecute && <p className="inline-warning">{t("当前连接未启用模型执行控制。可切换为只读观察，或连接具备任务执行权限的应用。", "Model execution control is unavailable on this connection. Choose read-only observation or connect an app with task execution enabled.")}</p>}
     </>}
     {error && <p className="inline-warning" role="alert">{error instanceof Error ? error.message : t("自动化操作失败", "Automation operation failed")}</p>}
-    <div className="automation-list-heading"><strong>{t("时间计划", "Time schedules")}</strong><span>{jobs.length} {t("个计划", "schedules")} · {jobs.filter((job) => job.status === "active").length} {t("已启用", "active")}</span></div>
+    <div className="automation-list-heading"><h2>{t("时间计划", "Time schedules")}</h2><span>{jobs.length} {t("个计划", "schedules")} · {jobs.filter((job) => job.status === "active").length} {t("已启用", "active")}</span></div>
     <div className="scheduled-task-layout">
       <div className="scheduled-task-list" aria-label={t("自动化列表", "Automation list")}>
-        {jobs.map((job) => <button className={job.id === selectedJobID ? "selected" : ""} key={job.id} onClick={() => setSelectedJobID(job.id)} type="button"><span><strong>{jobTitle(job)}</strong><span className="status-badge">{statusLabel(job.status)}</span></span><small>{modeLabel(job)} · {job.spec.schedule.kind === "once" ? t("单次", "Once") : t("周期", "Periodic")} · {formatTime(job.next_wake_at, locale)}</small><small>{job.id}</small>
+        {jobs.map((job) => <button aria-pressed={job.id === selectedJobID} className={job.id === selectedJobID ? "selected" : ""} key={job.id} onClick={() => setSelectedJobID(job.id)} type="button"><span><strong>{jobTitle(job)}</strong><span className="status-badge">{statusLabel(job.status)}</span></span><small>{modeLabel(job)} · {job.spec.schedule.kind === "once" ? t("单次", "Once") : t("周期", "Periodic")} · {formatTime(job.next_wake_at, locale)}</small><small>{job.id}</small>
           {["confirmed_read_only", "confirmed_jobs"].includes(worker?.selection_scope ?? "") && job.status === "active" && job.spec.execution_mode === "read_only" && job.observation_consent_version !== 1 && <small>{t("普通桌面观察尚未确认", "Desktop observation needs confirmation")}</small>}</button>)}
-        {!list.isLoading && jobs.length === 0 && <div className="utility-empty-state"><CalendarClock aria-hidden="true" size={25} /><strong>{t("还没有时间计划，选择任务与触发时间开始。", "No time schedules yet. Choose a task and trigger time to begin.")}</strong></div>}
+        {list.isLoading && <p role="status">{t("正在加载计划…", "Loading schedules…")}</p>}
+        {list.isSuccess && jobs.length === 0 && <div className="utility-empty-state"><CalendarClock aria-hidden="true" size={18} /><strong>{t("还没有时间计划，选择任务与触发时间开始。", "No time schedules yet. Choose a task and trigger time to begin.")}</strong></div>}
         {list.hasNextPage && <button className="compact-command" disabled={list.isFetchingNextPage}
           onClick={() => void list.fetchNextPage()} type="button">{list.isFetchingNextPage
             ? t("正在加载计划…", "Loading schedules…") : list.isFetchNextPageError
               ? t("重试加载更多计划", "Retry loading more schedules") : t("加载更多计划", "Load more schedules")}</button>}
         {list.data?.pages.at(-1)?.page?.truncated && <p role="status">{t("已达到计划浏览上限。", "Schedule browsing limit reached.")}</p>}
       </div>
-      <div className="scheduled-task-detail">{selected ? <>
+      {selected && <section className="scheduled-task-detail">
         <header><div><strong>{jobTitle(selected)}</strong><small>{selected.id}</small></div><span className="status-badge">{statusLabel(selected.status)}</span></header>
         <dl><div><dt>{t("下次运行", "Next run")}</dt><dd>{formatTime(selected.next_wake_at, locale)}</dd></div><div><dt>{t("截止时间", "Deadline")}</dt><dd>{formatTime(selected.spec.deadline_at, locale)}</dd></div><div><dt>{t("已执行次数", "Executions")}</dt><dd>{selected.rounds_completed} / {selected.spec.max_rounds}</dd></div><div><dt>{t("最近结果", "Latest result")}</dt><dd>{selected.last_result || selected.last_error_code || "—"}</dd></div></dl>
         <div className="scheduled-task-actions">
@@ -258,7 +259,7 @@ export function ScheduledTasksWorkspace({ client, initialRunID = "", initialThre
         {selected.spec.execution_target?.kind === "thread" && selected.spec.execution_target.thread_id && <a className="automation-result-link" href={"#/threads/" + encodeURIComponent(selected.spec.execution_target.thread_id)}>{t("打开执行任务", "Open execution task")}</a>}
         {detail.data?.snapshot.executions?.length ? <section className="automation-executions" aria-label={t("执行结果", "Execution results")}><strong>{t("执行结果", "Execution results")}</strong>{detail.data.snapshot.executions.map((item) => <article key={item.job_id + ":" + item.occurrence_at}><div><span className="status-badge">{statusLabel(item.state)}</span><small>{formatTime(item.occurrence_at, locale)}</small></div>{item.result && <p>{item.result}</p>}{item.error_code && <p role="alert">{item.error_code}</p>}{item.run_id && <a href={"#/runs/" + encodeURIComponent(item.run_id)}>{t("查看运行记录", "View run record")}</a>}{item.workflow_execution_id && <small>{t("工作流执行", "Workflow execution")} {item.workflow_execution_id}</small>}</article>)}</section> : null}
         {detail.data?.snapshot.notifications.length ? <section className="scheduled-notifications"><strong>{t("通知", "Notifications")}</strong>{detail.data.snapshot.notifications.map((notice) => <p key={notice.id}><span className="status-badge">{notice.kind}</span>{notice.summary}</p>)}</section> : null}
-      </> : <div className="utility-empty-state"><CalendarClock aria-hidden="true" size={25} /><strong>{t("选择计划，查看执行结果、通知与暂停控制。", "Select a schedule to view results, notifications, and pause controls.")}</strong></div>}</div>
+      </section>}
     </div>
   </section>;
 }
