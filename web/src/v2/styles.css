@@ -756,8 +756,6 @@
   box-shadow: var(--prayu-elevation-floating);
   min-width: 145px;
   padding: 5px;
-  position: absolute;
-  z-index: 80;
 }
 .v2-thread-menu button {
   align-items: center;
@@ -924,9 +922,9 @@
   width: 31px;
 }
 .v2-header-actions > button:hover { background: var(--v2-control-hover); }
-.v2-thread-menu { right: 0; top: 35px; }
 .v2-header-actions > .v2-thread-menu {
-  inset-inline-end: 0; top: calc(100% + 6px); width: max-content; min-width: min(180px, calc(100cqw - 24px));
+  position: absolute; inset-inline-end: 0; top: calc(100% + 6px); z-index: 80;
+  width: max-content; min-width: min(180px, calc(100cqw - 24px));
   max-width: calc(100cqw - 24px); padding: 5px; border-radius: var(--prayu-radius-panel, 16px);
 }
 .v2-header-actions .v2-thread-menu button { min-height: 32px; height: auto; padding: 7px 10px; gap: 9px; line-height: 1.4; }
