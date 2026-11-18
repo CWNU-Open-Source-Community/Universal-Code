@@ -69,6 +69,8 @@ import {
 } from "../workspace-tabs";
 import { V2FileWorkspaceContent, V2WorkspaceDock } from "./workspace-dock";
 import { V2ThreadExport } from "./thread-export";
+import { useV2ScrollMemory } from "../use-scroll-memory";
+import { V2NavigatorRail } from "./navigator-rail";
 
 export { parseProjectFileLink, type FileLinkTarget } from "./narrative";
 
@@ -499,23 +501,18 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const firstMenuItemRef = useRef<HTMLButtonElement>(null);
   const olderScrollAnchorRef = useRef<{ threadID: string; height: number; top: number; pages: number;
     row?: HTMLElement; offset?: number } | null>(null);
-  const readingThreadRef = useRef("");
-  const followLatestRef = useRef(true);
   const locatedMessageRef = useRef<{ key: string; row: HTMLElement } | null>(null);
+  const reportReplyReadingRef = useRef<() => void>(() => undefined);
+  const resetScrollMemoryRef = useRef<() => void>(() => undefined);
   const returnToLatestMessage = useCallback(() => {
-    followLatestRef.current = true;
-    readingThreadRef.current = "";
-    queryClient.setQueryData(["v2", "reading", threadID], { top: 0, following: true });
+    resetScrollMemoryRef.current();
     onExitMessage?.();
-  }, [queryClient, threadID, onExitMessage]);
+  }, [onExitMessage]);
   const currentMessageLocation = useRef<{ threadID: string; messageID: string; exit: () => void } | null>(null);
   useLayoutEffect(() => {
     currentMessageLocation.current = { threadID, messageID, exit: returnToLatestMessage };
     return () => { currentMessageLocation.current = null; };
   }, [threadID, messageID, returnToLatestMessage]);
-  const scrollSizeRef = useRef<{ content: number; viewport: number } | null>(null);
-  const [hasNewContent, setHasNewContent] = useState(false);
-  const [awayFromLatest, setAwayFromLatest] = useState(false);
   const optimistic = useMemo(() => submissions.filter(({ pending }) => pending).map(({ input }) => ({
     id: input.operationKey, text: input.content, images: input.images, attachments: input.attachments, createdAt: input.createdAt,
   })), [submissions]);
@@ -654,39 +651,38 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const failedSubmissions = submissions.filter(({ pending, error }) => !pending && error);
   const submissionNotices = failedSubmissions.filter(({ error }) => !(error instanceof APIRequestError &&
     error.turnFailed && narrativeRepresentsFailedSubmission(durableNarrative, threadID, error.turnFailure)));
+  const isPaginatingOlder = useCallback(() => olderScrollAnchorRef.current?.threadID === threadID, [threadID]);
+  const handleAfterScrollStateChange = useCallback(() => { reportReplyReadingRef.current(); }, []);
+  const scrollMemory = useV2ScrollMemory({
+    threadID,
+    scrollRef,
+    entries: visibleNarrative,
+    ready: !transcriptQuery.isLoading,
+    detailReady: detailQuery.isSuccess,
+    revision: `${detailQuery.data?.active_run?.status ?? ""}:${liveSnapshot?.revision ?? ""}`,
+    readingHistoryWindow: Boolean(messageID),
+    isPaginatingOlder,
+    onAfterScrollStateChange: handleAfterScrollStateChange,
+  });
+  resetScrollMemoryRef.current = scrollMemory.resetToLatest;
+
   useLayoutEffect(() => {
     const element = scrollRef.current;
-    if (!element || transcriptQuery.isLoading) return;
-    if (readingThreadRef.current !== threadID) {
-      readingThreadRef.current = threadID;
-      const saved = queryClient.getQueryData<{ top: number; following: boolean }>(["v2", "reading", threadID]);
-      followLatestRef.current = saved?.following ?? true;
-      element.scrollTop = saved && !saved.following ? saved.top : element.scrollHeight;
-      scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
-      setHasNewContent(false);
-      setAwayFromLatest(element.scrollHeight - element.clientHeight - element.scrollTop > 48);
-      return;
-    }
     const anchor = olderScrollAnchorRef.current;
-    if (anchor?.threadID === threadID) {
-      // Streaming can repaint while an older page is still in flight. Keep the
-      // anchor until that page actually arrives instead of consuming it early.
-      if ((transcriptQuery.data?.pages.length ?? 0) <= anchor.pages) {
-        if (transcriptQuery.isFetchNextPageError && !transcriptQuery.isFetchingNextPage) olderScrollAnchorRef.current = null;
-        return;
-      }
-      element.scrollTop = anchor.row?.isConnected && anchor.offset !== undefined
-        ? element.scrollTop + anchor.row.getBoundingClientRect().top - anchor.offset
-        : anchor.top + (element.scrollHeight - anchor.height);
-      olderScrollAnchorRef.current = null;
-      queryClient.setQueryData(["v2", "reading", threadID], { top: element.scrollTop, following: followLatestRef.current });
+    if (!element || transcriptQuery.isLoading || anchor?.threadID !== threadID) return;
+    // Streaming can repaint while an older page is still in flight. Keep the
+    // anchor until that page actually arrives instead of consuming it early.
+    if ((transcriptQuery.data?.pages.length ?? 0) <= anchor.pages) {
+      if (transcriptQuery.isFetchNextPageError && !transcriptQuery.isFetchingNextPage) olderScrollAnchorRef.current = null;
       return;
     }
-    if (followLatestRef.current) element.scrollTop = element.scrollHeight;
-    else setHasNewContent(true);
-  }, [visibleNarrative, detailQuery.data?.active_run?.status, liveSnapshot?.revision,
-    transcriptQuery.data?.pages.length, transcriptQuery.isLoading, transcriptQuery.isFetchNextPageError,
-    transcriptQuery.isFetchingNextPage, threadID, queryClient]);
+    element.scrollTop = anchor.row?.isConnected && anchor.offset !== undefined
+      ? element.scrollTop + anchor.row.getBoundingClientRect().top - anchor.offset
+      : anchor.top + (element.scrollHeight - anchor.height);
+    olderScrollAnchorRef.current = null;
+    scrollMemory.recordProgrammaticScroll(element.scrollTop, scrollMemory.followLatestRef.current);
+  }, [visibleNarrative, transcriptQuery.data?.pages.length, transcriptQuery.isLoading,
+    transcriptQuery.isFetchNextPageError, transcriptQuery.isFetchingNextPage, threadID, scrollMemory]);
 
   useLayoutEffect(() => {
     const location = messageID ? `${threadID}:${messageID}` : "";
@@ -696,30 +692,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     const row = [...(scrollRef.current?.querySelectorAll<HTMLElement>("[data-message-ids]") ?? [])]
       .find((element) => element.dataset.messageIds?.split(" ").includes(messageID));
     if (!row) return;
-    followLatestRef.current = false;
+    scrollMemory.followLatestRef.current = false;
     row.scrollIntoView?.({ block: "start" });
     row.focus({ preventScroll: true });
     row.classList.add("is-search-target");
     locatedMessageRef.current = { key: location, row };
-  }, [threadID, messageID, visibleNarrative, detailQuery.isLoading]);
-
-  useLayoutEffect(() => {
-    const element = scrollRef.current;
-    const content = element?.firstElementChild;
-    if (!element || !content || typeof ResizeObserver === "undefined") return;
-    // Composer growth and asynchronously loaded cards change the viewport or
-    // content without changing the transcript. Keep the latest content visible
-    // only while following it; leave historical reading/pagination anchored.
-    const observer = new ResizeObserver(() => {
-      if (readingThreadRef.current === threadID && followLatestRef.current &&
-        olderScrollAnchorRef.current?.threadID !== threadID) element.scrollTop = element.scrollHeight;
-      scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
-      setAwayFromLatest(element.scrollHeight - element.clientHeight - element.scrollTop > 48);
-    });
-    observer.observe(element);
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, [detailQuery.isSuccess, threadID]);
+  }, [threadID, messageID, visibleNarrative, detailQuery.isLoading, scrollMemory.followLatestRef]);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -736,8 +714,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     readable: readingEnabled && !messageID && !contextOpen && !modalVisible && !stageFullView,
     ready: detailQuery.isSuccess && !latestTranscriptQuery.isLoading && !latestTranscriptQuery.isError,
     content: visibleNarrative, scroll: scrollRef,
-    following: () => readingThreadRef.current === threadID && followLatestRef.current && olderScrollAnchorRef.current === null,
+    following: () => scrollMemory.readingThreadRef.current === threadID && scrollMemory.followLatestRef.current && olderScrollAnchorRef.current === null,
     refresh: refreshTranscript });
+  reportReplyReadingRef.current = reportReplyReading;
   useEffect(() => {
     if (!reviewEntry || reviewEntry.threadID !== threadID) return;
     setReviewFileTarget(undefined);
@@ -1125,22 +1104,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </div>
     </nav>
     </header>
-    <div className="v2-conversation-scroll" ref={scrollRef} onScroll={(event) => {
-      const element = event.currentTarget;
-      const size = scrollSizeRef.current;
-      // Replacing the editor can briefly expand the transcript, clamp its
-      // scrollTop, then shrink it again before ResizeObserver runs. That scroll
-      // event is a layout change, not a request to stop following the latest.
-      if (followLatestRef.current && size && size.viewport > 0 && size.content === element.scrollHeight &&
-        size.viewport !== element.clientHeight && olderScrollAnchorRef.current?.threadID !== threadID) element.scrollTop = element.scrollHeight;
-      scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
-      const following = element.scrollHeight - element.clientHeight - element.scrollTop <= 48;
-      followLatestRef.current = following;
-      setAwayFromLatest(!following);
-      if (following) setHasNewContent(false);
-      queryClient.setQueryData(["v2", "reading", threadID], { top: element.scrollTop, following });
-      reportReplyReading();
-    }}>
+    <div className="v2-conversation-viewport">
+    <div className="v2-conversation-scroll" ref={scrollRef} onScroll={scrollMemory.onScroll}>
       <div className="v2-conversation-content">
         {messageID && <p className="v2-notice v2-message-location" role="status">
           {t("正在查看搜索命中的消息及更早记录。", "Viewing the matching message and earlier history.")}
@@ -1213,16 +1178,29 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         </div>}
       </div>
     </div>
-    {!messageID && awayFromLatest && <button className="v2-jump-latest" onClick={() => {
-      followLatestRef.current = true;
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        queryClient.setQueryData(["v2", "reading", threadID], { top: scrollRef.current.scrollTop, following: true });
-      }
-      setAwayFromLatest(false);
-      setHasNewContent(false);
-      reportReplyReading();
-    }} type="button">{hasNewContent ? t("有新内容 · 回到最新", "New content · Jump to latest") : t("回到最新", "Jump to latest")}</button>}
+    {!messageID && !transcriptQuery.isLoading && <V2NavigatorRail
+      entries={visibleNarrative}
+      scrollRef={scrollRef}
+      scopeRef={mainColumnRef}
+      enabled={!contextOpen && !modalVisible && !stageFullView}
+      onJumpToEntry={(entryKey, _stop, nextScrollTop) => {
+        const scroller = scrollRef.current;
+        if (!scroller) return;
+        const top = nextScrollTop ?? scroller.scrollTop;
+        const atBottom = scroller.scrollHeight - scroller.clientHeight - top <= 48;
+        scrollMemory.recordProgrammaticScroll(top, atBottom, atBottom ? null : entryKey, 12);
+        reportReplyReading();
+      }}
+    />}
+    {scrollMemory.showScrollToBottom && <button
+      className={`v2-jump-latest${scrollMemory.isUnreadAnchored ? " has-unread" : ""}`}
+      onClick={scrollMemory.jumpToBottom}
+      type="button"
+    >
+      <span>{scrollMemory.isUnreadAnchored ? t("↓ 跳至最新", "↓ Jump to bottom") : t("↓ 回到底部", "↓ Scroll to bottom")}</span>
+      {scrollMemory.unreadCount > 0 && <span className="v2-jump-latest-badge" data-testid="scroll-unread-badge">{scrollMemory.unreadCount}</span>}
+    </button>}
+    </div>
     <div className="v2-composer-dock">
       {(agentActivity || currentRun.status === "paused") && <div className="v2-composer-status">
       <V2AgentActivity activity={agentActivity} />

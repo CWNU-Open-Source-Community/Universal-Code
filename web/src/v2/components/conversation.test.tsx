@@ -702,7 +702,7 @@ describe("V2Conversation", () => {
     }));
     expect(await screen.findByText("new content")).toBeInTheDocument();
     expect(scroller.scrollTop).toBe(180);
-    expect(await screen.findByRole("button", { name: "有新内容 · 回到最新" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /↓ 跳至最新/u })).toHaveTextContent("1");
     view.rerenderThread("thread-b");
     await screen.findByText("Title thread-b");
     view.rerenderThread("thread-a");
@@ -720,22 +720,22 @@ describe("V2Conversation", () => {
       clientHeight: { value: 500, configurable: true },
       scrollTop: { get: () => top, set: (value: number) => { top = Math.min(value, 1500); }, configurable: true } });
     fireEvent.scroll(scroller);
-    expect(screen.queryByRole("button", { name: "回到最新" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "↓ 回到底部" })).not.toBeInTheDocument();
     scroller.scrollTop = 180;
     fireEvent.scroll(scroller);
-    const jump = screen.getByRole("button", { name: "回到最新" });
-    expect(screen.queryByRole("button", { name: "有新内容 · 回到最新" })).not.toBeInTheDocument();
+    const jump = screen.getByRole("button", { name: "↓ 回到底部" });
+    expect(screen.queryByRole("button", { name: /↓ 跳至最新/u })).not.toBeInTheDocument();
     expect(scroller.scrollTop).toBe(180);
     await userEvent.click(jump);
     expect(scroller.scrollTop).toBe(1500);
-    expect(screen.queryByRole("button", { name: "回到最新" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "↓ 回到底部" })).not.toBeInTheDocument();
     expect(view.queryClient.getQueryData(["v2", "reading", "thread-a"])).toEqual({ top: 1500, following: true });
     scroller.scrollTop = 120;
     fireEvent.scroll(scroller);
-    expect(screen.getByRole("button", { name: "回到最新" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "↓ 回到底部" })).toBeInTheDocument();
     scroller.scrollTop = 1500;
     fireEvent.scroll(scroller);
-    expect(screen.queryByRole("button", { name: "回到最新" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "↓ 回到底部" })).not.toBeInTheDocument();
   });
 
   it("follows viewport and card size changes without moving a reader looking at history", async () => {
