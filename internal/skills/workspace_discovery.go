@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"cyberagent-workbench/internal/agentpackages"
 	"cyberagent-workbench/internal/toolcontract"
@@ -90,6 +92,9 @@ func DiscoverWorkspaceSkills(ctx context.Context, workspaceRoot string) (Workspa
 	if len(entries) > MaxWorkspaceSkillEntries {
 		return WorkspaceSkillDiscovery{}, fmt.Errorf("workspace skills directory exceeds %d entries", MaxWorkspaceSkillEntries)
 	}
+	slices.SortFunc(entries, func(a, b os.DirEntry) int {
+		return strings.Compare(a.Name(), b.Name())
+	})
 	for _, entry := range entries {
 		directory := report.Root + "/" + filepath.ToSlash(entry.Name())
 		// Since Go 1.23 junctions report ModeIrregular instead of
@@ -164,8 +169,16 @@ func discoveryFailureReason(err error) string {
 }
 
 func boundedDiscoveryReason(reason string) string {
-	if len(reason) > 200 {
-		return reason[:200]
+	const maxBytes = 200
+	if len(reason) <= maxBytes {
+		return reason
 	}
-	return reason
+	cutoff := 0
+	for i := range reason {
+		if i > maxBytes {
+			break
+		}
+		cutoff = i
+	}
+	return reason[:cutoff]
 }

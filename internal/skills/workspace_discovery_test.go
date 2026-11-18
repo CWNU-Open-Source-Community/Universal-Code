@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func writeWorkspaceSkill(t *testing.T, root, name, description string) string {
@@ -186,5 +187,42 @@ func TestDiscoverWorkspaceSkillsRejectsOverLimitEntries(t *testing.T) {
 	}
 	if _, err := DiscoverWorkspaceSkills(context.Background(), root); err == nil {
 		t.Fatal("entries beyond the bound must fail closed")
+	}
+}
+
+func TestDiscoverWorkspaceSkillsSortsEntriesDeterministically(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"zeta-skill", "alpha-skill", "mid-skill"} {
+		writeWorkspaceSkill(t, root, name, "Skill "+name)
+	}
+	for _, ignored := range []string{"z-note.txt", "a-note.txt"} {
+		if err := os.WriteFile(filepath.Join(root, "skills", ignored), []byte("ignore"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report, err := DiscoverWorkspaceSkills(context.Background(), root)
+	if err != nil {
+		t.Fatalf("discovery failed: %v", err)
+	}
+	if len(report.Candidates) != 3 || report.Candidates[0].Name != "alpha-skill" || report.Candidates[1].Name != "mid-skill" || report.Candidates[2].Name != "zeta-skill" {
+		t.Fatalf("candidates must be sorted deterministically: %+v", report.Candidates)
+	}
+	if len(report.Ignored) != 2 || report.Ignored[0].Directory != "skills/a-note.txt" || report.Ignored[1].Directory != "skills/z-note.txt" {
+		t.Fatalf("ignored entries must be sorted deterministically: %+v", report.Ignored)
+	}
+}
+
+func TestBoundedDiscoveryReasonPreservesValidUTF8(t *testing.T) {
+	// 199 ASCII bytes followed by a 3-byte rune (bytes 199..202) exceeds 200 bytes.
+	input := strings.Repeat("a", 199) + "中" + "tail"
+	got := boundedDiscoveryReason(input)
+	if len(got) > 200 {
+		t.Fatalf("expected <= 200 bytes, got %d", len(got))
+	}
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncated string is invalid UTF-8: %q", got)
+	}
+	if got != strings.Repeat("a", 199) {
+		t.Fatalf("expected truncation at rune boundary 199, got len=%d %q", len(got), got)
 	}
 }

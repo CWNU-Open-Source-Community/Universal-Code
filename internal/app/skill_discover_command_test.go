@@ -109,3 +109,81 @@ func TestSkillDiscoverCLIRequiresWorkspace(t *testing.T) {
 		t.Fatalf("unknown workspace must fail: stderr=%q", stderr)
 	}
 }
+
+func TestSkillDiscoverCLIEscapesControlsAndRedactsDisplayOnly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CYBERAGENT_HOME", home)
+	if _, stderr, code := executeTestCommand(t, "workspace", "init", "discover-escape"); code != 0 || stderr != "" {
+		t.Fatalf("workspace init failed: stderr=%q code=%d", stderr, code)
+	}
+	skillMD := filepath.Join(home, "workspaces", "discover-escape", "skills", "safe-skill", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillMD), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	secret := "sk-proj1234567890abcdefghijklmnop"
+	yamlDesc := `Alert \x1b]52;c;evil\x07 line1\n\u202ehidden ` + secret
+	content := "---\nname: safe-skill\ndescription: \"" + yamlDesc + "\"\n---\n\n# Body\n"
+	if err := os.WriteFile(skillMD, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	textOut, stderr, code := executeTestCommand(t, "skill", "discover", "--workspace", "discover-escape")
+	if code != 0 || stderr != "" {
+		t.Fatalf("skill discover text failed: stdout=%q stderr=%q code=%d", textOut, stderr, code)
+	}
+	if strings.ContainsRune(textOut, '\x1b') || strings.ContainsRune(textOut, '\x07') || strings.ContainsRune(textOut, '\u202e') {
+		t.Fatalf("text output leaked raw terminal/bidi control characters: %q", textOut)
+	}
+	if !strings.Contains(textOut, `\x1b`) || !strings.Contains(textOut, `\u202e`) {
+		t.Fatalf("text output must keep control characters visible as escaped data: %q", textOut)
+	}
+	if strings.Contains(textOut, secret) {
+		t.Fatalf("text output leaked unredacted secret token: %q", textOut)
+	}
+	if escaped := escapeDiscoveryDisplay("skills/x\nnext: forged-command"); strings.ContainsRune(escaped, '\n') || escaped != `skills/x\nnext: forged-command` {
+		t.Fatalf("embedded newline in filename must not forge report lines: %q", escaped)
+	}
+
+	jsonOut, stderr, code := executeTestCommand(t, "skill", "discover", "--workspace", "discover-escape", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("skill discover json failed: stdout=%q stderr=%q code=%d", jsonOut, stderr, code)
+	}
+	var report skills.WorkspaceSkillDiscovery
+	if err := json.Unmarshal([]byte(jsonOut), &report); err != nil {
+		t.Fatalf("unmarshal json: %v", err)
+	}
+	if len(report.Candidates) != 1 || !strings.ContainsRune(report.Candidates[0].Description, '\x1b') {
+		t.Fatalf("JSON output must preserve original field values: %+v", report.Candidates)
+	}
+}
+
+func TestSkillDiscoverCLIQuotesWorkspacePathsWithSpaces(t *testing.T) {
+	spacedHome := filepath.Join(t.TempDir(), "home with spaces")
+	if err := os.MkdirAll(spacedHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CYBERAGENT_HOME", spacedHome)
+	if _, stderr, code := executeTestCommand(t, "workspace", "init", "spaced-ws"); code != 0 || stderr != "" {
+		t.Fatalf("workspace init failed: stderr=%q code=%d", stderr, code)
+	}
+	seedWorkspaceSkill(t, "spaced-ws")
+	stdout, stderr, code := executeTestCommand(t, "skill", "discover", "--workspace", "spaced-ws")
+	if code != 0 || stderr != "" {
+		t.Fatalf("skill discover failed: stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	expectedDir := filepath.Join(spacedHome, "workspaces", "spaced-ws", "skills", "recon-notes")
+	if strings.Contains(stdout, "next: cyberagent skill import-dir "+expectedDir+" ") {
+		t.Fatalf("unquoted path with spaces breaks skill import-dir argument parsing:\n%s", stdout)
+	}
+	if got := quoteDiscoveryShellPath(`/tmp/work dir/skills/recon-notes`, "linux"); got != `'/tmp/work dir/skills/recon-notes'` {
+		t.Fatalf("unexpected POSIX shell quoting: %s", got)
+	}
+	if got := quoteDiscoveryShellPath(`C:\Users\Alice Smith\skills\recon-notes`, "windows"); got != `"C:\Users\Alice Smith\skills\recon-notes"` {
+		t.Fatalf("unexpected Windows shell quoting: %s", got)
+	}
+	if got := quoteDiscoveryShellPath(`/tmp/plain/skills/recon-notes`, "linux"); got != `/tmp/plain/skills/recon-notes` {
+		t.Fatalf("ordinary POSIX path must stay unquoted: %s", got)
+	}
+	if got := quoteDiscoveryShellPath(`C:\plain\skills\recon-notes`, "windows"); got != `C:\plain\skills\recon-notes` {
+		t.Fatalf("ordinary Windows path must stay unquoted: %s", got)
+	}
+}
