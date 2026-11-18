@@ -133,7 +133,7 @@ export function V2ModelRouteControl({ client, threadID, pendingRoute, runActive 
   const catalogKey = ["v2", "models", "available-routes"] as const;
 
   useChatShortcuts({ modelPicker: () => {
-    if (!routeControlAvailable) return false;
+    if (!routeControlAvailable || rootRef.current?.closest("[inert]")) return false;
     setLevel("models");
   } });
 
