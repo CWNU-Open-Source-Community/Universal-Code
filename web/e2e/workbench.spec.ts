@@ -114,6 +114,15 @@ test("normal entry reads a real project file and retains the task after reload",
     await withinViewport(page.getByRole("button", { name: "发送消息", exact: true }), page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await info.attach("narrow-workbench", { body: await page.screenshot(), contentType: "image/png" });
+    await page.getByRole("button", { name: "显示侧栏", exact: true }).click();
+    const currentChat = page.locator(".v2-thread-row-shell.is-selected").first();
+    await currentChat.hover();
+    await currentChat.getByRole("button", { name: /聊天选项$/u }).click();
+    // The menu is portaled above the narrow drawer. Its items must accept pointer input.
+    await page.getByRole("menuitem", { name: "重命名", exact: true }).click();
+    const rename = page.getByRole("dialog", { name: "重命名聊天" });
+    await expect(rename).toBeVisible();
+    await rename.getByRole("button", { name: "取消" }).click();
   } finally { await record(timings, info); }
 });
 
