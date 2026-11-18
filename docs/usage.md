@@ -511,6 +511,7 @@ cyberagent run steer show <steering-id>
 cyberagent run events <run-id>
 cyberagent headless events <run-id> --max-events 1000
 cyberagent headless events <run-id> --after-sequence <n> --follow --timeout 30m
+
 cyberagent run start <run-id>
 cyberagent run step <run-id>
 cyberagent run execute <run-id> --max-steps 3
@@ -546,6 +547,21 @@ cyberagent run cancel <run-id>
 cyberagent ui-evidence list --run <run-id> [--status <status>] [--limit <n>]
 cyberagent ui-evidence show <attempt-id>
 cyberagent ui-evidence artifact <attempt-id> <artifact-id> --output <new-path>
+```
+
+### Shell completion / Shell 补全
+
+Emit completion scripts for bash, zsh, and fish; install them with the
+standard shell mechanism. Candidates come from the hidden
+`cyberagent __complete` protocol: every argument is a command-line word,
+the last one is the word being completed, and candidates print one per
+line. Arguments the CLI does not complete — such as file paths — receive
+no candidates, consistently across the three shells.
+
+```bash
+cyberagent completion bash >> ~/.bashrc
+cyberagent completion zsh > "${fpath[1]}/_cyberagent"
+cyberagent completion fish > ~/.config/fish/completions/cyberagent.fish
 ```
 
 `run delivery report` reads the same freshness-aware

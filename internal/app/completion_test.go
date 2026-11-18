@@ -293,8 +293,8 @@ func TestCompleteSecondLevelSubcommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	if got := strings.Fields(out); len(got) != 2 || got[0] != "bash" || got[1] != "zsh" {
-		t.Fatalf("'completion ' must complete bash and zsh, got %v", got)
+	if got := strings.Fields(out); len(got) != 3 || got[0] != "bash" || got[1] != "fish" || got[2] != "zsh" {
+		t.Fatalf("'completion ' must complete bash, fish, and zsh, got %v", got)
 	}
 }
 
@@ -406,9 +406,26 @@ func TestPrintCommandHelpListsFullDoctorAndRunVocabularies(t *testing.T) {
 }
 
 func TestCompletionCommandRejectsUnknownShell(t *testing.T) {
-	_, err := dispatchForOutput(t, "completion", "fish")
-	if err == nil || !strings.Contains(err.Error(), "bash, zsh") {
+	_, err := dispatchForOutput(t, "completion", "tcsh")
+	if err == nil || !strings.Contains(err.Error(), "bash, zsh, fish") {
 		t.Fatalf("unknown shell must list supported shells, got %v", err)
+	}
+}
+
+func TestCompletionCommandEmitsFishScript(t *testing.T) {
+	out, err := dispatchForOutput(t, "completion", "fish")
+	if err != nil {
+		t.Fatalf("dispatch completion fish: %v", err)
+	}
+	for _, want := range []string{
+		"function __cyberagent_complete",
+		"commandline -opc) (commandline -ct)",
+		"$tokens[2..-1]",
+		"complete -c cyberagent -f -a '(__cyberagent_complete)'",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("fish script missing %q: %q", want, out)
+		}
 	}
 }
 

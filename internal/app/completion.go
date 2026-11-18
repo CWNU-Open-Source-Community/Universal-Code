@@ -26,7 +26,7 @@ var commandTable = []commandSpec{
 	{"approval", "Review, approve, deny, and grant tool approvals", "cyberagent approval list|show|approve-once|approve-for-thread|deny|grant"},
 	{"artifact", "List, show, read, and verify run artifacts", "cyberagent artifact list|show|read|verify"},
 	{"code-intel", "Show code intelligence status and qualification", "cyberagent code-intel status|qualify"},
-	{"completion", "Emit shell completion scripts for bash or zsh", "cyberagent completion bash|zsh"},
+	{"completion", "Emit shell completion scripts for bash, zsh, or fish", "cyberagent completion bash|zsh|fish"},
 	{"context", "Compact context and manage instructions and memory", "cyberagent context compact|show|instructions|memory"},
 	{"ctf", "Scaffold CTF challenge workspaces, analysis worksheets, and writeups", "cyberagent ctf init|analyze|writeup"},
 	{"debug", "Run bounded debug queries against a run", "cyberagent debug query --run <run-id> [bounded filters] [--json]"},
@@ -108,7 +108,7 @@ var commandSubcommands = map[string][]string{
 	"approval":       {"approve-for-thread", "approve-once", "deny", "grant", "list", "show"},
 	"artifact":       {"list", "read", "show", "verify"},
 	"code-intel":     {"qualify", "status"},
-	"completion":     {"bash", "zsh"},
+	"completion":     {"bash", "fish", "zsh"},
 	"context":        {"compact", "instructions", "memory", "show"},
 	"ctf":            {"analyze", "init", "writeup"},
 	"debug":          {"query"},
@@ -185,15 +185,17 @@ func (a *App) printCommandHelp(name string) error {
 
 func (a *App) completionCommand(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: cyberagent completion bash|zsh")
+		return errors.New("usage: cyberagent completion bash|zsh|fish")
 	}
 	switch args[0] {
 	case "bash":
 		fmt.Fprint(a.out, bashCompletionScript)
 	case "zsh":
 		fmt.Fprint(a.out, zshCompletionScript)
+	case "fish":
+		fmt.Fprint(a.out, fishCompletionScript)
 	default:
-		return fmt.Errorf("unknown shell %q; supported shells: bash, zsh", args[0])
+		return fmt.Errorf("unknown shell %q; supported shells: bash, zsh, fish", args[0])
 	}
 	return nil
 }
@@ -221,6 +223,22 @@ _cyberagent_completions() {
 }
 
 complete -F _cyberagent_completions cyberagent
+`
+
+// fishCompletionScript emits a fish completer that delegates candidate
+// generation to 'cyberagent __complete'. -f keeps fish from mixing
+// filesystem entries into CLI-provided candidates; path arguments receive
+// no completion yet, consistent with the bash and zsh scripts.
+const fishCompletionScript = `# fish completion for cyberagent
+# Delegates candidate generation to 'cyberagent __complete'. Install under
+# ~/.config/fish/completions/cyberagent.fish.
+
+function __cyberagent_complete
+    set -l tokens (commandline -opc) (commandline -ct)
+    command cyberagent __complete $tokens[2..-1] 2>/dev/null
+end
+
+complete -c cyberagent -f -a '(__cyberagent_complete)'
 `
 
 // zshCompletionScript emits a zsh completer that delegates candidate
