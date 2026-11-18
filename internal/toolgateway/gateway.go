@@ -161,9 +161,43 @@ func (g *Gateway) WithLifecycleHooks(engine *hooks.Engine) *Gateway {
 type orderedBudgetTurnstileKey struct{}
 
 type orderedBudgetTurnstile struct {
-	wait <-chan struct{}
-	next chan<- struct{}
-	once sync.Once
+	ctx      context.Context
+	wait     <-chan struct{}
+	next     chan<- struct{}
+	mu       sync.Mutex
+	acquired bool
+	once     sync.Once
+}
+
+func (t *orderedBudgetTurnstile) acquire(ctx context.Context) error {
+	if t == nil {
+		return nil
+	}
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	if t.wait != nil {
+		if ctx == nil {
+			<-t.wait
+		} else {
+			select {
+			case <-t.wait:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+	t.mu.Lock()
+	t.acquired = true
+	t.mu.Unlock()
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (t *orderedBudgetTurnstile) release() {
@@ -171,6 +205,19 @@ func (t *orderedBudgetTurnstile) release() {
 		return
 	}
 	t.once.Do(func() {
+		t.mu.Lock()
+		wasAcquired := t.acquired
+		t.mu.Unlock()
+		if !wasAcquired && t.wait != nil {
+			if t.ctx == nil {
+				<-t.wait
+			} else {
+				select {
+				case <-t.wait:
+				case <-t.ctx.Done():
+				}
+			}
+		}
 		close(t.next)
 	})
 }
@@ -187,7 +234,7 @@ func WithOrderedBudgetTurnstile(ctx context.Context, wait <-chan struct{}, next 
 	if wait == nil && next == nil {
 		return ctx, func() {}
 	}
-	slot := &orderedBudgetTurnstile{wait: wait, next: next}
+	slot := &orderedBudgetTurnstile{ctx: ctx, wait: wait, next: next}
 	return context.WithValue(ctx, orderedBudgetTurnstileKey{}, slot), slot.release
 }
 
@@ -196,21 +243,8 @@ func (g *Gateway) Invoke(ctx context.Context, call ToolCall) (outcome Outcome, r
 	if ctx != nil {
 		turnstile, _ = ctx.Value(orderedBudgetTurnstileKey{}).(*orderedBudgetTurnstile)
 	}
-	turnstileAcquired := false
 	if turnstile != nil {
-		defer func() {
-			if !turnstileAcquired && turnstile.wait != nil {
-				if ctx == nil {
-					<-turnstile.wait
-				} else {
-					select {
-					case <-turnstile.wait:
-					case <-ctx.Done():
-					}
-				}
-			}
-			turnstile.release()
-		}()
+		defer turnstile.release()
 	}
 	if g == nil {
 		return Outcome{}, errors.New("tool gateway is required")
@@ -314,18 +348,7 @@ func (g *Gateway) Invoke(ctx context.Context, call ToolCall) (outcome Outcome, r
 	}
 	defer releaseWait()
 	if turnstile != nil {
-		if err := ctx.Err(); err != nil {
-			return Outcome{}, err
-		}
-		if turnstile.wait != nil {
-			select {
-			case <-turnstile.wait:
-			case <-ctx.Done():
-				return Outcome{}, ctx.Err()
-			}
-		}
-		turnstileAcquired = true
-		if err := ctx.Err(); err != nil {
+		if err := turnstile.acquire(ctx); err != nil {
 			return Outcome{}, err
 		}
 	}

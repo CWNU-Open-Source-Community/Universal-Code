@@ -981,7 +981,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			return result, s.recordFailure(ctx, &result, boundaryErr, 0)
 		}
 		if boundary.AllowsContinue() {
-			modelRequest = supervisorToolBoundaryRequest(modelRequest)
+			modelRequest = supervisorToolBoundaryRequest(modelRequest, boundary)
 		} else if boundary.ContextPressure {
 			modelRequest = supervisorContextPressureBoundaryRequest(modelRequest)
 		}
@@ -992,6 +992,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 				HostToolRounds:  len(prepared.toolRounds) - supervisorNativeToolRounds(prepared.toolRounds),
 				BoundaryReached: boundary.Reached,
 				AllowContinue:   boundary.AllowsContinue(),
+				ToolBudgetZero:  boundary.ToolBudgetZero,
 			})
 			modelContextLayout = modelContextLayout.shifted(1)
 		}

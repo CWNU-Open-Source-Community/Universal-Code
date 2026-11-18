@@ -444,7 +444,12 @@ func (m *standardCodeSupervisorTurn) pendingDirectApplyCheckpoint(ctx context.Co
 	if err != nil {
 		return "", "", false, apperror.Normalize(err)
 	}
-	for _, transaction := range transactions {
+	expectedCapGen := preApplyCapabilityGeneration
+	latestFingerprint := ""
+	latestCapGen := ""
+	matched := false
+	for i := len(transactions) - 1; i >= 0; i-- {
+		transaction := transactions[i]
 		editID := transaction.TriggerReceiptID
 		if transaction.RunID != current.RunID ||
 			transaction.WorkspaceID != m.fileWorkspaceID ||
@@ -464,7 +469,7 @@ func (m *standardCodeSupervisorTurn) pendingDirectApplyCheckpoint(ctx context.Co
 			checkpoint.TriggerReceiptID != editID ||
 			checkpoint.Phase != workspacecheckpoint.PhaseAfter ||
 			(checkpoint.AttemptID != turn.Checkpoint.AttemptID && checkpoint.AttemptID != "") ||
-			(checkpoint.AttemptID != "" && checkpoint.CapabilityGeneration != preApplyCapabilityGeneration) {
+			(checkpoint.AttemptID != "" && checkpoint.CapabilityGeneration != expectedCapGen) {
 			continue
 		}
 		if checkpoint.AttemptID == "" && len(checkpoint.IncompleteReasons) > 0 {
@@ -495,7 +500,13 @@ func (m *standardCodeSupervisorTurn) pendingDirectApplyCheckpoint(ctx context.Co
 		if capabilities.Generation == "" {
 			continue
 		}
-		return checkpoint.RootFingerprint, capabilities.Generation, true, nil
+		latestFingerprint = checkpoint.RootFingerprint
+		latestCapGen = capabilities.Generation
+		expectedCapGen = capabilities.Generation
+		matched = true
+	}
+	if matched {
+		return latestFingerprint, latestCapGen, true, nil
 	}
 	return "", "", false, nil
 }
@@ -510,7 +521,9 @@ func (m *standardCodeSupervisorTurn) reconcileDirectApplyCheckpoints(ctx context
 	if err != nil {
 		return apperror.Normalize(err)
 	}
-	for _, transaction := range transactions {
+	expectedCapGen := preApplyCapabilityGeneration
+	for i := len(transactions) - 1; i >= 0; i-- {
+		transaction := transactions[i]
 		if len(m.ledger) >= domain.StandardCodeSupervisorMaximumLedgerEntries {
 			break
 		}
@@ -533,7 +546,7 @@ func (m *standardCodeSupervisorTurn) reconcileDirectApplyCheckpoints(ctx context
 			checkpoint.TriggerReceiptID != editID ||
 			checkpoint.Phase != workspacecheckpoint.PhaseAfter ||
 			(checkpoint.AttemptID != m.snapshot.AttemptID && checkpoint.AttemptID != "") ||
-			(checkpoint.AttemptID != "" && checkpoint.CapabilityGeneration != preApplyCapabilityGeneration) {
+			(checkpoint.AttemptID != "" && checkpoint.CapabilityGeneration != expectedCapGen) {
 			continue
 		}
 		if checkpoint.AttemptID == "" && len(checkpoint.IncompleteReasons) > 0 {
@@ -566,6 +579,7 @@ func (m *standardCodeSupervisorTurn) reconcileDirectApplyCheckpoints(ctx context
 			return entry.ToolAction == directAction || entry.EvidenceFingerprint == evidence
 		})
 		if alreadyObserved {
+			expectedCapGen = capabilities.Generation
 			continue
 		}
 		previous := m.snapshot.State
@@ -589,6 +603,7 @@ func (m *standardCodeSupervisorTurn) reconcileDirectApplyCheckpoints(ctx context
 			"workspace_mutation_checkpoint_verified"); err != nil {
 			return err
 		}
+		expectedCapGen = capabilities.Generation
 	}
 	return nil
 }

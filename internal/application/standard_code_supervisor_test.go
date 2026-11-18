@@ -1337,3 +1337,196 @@ func TestStandardCodeSupervisorDirectPostApprovalApplyReconcilesCheckpoint(t *te
 	}
 }
 
+func TestStandardCodeSupervisorSupportsMoreThanFourToolRoundsInSingleTurn(t *testing.T) {
+	f, _ := newFileEditDrydockFixture(t)
+	ctx := t.Context()
+	p := &continuationCodeProvider{}
+	ref := llm.ModelRef{Provider: p.Name(), Model: "model"}
+	router := llm.NewRouter(ref)
+	router.RegisterProvider(p)
+	router.SetRoute("code", ref)
+	agentRunner := NewAgentRunner(f.state, router, policy.NewDefaultChecker()).WithRunWorktree(f.service).
+		WithExecutionPermissionCapabilities(standardCodeThreadTestRuntime().ExecutionPermissionCapabilities)
+	wait := func(msg string) *llm.ChatResponse {
+		raw, _ := json.Marshal(domain.RootAction{Version: domain.RootLifecycleVersion, Kind: domain.RootActionWait,
+			Message: msg, Reason: "operator review"})
+		return &llm.ChatResponse{Provider: p.Name(), Model: "model", Text: string(raw)}
+	}
+	tool := func(id, name, payload string) *llm.ChatResponse {
+		return &llm.ChatResponse{Provider: p.Name(), Model: "model", ToolCalls: []llm.ToolCall{{ID: id, Name: name, Arguments: json.RawMessage(payload)}}}
+	}
+	if _, err := NewRunService(f.state).Start(ctx, f.run.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Execute 6 tool rounds in a single Plan turn (> legacy 4-round cap).
+	p.responses = []*llm.ChatResponse{
+		tool("r1", "workspace_list", `{"version":"agent-code-tools.v1","path":".","limit":5}`),
+		tool("r2", "workspace_read", `{"version":"agent-code-tools.v1","path":"tracked.txt","start_line":1,"end_line":1}`),
+		tool("r3", "workspace_glob", `{"version":"agent-code-tools.v1","pattern":"*.txt","limit":5}`),
+		tool("r4", "workspace_grep", `{"version":"agent-code-tools.v1","query":"base","pattern":"*.txt","limit":5}`),
+		tool("r5", "workspace_list", `{"version":"agent-code-tools.v1","path":".","limit":10}`),
+		tool("r6", "workspace_read", `{"version":"agent-code-tools.v1","path":"tracked.txt","start_line":1,"end_line":2}`),
+		wait("Completed 6 read rounds cleanly"),
+	}
+	res, err := agentRunner.StepWithInput(ctx, f.run.ID, "Inspect tracked.txt across 6 rounds")
+	if err != nil {
+		t.Fatalf("6-round Standard Code turn failed: %v", err)
+	}
+	if res.ToolRounds != 6 {
+		t.Fatalf("expected 6 tool rounds, got %d", res.ToolRounds)
+	}
+	snapshot, found, err := f.state.GetStandardCodeSupervisorSnapshot(ctx, f.run.ID)
+	if err != nil || !found || snapshot.TurnToolRounds != 6 || snapshot.TotalToolRounds != 6 || snapshot.StopReason != "" {
+		t.Fatalf("unexpected 6-round Standard Code snapshot: found=%t snapshot=%+v err=%v", found, snapshot, err)
+	}
+}
+
+func TestStandardCodeSupervisorMultiProposalBatchDirectApplyReconcilesChronologically(t *testing.T) {
+	f, owned := newFileEditDrydockFixture(t)
+	ctx := t.Context()
+	if err := os.WriteFile(filepath.Join(owned.Path, "extra.txt"), []byte("alpha\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	checkpoints, err := NewWorkspaceCheckpointService(f.state, standardCodeThreadTestRuntime().ExecutionPermissionCapabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.service.WithCheckpointService(checkpoints)
+	p := &continuationCodeProvider{}
+	ref := llm.ModelRef{Provider: p.Name(), Model: "model"}
+	router := llm.NewRouter(ref)
+	router.RegisterProvider(p)
+	router.SetRoute("code", ref)
+	checker := standardCodeAlwaysReviewPolicy{base: policy.NewDefaultChecker()}
+	agentRunner := NewAgentRunner(f.state, router, checker).WithRunWorktree(f.service).
+		WithExecutionPermissionCapabilities(standardCodeThreadTestRuntime().ExecutionPermissionCapabilities)
+	wait := func(msg string) *llm.ChatResponse {
+		raw, _ := json.Marshal(domain.RootAction{Version: domain.RootLifecycleVersion, Kind: domain.RootActionWait,
+			Message: msg, Reason: "operator review"})
+		return &llm.ChatResponse{Provider: p.Name(), Model: "model", Text: string(raw)}
+	}
+	tool := func(id, name string, payload any) *llm.ChatResponse {
+		var raw json.RawMessage
+		if text, ok := payload.(string); ok {
+			raw = json.RawMessage(text)
+		} else {
+			raw = mustAgentCodeDrydockJSON(t, payload)
+		}
+		return &llm.ChatResponse{Provider: p.Name(), Model: "model", ToolCalls: []llm.ToolCall{{ID: id, Name: name, Arguments: raw}}}
+	}
+	if _, err = NewRunService(f.state).Start(ctx, f.run.ID); err != nil {
+		t.Fatal(err)
+	}
+	plan := `{"version":"plan_delivery.v1","directions":[
+ {"title":"Batch update","summary":"Update both files","tradeoffs":["Two files"],"modules":[{"title":"Update files","objective":"Update tracked and extra","acceptance_criteria":["Both updated"],"dependencies":[]}]},
+ {"title":"Single file","summary":"Only tracked","tradeoffs":["Partial"],"modules":[{"title":"Tracked","objective":"Tracked","acceptance_criteria":["One"],"dependencies":[]}]},
+ {"title":"Defer","summary":"Defer","tradeoffs":["Later"],"modules":[{"title":"Defer","objective":"Defer","acceptance_criteria":["Deferred"],"dependencies":[]}]}]}`
+	p.responses = []*llm.ChatResponse{
+		tool("p1", "workspace_read", `{"version":"agent-code-tools.v1","path":"tracked.txt","start_line":1,"end_line":1}`),
+		tool("p2", "workspace_read", `{"version":"agent-code-tools.v1","path":"extra.txt","start_line":1,"end_line":1}`),
+		tool("p3", "plan_delivery_propose", plan),
+		wait("Choose direction"),
+	}
+	if _, err = agentRunner.StepWithInput(ctx, f.run.ID, "Plan two-file update"); err != nil {
+		t.Fatal(err)
+	}
+	proposals, err := f.state.ListPlanDeliveryProposals(ctx, f.run.ID, 10)
+	if err != nil || len(proposals) != 1 {
+		t.Fatalf("plan=%+v err=%v", proposals, err)
+	}
+	control := NewPlanDeliveryControlService(f.state)
+	if _, err = control.SelectDirection(ctx, ControlPlanDirectionRequest{Version: PlanDeliveryControlProtocolVersion, RunID: f.run.ID, ProposalID: proposals[0].ID,
+		Direction: 1, OperationKey: "sc-batch-select-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = control.EnterDelivery(ctx, ControlPlanDeliveryTransitionRequest{Version: PlanDeliveryControlProtocolVersion, RunID: f.run.ID,
+		OperationKey: "sc-batch-deliver-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	thread, err := f.state.GetThreadByRun(ctx, f.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = NewRunService(f.state).Resume(ctx, f.run.ID); err != nil {
+		t.Fatal(err)
+	}
+	caps := standardCodeThreadTestRuntime().ExecutionPermissionCapabilities
+	lifecycle := NewRunLifecycleControlService(f.state)
+	execution := NewRunExecutionHandoffService(f.state, router, checker).
+		WithRunWorktree(f.service).
+		WithExecutionPermissionCapabilities(caps)
+	turns := NewThreadTurnServiceWithExecutionCapabilities(f.state, lifecycle, execution, caps)
+	p.responses = []*llm.ChatResponse{
+		{
+			Provider: p.Name(),
+			Model:    "model",
+			ToolCalls: []llm.ToolCall{
+				{
+					ID:   "batch-1",
+					Name: "workspace_change",
+					Arguments: mustAgentCodeDrydockJSON(t, toolgateway.WorkspaceChangePayload{
+						Version: toolgateway.AgentCodeRegistryVersion, Action: "propose_patch",
+						Path: "tracked.txt", ExpectedSHA256: fileedit.HashText("base\n"),
+						Replacements: []toolgateway.WorkspaceReplacement{{OldText: "base", NewText: "batch one", ExpectedOccurrences: 1}},
+					}),
+				},
+				{
+					ID:   "batch-2",
+					Name: "workspace_change",
+					Arguments: mustAgentCodeDrydockJSON(t, toolgateway.WorkspaceChangePayload{
+						Version: toolgateway.AgentCodeRegistryVersion, Action: "propose_patch",
+						Path: "extra.txt", ExpectedSHA256: fileedit.HashText("alpha\n"),
+						Replacements: []toolgateway.WorkspaceReplacement{{OldText: "alpha", NewText: "batch two", ExpectedOccurrences: 1}},
+					}),
+				},
+			},
+		},
+		wait("Await batch approval"),
+		wait("Both batch edits applied without workspace drift"),
+	}
+	if _, err := turns.Execute(ctx, ExecuteThreadTurnRequest{Version: domain.ThreadMessageProtocolVersion, ThreadID: thread.ID, Content: "Update both files", OperationKey: "sc-batch-exec-0001", RequestedBy: "operator"}); err != nil {
+		t.Fatal(err)
+	}
+	edits, err := f.state.ListFileEdits(ctx, fileedit.ListFilter{SessionID: f.run.SessionID})
+	if err != nil || len(edits) != 2 {
+		t.Fatalf("edits=%+v err=%v", edits, err)
+	}
+	var editTracked, editExtra fileedit.Edit
+	for _, item := range edits {
+		if item.Path == "tracked.txt" {
+			editTracked = item
+		} else if item.Path == "extra.txt" {
+			editExtra = item
+		}
+	}
+	revSvc := NewFileEditReviewService(f.state).WithRunWorktree(f.service)
+	if _, err = revSvc.Review(ctx, ReviewFileEditRequest{
+		Version: FileEditReviewProtocolVersion, RunID: f.run.ID, EditID: editTracked.ID, Action: FileEditApproveIntent,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	firstResume := turns.ResumeApproval(ctx, ApprovalContinuationRequest{RunID: f.run.ID, Kind: "file_edit", ProposalID: editTracked.ID})
+	if firstResume.State != "not_started" {
+		t.Fatalf("expected not_started after first of two reviews, got %+v", firstResume)
+	}
+	if _, err = revSvc.Review(ctx, ReviewFileEditRequest{
+		Version: FileEditReviewProtocolVersion, RunID: f.run.ID, EditID: editExtra.ID, Action: FileEditApproveIntent,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	secondResume := turns.ResumeApproval(ctx, ApprovalContinuationRequest{RunID: f.run.ID, Kind: "file_edit", ProposalID: editExtra.ID})
+	if secondResume.State != "completed" || secondResume.ToolCalled {
+		t.Fatalf("expected completed batch continuation, got %+v", secondResume)
+	}
+	if got1, err1 := os.ReadFile(filepath.Join(owned.Path, "tracked.txt")); err1 != nil || string(got1) != "batch one\n" {
+		t.Fatalf("tracked.txt not direct-applied in batch: got=%q err=%v", got1, err1)
+	}
+	if got2, err2 := os.ReadFile(filepath.Join(owned.Path, "extra.txt")); err2 != nil || string(got2) != "batch two\n" {
+		t.Fatalf("extra.txt not direct-applied in batch: got=%q err=%v", got2, err2)
+	}
+	snapshot, found, err := f.state.GetStandardCodeSupervisorSnapshot(ctx, f.run.ID)
+	if err != nil || !found || snapshot.MutationEpoch != 2 || snapshot.State != domain.StandardCodeSupervisorExecute || snapshot.StopReason != "" {
+		t.Fatalf("supervisor failed chronological multi-edit reconciliation: found=%t snapshot=%+v err=%v", found, snapshot, err)
+	}
+}
+

@@ -390,7 +390,7 @@ function FileReviewDrawer({ applyEnabled, applying, client, diff, edit, onApply,
     <footer>
       <span>{!currentTarget ? t("保留原目录的历史记录", "Historical record in its original directory") : onRequestChange ? edit.apply_enabled ? t("可应用到文件", "Ready to apply")
         : edit.status === "applied" ? t("写入已记录；后续检查须使用同一执行目录", "Write recorded; subsequent checks must use the same execution directory")
-          : edit.status === "proposed" ? t("批准后可应用", "Approve before applying") : t("尚不能应用", "Not ready to apply")
+          : edit.status === "proposed" ? t("批准并直接应用", "Approve to apply") : t("尚不能应用", "Not ready to apply")
         : <>{t("应用权限", "Apply authority")}: {edit.apply_enabled ? t("就绪", "ready") : t("禁用", "disabled")}</>}</span>
       <div>
         {edit.status === "applied" && <button className="compact-command" disabled={!client.hasFileEditReview || reverting ||

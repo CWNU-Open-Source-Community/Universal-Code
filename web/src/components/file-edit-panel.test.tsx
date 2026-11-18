@@ -434,8 +434,9 @@ describe("FileEditPanel", () => {
       fileEditChangeSet: vi.fn().mockResolvedValue(changeSetFor(proposed)),
       reviewFileEdit: review } as unknown as APIClient;
     const user = userEvent.setup();
-    renderPanel(client);
+    renderPanel(client, "running", undefined, { onRequestChange: vi.fn() });
     await user.click(await screen.findByRole("button", { name: /README.md/ }));
+    expect(screen.getByText("Approve to apply")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Approve and apply README.md" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("workspace file changed after review; refusing to apply");
@@ -480,7 +481,7 @@ function changeSetItem(edit: {
 
 function renderPanel(client: APIClient, runStatus = "running", queryClient = new QueryClient({ defaultOptions: {
     queries: { retry: false }, mutations: { retry: false },
-  } }), props: { onRequestRevert?: (edit: FileEditPreviewView) => void } = {}) {
+  } }), props: { onRequestRevert?: (edit: FileEditPreviewView) => void; onRequestChange?: () => void } = {}) {
   return render(<QueryClientProvider client={queryClient}>
     <FileEditPanel client={client} runID="run-1" runStatus={runStatus} {...props} />
   </QueryClientProvider>);

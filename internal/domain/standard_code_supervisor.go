@@ -12,7 +12,8 @@ const StandardCodeSupervisorProtocolVersion = "standard_code_supervisor.v1"
 
 const (
 	StandardCodeSupervisorMinimumReadRounds             = 2
-	StandardCodeSupervisorMaximumToolRounds             = 4
+	StandardCodeSupervisorMaximumToolRounds             = MaxSupervisorExecutionRounds
+	legacyStandardCodeSupervisorMaximumToolRounds       = 4
 	StandardCodeSupervisorMaximumCommands               = 12
 	StandardCodeSupervisorMaximumJobs                   = 2
 	StandardCodeSupervisorMaximumFixRounds              = 3
@@ -176,10 +177,16 @@ func DefaultStandardCodeSupervisorLimits() StandardCodeSupervisorLimits {
 }
 
 func (l StandardCodeSupervisorLimits) Validate() error {
-	if l != DefaultStandardCodeSupervisorLimits() {
-		return errors.New("Standard Code Supervisor limits cannot be widened or weakened")
+	expected := DefaultStandardCodeSupervisorLimits()
+	if l == expected {
+		return nil
 	}
-	return nil
+	legacy := expected
+	legacy.MaximumToolRounds = legacyStandardCodeSupervisorMaximumToolRounds
+	if l == legacy {
+		return nil
+	}
+	return errors.New("Standard Code Supervisor limits cannot be widened or weakened")
 }
 
 type StandardCodeSupervisorJob struct {

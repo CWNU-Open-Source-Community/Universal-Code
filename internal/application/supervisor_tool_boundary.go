@@ -65,7 +65,16 @@ func (s *AgentRunner) evaluateTurnSegmentBoundary(ctx context.Context, turn doma
 	return evaluateSupervisorSegmentBoundary(nativeRounds, totalRounds, toolUsage, privateHistory, contextNearLimit), nil
 }
 
-func supervisorToolBoundaryRequest(request llm.ChatRequest) llm.ChatRequest {
+func supervisorToolBoundaryRequest(request llm.ChatRequest, boundary ...supervisorSegmentBoundaryState) llm.ChatRequest {
+	if len(boundary) > 0 && boundary[0].ToolBudgetZero {
+		request.Tools = nil
+		request.Messages = append(append([]llm.Message(nil), request.Messages...), llm.Message{
+			Role: "user",
+			Content: "The Harness has reached the internal segment tool-budget scheduling boundary: 0 tool calls remain in the Run's tool-call budget. No tools are offered for this response. Do not call tools or return continue, because continuing with 0 remaining tool budget fails with resource exhaustion. Return finish with verified results (honestly noting any remaining scope limited by the Run's tool budget), or wait only if external input or approval is genuinely required. Do not claim unexecuted actions.\n" +
+				`Response schema: return exactly one JSON object with version="root_lifecycle.v1", action="finish" or "wait", and a required nonempty message string. finish requires a nonempty summary and omits reason; wait requires a nonempty reason and omits summary.`,
+		})
+		return request
+	}
 	availability := supervisorToolBoundaryAvailability(request.Tools)
 	request.Tools = nil
 	request.Messages = append(append([]llm.Message(nil), request.Messages...), llm.Message{Role: "user",

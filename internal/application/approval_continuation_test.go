@@ -533,3 +533,91 @@ func TestApprovalContinuationRecordsCASConflictWithoutAbortingTurn(t *testing.T)
 	}
 }
 
+func TestApprovalContinuationBatchAppliesEarlierApprovedEditWhenFinalProposalDenied(t *testing.T) {
+	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	if err := os.WriteFile(filepath.Join(root, "second.txt"), []byte("keep me\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var editA, editB fileedit.Edit
+	p := &boundaryJourneyProvider{}
+	p.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
+		switch index {
+		case 1:
+			return toolBatchResponse(
+				llm.ToolCall{
+					ID:        "batch-propose-a",
+					Name:      "workspace_change",
+					Arguments: []byte(fmt.Sprintf(`{"version":"agent-code-tools.v1","action":"propose_patch","path":"README.md","expected_sha256":%q,"replacements":[{"old_text":"original text","new_text":"batch approved a","expected_occurrences":1}]}`, fileedit.HashText("original text\n"))),
+				},
+				llm.ToolCall{
+					ID:        "batch-propose-b",
+					Name:      "workspace_change",
+					Arguments: []byte(fmt.Sprintf(`{"version":"agent-code-tools.v1","action":"propose_patch","path":"second.txt","expected_sha256":%q,"replacements":[{"old_text":"keep me","new_text":"denied b","expected_occurrences":1}]}`, fileedit.HashText("keep me\n"))),
+				},
+			), nil
+		case 2:
+			return textResponse(rootActionResponse(domain.RootActionWait, "Await batch operator review", "", "operator review required")), nil
+		case 3:
+			var all strings.Builder
+			for _, message := range request.Messages {
+				all.WriteString(message.Content)
+				all.WriteByte('\n')
+			}
+			joined := all.String()
+			for _, want := range []string{editA.ID, editB.ID, "System-recorded direct file apply result after operator approval", "APPLIED", "denied"} {
+				if !strings.Contains(joined, want) {
+					t.Fatalf("batch continuation omitted %q in:\n%s", want, joined)
+				}
+			}
+			for _, forbidden := range []string{"No file write is implied by approval", "use normal workspace_apply"} {
+				if strings.Contains(joined, forbidden) {
+					t.Fatalf("batch continuation contained contradictory legacy guidance %q", forbidden)
+				}
+			}
+			return textResponse(rootActionResponse(domain.RootActionFinish, "Edit A applied and Edit B remained denied", "done", "")), nil
+		default:
+			return nil, fmt.Errorf("unexpected call %d", index)
+		}
+	}
+	turns := toolBoundaryServiceWithPolicy(st, st, p, &fileOperationPolicy{review: true})
+	if _, err := turns.Execute(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	edits, err := st.ListFileEdits(t.Context(), fileedit.ListFilter{SessionID: run.SessionID})
+	if err != nil || len(edits) != 2 {
+		t.Fatalf("expected 2 proposed edits, got %#v err=%v", edits, err)
+	}
+	for _, item := range edits {
+		if item.Path == "README.md" {
+			editA = item
+		} else if item.Path == "second.txt" {
+			editB = item
+		}
+	}
+	revSvc := application.NewFileEditReviewService(st)
+	if _, err := revSvc.Review(t.Context(), application.ReviewFileEditRequest{
+		Version: application.FileEditReviewProtocolVersion, RunID: run.ID, EditID: editA.ID, Action: application.FileEditApproveIntent,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	early := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: editA.ID})
+	if early.State != "not_started" {
+		t.Fatalf("expected not_started while editB still unreviewed, got %#v", early)
+	}
+	if _, err := revSvc.Review(t.Context(), application.ReviewFileEditRequest{
+		Version: application.FileEditReviewProtocolVersion, RunID: run.ID, EditID: editB.ID, Action: application.FileEditDeny,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	final := turns.ResumeApproval(t.Context(), application.ApprovalContinuationRequest{RunID: run.ID, Kind: "file_edit", ProposalID: editB.ID})
+	if final.State != "completed" || !final.ModelCalled || final.ToolCalled {
+		t.Fatalf("expected completed continuation after denying editB, got %#v", final)
+	}
+	if gotA, readErr := os.ReadFile(filepath.Join(root, "README.md")); readErr != nil || string(gotA) != "batch approved a\n" {
+		t.Fatalf("earlier approved editA was stranded unapplied: got=%q err=%v", gotA, readErr)
+	}
+	if gotB, readErr := os.ReadFile(filepath.Join(root, "second.txt")); readErr != nil || string(gotB) != "keep me\n" {
+		t.Fatalf("denied editB mutated disk: got=%q err=%v", gotB, readErr)
+	}
+}
+

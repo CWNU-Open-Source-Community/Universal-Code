@@ -175,8 +175,16 @@ func (s *ThreadTurnService) resumeApprovalWithOwner(ctx context.Context, request
 	var execution LifecycleResult
 	err = s.execution.supervisor.withRunExecutionLease(ctx, request.RunID, func(leaseCtx context.Context, lease domain.RunExecutionLease) error {
 		turn, stepErr := store.BeginSupervisorApprovalContinuation(leaseCtx, lease, value.Handoff.Operation.ID)
-		if stepErr == nil && request.Kind == "file_edit" {
-			stepErr = s.execution.supervisor.applyApprovedFileEditForContinuation(leaseCtx, lease, turn, value.Handoff.Operation.ID, request.ProposalID)
+		if stepErr == nil {
+			editIDs := value.ApprovedFileEditIDs
+			if len(editIDs) == 0 && request.Kind == "file_edit" && request.ProposalID != "" {
+				editIDs = []string{request.ProposalID}
+			}
+			for _, editID := range editIDs {
+				if stepErr = s.execution.supervisor.applyApprovedFileEditForContinuation(leaseCtx, lease, turn, value.Handoff.Operation.ID, editID); stepErr != nil {
+					break
+				}
+			}
 		}
 		if stepErr == nil {
 			execution, stepErr = s.execution.supervisor.stepWithLease(leaseCtx, lease, value.Input)

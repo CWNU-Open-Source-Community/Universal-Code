@@ -210,6 +210,14 @@ func TestPrepareApprovalContinuationSupportsWorkspaceDeleteAndAppliedOrFailedOut
 		wantWord   string
 	}{
 		{
+			name:       "workspace_change_approved_direct_apply",
+			toolName:   "workspace_change",
+			operation:  fileedit.OperationCreate,
+			review:     application.FileEditApproveIntent,
+			finalState: fileedit.StatusApproved,
+			wantWord:   "approved",
+		},
+		{
 			name:       "workspace_change_applied",
 			toolName:   "workspace_change",
 			operation:  fileedit.OperationCreate,
@@ -402,6 +410,9 @@ func TestPrepareApprovalContinuationSupportsWorkspaceDeleteAndAppliedOrFailedOut
 			}
 			if strings.Contains(evidence, "workspace_apply") {
 				t.Fatalf("evidence for %s must not instruct workspace_apply: %s", tc.finalState, evidence)
+			}
+			if tc.finalState == fileedit.StatusApproved && (len(cont.ApprovedFileEditIDs) != 1 || cont.ApprovedFileEditIDs[0] != edit.ID) {
+				t.Fatalf("expected ApprovedFileEditIDs=[%s], got %+v", edit.ID, cont.ApprovedFileEditIDs)
 			}
 		})
 	}

@@ -48,7 +48,7 @@ The protocol fixes, and validates on every persisted snapshot, these limits:
 | Budget | Limit |
 | --- | ---: |
 | Consecutive read rounds | 2 minimum |
-| Tool rounds per Supervisor turn | 4 |
+| Tool rounds per Supervisor turn | 24 native (217 physical execution rounds) |
 | Command invocations | 12 |
 | Background Jobs | 2 |
 | Fix rounds | 3 |

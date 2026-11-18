@@ -22,13 +22,14 @@ import (
 const approvalContinuationActor = "approval_continuation"
 
 type approvalContinuationContext struct {
-	ThreadID         string `json:"thread_id"`
-	OriginTurn       int    `json:"origin_turn"`
-	OriginAttemptID  string `json:"origin_attempt_id"`
-	UserMessageID    int64  `json:"user_message_id"`
-	Evidence         string `json:"evidence"`
-	ScopeFingerprint string `json:"scope_fingerprint"`
-	BatchStartTurn   int    `json:"batch_start_turn"`
+	ThreadID            string   `json:"thread_id"`
+	OriginTurn          int      `json:"origin_turn"`
+	OriginAttemptID     string   `json:"origin_attempt_id"`
+	UserMessageID       int64    `json:"user_message_id"`
+	Evidence            string   `json:"evidence"`
+	ScopeFingerprint    string   `json:"scope_fingerprint"`
+	BatchStartTurn      int      `json:"batch_start_turn"`
+	ApprovedFileEditIDs []string `json:"approved_file_edit_ids,omitempty"`
 }
 
 // PrepareApprovalContinuation admits only a completed model wait whose exact
@@ -133,12 +134,13 @@ func (s *SQLiteStore) PrepareApprovalContinuation(ctx context.Context, runID, ki
 	if err != nil {
 		return empty, false, err
 	}
-	facts, hasPendingFileApply, ready, err := approvalContinuationFactsTx(ctx, tx, run, origin)
+	facts, approvedEditIDs, ready, err := approvalContinuationFactsTx(ctx, tx, run, origin)
 	if err != nil || !ready {
 		return empty, false, err
 	}
-	if hasPendingFileApply {
-		origin.Evidence = "System-recorded operator review results for the preceding model wait. This is not a new user message or broader authorization. Continue the original task using these exact decisions. File approval authorizes only the existing proposal; obtain its current status and use normal workspace_apply checks if needed. A denied proposal must not be applied. Host results below are already executed: do not rerun those commands. Do not claim verification beyond their recorded result.\n" + facts
+	origin.ApprovedFileEditIDs = approvedEditIDs
+	if len(approvedEditIDs) > 0 {
+		origin.Evidence = "System-recorded operator review results for the preceding model wait. This is not a new user message or broader authorization. Continue the original task using these exact decisions. Approved file proposals are applied directly by the host during this continuation; check the direct file apply result recorded below (applied changes are already written to the workspace and must not be re-applied; failed edits must be inspected before retrying). A denied proposal must not be applied. Host results below are already executed: do not rerun those commands. Do not claim verification beyond their recorded result.\n" + facts
 	} else {
 		origin.Evidence = "System-recorded operator review results for the preceding model wait. This is not a new user message or broader authorization. Continue the original task using these exact decisions. Approved file edits reported as applied are already written to the workspace and must not be re-applied; failed edits must be inspected before retrying. A denied proposal must not be applied. Host results below are already executed: do not rerun those commands. Do not claim verification beyond their recorded result.\n" + facts
 	}
@@ -167,7 +169,7 @@ func (s *SQLiteStore) PrepareApprovalContinuation(ctx context.Context, runID, ki
 	return value, true, tx.Commit()
 }
 
-func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run, origin approvalContinuationContext) (string, bool, bool, error) {
+func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run, origin approvalContinuationContext) (string, []string, bool, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT tool_name,result_json FROM run_supervisor_tool_calls call
 		WHERE run_id=? AND turn BETWEEN ? AND ? AND status='completed'
 		AND tool_name IN ('workspace_change','workspace_delete','host_command_propose')
@@ -179,7 +181,7 @@ func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run
 		 AND json_extract(started.payload_json,'$.approval_continuation_handoff_id')=json_extract(final.payload_json,'$.approval_continuation_handoff_id')))
 		 ORDER BY turn,round,position LIMIT ?`, run.ID, origin.BatchStartTurn, origin.OriginTurn, origin.OriginAttemptID, origin.UserMessageID, origin.OriginAttemptID, domain.MaxSupervisorBoundaryContextCalls+1)
 	if err != nil {
-		return "", false, false, err
+		return "", nil, false, err
 	}
 	type item struct{ tool, body string }
 	var items []item
@@ -187,31 +189,32 @@ func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run
 		var v item
 		if err := rows.Scan(&v.tool, &v.body); err != nil {
 			_ = rows.Close()
-			return "", false, false, err
+			return "", nil, false, err
 		}
 		items = append(items, v)
 	}
 	err = rows.Err()
 	_ = rows.Close()
 	if err != nil {
-		return "", false, false, err
+		return "", nil, false, err
 	}
 	if len(items) == 0 || len(items) > domain.MaxSupervisorBoundaryContextCalls {
-		return "", false, false, nil
+		return "", nil, false, nil
 	}
 	var facts strings.Builder
-	hasPendingFileApply := false
+	var approvedEditIDs []string
+	seenApproved := make(map[string]struct{})
 	for _, item := range items {
 		var result struct {
 			Metadata map[string]string `json:"metadata"`
 		}
 		if err := json.Unmarshal([]byte(item.body), &result); err != nil {
-			return "", false, false, err
+			return "", nil, false, err
 		}
 		if item.tool == "workspace_change" || item.tool == "workspace_delete" {
 			id := result.Metadata["edit_id"]
 			if !domain.ValidAgentID(id) {
-				return "", false, false, nil
+				return "", nil, false, nil
 			}
 			var status, approvalStatus, path, original, proposed, workspaceID, operationKind string
 			err := tx.QueryRowContext(ctx, `SELECT edit.status,approval.status,edit.path,edit.original_hash,edit.proposed_hash,edit.workspace_id,edit.operation_kind
@@ -220,13 +223,13 @@ func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run
 				AND approval.workspace_id=edit.workspace_id AND approval.action_class='workspace_write'`, id, run.SessionID, run.ID).
 				Scan(&status, &approvalStatus, &path, &original, &proposed, &workspaceID, &operationKind)
 			if err != nil {
-				return "", false, false, err
+				return "", nil, false, err
 			}
 			if ((status != fileedit.StatusApproved && status != fileedit.StatusApplied && status != fileedit.StatusFailed) || approvalStatus != "approved") && (status != fileedit.StatusDenied || approvalStatus != "denied") {
-				return "", false, false, nil
+				return "", nil, false, nil
 			}
 			if err := requireFileEditWorkspaceTx(ctx, tx, run.SessionID, workspaceID, false); err != nil {
-				return "", false, false, err
+				return "", nil, false, err
 			}
 			switch status {
 			case fileedit.StatusApplied:
@@ -236,24 +239,27 @@ func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run
 			case fileedit.StatusDenied:
 				fmt.Fprintf(&facts, "File proposal %s (%s): denied; path %q; original SHA256 %s; proposed SHA256 %s. A denied proposal must not be applied.\n", id, operationKind, path, original, proposed)
 			default:
-				hasPendingFileApply = true
-				fmt.Fprintf(&facts, "File proposal %s (%s): %s; path %q; original SHA256 %s; proposed SHA256 %s. No file write is implied by approval; applied/failed records must not be blindly repeated.\n", id, operationKind, status, path, original, proposed)
+				if _, exists := seenApproved[id]; !exists {
+					seenApproved[id] = struct{}{}
+					approvedEditIDs = append(approvedEditIDs, id)
+				}
+				fmt.Fprintf(&facts, "File proposal %s (%s): %s; path %q; original SHA256 %s; proposed SHA256 %s. Approved by operator; the host applies approved file changes directly during this continuation (check the direct file apply result recorded below and do not repeat this edit).\n", id, operationKind, status, path, original, proposed)
 			}
 		} else {
 			id := result.Metadata["proposal_id"]
 			if !domain.ValidAgentID(id) {
-				return "", false, false, nil
+				return "", nil, false, nil
 			}
 			proposal, err := getHostCommandProposal(ctx, tx, id)
 			if err != nil {
-				return "", false, false, err
+				return "", nil, false, err
 			}
 			if proposal.RunID != run.ID || proposal.SessionID != run.SessionID {
-				return "", false, false, apperror.New(apperror.CodeConflict, "Host continuation crossed its Run")
+				return "", nil, false, apperror.New(apperror.CodeConflict, "Host continuation crossed its Run")
 			}
 			review, found, err := getHostCommandReviewByProposal(ctx, tx, id)
 			if err != nil || !found {
-				return "", false, false, err
+				return "", nil, false, err
 			}
 			if review.Decision == runner.HostCommandReviewDeny {
 				fmt.Fprintf(&facts, "Host proposal %s: denied, not executed.\n", id)
@@ -261,15 +267,15 @@ func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run
 			}
 			value, receipt, found, err := getHostCommandProposalResult(ctx, tx, id)
 			if err != nil || !found {
-				return "", false, false, err
+				return "", nil, false, err
 			}
 			if value.RunID != run.ID || value.SessionID != run.SessionID || value.ProposalID != id || value.ReviewID != review.ID {
-				return "", false, false, apperror.New(apperror.CodeConflict, "Host continuation result binding is invalid")
+				return "", nil, false, apperror.New(apperror.CodeConflict, "Host continuation result binding is invalid")
 			}
 			fmt.Fprintf(&facts, "Host proposal %s: result %s; receipt %s; exit %d; timed_out %t; cancelled %t; stdout_truncated %t; stderr_truncated %t. Its saved output is already in this Session.\n", id, value.ID, receipt.RequestID, receipt.ExitCode, receipt.TimedOut, receipt.Cancelled, receipt.StdoutTruncated, receipt.StderrTruncated)
 		}
 	}
-	return facts.String(), hasPendingFileApply, true, nil
+	return facts.String(), approvedEditIDs, true, nil
 }
 
 func loadApprovalContinuationTx(ctx context.Context, q hostCommandProposalQueryer, handoff domain.RunExecutionHandoff) (domain.ApprovalContinuation, error) {
@@ -303,6 +309,7 @@ func loadApprovalContinuationTx(ctx context.Context, q hostCommandProposalQuerye
 		return value, apperror.New(apperror.CodeConflict, "Approval continuation original input is invalid")
 	}
 	value.ThreadID, value.OriginTurn, value.OriginAttemptID, value.UserMessageID, value.Input = origin.ThreadID, origin.OriginTurn, origin.OriginAttemptID, origin.UserMessageID, original.Content
+	value.ApprovedFileEditIDs = append([]string(nil), origin.ApprovedFileEditIDs...)
 	if err := q.QueryRowContext(ctx, `SELECT image_count,attachment_count FROM operator_steering_messages WHERE id=? AND run_id=?`, handoff.Items[0].MessageID, handoff.Operation.RunID).Scan(&value.ImageCount, &value.AttachmentCount); err != nil {
 		return value, err
 	}

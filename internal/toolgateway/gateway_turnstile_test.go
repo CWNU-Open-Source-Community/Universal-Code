@@ -391,3 +391,46 @@ func TestOrderedBudgetTurnstilePreToolDenialPreservesFIFOBudgetOrderWhenEarlierS
 	}
 }
 
+func TestOrderedBudgetTurnstileCallerReleaseBeforeInvokeWaitsForEarlierSlot(t *testing.T) {
+	st := &turnstileBudgetStore{memoryStore: newMemoryStore(), limit: 2}
+	exec := newTurnstileConcurrentSearchExecutor(1)
+	gw := New(st, policy.NewDefaultChecker()).WithMCPExecutor(exec)
+
+	ready := make([]chan struct{}, 4)
+	for i := range ready {
+		ready[i] = make(chan struct{})
+	}
+	close(ready[0])
+
+	var wg sync.WaitGroup
+	errs := make([]error, 3)
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			slotCtx, release := WithOrderedBudgetTurnstile(t.Context(), ready[idx], ready[idx+1])
+			defer release()
+			if idx == 0 {
+				time.Sleep(35 * time.Millisecond)
+			}
+			if idx == 1 {
+				// Simulate caller short-circuiting before Gateway.Invoke; release() must
+				// still wait for slot 0 before unblocking slot 2.
+				return
+			}
+			call := testTurnstileMCPSearchCall(fmt.Sprintf("call-%d", idx+1), fmt.Sprintf("%064d", idx+1))
+			_, errs[idx] = gw.Invoke(slotCtx, call)
+		}(i)
+	}
+	wg.Wait()
+
+	if errs[0] != nil || errs[2] != nil {
+		t.Fatalf("expected slots 0 and 2 to succeed, got errs=%v", errs)
+	}
+	wantOrder := []string{"call-1", "call-3"}
+	gotOrder := st.ChargeOrder()
+	if strings.Join(gotOrder, ",") != strings.Join(wantOrder, ",") {
+		t.Fatalf("early caller release bypassed earlier slot FIFO order: got=%v want=%v", gotOrder, wantOrder)
+	}
+}
+

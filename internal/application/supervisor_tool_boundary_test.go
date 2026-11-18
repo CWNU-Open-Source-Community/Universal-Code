@@ -532,6 +532,14 @@ func TestThreadToolBoundaryHonorsTurnBudgetAndNaturalWait(t *testing.T) {
 					return nil, fmt.Errorf("boundary continued past %s", test.name)
 				}
 				assertBoundaryPrompt(t, request)
+				lastContent := request.Messages[len(request.Messages)-1].Content
+				if test.name == "tool_budget" {
+					if !strings.Contains(lastContent, "0 tool calls remain") || strings.Contains(lastContent, "Return continue if the same accepted user task needs more work") {
+						t.Fatalf("ToolBudgetZero prompt must warn 0 tool calls remain instead of instructing continue: %q", lastContent)
+					}
+				} else if !strings.Contains(lastContent, "Return continue if the same accepted user task needs more work") {
+					t.Fatalf("normal 24-round boundary prompt must advertise continue within remaining budget: %q", lastContent)
+				}
 				summary, reason := "", ""
 				if test.action == domain.RootActionFinish {
 					summary = "finished"
@@ -756,6 +764,10 @@ func TestThreadToolBoundaryWithdrawsToolsImmediatelyOnToolBudgetZero(t *testing.
 					return nil, fmt.Errorf("unexpected extra call %d after ToolBudgetZero", index)
 				}
 				assertBoundaryPrompt(t, request)
+				lastContent := request.Messages[len(request.Messages)-1].Content
+				if !strings.Contains(lastContent, "0 tool calls remain") || strings.Contains(lastContent, "Return continue if the same accepted user task needs more work") {
+					t.Fatalf("ToolBudgetZero prompt must warn 0 tool calls remain instead of instructing continue: %q", lastContent)
+				}
 				if action == domain.RootActionFinish {
 					return textResponse(rootActionResponse(domain.RootActionFinish, "Finished on tool budget boundary", "done", "")), nil
 				}
