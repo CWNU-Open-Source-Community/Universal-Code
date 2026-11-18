@@ -536,6 +536,7 @@
   grid-template-columns: 40px minmax(0, 1fr);
   height: 100%;
   min-height: 80px;
+  overflow: hidden;
   padding: 14px 16px;
   text-align: start;
   transition: background 140ms ease-out, border-color 140ms ease-out;

@@ -79,36 +79,37 @@ describe("V2 model settings", () => {
 
     expect(document.querySelector("style[data-v2-model-settings]")).toBeNull();
     expect(list.querySelector("[style]")).toBeNull();
-    expect(modelStyles).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
-    expect(modelStyles).toContain("@media (max-width: 680px)");
-    expect(modelStyles).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(modelStyles).toMatch(/\.v2-model-catalog\s*\{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/u);
+    expect(modelStyles).toMatch(/@container secondary-page \(max-width: 620px\)\s*\{\s*\.v2-model-catalog\s*\{\s*grid-template-columns: minmax\(0, 1fr\)/u);
   });
 
-  it("exposes white glass icon wells as decoration without duplicating accessible names", () => {
+  it("keeps provider icons decorative and uses the theme's paired foreground and background colors", () => {
     renderSettings();
 
     const openAIButton = screen.getByRole("button", { name: /OpenAI，GPT-5/u });
     const icon = within(openAIButton).getByTestId("openai-mark");
     expect(icon.closest(".v2-model-card-icon")).toHaveAttribute("aria-hidden", "true");
-    expect(modelStyles).toContain("backdrop-filter: blur(18px)");
-    expect(modelStyles).toContain("prefers-reduced-transparency: reduce");
-    expect(modelStyles).toContain("background: var(--v2-control)");
+    expect(modelCardIconRule).toContain("background: var(--prayu-primary-bg)");
+    expect(modelCardIconRule).toContain("color: var(--prayu-primary-fg)");
+    expect(modelStyles).toMatch(/\.v2-model-card-icon svg\s*\{\s*color: currentColor/u);
   });
 
-  it("clips the composited icon well to the card's inner left radius", () => {
+  it("clips the native provider button and its inset icon to their own rounded edges", () => {
     renderSettings();
 
     expect(modelCardRule).toContain("-webkit-appearance: none");
     expect(modelCardRule).toContain("appearance: none");
     expect(modelCardRule).toContain("background-clip: padding-box");
+    expect(modelCardRule).toContain("border-radius: var(--prayu-radius-panel)");
     expect(modelCardRule).toContain("overflow: hidden");
-    expect(modelCardIconRule).toContain("border-radius: 15px 0 0 15px");
+    expect(modelCardIconRule).toContain("border-radius: var(--prayu-radius-control)");
     expect(modelCardIconRule).toContain("overflow: hidden");
   });
 
   it("falls back to solid system colors for contrast preferences without motion transforms", () => {
     renderSettings();
 
+    expect(modelStyles).toMatch(/@media \(prefers-reduced-transparency: reduce\)\s*\{[^@]*?\.v2-model-card\s*\{[^}]*background: var\(--v2-floating-surface\)/u);
     expect(modelStyles).toContain("@media (prefers-contrast: more)");
     expect(modelStyles).toContain("@media (forced-colors: active)");
     expect(modelStyles).toContain("background: Canvas");
