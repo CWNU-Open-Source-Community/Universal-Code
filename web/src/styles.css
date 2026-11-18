@@ -35,10 +35,14 @@
     "Cascadia Code", Consolas, monospace;
   --prayu-prose-size: 15px;
   --prayu-prose-leading: 1.7;
-  --prayu-code-size: 13px;
+  --prayu-code-size: 15px;
   --prayu-code-leading: 1.6;
   --prayu-weight-body: 400;
   --prayu-weight-heading: 600;
+  --prayu-radius-inner: 8px;
+  --prayu-radius-control: 10px;
+  --prayu-radius-panel: 16px;
+  --prayu-radius-dialog: 20px;
   --prayu-motion-fast: 120ms;
   --prayu-motion-disclosure: 180ms;
   --prayu-ease-out: cubic-bezier(.2, .8, .2, 1);
@@ -454,23 +458,7 @@ td code { font-size: 11px; }
 .role-assistant { border-left: 3px solid var(--prayu-border); padding-left: 12px; }
 .role-user { border-left: 3px solid var(--prayu-border); padding-left: 12px; }
 
-.connection-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--prayu-control); }
-.connection-panel { width: min(440px, 100%); padding: 28px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); box-shadow: 0 14px 36px rgb(0 0 0 / 8%); }
-.connection-heading { margin: 42px 0 23px; }
-.connection-heading h1 { margin: 0 0 6px; font-size: 22px; }
-.connection-heading p { margin: 0; color: var(--muted); font-size: 12px; }
-.connection-token-help { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 7px 0 16px; }
-.field-label { display: block; margin-bottom: 7px; color: var(--prayu-text); font-size: 12px; font-weight: 600; }
-.token-row { display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: 8px; }
-.token-row input { min-width: 0; height: 42px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 5px; }
-.token-row button { width: 42px; height: 42px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: var(--prayu-primary-bg); color: var(--prayu-primary-fg); cursor: pointer; }
-.token-row button:hover:not(:disabled) { background: var(--prayu-primary-hover); }
-.token-row button:disabled { opacity: .5; cursor: default; }
-.optional-token-label { margin-top: 16px; }
-.optional-token-label span { color: var(--muted); font-weight: 400; }
-.control-token-input { width: 100%; min-width: 0; height: 42px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 5px; }
 .connection-error { margin-top: 11px; font-size: 12px; overflow-wrap: anywhere; }
-.desktop-connecting { min-height: 34px; display: flex; align-items: center; gap: 8px; margin: -10px 0 17px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--accent-soft); color: var(--prayu-text); font-size: 12px; }
 .desktop-dialog-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; background: rgb(0 0 0 / 48%); }
 .desktop-dialog { width: min(680px, 100%); max-height: min(760px, calc(100dvh - 48px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); box-shadow: 0 20px 54px rgb(0 0 0 / 24%); }
 .desktop-dialog > header { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
@@ -1585,18 +1573,6 @@ body { background: transparent; }
 .about-prayu > h1 { margin: 14px 0 4px; }
 .about-prayu > p { margin: 0 0 26px; color: var(--prayu-text); }
 .about-prayu .settings-row-list { width: 100%; text-align: left; }
-
-.connection-page {
-  background: transparent;
-}
-.connection-panel {
-  border-color: var(--prayu-border);
-  background: var(--prayu-panel-strong);
-  box-shadow: 0 22px 70px rgb(0 0 0 / 28%);
-  backdrop-filter: blur(8px);
-}
-.connection-heading { margin-top: 26px; }
-.connection-panel .token-row button { background: var(--prayu-primary-bg); border: 1px solid var(--prayu-primary-border); box-shadow: 0 7px 20px var(--prayu-primary-shadow), inset 0 1px 0 var(--prayu-glass-highlight); }
 
 [data-prayu-density="compact"] .workspace-header { min-height: 94px; padding-top: 15px; padding-bottom: 13px; }
 [data-prayu-density="compact"] .workspace-content { padding-top: 15px; padding-bottom: 24px; }
@@ -3044,9 +3020,6 @@ summary:focus-visible {
 .prayu-brand-hero .prayu-brand-copy small { font-size: 12px; }
 
 @media (max-width: 480px) {
-  .connection-brand.prayu-brand-hero { gap: 12px; }
-  .connection-brand.prayu-brand-hero .prayu-brand-icon { width: 64px; }
-  .connection-brand.prayu-brand-hero .prayu-brand-copy strong { font-size: 22px; }
 }
 
 .about-mark.prayu-brand {
@@ -3065,8 +3038,7 @@ summary:focus-visible {
   color: var(--prayu-muted);
 }
 
-.appearance-preview,
-.connection-panel {
+.appearance-preview {
   border-color: var(--prayu-border);
   color: var(--prayu-text);
   background: var(--prayu-control);
@@ -4941,39 +4913,6 @@ samp {
   border-color: color-mix(in srgb, var(--prayu-danger) 56%, var(--prayu-border));
   color: var(--prayu-danger);
   background: color-mix(in srgb, var(--prayu-danger) 9%, var(--prayu-control));
-}
-
-.connection-page {
-  color: var(--prayu-text);
-  background:
-    radial-gradient(circle at 70% 18%, color-mix(in srgb, var(--prayu-accent) 13%, transparent),
-      transparent 34%),
-    var(--prayu-window);
-}
-
-[data-prayu-theme="dark"] .connection-page,
-[data-prayu-theme="glass"] .connection-page {
-  background: transparent;
-}
-
-.connection-panel .field-label,
-.connection-heading h1 {
-  color: var(--prayu-text);
-}
-
-.connection-panel input {
-  border-color: var(--prayu-border-strong);
-  border-radius: 12px;
-  color: var(--prayu-text);
-  background: var(--prayu-control);
-}
-
-.connection-panel .token-row button {
-  border-radius: 12px;
-  color: var(--prayu-selected-ink);
-  background: var(--prayu-selected);
-  box-shadow: 0 7px 20px var(--prayu-primary-shadow), inset 0 1px 0 var(--prayu-glass-highlight);
-  border: 1px solid var(--prayu-primary-border);
 }
 
 @keyframes prayu-backdrop-arrive {

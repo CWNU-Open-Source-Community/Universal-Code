@@ -328,6 +328,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const [desktopSidebarVisible, setDesktopSidebarVisible] = useState(true);
   const [narrowSidebarVisible, setNarrowSidebarVisible] = useState(false);
   const sidebarVisible = narrowLayout ? narrowSidebarVisible : desktopSidebarVisible;
+  const sidebarOverlayOpen = narrowLayout && narrowSidebarVisible;
   const sidebarSlot = useRef<HTMLDivElement>(null);
   const sidebarToggle = useRef<HTMLButtonElement>(null);
   const setSidebarVisible = (visible: boolean) => {
@@ -691,7 +692,16 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
       requestAnimationFrame(() => document.querySelector<HTMLElement>('.v2-composer :is(textarea, [contenteditable="true"][role="textbox"])')?.focus());
     },
   });
-  return <div className={`v2-shell${sidebarVisible ? " has-sidebar" : " no-sidebar"}`}>
+  return <div className={`v2-shell${sidebarVisible ? " has-sidebar" : " no-sidebar"}`} onKeyDown={(event) => {
+    if (!sidebarOverlayOpen || event.key !== "Escape" || event.defaultPrevented || event.nativeEvent.isComposing) return;
+    const target = event.target;
+    // A portalled menu or dialog owns its own dismissal. A populated search
+    // field also gets the first Escape so the browser can clear it.
+    if (!(target instanceof Element) || !event.currentTarget.contains(target) ||
+      target.closest('[role="dialog"], [role="menu"], .v2-project-row.is-open, input[type="search"]:not(:placeholder-shown)')) return;
+    event.preventDefault();
+    setSidebarVisible(false);
+  }}>
     <V2Titlebar canGoBack={navigation.canGoBack} onBack={surface === "settings" ? returnFromSettings : goBack}
       onToggleSidebar={() => setSidebarVisible(!sidebarVisible)} sidebarVisible={sidebarVisible} sidebarToggleRef={sidebarToggle} />
     <button aria-label={t("关闭侧栏", "Close sidebar")} className="v2-sidebar-backdrop" aria-hidden={!sidebarVisible} inert={!sidebarVisible}
@@ -745,7 +755,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
           selectedThreadID={selectedThreadID} threads={threads} workspaces={workspaces} />}>
       {editingProject && <ProjectDialog client={client} workspace={editingProject} onClose={() => setEditingProject(null)}
         onSaved={(workspace) => setImportedWorkspaces((current) => [...current.filter(({ id }) => id !== workspace.id), workspace])} />}
-      <div className="v2-product-surface" inert={moveMutation.isPending && moveMutation.variables.thread.id === selectedThreadID}
+      <div className="v2-product-surface" inert={sidebarOverlayOpen || (moveMutation.isPending && moveMutation.variables.thread.id === selectedThreadID)}
         aria-busy={moveMutation.isPending && moveMutation.variables.thread.id === selectedThreadID}>
         {route.kind === "invalid" ? <div className="v2-notice" role="alert">{t("任务地址无法识别。", "The task address is not recognized.")}
           <button onClick={() => startNew()} type="button">{t("打开新对话", "Open new conversation")}</button></div>

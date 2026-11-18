@@ -8,11 +8,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("restores saved sizes during appearance initialization and keeps existing defaults", () => {
-  expect(readTypography()).toEqual({ messageSize: 14, codeSize: 13 });
+it("restores saved sizes during appearance initialization and uses the desktop reading scale for new settings", () => {
+  expect(readTypography()).toEqual({ messageSize: 16, codeSize: 15 });
   initializePrayuAppearance();
-  expect(document.documentElement.style.getPropertyValue("--prayu-message-size")).toBe("14px");
-  expect(document.documentElement.style.getPropertyValue("--prayu-code-size")).toBe("13px");
+  expect(document.documentElement.style.getPropertyValue("--prayu-message-size")).toBe("16px");
+  expect(document.documentElement.style.getPropertyValue("--prayu-code-size")).toBe("15px");
   saveTypography({ messageSize: 20, codeSize: 18 });
   document.documentElement.style.removeProperty("--prayu-message-size");
   document.documentElement.style.removeProperty("--prayu-code-size");

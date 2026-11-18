@@ -394,6 +394,13 @@ describe("V2Workbench resource navigation", () => {
       expect(screen.queryByRole("button", { name: "关闭侧栏" })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "显示侧栏" })).toHaveAttribute("aria-pressed", "false");
     };
+    const product = screen.getByTestId("v2-conversation").closest(".v2-product-surface");
+    await user.click(screen.getByRole("button", { name: "显示侧栏" }));
+    expect(product).toHaveAttribute("inert");
+    await user.keyboard("{Escape}");
+    expectDrawerClosed();
+    expect(product).not.toHaveAttribute("inert");
+    expect(screen.getByRole("button", { name: "显示侧栏" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "显示侧栏" }));
     await user.click(within(screen.getByRole("navigation", { name: "对话导航" })).getByRole("button", { name: "新对话" }));
     expectDrawerClosed();

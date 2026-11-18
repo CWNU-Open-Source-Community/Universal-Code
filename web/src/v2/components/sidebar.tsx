@@ -9,6 +9,7 @@ import { ThreadProjectDialog, threadProjectID } from "./thread-project-dialog";
 import { ProjectHeader } from "./project-header";
 import { ThreadActions } from "./thread-actions";
 import { useV2PersistentState } from "../recovery-storage";
+import { shortcutBinding, shortcutLabel, useChatPreferences } from "../chat-preferences";
 import "./project-sidebar.css";
 
 function projectPinIDs(value: unknown): string[] {
@@ -90,6 +91,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   onLoadMore?: () => void; onRefresh?: () => void; onRetry?: () => void;
 }) {
   const { t, locale } = useLocale();
+  const preferences = useChatPreferences();
+  const newChatKeys = shortcutLabel(shortcutBinding(preferences, "newChat"));
   const searching = Boolean(appliedSearch);
   const [draggingThreadID, setDraggingThreadID] = useState("");
   const [dropProjectID, setDropProjectID] = useState<string | null>(null);
@@ -183,7 +186,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
       </button></div>
     <nav aria-label={t("对话导航", "Conversation navigation")} className="v2-sidebar-actions">
       <button onClick={onNewConversation} type="button"><SquarePen aria-hidden="true" size={16} />
-        <span>{t("新对话", "New conversation")}</span></button>
+        <span>{t("新对话", "New conversation")}</span>{newChatKeys && <kbd aria-hidden="true">{newChatKeys}</kbd>}</button>
       <button onClick={onOpenModels} type="button"><Cpu aria-hidden="true" size={16} />
         <span>{t("接入模型", "Connect models")}</span></button>
     </nav>
@@ -249,7 +252,11 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           {t("项目", "Projects")}<ChevronDown aria-hidden="true" className={projectsExpanded ? "" : "is-collapsed"} size={14} /></button>
         <details className="v2-project-section-menu" onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false;
-        }} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
+        }} onKeyDown={(event) => { if (event.key === "Escape" && event.currentTarget.open) {
+          event.preventDefault();
+          event.currentTarget.open = false;
+          event.currentTarget.querySelector("summary")?.focus();
+        } }}>
           <summary aria-label={t("项目选项", "Project options")}><MoreHorizontal aria-hidden="true" size={17} /></summary>
           <div>{[true, false].map((expand) => <button key={String(expand)} type="button" onClick={(event) => {
             setProjectsExpanded(true); setCollapsedProjects(expand ? new Set() : new Set(workspaces.map(({ id }) => id)));
@@ -337,6 +344,10 @@ export function V2SettingsSidebar({ section, onBack, onSelect }: {
   const { t } = useLocale();
   const [search, setSearch] = useState("");
   const normalized = search.trim().toLocaleLowerCase();
+  const groups = settingsGroups.map(({ label, items }) => ({
+    label,
+    items: items.filter((item) => !normalized || `${t(...item.label)} ${item.keywords ?? ""}`.toLocaleLowerCase().includes(normalized)),
+  })).filter(({ items }) => items.length);
   return <aside className="v2-sidebar v2-settings-sidebar">
     <button className="v2-settings-back" onClick={onBack} type="button">
       <ArrowLeft aria-hidden="true" size={16} />{t("返回应用", "Back to app")}</button>
@@ -344,17 +355,15 @@ export function V2SettingsSidebar({ section, onBack, onSelect }: {
       <input aria-label={t("搜索设置", "Search settings")} onChange={(event) => setSearch(event.target.value)}
         placeholder={t("搜索设置…", "Search settings…")} type="search" value={search} /></label>
     <nav aria-label={t("设置分类", "Settings categories")} className="v2-settings-nav">
-      {settingsGroups.map((group) => {
-        const items = group.items.filter((item) => !normalized || `${t(...item.label)} ${item.keywords ?? ""}`.toLocaleLowerCase().includes(normalized));
-        if (!items.length) return null;
-        return <section key={group.label[0]}><h2>{t(...group.label)}</h2>{items.map(({ id, label, icon: Icon }) => {
+      {groups.length === 0 && <p className="v2-settings-no-results" role="status">{t("没有匹配的设置", "No matching settings")}</p>}
+      {groups.map((group) =>
+        <section key={group.label[0]}><h2>{t(...group.label)}</h2>{group.items.map(({ id, label, icon: Icon }) => {
           const active = section === id || section === "advanced-models" && id === "models" ||
             section === "plugins" && id === "extensions" || section === "keyboard" && id === "shortcuts";
           return <button aria-current={active ? "page" : undefined}
             className={active ? "is-active" : ""} key={id} onClick={() => onSelect(id)}
             type="button"><Icon aria-hidden="true" size={16} />{t(...label)}</button>;
-        })}</section>;
-      })}
+        })}</section>)}
     </nav>
     <div className="v2-settings-archive"><span>{t("已归档", "Archived")}</span>
       <button aria-current={section === "archived" ? "page" : undefined}

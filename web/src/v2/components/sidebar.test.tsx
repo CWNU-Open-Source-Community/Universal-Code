@@ -282,8 +282,11 @@ it("updates both navigation sidebars at runtime and searches the translated sett
   expect(within(settings).getAllByRole("button")).toHaveLength(1);
   await user.click(within(settings).getByRole("button", { name: "Models" }));
   expect(onSelect).toHaveBeenCalledExactlyOnceWith("models");
+  await user.type(screen.getByRole("searchbox", { name: "Search settings" }), "xxxx");
+  expect(within(settings).getByRole("status")).toHaveTextContent("No matching settings");
 
   await user.clear(screen.getByRole("searchbox", { name: "Search settings" }));
+  expect(within(settings).queryByRole("status")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Switch test language" }));
   expect(screen.getByRole("navigation", { name: "设置分类" })).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "项目 我的新对话项目" })).toBeInTheDocument();
