@@ -47,7 +47,7 @@ export function TaskOverview({ client, threadID, onFeedback, onAddComment, onGit
   const allPassed = totalChecks > 0 && passedChecksCount === totalChecks;
 
   return <section className="v2-task-delivery" aria-label={t("整个任务的审阅", "Whole-task review")}>
-    <div className="v2-delivery-heading"><div><h2>{t("任务改动", "Task changes")}</h2><p className="v2-delivery-muted">{t("先核对改动，再选择要提交的文件与交付流程。", "Review changes, then choose files to commit and a delivery workflow.")}</p></div><button disabled={query.isFetching} onClick={() => void query.refetch()} type="button">
+    <div className="v2-delivery-heading"><h2>{t("任务改动", "Task changes")}</h2><button disabled={query.isFetching} onClick={() => void query.refetch()} type="button">
       <RefreshCw size={15} aria-hidden="true" />{query.isFetching ? t("正在核对…", "Checking…") : t("刷新当前状态", "Refresh current status")}</button></div>
     {query.isLoading && <LoadingState label={t("正在汇总任务改动并核对当前目录…", "Collecting task changes and checking the current directory…")} />}
     {query.isError && <ErrorState error={query.error} />}
