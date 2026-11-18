@@ -1,7 +1,6 @@
 
 
-.v2-settings-main { display: grid; grid-template-rows: var(--v2-toolbar-height) minmax(0, 1fr); height: 100%; min-height: 0; }
-.v2-settings-toolbar { background: color-mix(in srgb, var(--v2-control) 28%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--v2-border) 72%, transparent); }
+.v2-settings-main { height: 100%; }
 .v2-settings-section + .v2-settings-section { margin-top: 36px; }
 .v2-settings-section > h2 { font-size: 16px; font-weight: 600; letter-spacing: -.015em; margin: 0 0 12px; }
 .v2-execution-settings > .permission-control-card { margin-top: 16px; min-width: 0; }

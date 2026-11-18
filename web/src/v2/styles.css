@@ -2400,11 +2400,6 @@
   z-index: 8;
 }
 
-:where([data-prayu-theme="glass"]:not([data-prayu-glass-mode="compat"])) .v2-settings-toolbar {
-  background: transparent;
-  border-bottom-color: transparent;
-}
-
 :where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) .v2-titlebar {
   background: var(--prayu-titlebar);
   border-bottom-color: var(--dsh-glass-rim-soft);
@@ -2426,7 +2421,7 @@
   backdrop-filter: none;
 }
 
-:where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) :is(.v2-conversation-header, .v2-new-conversation > header, .v2-settings-toolbar) {
+:where([data-prayu-theme="glass"][data-prayu-glass-mode="compat"]) :is(.v2-conversation-header, .v2-new-conversation > header) {
   background: var(--dsh-glass-card);
   border-bottom: 1px solid var(--dsh-glass-rim-soft);
   -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));

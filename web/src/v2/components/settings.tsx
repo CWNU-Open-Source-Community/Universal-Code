@@ -512,13 +512,13 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
   desktop?: boolean;
 }) {
   const { t } = useLocale();
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [section]);
 
-  return <main className="v2-settings-main"><div aria-hidden="true" className="v2-settings-toolbar" />
-    <div className="v2-settings-scroll v2-page-scroll" ref={scrollRef}><div className={`v2-settings-content v2-page-column${section === "usage" ? " v2-usage-content" : ""}`}>
+  return <main className="v2-settings-main v2-settings-scroll v2-page-scroll" ref={scrollRef}>
+    <div className={`v2-settings-content v2-page-column${section === "usage" ? " v2-usage-content" : ""}`}>
       {section === "general" && <GeneralSettings client={client} onPermissions={() => onSelectSection("permissions")}
         threadID={threadID} workspaces={workspaces} />}
       {section === "configuration" && <V2WebAccessSettings mode={defaultWebAccessMode} targets={defaultWebAccessTargets}
@@ -560,6 +560,6 @@ export function V2Settings({ client, section, threadID, workspaces, onSelectSect
       {!(["general", "permissions", "appearance", "archived", "models", "records", "extensions", "plugins",
         "skills", "advanced-models", "about", "shortcuts", "keyboard", "connections", "task-configuration", "environment", "configuration", "usage"] as V2SettingsSection[])
         .includes(section) && <p role="alert">{t("设置项不可用。", "This setting is unavailable.")}</p>}
-    </div></div>
+    </div>
   </main>;
 }

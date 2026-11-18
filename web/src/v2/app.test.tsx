@@ -395,7 +395,9 @@ describe("V2Workbench resource navigation", () => {
       expect(screen.getByRole("button", { name: "显示侧栏" })).toHaveAttribute("aria-pressed", "false");
     };
     const product = screen.getByTestId("v2-conversation").closest(".v2-product-surface");
-    await user.click(screen.getByRole("button", { name: "显示侧栏" }));
+    await user.click(screen.getByRole("textbox", { name: "任务草稿 fixture" }));
+    await user.keyboard("{Control>}b{/Control}");
+    expect(screen.getByRole("button", { name: "隐藏侧栏" })).toHaveFocus();
     expect(product).toHaveAttribute("inert");
     await user.keyboard("{Escape}");
     expectDrawerClosed();
@@ -407,7 +409,12 @@ describe("V2Workbench resource navigation", () => {
     await user.click(screen.getByRole("button", { name: "接入项目" }));
     expect(screen.getByRole("dialog", { name: "创建项目" })).toBeInTheDocument();
     await user.keyboard("{Escape}");
-    await user.type(screen.getByRole("textbox", { name: "开始新对话" }), "窄窗口中的项目需求");
+    const editor = screen.getByRole("textbox", { name: "开始新对话" });
+    await user.type(editor, "窄窗口中的项目需求");
+    await user.click(screen.getByRole("button", { name: "显示侧栏" }));
+    await user.keyboard("{Control>}{Shift>}i{/Shift}{/Control}");
+    expectDrawerClosed();
+    await waitFor(() => expect(editor).toHaveFocus());
     await user.click(screen.getByRole("button", { name: "显示侧栏" }));
     await user.click(screen.getByRole("button", { name: "接入模型" }));
     expect(await screen.findByRole("heading", { name: "模型" })).toBeInTheDocument();

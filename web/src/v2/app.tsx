@@ -341,7 +341,8 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
   const sidebarSlot = useRef<HTMLDivElement>(null);
   const sidebarToggle = useRef<HTMLButtonElement>(null);
   const setSidebarVisible = (visible: boolean) => {
-    if (!visible) sidebarToggle.current?.focus();
+    // A narrow drawer makes the conversation inert as soon as it opens.
+    if (!visible || narrowLayout) sidebarToggle.current?.focus();
     if (narrowLayout) setNarrowSidebarVisible(visible);
     else setDesktopSidebarVisible(visible);
   };
@@ -698,6 +699,7 @@ function V2WorkbenchContent({ client }: { client: APIClient }) {
     sidebar: () => setSidebarVisible(!sidebarVisible),
     composer: () => {
       if (surface === "settings") returnFromSettings();
+      else if (surface === "conversation" && sidebarOverlayOpen) setSidebarVisible(false);
       requestAnimationFrame(() => document.querySelector<HTMLElement>('.v2-composer :is(textarea, [contenteditable="true"][role="textbox"])')?.focus());
     },
   });
