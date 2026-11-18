@@ -1632,7 +1632,8 @@
         "skill_selection_operation.v1",
         "skill_selection_request.v1",
         "specialist_instruction.v1",
-        "specialist_instruction.v2"
+        "specialist_instruction.v2",
+        "workspace_skill_discovery.v1"
       ],
       "retired_identifiers": []
     },

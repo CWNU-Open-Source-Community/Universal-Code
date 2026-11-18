@@ -303,11 +303,18 @@ func (a *App) dispatch(ctx context.Context, args []string) error {
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
+		if args[0] == "help" && len(args) > 1 && !strings.HasPrefix(args[1], "-") {
+			return a.printCommandHelp(args[1])
+		}
 		a.printHelp()
 		return nil
-	case "version":
+	case "version", "-v", "--version":
 		fmt.Fprintf(a.out, "%s cyberagent %s\n", Name, Version)
 		return nil
+	case "__complete":
+		return a.completeCommand(args[1:])
+	case "completion":
+		return a.completionCommand(args[1:])
 	case "doctor":
 		return a.doctorCommand(ctx, args[1:])
 	case "debug":
@@ -385,8 +392,60 @@ func (a *App) dispatch(ctx context.Context, args []string) error {
 	case "tui":
 		return a.tuiCommand(ctx, args[1:])
 	default:
-		return fmt.Errorf("unknown command %q", args[0])
+		return fmt.Errorf("%w", a.unknownCommandError(args[0]))
 	}
+}
+
+func suggestCommands(input string) []string {
+	var suggestions []string
+	for _, command := range commandNames() {
+		if levenshtein(input, command) <= 2 && len(input) > 1 {
+			suggestions = append(suggestions, command)
+			if len(suggestions) >= 3 {
+				break
+			}
+		}
+	}
+	return suggestions
+}
+
+func levenshtein(a, b string) int {
+	if a == b {
+		return 0
+	}
+	la, lb := len(a), len(b)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+	prev := make([]int, lb+1)
+	curr := make([]int, lb+1)
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		curr[0] = i
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min(curr[j-1]+1, min(prev[j]+1, prev[j-1]+cost))
+		}
+		prev, curr = curr, prev
+	}
+	return prev[lb]
+}
+
+func (a *App) unknownCommandError(input string) error {
+	suggestions := suggestCommands(input)
+	if len(suggestions) > 0 {
+		return fmt.Errorf("unknown command %q; did you mean one of: %s?\nRun 'cyberagent help' for the full command list.",
+			input, strings.Join(suggestions, ", "))
+	}
+	return fmt.Errorf("unknown command %q\nRun 'cyberagent help' for the full command list.", input)
 }
 
 func (a *App) printHelp() {
@@ -409,25 +468,28 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.out)
 	fmt.Fprintln(a.out, "Usage:")
 	fmt.Fprintln(a.out, "  cyberagent version")
+	fmt.Fprintln(a.out, "  cyberagent doctor portable|snapshot|bundle|browser-readiness|browser-network-probe|browser-network-review")
 	fmt.Fprintln(a.out, "  cyberagent doctor portable [--json]")
 	fmt.Fprintln(a.out, "  cyberagent doctor snapshot [--run <run-id>] [--json]")
 	fmt.Fprintln(a.out, "  cyberagent doctor bundle --run <run-id> [bounded debug filters]")
 	fmt.Fprintln(a.out, "  cyberagent debug query --run <run-id> [bounded filters] [--json]")
 	fmt.Fprintln(a.out, "  cyberagent doctor browser-readiness --product <edge|chrome|chromium> [--json]")
+	fmt.Fprintln(a.out, "  cyberagent doctor browser-network-probe --product <edge|chrome|chromium> --collector <operator> --confirm <token> [--json]")
+	fmt.Fprintln(a.out, "  cyberagent doctor browser-network-review --product <edge|chrome|chromium> --reviewer <operator> --operation-key <key> (--accept|--reject)")
 	fmt.Fprintln(a.out, "  cyberagent workspace init|list|show|tree|read|checkpoint")
 	fmt.Fprintln(a.out, "  cyberagent script new|run  (new writes a local template; use thread create/run execute for agent work)")
 	fmt.Fprintln(a.out, "  cyberagent ctf init|analyze|writeup  (analyze writes a worksheet; it does not perform analysis)")
 	fmt.Fprintln(a.out, "  cyberagent learn ask")
-	fmt.Fprintln(a.out, "  cyberagent provider list|test|qualify")
+	fmt.Fprintln(a.out, "  cyberagent provider list|test|qualify|price-import|price-list")
 	fmt.Fprintln(a.out, "  cyberagent model list|set")
-	fmt.Fprintln(a.out, "  cyberagent skill list|show|validate|package|import|installed|remove|candidate|candidates|select|selection|select-external|external-selection")
+	fmt.Fprintln(a.out, "  cyberagent skill list|discover|show|validate|package|import|import-url|import-git|import-dir|installed|remove|candidate|candidates|select|selection|select-external|external-selection|catalog")
 	fmt.Fprintln(a.out, "  cyberagent context compact|show|instructions|memory")
 	fmt.Fprintln(a.out, "  cyberagent context instructions scaffold --workspace <name> [--target <dir>] [--print]  (writes AGENTS.md only when absent; never overwrites / 仅在缺失时写入 AGENTS.md，绝不覆盖)")
 	fmt.Fprintln(a.out, "  cyberagent context memory create|list|show|edit|enable|disable|delete|export")
-	fmt.Fprintln(a.out, "  cyberagent thread create|list|show|send|history|rename|pin|archive|restore|delete|export")
+	fmt.Fprintln(a.out, "  cyberagent thread create|list|show|send|compact|compactions|history|rename|pin|archive|restore|delete|export")
 	fmt.Fprintln(a.out, "  cyberagent session create|list|send|history|tree|checkpoint|fork|resume")
 	fmt.Fprintln(a.out, "  cyberagent tool schema|invoke|list|show|approve|deny")
-	fmt.Fprintln(a.out, "  cyberagent edit propose|list|show|review-approve|review-deny|approve|deny")
+	fmt.Fprintln(a.out, "  cyberagent edit propose|list|show|review-approve|review-deny|approve|apply|deny")
 	fmt.Fprintln(a.out, "  cyberagent approval list|show|approve-once|approve-for-thread|deny|grant")
 	fmt.Fprintln(a.out, "  cyberagent sandbox validate|template|local-readiness")
 	fmt.Fprintln(a.out, "  cyberagent artifact list|show|read|verify")
@@ -441,17 +503,22 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.out, "  cyberagent drydock status|create|use|checkpoint|rewind|undo|fork|deliver|cleanup|reconcile|gc")
 	fmt.Fprintln(a.out, "  cyberagent github-review configure|credential|login|qualify|fetch|evidence|status|write|recover")
 	fmt.Fprintln(a.out, "  cyberagent mcp serve|client|credential")
-	fmt.Fprintln(a.out, "  cyberagent plugin stage|list|show|review|rollback|trust-publisher|revoke-publisher|stage-mcp")
+	fmt.Fprintln(a.out, "  cyberagent plugin stage|import-url|import-git|list|show|review|rollback|trust-publisher|revoke-publisher|stage-mcp")
 	fmt.Fprintln(a.out, "  cyberagent code-intel status|qualify")
+	fmt.Fprintln(a.out, "  cyberagent project-config show|validate <path> [--profile <p> --max-turns <n> --max-tool-calls <n>]  (read-only narrowing config inspection)")
+	fmt.Fprintln(a.out, "  cyberagent once-command proposals <run-id>  (legacy listing; new commands use run host-execute or command_runtime)")
+	fmt.Fprintln(a.out, "  cyberagent git-op stage|unstage|commit|create-branch|switch-branch --run <run-id> [--path p]... [--all] [--message m] [--branch b] --operation-key <key> [--confirm]")
+	fmt.Fprintln(a.out, "  cyberagent git-remote fetch|pull|push-branch|create-pr|update-pr --run <run-id> --remote <https-url> --branch <name> [--base <name>] [--title <t>] [--body <b>] [--pr-number <n>] [--credential <name>] [--ttl 30s] --operation-key <key> [--confirm]")
 	fmt.Fprintln(a.out, "  cyberagent headless events")
-	fmt.Fprintln(a.out, "  cyberagent run create|adapt-task|list|show|mode|phase|execution-profile|execution-interaction|execution-permission|capability-readiness|command-plan|command-execute|host-execute|project-action|events|usage|start|step|execute|checkpoint|graph|lease|finish|fail|pause|resume|cancel|delegations|delegation|plans|plan|delivery|steer|fanouts|fanout|sandbox|wake|schedule")
+	fmt.Fprintln(a.out, `  cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--instructions <text>] [--timeout 30m] [--json] [--continue <thread-id>]`)
+	fmt.Fprintln(a.out, "  cyberagent run create|adapt-task|list|show|mode|phase|execution-profile|execution-interaction|execution-permission|browser-cdp-permission|capability-readiness|command-plan|command-execute|host-execute|project-action|command-proposal|events|usage|start|step|execute|checkpoint|graph|lease|finish|fail|pause|resume|cancel|delegations|delegation|specialist-step|plans|plan|delivery|steer|fanouts|fanout|sandbox|standard-code|wake|schedule")
 	fmt.Fprintln(a.out, "  cyberagent run plan show|choose|selection")
 	fmt.Fprintln(a.out, "  cyberagent run sandbox docker-readiness|docker-admit|docker-start|docker-cancel|docker-status")
 	fmt.Fprintln(a.out, "  cyberagent run standard-code docker-readiness|docker-prepare|docker-execute|docker-cancel|docker-recover")
 	fmt.Fprintln(a.out, "  cyberagent run delivery report|record|checkpoint|list|show")
 	fmt.Fprintln(a.out, "  cyberagent run fanout plan|execute|show|execution|report")
-	fmt.Fprintln(a.out, "  cyberagent todo create|list|show|update|start|block|reopen|complete|cancel")
-	fmt.Fprintln(a.out, "  cyberagent note create|list|show|update|archive|restore")
+	fmt.Fprintln(a.out, "  cyberagent todo create|list|show|update|start|block|reopen|unblock|complete|cancel")
+	fmt.Fprintln(a.out, "  cyberagent note create|list|show|get|update|archive|restore")
 	fmt.Fprintln(a.out, "  cyberagent tui [--run <run-id> | --session <session-id>] [--print]")
 }
 

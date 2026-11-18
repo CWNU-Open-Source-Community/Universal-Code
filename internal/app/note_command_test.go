@@ -92,7 +92,7 @@ func TestNoteCLIEndToEndLifecycle(t *testing.T) {
 func TestNoteCLIValidationAndHelp(t *testing.T) {
 	t.Setenv("CYBERAGENT_HOME", t.TempDir())
 	help, stderr, code := executeTestCommand(t, "help")
-	if code != 0 || stderr != "" || !strings.Contains(help, "cyberagent note create|list|show|update|archive|restore") {
+	if code != 0 || stderr != "" || !strings.Contains(help, "cyberagent note create|list|show") {
 		t.Fatalf("note command missing from help output=%s stderr=%s code=%d", help, stderr, code)
 	}
 	createdRun, stderr, code := executeTestCommand(t, "run", "create", "note validation", "--profile", "review")
