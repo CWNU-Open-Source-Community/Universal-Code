@@ -4,7 +4,7 @@ import { useConnectionStore } from "../state/connection";
 
 export const MAX_SCROLL_MEMORY_THREADS = 150;
 export const SCROLL_FOLLOW_THRESHOLD_PX = 48;
-export const SCROLL_TO_BOTTOM_PILL_THRESHOLD_PX = 160;
+export const SCROLL_TO_BOTTOM_PILL_THRESHOLD_PX = SCROLL_FOLLOW_THRESHOLD_PX;
 export const UNREAD_OVERFLOW_VIEWPORT_RATIO = 0.7;
 
 export interface V2ThreadScrollMemory {
@@ -13,6 +13,7 @@ export interface V2ThreadScrollMemory {
   anchorKey: string | null;
   anchorOffset: number;
   seenEntryCount: number;
+  lastSeenTailID?: string | null;
   updatedAt: number;
 }
 
@@ -37,13 +38,18 @@ function sanitizeScrollMemoryEntry(raw: unknown): V2ThreadScrollMemory | null {
   if (candidate.anchorKey !== null && typeof candidate.anchorKey !== "string") return null;
   if (typeof candidate.anchorOffset !== "number" || !Number.isFinite(candidate.anchorOffset)) return null;
   if (typeof candidate.seenEntryCount !== "number" || !Number.isFinite(candidate.seenEntryCount) || candidate.seenEntryCount < 0) return null;
+  if (candidate.lastSeenTailID !== undefined && candidate.lastSeenTailID !== null && typeof candidate.lastSeenTailID !== "string") return null;
   if (typeof candidate.updatedAt !== "number" || !Number.isFinite(candidate.updatedAt)) return null;
+  const lastSeenTailID = typeof candidate.lastSeenTailID === "string" && candidate.lastSeenTailID
+    ? candidate.lastSeenTailID
+    : null;
   return {
     top: candidate.top,
     following: candidate.following,
     anchorKey: candidate.anchorKey,
     anchorOffset: candidate.anchorOffset,
     seenEntryCount: Math.floor(candidate.seenEntryCount),
+    lastSeenTailID,
     updatedAt: candidate.updatedAt,
   };
 }
@@ -101,7 +107,7 @@ export function writePersistedThreadScrollMemory(
   }
 }
 
-export function findConversationEntryElement(scroller: HTMLElement, key: string): HTMLElement | null {
+export function findRawConversationEntryElement(scroller: HTMLElement, key: string): HTMLElement | null {
   if (!key) return null;
   const topLevel = scroller.querySelectorAll<HTMLElement>(".v2-conv-entries > [data-conv-entry-key]");
   for (const node of topLevel) {
@@ -109,14 +115,62 @@ export function findConversationEntryElement(scroller: HTMLElement, key: string)
   }
   const all = scroller.querySelectorAll<HTMLElement>("[data-conv-entry-key]");
   for (const node of all) {
-    if (node.dataset.convEntryKey === key) {
-      if (node.closest("[hidden]")) {
-        return node.closest<HTMLElement>(".v2-task-turn[data-conv-entry-key]") ?? node;
-      }
-      return node;
-    }
+    if (node.dataset.convEntryKey === key) return node;
   }
   return null;
+}
+
+export function findConversationEntryElement(scroller: HTMLElement, key: string): HTMLElement | null {
+  const node = findRawConversationEntryElement(scroller, key);
+  if (!node) return null;
+  if (node.closest("[hidden]")) {
+    return node.closest<HTMLElement>(".v2-task-turn[data-conv-entry-key]") ?? node;
+  }
+  return node;
+}
+
+export function computeUnreadTail(
+  entries: ReadonlyArray<ScrollMemoryEntryLike>,
+  seenEntryCount: number,
+  lastSeenTailID: string | null | undefined,
+): { firstUnreadIndex: number; unreadCount: number; resolvedSeenCount: number; resolvedTailID: string | null } {
+  if (entries.length === 0) {
+    return { firstUnreadIndex: 0, unreadCount: 0, resolvedSeenCount: 0, resolvedTailID: null };
+  }
+  if (lastSeenTailID) {
+    for (let index = entries.length - 1; index >= 0; index--) {
+      if (entries[index]!.id === lastSeenTailID) {
+        const firstUnreadIndex = index + 1;
+        const unreadCount = Math.max(0, entries.length - firstUnreadIndex);
+        return {
+          firstUnreadIndex,
+          unreadCount,
+          resolvedSeenCount: firstUnreadIndex,
+          resolvedTailID: lastSeenTailID,
+        };
+      }
+    }
+    // If a provisional tail ID was replaced in-place by its durable counterpart without
+    // growing past the previously seen count, keep unreadCount at 0 and adopt the new tail ID.
+    if (entries.length <= seenEntryCount) {
+      const currentTail = entries[entries.length - 1]!.id;
+      return {
+        firstUnreadIndex: entries.length,
+        unreadCount: 0,
+        resolvedSeenCount: entries.length,
+        resolvedTailID: currentTail,
+      };
+    }
+  }
+  const clampedSeen = Math.max(0, Math.min(entries.length, seenEntryCount));
+  const unreadCount = Math.max(0, entries.length - clampedSeen);
+  const resolvedTailID = clampedSeen > 0 ? (entries[clampedSeen - 1]?.id ?? null) : null;
+  return {
+    firstUnreadIndex: clampedSeen,
+    unreadCount,
+    resolvedSeenCount: clampedSeen,
+    resolvedTailID,
+  };
 }
 
 function hasMeasuredGeometry(scroller: HTMLElement, target: HTMLElement): boolean {
@@ -173,15 +227,36 @@ export function resolveUnreadStartAnchor(
   scroller: HTMLElement,
   entries: ReadonlyArray<ScrollMemoryEntryLike>,
   saved: V2ThreadScrollMemory,
-): { shouldAnchor: boolean; anchorKey: string | null; targetTop: number; unreadCount: number } {
-  if (entries.length <= saved.seenEntryCount) {
-    return { shouldAnchor: false, anchorKey: null, targetTop: saved.top, unreadCount: 0 };
+): {
+  shouldAnchor: boolean;
+  anchorKey: string | null;
+  targetTop: number;
+  unreadCount: number;
+  resolvedSeenCount: number;
+  resolvedTailID: string | null;
+} {
+  const tail = computeUnreadTail(entries, saved.seenEntryCount, saved.lastSeenTailID);
+  if (tail.unreadCount <= 0) {
+    return {
+      shouldAnchor: false,
+      anchorKey: null,
+      targetTop: saved.top,
+      unreadCount: 0,
+      resolvedSeenCount: tail.resolvedSeenCount,
+      resolvedTailID: tail.resolvedTailID,
+    };
   }
-  const unreadCount = entries.length - saved.seenEntryCount;
-  const firstUnreadIndex = Math.max(0, saved.seenEntryCount);
+  const { unreadCount, firstUnreadIndex, resolvedSeenCount, resolvedTailID } = tail;
   const firstUnread = entries[firstUnreadIndex];
   if (!firstUnread || scroller.clientHeight <= 0) {
-    return { shouldAnchor: false, anchorKey: null, targetTop: saved.top, unreadCount };
+    return {
+      shouldAnchor: false,
+      anchorKey: null,
+      targetTop: saved.top,
+      unreadCount,
+      resolvedSeenCount,
+      resolvedTailID,
+    };
   }
   const precedingPrompt = firstUnreadIndex > 0 && firstUnread.kind !== "user" && entries[firstUnreadIndex - 1]?.kind === "user"
     ? entries[firstUnreadIndex - 1]
@@ -213,8 +288,8 @@ export function resolveUnreadStartAnchor(
     }
     unreadHeight = Math.max(scroller.scrollHeight - firstUnreadTop, measuredSum);
   } else if (scroller.scrollHeight > scroller.clientHeight) {
-    firstUnreadTop = saved.seenEntryCount > 0
-      ? Math.round((saved.seenEntryCount / entries.length) * scroller.scrollHeight)
+    firstUnreadTop = resolvedSeenCount > 0
+      ? Math.round((resolvedSeenCount / entries.length) * scroller.scrollHeight)
       : 0;
     anchorTop = precedingPrompt
       ? Math.round(((firstUnreadIndex - 1) / entries.length) * scroller.scrollHeight)
@@ -228,6 +303,8 @@ export function resolveUnreadStartAnchor(
     anchorKey: anchorEntry.id,
     targetTop: Math.max(0, anchorTop),
     unreadCount,
+    resolvedSeenCount,
+    resolvedTailID,
   };
 }
 
@@ -305,6 +382,8 @@ export function useV2ScrollMemory({
   const readingThreadRef = useRef("");
   const followLatestRef = useRef(true);
   const seenEntryCountRef = useRef(0);
+  const lastSeenTailIDRef = useRef<string | null>(null);
+  const seenContentHeightRef = useRef(0);
   const scrollSizeRef = useRef<{ content: number; viewport: number } | null>(null);
   const restoringRef = useRef<RestoreGuardState | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -313,6 +392,7 @@ export function useV2ScrollMemory({
 
   const [following, setFollowing] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [hasContentGrowth, setHasContentGrowth] = useState(false);
   const [distanceFromBottom, setDistanceFromBottom] = useState(0);
 
   const cancelRestoreFrames = useCallback(() => {
@@ -338,7 +418,8 @@ export function useV2ScrollMemory({
       existing.following === next.following &&
       existing.anchorKey === next.anchorKey &&
       existing.anchorOffset === next.anchorOffset &&
-      existing.seenEntryCount === next.seenEntryCount,
+      existing.seenEntryCount === next.seenEntryCount &&
+      (existing.lastSeenTailID ?? null) === (next.lastSeenTailID ?? null),
     );
     if (!unchanged) {
       queryClient.setQueryData<V2ThreadScrollMemory>(key, next);
@@ -446,18 +527,24 @@ export function useV2ScrollMemory({
         followLatestRef.current = false;
         setFollowing(false);
         setUnreadCount(0);
+        setHasContentGrowth(false);
+        seenContentHeightRef.current = element.scrollHeight;
         scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
         setDistanceFromBottom(Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop));
         return;
       }
 
+      const currentTailID = entries.length > 0 ? entries[entries.length - 1]!.id : null;
       const saved = readSavedMemory(threadID);
       if (!saved) {
         followLatestRef.current = true;
         seenEntryCountRef.current = entries.length;
+        lastSeenTailIDRef.current = currentTailID;
         setFollowing(true);
         setUnreadCount(0);
+        setHasContentGrowth(false);
         element.scrollTop = element.scrollHeight;
+        seenContentHeightRef.current = element.scrollHeight;
         scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
         setDistanceFromBottom(Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop));
         persistMemory(threadID, {
@@ -466,6 +553,7 @@ export function useV2ScrollMemory({
           anchorKey: null,
           anchorOffset: 0,
           seenEntryCount: entries.length,
+          lastSeenTailID: currentTailID,
           updatedAt: Date.now(),
         }, false);
         return;
@@ -475,9 +563,11 @@ export function useV2ScrollMemory({
         const unread = resolveUnreadStartAnchor(element, entries, saved);
         if (unread.shouldAnchor) {
           followLatestRef.current = false;
-          seenEntryCountRef.current = saved.seenEntryCount;
+          seenEntryCountRef.current = unread.resolvedSeenCount;
+          lastSeenTailIDRef.current = unread.resolvedTailID;
           setFollowing(false);
           setUnreadCount(unread.unreadCount);
+          setHasContentGrowth(false);
           armProgrammaticRestore(element, {
             threadID,
             targetFollowing: false,
@@ -485,6 +575,7 @@ export function useV2ScrollMemory({
             anchorKey: unread.anchorKey,
             anchorOffset: 0,
           });
+          seenContentHeightRef.current = element.scrollHeight;
           scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
           setDistanceFromBottom(Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop));
           persistMemory(threadID, {
@@ -492,7 +583,8 @@ export function useV2ScrollMemory({
             following: false,
             anchorKey: unread.anchorKey,
             anchorOffset: 0,
-            seenEntryCount: saved.seenEntryCount,
+            seenEntryCount: unread.resolvedSeenCount,
+            lastSeenTailID: unread.resolvedTailID,
             updatedAt: Date.now(),
           });
           return;
@@ -500,9 +592,12 @@ export function useV2ScrollMemory({
 
         followLatestRef.current = true;
         seenEntryCountRef.current = entries.length;
+        lastSeenTailIDRef.current = currentTailID;
         setFollowing(true);
         setUnreadCount(0);
+        setHasContentGrowth(false);
         element.scrollTop = element.scrollHeight;
+        seenContentHeightRef.current = element.scrollHeight;
         scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
         setDistanceFromBottom(Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop));
         persistMemory(threadID, {
@@ -511,17 +606,20 @@ export function useV2ScrollMemory({
           anchorKey: null,
           anchorOffset: 0,
           seenEntryCount: entries.length,
+          lastSeenTailID: currentTailID,
           updatedAt: Date.now(),
         }, false);
         return;
       }
 
       // saved.following === false: restore mid-thread reading position with clamp guard.
+      const tail = computeUnreadTail(entries, saved.seenEntryCount, saved.lastSeenTailID);
       followLatestRef.current = false;
-      seenEntryCountRef.current = saved.seenEntryCount;
-      const arrivedWhileAway = Math.max(0, entries.length - saved.seenEntryCount);
+      seenEntryCountRef.current = tail.resolvedSeenCount;
+      lastSeenTailIDRef.current = tail.resolvedTailID;
       setFollowing(false);
-      setUnreadCount(arrivedWhileAway);
+      setUnreadCount(tail.unreadCount);
+      setHasContentGrowth(false);
       armProgrammaticRestore(element, {
         threadID,
         targetFollowing: false,
@@ -529,6 +627,7 @@ export function useV2ScrollMemory({
         anchorKey: saved.anchorKey,
         anchorOffset: saved.anchorOffset,
       });
+      seenContentHeightRef.current = element.scrollHeight;
       scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
       setDistanceFromBottom(Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop));
       return;
@@ -538,10 +637,14 @@ export function useV2ScrollMemory({
     if (isPaginatingOlder?.()) return;
     if (readingHistoryWindow) return;
 
+    const currentTailID = entries.length > 0 ? entries[entries.length - 1]!.id : null;
     if (followLatestRef.current) {
       element.scrollTop = element.scrollHeight;
       seenEntryCountRef.current = entries.length;
+      lastSeenTailIDRef.current = currentTailID;
       setUnreadCount(0);
+      setHasContentGrowth(false);
+      seenContentHeightRef.current = element.scrollHeight;
       scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
       setDistanceFromBottom(0);
       persistMemory(threadID, {
@@ -550,10 +653,17 @@ export function useV2ScrollMemory({
         anchorKey: null,
         anchorOffset: 0,
         seenEntryCount: entries.length,
+        lastSeenTailID: currentTailID,
         updatedAt: Date.now(),
       }, false);
-    } else if (entries.length > seenEntryCountRef.current) {
-      setUnreadCount(entries.length - seenEntryCountRef.current);
+    } else {
+      const tail = computeUnreadTail(entries, seenEntryCountRef.current, lastSeenTailIDRef.current);
+      seenEntryCountRef.current = tail.resolvedSeenCount;
+      lastSeenTailIDRef.current = tail.resolvedTailID;
+      setUnreadCount(tail.unreadCount);
+      if (element.scrollHeight > seenContentHeightRef.current + 8) {
+        setHasContentGrowth(true);
+      }
       setDistanceFromBottom(Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop));
     }
   }, [
@@ -633,7 +743,12 @@ export function useV2ScrollMemory({
 
     if (nextFollowing) {
       seenEntryCountRef.current = entriesRef.current.length;
+      lastSeenTailIDRef.current = entriesRef.current.length > 0 ? entriesRef.current[entriesRef.current.length - 1]!.id : null;
+      seenContentHeightRef.current = element.scrollHeight;
       setUnreadCount(0);
+      setHasContentGrowth(false);
+    } else if (seenContentHeightRef.current <= 0) {
+      seenContentHeightRef.current = element.scrollHeight;
     }
 
     if (!readingHistoryWindow) {
@@ -644,6 +759,7 @@ export function useV2ScrollMemory({
         anchorKey: anchor.anchorKey,
         anchorOffset: anchor.anchorOffset,
         seenEntryCount: seenEntryCountRef.current,
+        lastSeenTailID: lastSeenTailIDRef.current,
         updatedAt: Date.now(),
       });
     } else {
@@ -656,13 +772,17 @@ export function useV2ScrollMemory({
     cancelRestoreFrames();
     restoringRef.current = null;
     followLatestRef.current = true;
-    seenEntryCountRef.current = entriesRef.current.length;
+    const latestEntries = entriesRef.current;
+    seenEntryCountRef.current = latestEntries.length;
+    lastSeenTailIDRef.current = latestEntries.length > 0 ? latestEntries[latestEntries.length - 1]!.id : null;
     setFollowing(true);
     setUnreadCount(0);
+    setHasContentGrowth(false);
     setDistanceFromBottom(0);
     const element = scrollRef.current;
     if (element) {
       element.scrollTop = element.scrollHeight;
+      seenContentHeightRef.current = element.scrollHeight;
       scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
       persistMemory(threadID, {
         top: element.scrollTop,
@@ -670,6 +790,7 @@ export function useV2ScrollMemory({
         anchorKey: null,
         anchorOffset: 0,
         seenEntryCount: seenEntryCountRef.current,
+        lastSeenTailID: lastSeenTailIDRef.current,
         updatedAt: Date.now(),
       });
     }
@@ -689,9 +810,20 @@ export function useV2ScrollMemory({
     const element = scrollRef.current;
     const dist = element ? Math.max(0, element.scrollHeight - element.clientHeight - scrollTop) : 0;
     setDistanceFromBottom(dist);
+    const latestEntries = entriesRef.current;
     if (nextFollowing) {
-      seenEntryCountRef.current = entriesRef.current.length;
+      seenEntryCountRef.current = latestEntries.length;
+      lastSeenTailIDRef.current = latestEntries.length > 0 ? latestEntries[latestEntries.length - 1]!.id : null;
+      if (element) seenContentHeightRef.current = element.scrollHeight;
       setUnreadCount(0);
+      setHasContentGrowth(false);
+    } else {
+      // Re-anchor seen count via lastSeenTailID so older-page prepends never create false unread counts.
+      const tail = computeUnreadTail(latestEntries, seenEntryCountRef.current, lastSeenTailIDRef.current);
+      seenEntryCountRef.current = tail.resolvedSeenCount;
+      lastSeenTailIDRef.current = tail.resolvedTailID;
+      if (element) seenContentHeightRef.current = element.scrollHeight;
+      setUnreadCount(tail.unreadCount);
     }
     const anchor = nextFollowing
       ? { anchorKey: null, anchorOffset: 0 }
@@ -704,6 +836,7 @@ export function useV2ScrollMemory({
       anchorKey: anchor.anchorKey,
       anchorOffset: anchor.anchorOffset,
       seenEntryCount: seenEntryCountRef.current,
+      lastSeenTailID: lastSeenTailIDRef.current,
       updatedAt: Date.now(),
     });
   }, [cancelRestoreFrames, persistMemory, scrollRef, threadID]);
@@ -713,23 +846,27 @@ export function useV2ScrollMemory({
     restoringRef.current = null;
     followLatestRef.current = true;
     readingThreadRef.current = "";
-    seenEntryCountRef.current = entriesRef.current.length;
+    const latestEntries = entriesRef.current;
+    seenEntryCountRef.current = latestEntries.length;
+    lastSeenTailIDRef.current = latestEntries.length > 0 ? latestEntries[latestEntries.length - 1]!.id : null;
     setFollowing(true);
     setUnreadCount(0);
+    setHasContentGrowth(false);
     setDistanceFromBottom(0);
     persistMemory(threadID, {
       top: 0,
       following: true,
       anchorKey: null,
       anchorOffset: 0,
-      seenEntryCount: entriesRef.current.length,
+      seenEntryCount: latestEntries.length,
+      lastSeenTailID: lastSeenTailIDRef.current,
       updatedAt: Date.now(),
     });
   }, [cancelRestoreFrames, persistMemory, threadID]);
 
-  const isUnreadAnchored = !following && unreadCount > 0;
+  const isUnreadAnchored = !following && (unreadCount > 0 || hasContentGrowth);
   const showScrollToBottom = !readingHistoryWindow && !following && (
-    unreadCount > 0 || distanceFromBottom > SCROLL_TO_BOTTOM_PILL_THRESHOLD_PX
+    isUnreadAnchored || distanceFromBottom > SCROLL_TO_BOTTOM_PILL_THRESHOLD_PX
   );
 
   return useMemo(() => ({

@@ -19,7 +19,10 @@ interface TestHarnessProps {
   threadID: string;
   entries: ScrollMemoryEntryLike[];
   ready?: boolean;
+  revision?: unknown;
   scope?: string;
+  isPaginatingOlder?: () => boolean;
+  onController?: (controller: ReturnType<typeof useV2ScrollMemory>) => void;
   entryMetrics?: Record<string, { top: number; height: number }>;
   scrollMetrics: { scrollHeight: number; clientHeight: number };
 }
@@ -28,7 +31,10 @@ function ScrollMemoryTestHarness({
   threadID,
   entries,
   ready = true,
+  revision,
   scope,
+  isPaginatingOlder,
+  onController,
   entryMetrics,
   scrollMetrics,
 }: TestHarnessProps) {
@@ -39,8 +45,11 @@ function ScrollMemoryTestHarness({
     scrollRef,
     entries,
     ready,
+    revision,
     scope,
+    isPaginatingOlder,
   });
+  onController?.(memory);
 
   return (
     <div className="v2-conversation-viewport">
@@ -535,16 +544,17 @@ describe("useV2ScrollMemory", () => {
     expect(screen.queryByTestId("scroll-unread-badge")).not.toBeInTheDocument();
   });
 
-  it("shows localized Scroll to bottom pill only when !following and distance from bottom exceeds 160px", () => {
+  it("shows localized Scroll to bottom pill immediately when !following (>48px) with zero dead zone, and surfaces intra-entry streaming growth", () => {
     window.localStorage.setItem("prayu.locale.v1", "en-US");
     const scrollMetrics = { scrollHeight: 2000, clientHeight: 500 };
     const queryClient = new QueryClient();
 
-    render(
+    const ui = render(
       <LocaleProvider>
         <QueryClientProvider client={queryClient}>
           <ScrollMemoryTestHarness
             entries={[{ id: "u-1", kind: "user" }, { id: "a-1", kind: "assistant" }]}
+            revision="r1"
             scope="threshold-scope"
             scrollMetrics={scrollMetrics}
             threadID="thread-en"
@@ -554,15 +564,141 @@ describe("useV2ScrollMemory", () => {
     );
 
     const scroller = screen.getByTestId("scroller");
-    // Distance from bottom = 2000 - 500 - 1400 = 100px (> 48px so !following, but <= 160px so pill stays hidden).
+    // Distance from bottom = 2000 - 500 - 1460 = 40px (<= 48px -> following stays true, pill stays hidden).
+    scroller.scrollTop = 1460;
+    fireEvent.scroll(scroller);
+    expect(scroller).toHaveAttribute("data-following", "true");
+    expect(screen.queryByRole("button", { name: /Scroll to bottom/i })).not.toBeInTheDocument();
+
+    // Distance from bottom = 2000 - 500 - 1400 = 100px (> 48px -> !following, pill appears immediately with zero dead zone!).
     scroller.scrollTop = 1400;
     fireEvent.scroll(scroller);
     expect(scroller).toHaveAttribute("data-following", "false");
-    expect(screen.queryByRole("button", { name: /Scroll to bottom/i })).not.toBeInTheDocument();
-
-    // Distance from bottom = 2000 - 500 - 1250 = 250px (> 160px -> pill appears).
-    scroller.scrollTop = 1250;
-    fireEvent.scroll(scroller);
     expect(screen.getByRole("button", { name: "↓ Scroll to bottom" })).toBeVisible();
+
+    // Streaming appends text inside existing a-1 without changing entries.length -> switches to Jump to bottom.
+    scrollMetrics.scrollHeight = 2320;
+    ui.rerender(
+      <LocaleProvider>
+        <QueryClientProvider client={queryClient}>
+          <ScrollMemoryTestHarness
+            entries={[{ id: "u-1", kind: "user" }, { id: "a-1", kind: "assistant" }]}
+            revision="r2"
+            scope="threshold-scope"
+            scrollMetrics={scrollMetrics}
+            threadID="thread-en"
+          />
+        </QueryClientProvider>
+      </LocaleProvider>,
+    );
+    expect(screen.getByRole("button", { name: "↓ Jump to bottom" })).toBeVisible();
+  });
+
+  it("does not miscount prepended older transcript pages as unread messages while tracking lastSeenTailID", () => {
+    window.localStorage.setItem("prayu.locale.v1", "zh-CN");
+    const initialEntries: ScrollMemoryEntryLike[] = [
+      { id: "u-10", kind: "user" },
+      { id: "a-10", kind: "assistant" },
+      { id: "u-11", kind: "user" },
+      { id: "a-11", kind: "assistant" },
+    ];
+    const scrollMetrics = { scrollHeight: 1600, clientHeight: 400 };
+    let paginating = false;
+    let controller: ReturnType<typeof useV2ScrollMemory> | undefined;
+    const queryClient = new QueryClient();
+
+    const ui = render(
+      <LocaleProvider>
+        <QueryClientProvider client={queryClient}>
+          <ScrollMemoryTestHarness
+            entries={initialEntries}
+            isPaginatingOlder={() => paginating}
+            onController={(ctrl) => { controller = ctrl; }}
+            scope="paginate-scope"
+            scrollMetrics={scrollMetrics}
+            threadID="thread-paginate"
+          />
+        </QueryClientProvider>
+      </LocaleProvider>,
+    );
+
+    const scroller = screen.getByTestId("scroller");
+    // User scrolls near top to read history (tail "a-11" was already seen).
+    scroller.scrollTop = 40;
+    fireEvent.scroll(scroller);
+    expect(scroller).toHaveAttribute("data-following", "false");
+    expect(screen.queryByTestId("scroll-unread-badge")).not.toBeInTheDocument();
+    expect(readPersistedThreadScrollMemory("paginate-scope", "thread-paginate")?.lastSeenTailID).toBe("a-11");
+
+    // Older history page prepends 6 older entries at index 0.
+    const olderPrepended: ScrollMemoryEntryLike[] = [
+      { id: "u-7", kind: "user" },
+      { id: "a-7", kind: "assistant" },
+      { id: "u-8", kind: "user" },
+      { id: "a-8", kind: "assistant" },
+      { id: "u-9", kind: "user" },
+      { id: "a-9", kind: "assistant" },
+      ...initialEntries,
+    ];
+    paginating = true;
+    scrollMetrics.scrollHeight = 2500;
+    ui.rerender(
+      <LocaleProvider>
+        <QueryClientProvider client={queryClient}>
+          <ScrollMemoryTestHarness
+            entries={olderPrepended}
+            isPaginatingOlder={() => paginating}
+            onController={(ctrl) => { controller = ctrl; }}
+            scope="paginate-scope"
+            scrollMetrics={scrollMetrics}
+            threadID="thread-paginate"
+          />
+        </QueryClientProvider>
+      </LocaleProvider>,
+    );
+
+    act(() => {
+      scroller.scrollTop = 940;
+      paginating = false;
+      controller?.recordProgrammaticScroll(940, false);
+    });
+
+    // Next render after pagination finishes must NOT show a false unread badge!
+    ui.rerender(
+      <LocaleProvider>
+        <QueryClientProvider client={queryClient}>
+          <ScrollMemoryTestHarness
+            entries={olderPrepended}
+            isPaginatingOlder={() => paginating}
+            onController={(ctrl) => { controller = ctrl; }}
+            revision="post-paginate"
+            scope="paginate-scope"
+            scrollMetrics={scrollMetrics}
+            threadID="thread-paginate"
+          />
+        </QueryClientProvider>
+      </LocaleProvider>,
+    );
+    expect(screen.queryByTestId("scroll-unread-badge")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "↓ 回到底部" })).toBeVisible();
+
+    // Now 2 genuinely new entries arrive at the tail -> unread badge accurately shows 2 (not 8!).
+    scrollMetrics.scrollHeight = 2900;
+    ui.rerender(
+      <LocaleProvider>
+        <QueryClientProvider client={queryClient}>
+          <ScrollMemoryTestHarness
+            entries={[...olderPrepended, { id: "u-12", kind: "user" }, { id: "a-12", kind: "assistant" }]}
+            isPaginatingOlder={() => paginating}
+            onController={(ctrl) => { controller = ctrl; }}
+            revision="new-tail"
+            scope="paginate-scope"
+            scrollMetrics={scrollMetrics}
+            threadID="thread-paginate"
+          />
+        </QueryClientProvider>
+      </LocaleProvider>,
+    );
+    expect(screen.getByTestId("scroll-unread-badge")).toHaveTextContent("2");
   });
 });

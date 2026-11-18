@@ -74,7 +74,7 @@
   justify-content: center;
   pointer-events: none;
   position: absolute;
-  z-index: 26;
+  z-index: 30;
 }
 
 .v2-navigator-rail-anchor {

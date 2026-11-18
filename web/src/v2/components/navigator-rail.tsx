@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import { flushSync } from "react-dom";
 import { CircleAlert, Search, X } from "lucide-react";
 import { useLocale, type LocaleText } from "../../lib/locale";
 import type { NarrativeEntry } from "../projection/narrative";
-import { findConversationEntryElement } from "../use-scroll-memory";
+import { findConversationEntryElement, findRawConversationEntryElement } from "../use-scroll-memory";
 import "./navigator-rail.css";
+
+function isEditableOrExcludedTarget(node: EventTarget | null): boolean {
+  const el = node instanceof Element ? node : node instanceof Node ? node.parentElement : null;
+  if (!el) return false;
+  if (el.closest(".monaco-editor, .xterm, .v2-workbench-slot")) return true;
+  if (el.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], .ProseMirror')) return true;
+  return el instanceof HTMLElement && el.isContentEditable;
+}
 
 export type NavigatorStopKind = "turn" | "checkpoint" | "error";
 export type NavigatorSectionFilter = "all" | "checkpoints" | "errors";
@@ -288,6 +297,7 @@ export function V2NavigatorRail({
   const previewDismissTimer = useRef<number | null>(null);
   const pulseTimerRef = useRef<number | null>(null);
   const pulsedElementRef = useRef<HTMLElement | null>(null);
+  const pinnedJumpRef = useRef<{ stopID: string; scrollTop: number } | null>(null);
 
   const clearPreviewTimer = useCallback(() => {
     if (previewDismissTimer.current !== null) {
@@ -324,14 +334,22 @@ export function V2NavigatorRail({
       setActiveStopID((current) => stops.some((stop) => stop.id === current) ? current : stops[stops.length - 1]!.id);
       return;
     }
+    const pinned = pinnedJumpRef.current;
+    if (pinned) {
+      if (Math.abs(scroller.scrollTop - pinned.scrollTop) <= 2 && stops.some((stop) => stop.id === pinned.stopID)) {
+        setActiveStopID(pinned.stopID);
+        return;
+      }
+      pinnedJumpRef.current = null;
+    }
     const scrollerRect = scroller.getBoundingClientRect();
     const focalY = scrollerRect.top + Math.min(120, Math.max(36, scroller.clientHeight * 0.28));
     let matched: NavigatorStop | undefined;
     let hasGeometry = false;
 
     for (const stop of stops) {
-      const el = findConversationEntryElement(scroller, stop.entryKey);
-      if (!el) continue;
+      const el = findRawConversationEntryElement(scroller, stop.entryKey);
+      if (!el || el.closest("[hidden]")) continue;
       const rect = el.getBoundingClientRect();
       if (rect.height > 0 || rect.top !== scrollerRect.top) {
         hasGeometry = true;
@@ -351,7 +369,11 @@ export function V2NavigatorRail({
 
     if (hasGeometry && scroller.clientHeight > 0 &&
       scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 24) {
-      matched = stops[stops.length - 1];
+      const lastVisible = [...stops].reverse().find((stop) => {
+        const el = findRawConversationEntryElement(scroller, stop.entryKey);
+        return Boolean(el && !el.closest("[hidden]"));
+      });
+      matched = lastVisible ?? stops[stops.length - 1];
     }
 
     if (matched) {
@@ -384,14 +406,27 @@ export function V2NavigatorRail({
   }, [scrollRef, stops.length, syncActiveStopFromScroll]);
 
   const jumpToStop = useCallback((stop: NavigatorStop) => {
-    setActiveStopID(stop.id);
     clearPreviewTimer();
     setPreviewStopID(null);
 
     let nextScrollTop: number | undefined;
     const scroller = scrollRef?.current;
     if (scroller) {
-      const target = findConversationEntryElement(scroller, stop.entryKey)
+      let rawTarget = findRawConversationEntryElement(scroller, stop.entryKey);
+      if (rawTarget?.closest("[hidden]")) {
+        const taskTurn = rawTarget.closest<HTMLElement>(".v2-task-turn");
+        const expandButton = taskTurn?.querySelector<HTMLButtonElement>(
+          '.v2-task-process-heading button[aria-expanded="false"]',
+        );
+        if (expandButton) {
+          flushSync(() => {
+            expandButton.click();
+          });
+          rawTarget = findRawConversationEntryElement(scroller, stop.entryKey);
+        }
+      }
+      const target = (rawTarget && !rawTarget.closest("[hidden]") ? rawTarget : null)
+        ?? findConversationEntryElement(scroller, stop.entryKey)
         ?? findConversationEntryElement(scroller, `task:${stop.entryKey}`);
       if (target) {
         const scrollerRect = scroller.getBoundingClientRect();
@@ -408,6 +443,7 @@ export function V2NavigatorRail({
           target.scrollIntoView?.({ block: "start", behavior: reducedMotion ? "auto" : "smooth" });
           nextScrollTop = scroller.scrollTop;
         }
+        pinnedJumpRef.current = { stopID: stop.id, scrollTop: scroller.scrollTop };
 
         clearPulse();
         target.classList.add("is-nav-pulse");
@@ -422,6 +458,7 @@ export function V2NavigatorRail({
       }
     }
 
+    setActiveStopID(stop.id);
     onJumpToEntry?.(stop.entryKey, stop, nextScrollTop);
   }, [clearPreviewTimer, clearPulse, onJumpToEntry, scrollRef]);
 
@@ -437,7 +474,7 @@ export function V2NavigatorRail({
       if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-      if (event.target instanceof Element && event.target.closest(".monaco-editor, .xterm, .v2-workbench-slot")) return;
+      if (isEditableOrExcludedTarget(event.target) || isEditableOrExcludedTarget(document.activeElement)) return;
 
       const scopeElement = scopeRef?.current;
       if (scopeElement) {

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -391,5 +391,182 @@ describe("V2NavigatorRail", () => {
 
     await user.type(within(dialog).getByRole("searchbox", { name: "Search conversation stops" }), "nonexistent-xyz-query");
     expect(within(dialog).getByText("No matching navigation stops")).toBeVisible();
+  });
+
+  it("does not hijack Alt+ArrowUp / Alt+ArrowDown inside textarea, input, select, or ProseMirror contenteditable", () => {
+    const onJump = vi.fn();
+    render(
+      <LocaleProvider>
+        <div>
+          <NavigatorFixture onJumpToEntry={onJump} />
+        </div>
+      </LocaleProvider>,
+    );
+
+    const scope = document.querySelector(".v2-conversation-main-column")!;
+    const textarea = document.createElement("textarea");
+    const input = document.createElement("input");
+    const proseMirror = document.createElement("div");
+    proseMirror.className = "ProseMirror";
+    proseMirror.setAttribute("contenteditable", "true");
+    proseMirror.tabIndex = 0;
+    scope.append(textarea, input, proseMirror);
+
+    for (const control of [textarea, input, proseMirror]) {
+      control.focus();
+      const upEvent = new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true, cancelable: true });
+      control.dispatchEvent(upEvent);
+      expect(upEvent.defaultPrevented).toBe(false);
+
+      const downEvent = new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true, cancelable: true });
+      control.dispatchEvent(downEvent);
+      expect(downEvent.defaultPrevented).toBe(false);
+    }
+    expect(onJump).not.toHaveBeenCalled();
+  });
+
+  it("skips hidden collapsed process stops in passive scroll-spy and auto-expands collapsed NarrativeTaskRow on jump", async () => {
+    const onJump = vi.fn();
+    const user = userEvent.setup();
+
+    function CollapsedTaskFixture() {
+      const scopeRef = useRef<HTMLDivElement>(null);
+      const scrollRef = useRef<HTMLDivElement>(null);
+      const [expanded, setExpanded] = useState(false);
+
+      const taskEntries: NarrativeEntry[] = [
+        {
+          id: "u-1",
+          kind: "user",
+          text: "执行部署前安全检查",
+          createdAt: "2026-11-17T10:00:00Z",
+          provisional: false,
+        },
+        {
+          id: "err-collapsed-1",
+          kind: "activity",
+          activity: "execute",
+          title: "运行安全检查",
+          detail: "FAIL secret check",
+          status: "failed",
+          createdAt: "2026-11-17T10:01:00Z",
+          runId: "run-1",
+          count: 1,
+          provisional: false,
+          items: [{ title: "运行安全检查", detail: "FAIL secret check", status: "failed", provisional: false, detailAvailable: false }],
+        },
+        {
+          id: "a-final-1",
+          kind: "assistant",
+          text: "已完成修复并复测通过。",
+          createdAt: "2026-11-17T10:02:00Z",
+          provisional: false,
+        },
+      ];
+
+      return (
+        <div className="v2-conversation-main-column" ref={scopeRef} tabIndex={-1}>
+          <div className="v2-conversation-viewport">
+            <div
+              className="v2-conversation-scroll"
+              ref={(node) => {
+                scrollRef.current = node;
+                if (!node) return;
+                let top = 0;
+                Object.defineProperties(node, {
+                  scrollHeight: { configurable: true, value: 800 },
+                  clientHeight: { configurable: true, value: 400 },
+                  scrollTop: {
+                    configurable: true,
+                    get: () => top,
+                    set: (v: number) => { top = Math.max(0, Math.min(400, v)); },
+                  },
+                });
+                node.getBoundingClientRect = () => ({
+                  top: 0, bottom: 400, left: 0, right: 700, width: 700, height: 400, x: 0, y: 0, toJSON: () => ({}),
+                });
+              }}
+            >
+              <ol className="v2-narrative v2-conv-entries">
+                <li className="v2-task-turn" data-conv-entry-key="task:t1" data-task-id="t1" data-task-state="completed">
+                  <ol className="v2-task-inputs">
+                    <li
+                      className="v2-user-turn"
+                      data-conv-entry-key="u-1"
+                      ref={(row) => {
+                        if (!row) return;
+                        row.getBoundingClientRect = () => ({
+                          top: 10 - (scrollRef.current?.scrollTop ?? 0),
+                          bottom: 90 - (scrollRef.current?.scrollTop ?? 0),
+                          left: 0, right: 660, width: 660, height: 80, x: 0, y: 10, toJSON: () => ({}),
+                        });
+                      }}
+                    >
+                      u-1
+                    </li>
+                  </ol>
+                  <div className="v2-task-process-heading">
+                    <button
+                      aria-expanded={expanded}
+                      onClick={() => setExpanded((prev) => !prev)}
+                      type="button"
+                    >
+                      查看过程
+                    </button>
+                  </div>
+                  <ol className="v2-task-entries">
+                    <li
+                      className="v2-activity-turn"
+                      data-conv-entry-key="err-collapsed-1"
+                      hidden={!expanded}
+                      ref={(row) => {
+                        if (!row) return;
+                        row.getBoundingClientRect = () => ({
+                          top: 220 - (scrollRef.current?.scrollTop ?? 0),
+                          bottom: 320 - (scrollRef.current?.scrollTop ?? 0),
+                          left: 0, right: 660, width: 660, height: 100, x: 0, y: 220, toJSON: () => ({}),
+                        });
+                      }}
+                    >
+                      err-collapsed-1
+                    </li>
+                  </ol>
+                </li>
+              </ol>
+            </div>
+            <V2NavigatorRail
+              entries={taskEntries}
+              onJumpToEntry={(key) => onJump(key)}
+              scopeRef={scopeRef}
+              scrollRef={scrollRef}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    const { container } = render(
+      <LocaleProvider>
+        <CollapsedTaskFixture />
+      </LocaleProvider>,
+    );
+
+    const nav = screen.getByRole("navigation", { name: "对话快速导航" });
+    const turnStop = within(nav).getByRole("button", { name: /#1 对话回合/u });
+    const errorStop = within(nav).getByRole("button", { name: /#1 工具失败/u });
+
+    // While process entries are collapsed (hidden), passive scroll-spy highlights the visible turn (#1 对话回合), NOT the hidden error stop.
+    expect(turnStop).toHaveAttribute("aria-current", "true");
+    expect(errorStop).not.toHaveAttribute("aria-current");
+
+    const hiddenRow = container.querySelector('[data-conv-entry-key="err-collapsed-1"]')!;
+    expect(hiddenRow).toHaveAttribute("hidden");
+
+    // Clicking the error stop on the rail auto-expands the collapsed task process section, scrolls to the revealed row, and pulses it!
+    await user.click(errorStop);
+    expect(onJump).toHaveBeenCalledWith("err-collapsed-1");
+    expect(hiddenRow).not.toHaveAttribute("hidden");
+    expect(hiddenRow).toHaveClass("is-nav-pulse");
+    expect(errorStop).toHaveAttribute("aria-current", "true");
   });
 });
