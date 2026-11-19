@@ -149,7 +149,7 @@ function ApprovalDecisionRow({ client, item, runID, busy, reason, onReasonChange
     {preview.data?.redacted && <p>{t("敏感内容已脱敏，请按可见内容核对操作。", "Sensitive content is redacted. Review the action using the visible information.")}</p>}
     <div className="approval-actions">
       {fileReview && onReviewFile && <button className="command-button" disabled={!preview.isSuccess || preview.isFetching} type="button"
-        onClick={() => onReviewFile({ runID, editID: item.proposal_id, workspaceID: item.workspace_id })}>{t("审阅文件提案", "Review file proposal")}</button>}
+        onClick={() => onReviewFile({ runID, editID: item.proposal_id, workspaceID: item.workspace_id })}>{t("审阅差异", "Review diff")}</button>}
       {client.hasApprovalControl && !fileTool && item.allowed_actions.includes("approve_once") && <button className="command-button" disabled={!canApprove}
         onClick={() => onDecide("approve_once")} type="button">{computerUse ? t("本次允许", "Allow once") : t("仅批准一次", "Approve once")}</button>}
       {client.hasApprovalControl && computerUse && item.allowed_actions.includes("approve_for_run_app") && <button className="command-button" disabled={!canApprove}

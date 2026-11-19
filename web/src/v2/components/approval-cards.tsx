@@ -235,7 +235,7 @@ function ApprovalCard({ client, item, runID, onDecided, onReviewFile }: {
     <footer>
       {onReviewFile && preview.isSuccess && preview.data.effect === "file_review_required" && <button
         className="primary" disabled={preview.isFetching} onClick={(event) => onReviewFile({
-          runID, editID: item.proposal_id, workspaceID: item.workspace_id }, event.currentTarget)} type="button">{t("审阅文件提案", "Review file proposal")}</button>}
+          runID, editID: item.proposal_id, workspaceID: item.workspace_id }, event.currentTarget)} type="button">{t("审阅差异", "Review diff")}</button>}
       {client.hasApprovalControl && !fileTool && !fileReview && item.allowed_actions.includes("approve_once") && <button className="primary" disabled={!canApprove}
         onClick={() => decide("approve_once")} type="button">
         {mutation.isPending && mutation.variables === "approve_once" && <LoaderCircle aria-hidden="true" className="spin" size={14} />}

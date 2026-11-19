@@ -192,7 +192,7 @@ describe("V2ApprovalCards", () => {
       workspace_id: "original-workspace", allowed_actions: ["deny"], canonical_url: undefined, exact_target: undefined });
     const { onReviewFile, decideApproval } = renderCards(item, { effect: "file_review_required", source_current: false,
       fields: [{ name: "path", value: "same.txt" }] });
-    const button = await screen.findByRole("button", { name: "审阅文件提案" });
+    const button = await screen.findByRole("button", { name: "审阅差异" });
     button.focus();
     await userEvent.keyboard("{Enter}");
     expect(onReviewFile).toHaveBeenCalledWith({ runID: "run-1", editID: "exact-edit", workspaceID: "original-workspace" }, button);
@@ -218,7 +218,7 @@ describe("V2ApprovalCards", () => {
     expect(replace.queryByText("replace")).not.toBeInTheDocument();
     expect(replace.queryByText("工作目录")).not.toBeInTheDocument();
     expect(replace.getByLabelText("replace_file 的拒绝原因")).not.toBeVisible();
-    const review = move.getByRole("button", { name: "审阅文件提案" });
+    const review = move.getByRole("button", { name: "审阅差异" });
     review.focus();
     await user.keyboard("{Enter}");
     expect(onReviewFile).toHaveBeenCalledWith({ runID: "run-1", editID: "move-edit", workspaceID: "ws" }, review);
@@ -256,7 +256,7 @@ describe("V2ApprovalCards", () => {
       workspace_id: "original-workspace", allowed_actions: [], canonical_url: undefined, exact_target: undefined });
     const { onReviewFile, decideApproval } = renderCards(item, { effect: "file_review_required", ...mismatch });
     await screen.findByText("操作预览读取失败，请重新读取后确认批准范围。");
-    expect(screen.queryByRole("button", { name: "审阅文件提案" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "审阅差异" })).not.toBeInTheDocument();
     expect(onReviewFile).not.toHaveBeenCalled(); expect(decideApproval).not.toHaveBeenCalled();
   });
 
