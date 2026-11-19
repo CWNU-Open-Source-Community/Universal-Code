@@ -924,10 +924,11 @@ td code { font-size: 11px; }
 .file-proposal-modes button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 0 8px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--prayu-muted); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .file-proposal-modes button[aria-pressed="true"] { border-bottom-color: currentColor; color: var(--prayu-text); font-weight: 600; }
 .file-proposal-modes button:hover, .file-proposal-header > .icon-button:hover { color: var(--prayu-text); background: var(--prayu-control-hover); }
-.file-proposal-editor > .file-proposal-footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px 12px; font-size: 12px; }
-.file-proposal-meta, .file-proposal-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px 12px; min-width: 0; }
+.file-proposal-editor > .file-proposal-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 12px; font-size: 12px; }
+.file-proposal-meta, .file-proposal-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
 .file-proposal-meta { color: var(--prayu-muted); }
-.file-proposal-actions > button, .file-proposal-actions > .proposal-created-status { flex-shrink: 0; margin-left: auto; font-size: 13px; }
+.file-proposal-actions { margin-inline-start: auto; justify-content: flex-end; }
+.file-proposal-actions > button, .file-proposal-actions > .proposal-created-status { font-size: 13px; }
 .file-proposal-actions > button { min-height: 34px; padding: 6px 10px; }
 .file-proposal-actions > .file-proposal-submit { background: var(--prayu-primary-bg); border-color: var(--prayu-primary-border); color: var(--prayu-primary-fg); }
 .file-proposal-actions > .file-proposal-submit:hover:not(:disabled) { background: var(--prayu-primary-hover); }
@@ -4020,12 +4021,6 @@ summary:focus-visible {
   color: var(--prayu-muted);
   cursor: default;
   opacity: .62;
-}
-
-.workbench-sidecar-menu-group > button small {
-  color: var(--prayu-muted);
-  font: inherit;
-  font-size: 9px;
 }
 
 .workbench-sidecar-menu-group > button kbd {
