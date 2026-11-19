@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronRight, FileCheck2, FileDiff, FileText, History,
   LoaderCircle, PanelRightClose, X } from "lucide-react";
 import type { APIClient } from "../api/client";
-import type { ApprovalContinuationView, FileEditApplyView, FileEditPreviewView, FileEditQueueView, FileEditReviewRequestView, OperationReceiptView } from "../api/types";
+import type { ApprovalContinuationView, FileEditApplyView, FileEditPreviewView, FileEditQueueView, FileEditReviewRequestView, FileEditReviewView, OperationReceiptView } from "../api/types";
 import { formatBytes, formatDate } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { EmptyState, ErrorState, LoadingState, StatusBadge, StatusLabel } from "./common";
@@ -38,7 +38,7 @@ export function FileEditPanel({ client, runID, runStatus, onRequestChange, onReq
   onRequestChange?: (edit: FileEditPreviewView) => void;
   onRequestRevert?: (edit: FileEditPreviewView) => void;
   requestRevertUnavailableReason?: string;
-  onChanged?: () => void;
+  onChanged?: (review?: FileEditReviewView) => void;
   initialTarget?: FileEditReviewTarget;
 }) {
   const { t } = useLocale();
@@ -150,14 +150,19 @@ export function FileEditPanel({ client, runID, runStatus, onRequestChange, onReq
     revert.mutate(attempt);
   };
   const review = useMutation({
-    mutationFn: ({ requestedRunID, editID, action }: { requestedRunID: string; editID: string;
-      action: FileEditReviewRequestView["action"] }) =>
-      client.reviewFileEdit(requestedRunID, editID, { version: "file_edit_review.v1", action }),
+    mutationFn: async ({ requestedRunID, edit, action }: { requestedRunID: string; edit: FileEditPreviewView;
+      action: FileEditReviewRequestView["action"] }) => {
+      const result = await client.reviewFileEdit(requestedRunID, edit.id, { version: "file_edit_review.v1", action });
+      if (result.edit.session_id !== edit.session_id || result.edit.workspace_id !== edit.workspace_id || result.edit.operation !== edit.operation) {
+        throw new Error(t("文件审阅结果与所选提案不一致，请刷新后重试。", "The file review result does not match the selected proposal. Refresh and retry."));
+      }
+      return result;
+    },
     onSuccess: (result, { requestedRunID }) => {
       queryClient.setQueryData(["run", requestedRunID, "file-edit", result.edit.id], result.edit);
       if (result.continuation) setContinuations((current) => ({ ...current,
         [`${requestedRunID}:${result.edit.id}`]: result.continuation! }));
-      if (selection.current.runID === requestedRunID) onChanged?.();
+      if (selection.current.runID === requestedRunID) onChanged?.(result);
     },
     onSettled: (_result, _error, { requestedRunID }) => refreshEdits(requestedRunID),
   });
@@ -309,8 +314,8 @@ export function FileEditPanel({ client, runID, runStatus, onRequestChange, onReq
           setSelectedEditID("");
           requestAnimationFrame(() => (fileButtons.current.get(selectedEdit.id) ?? panel.current)?.focus());
         }} onRecover={() => setRecoveryEditID(selectedEdit.id)}
-        onReview={(action) => review.mutate({ requestedRunID: runID, editID: selectedEdit.id, action })}
-        receipt={receipts[`${runID}:${selectedEdit.id}`]} reviewing={review.isPending && review.variables?.editID === selectedEdit.id}
+        onReview={(action) => review.mutate({ requestedRunID: runID, edit: selectedEdit, action })}
+        receipt={receipts[`${runID}:${selectedEdit.id}`]} reviewing={review.isPending && review.variables?.edit.id === selectedEdit.id}
         reviewAction={review.variables?.action} applying={Boolean(applyAttempts[selectedEdit.id])} />}
     </div>
     {recoveryEditID && <FileProposalRecovery client={client} editID={recoveryEditID}

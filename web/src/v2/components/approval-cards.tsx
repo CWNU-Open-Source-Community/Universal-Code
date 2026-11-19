@@ -8,7 +8,7 @@ import type { ApprovalDecisionControlRequestView, ApprovalPreviewView, ApprovalQ
 import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 import { ComputerUsePreview } from "../../components/computer-use-preview";
 import { ApprovalDenialReason, approvalToolLabel, fileApprovalLabel, readApprovalPreview } from "../../components/approval-controls";
-import { v2QueryKeys } from "../query-keys";
+import { removeDecidedApproval, v2QueryKeys } from "../query-keys";
 
 type Action = ApprovalDecisionControlRequestView["action"];
 type Fields = ApprovalPreviewView["fields"];
@@ -133,6 +133,7 @@ export function V2ApprovalCards({ client, runID, threadID, onReviewFile }: {
     if (notice && items?.length && !items.some((item) => item.id === notice.approvalID)) setNotice(undefined);
   }, [items, notice]);
   const decided = (approvalID: string, message: string) => {
+    removeDecidedApproval(queryClient, runID, (item) => item.id === approvalID);
     setNotice({ approvalID, message });
     void queryClient.invalidateQueries({ queryKey: v2QueryKeys.approvals(runID) });
     void queryClient.invalidateQueries({ queryKey: v2QueryKeys.thread(threadID) });

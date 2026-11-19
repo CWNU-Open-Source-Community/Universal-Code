@@ -2,14 +2,15 @@ import type { ReactElement } from "react";
 import type { RenderOptions } from "@testing-library/react";
 import { LocaleProvider } from "../../lib/locale";
 import { createRef, useState, type ReactNode } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
-import type { FileEditPreviewView, ThreadDetailView } from "../../api/types";
+import type { ApprovalQueueView, FileEditPreviewView, ThreadDetailView } from "../../api/types";
 import type { ThreadReview, ThreadReviewChange } from "../../api/task-delivery";
 import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 import { V2TaskReview } from "./task-review";
+import { v2QueryKeys } from "../query-keys";
 
 const when = "2026-09-29T00:00:00Z";
 function detail(): ThreadDetailView {
@@ -92,6 +93,50 @@ it("takes each default overview proposal straight to its own run and edit withou
   expect(api.fileEdit.mock.calls.map(([runID]) => runID)).toEqual(["run-current", "run-history"]);
   expect(api.reviewFileEdit).not.toHaveBeenCalled(); expect(api.applyFileEdit).not.toHaveBeenCalled();
   expect(api.controlRunLifecycle).not.toHaveBeenCalled();
+});
+
+it("removes only the confirmed file approval when the next queue read fails", async () => {
+  const api = client();
+  api.hasFileEditReview = true;
+  const runID = "run-current";
+  const file = edit(runID);
+  const target = { runID, editID: file.id, workspaceID: file.workspace_id };
+  const pending = { id: "file-approval", run_id: runID, proposal_id: file.id, workspace_id: file.workspace_id,
+    session_id: file.session_id, tool_name: "create_file", action_class: "workspace_write", mode: "per_call",
+    status: "pending" as const, version: 1, created_at: when, updated_at: when, allowed_actions: [],
+    capability_grant: false, process_execution_enabled: false };
+  const others = [{ ...pending, id: "other-file", proposal_id: "other-edit" },
+    { ...pending, id: "other-directory", workspace_id: "other-workspace" },
+    { ...pending, id: "other-operation", tool_name: "replace_file" }];
+  const queue: ApprovalQueueView = { protocol_version: "approval_queue.v1", run_id: runID, items: [pending, ...others],
+    truncated: false, capability_grant: false, process_execution_enabled: false, session_grant_created: false };
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const key = v2QueryKeys.approvals(runID);
+  const cached = () => queryClient.getQueryData<ApprovalQueueView>(key)?.items;
+  function ObserveQueue() {
+    useQuery({ queryKey: key, initialData: queue, staleTime: Infinity, queryFn: () => Promise.reject(new Error("Queue offline")) });
+    return null;
+  }
+  const reviewed = { protocol_version: "file_edit_review.v1", run_id: runID, action: "approve_intent",
+    edit: { ...file, status: "applied", allowed_actions: [] }, file_written: true, replayed: false };
+  api.reviewFileEdit.mockRejectedValueOnce(new Error("Review unavailable"))
+    .mockResolvedValueOnce({ ...reviewed, edit: { ...reviewed.edit, workspace_id: "other-workspace" } })
+    .mockResolvedValueOnce(reviewed);
+  render(<QueryClientProvider client={queryClient}><ObserveQueue /><V2TaskReview client={api as unknown as APIClient}
+    detail={detail()} working={false} initialFileTarget={target} onClose={vi.fn()} onRequestChange={vi.fn()} returnFocusRef={createRef()} /></QueryClientProvider>);
+  const user = userEvent.setup();
+  const approve = () => screen.findByRole("button", { name: `批准并应用 ${file.path}` });
+  await approve();
+  expect(cached()).toEqual(queue.items);
+  await user.click(await approve());
+  expect(await screen.findByText("Review unavailable")).toBeVisible();
+  expect(cached()).toEqual(queue.items);
+  await user.click(await approve());
+  expect(await screen.findByText(/文件审阅结果与所选提案不一致/)).toBeVisible();
+  expect(cached()).toEqual(queue.items);
+  await user.click(await approve());
+  await waitFor(() => expect(queryClient.getQueryState(key)?.status).toBe("error"));
+  expect(cached()).toEqual(others);
 });
 
 it("keeps a missing or removed target run explicit instead of opening the current run", async () => {
