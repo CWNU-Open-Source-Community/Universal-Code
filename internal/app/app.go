@@ -479,6 +479,7 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.out, "  cyberagent doctor browser-network-probe --product <edge|chrome|chromium> --collector <operator> --confirm <token> [--json]")
 	fmt.Fprintln(a.out, "  cyberagent doctor browser-network-review --product <edge|chrome|chromium> --reviewer <operator> --operation-key <key> (--accept|--reject)")
 	fmt.Fprintln(a.out, "  cyberagent workspace init|list|show|tree|read|checkpoint")
+	fmt.Fprintln(a.out, "  cyberagent workspace checkpoint capture|cursor|fork|preview|redo|rewind|timeline|undo")
 	fmt.Fprintln(a.out, "  cyberagent script new|run  (new writes a local template; use thread create/run execute for agent work)")
 	fmt.Fprintln(a.out, "  cyberagent ctf init|analyze|writeup  (analyze writes a worksheet; it does not perform analysis)")
 	fmt.Fprintln(a.out, "  cyberagent learn ask")
