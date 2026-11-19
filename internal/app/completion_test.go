@@ -289,6 +289,8 @@ var commandFlagScanTargets = map[string]string{
 	"workspace checkpoint timeline":   "workspaceCheckpointTimeline",
 	"workspace read":                  "workspaceRead",
 	"workspace tree":                  "workspaceTree",
+	"tool deny":                       "toolDeny",
+	"tool invoke":                     "toolInvoke",
 }
 
 func functionBodyByExactName(t *testing.T, functionName string) string {

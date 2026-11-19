@@ -297,6 +297,8 @@ var commandFlags = map[string][]string{
 	"workspace checkpoint redo":       {"--expected-current", "--operation-key", "--run"},
 	"workspace read":                  {"--max-bytes"},
 	"workspace tree":                  {"--depth"},
+	"tool deny":                       {"--reason"},
+	"tool invoke":                     {"--operation-key", "--payload", "--payload-file", "--run"},
 }
 
 // flagValueVocabulary completes enum-style flag values: the key is
