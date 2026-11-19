@@ -152,7 +152,7 @@ function renderReview(api: ReturnType<typeof client>, value = detail()) {
 }
 async function chooseTool(user: ReturnType<typeof userEvent.setup>, name: string) {
   await user.click(within(screen.getByRole("group", { name: "选择交付工具" }))
-    .getByRole("button", { name: new RegExp(`^${name}`, "u") }));
+    .getByRole("button", { name }));
 }
 
 it("loads advanced tools only after selection and binds every panel to the explicitly chosen historical Run", async () => {
@@ -186,7 +186,7 @@ it("loads advanced tools only after selection and binds every panel to the expli
   await screen.findByText(/还没有浏览器验证/u);
   expect(api.uiEvidence).toHaveBeenCalledWith("run-history", expect.any(AbortSignal));
   await user.selectOptions(screen.getByRole("combobox", { name: "选择审阅的执行记录" }), "run-current");
-  expect(screen.getByText(/选择工具后才会读取对应状态/)).toBeInTheDocument();
+  expect(within(screen.getByRole("group", { name: "选择交付工具" })).queryByRole("button", { pressed: true })).toBeNull();
   expect(api.uiEvidence).toHaveBeenCalledTimes(1);
   await chooseTool(user, "UI 取证");
   await waitFor(() => expect(api.uiEvidence).toHaveBeenCalledWith("run-current", expect.any(AbortSignal)));
