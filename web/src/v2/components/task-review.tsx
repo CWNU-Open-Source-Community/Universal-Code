@@ -16,7 +16,7 @@ import { WorkspaceExplorer } from "../../components/workspace-explorer";
 import { EvidenceInventory } from "../../components/evidence-inventory";
 import { useModalFocusTrap } from "../../hooks/use-modal-focus-trap";
 import { ThreadActivityToolDetailPanel } from "./activity-detail";
-import { v2QueryKeys } from "../query-keys";
+import { removeDecidedApproval, v2QueryKeys } from "../query-keys";
 import { TaskOverview } from "./task-overview";
 import { TaskGit } from "./task-git";
 import { TaskPullRequest } from "./task-pull-request";
@@ -245,7 +245,17 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
           onGithubReviewChange={(review) => retainToolReview("github", review)}
           onOpenDelivery={() => selectTab("checks", true)} />}
         {tab === "files" && selectedRun && <>
-          <FileEditPanel client={client} runID={reviewedRunID} runStatus={selectedRun.status} initialTarget={fileTarget} onChanged={() => refresh()}
+          <FileEditPanel client={client} runID={reviewedRunID} runStatus={selectedRun.status} initialTarget={fileTarget}
+            onChanged={(review) => {
+              if (review) {
+                const { run_id: runID, edit } = review;
+                removeDecidedApproval(queryClient, runID, (item) => item.run_id === runID && item.proposal_id === edit.id &&
+                  item.workspace_id === edit.workspace_id && item.session_id === edit.session_id &&
+                  item.tool_name === `${edit.operation}_file` && item.action_class === "workspace_write");
+                void queryClient.invalidateQueries({ queryKey: v2QueryKeys.approvals(runID) });
+              }
+              refresh();
+            }}
             requestRevertUnavailableReason={detail.thread.status === "archived"
               ? t("此对话已归档，取消归档后才能发送撤销要求。", "This conversation is archived. Unarchive it to send an undo request.")
               : !client.hasThreadControl || !client.hasSessionMessages

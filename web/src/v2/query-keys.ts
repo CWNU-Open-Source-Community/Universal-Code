@@ -1,3 +1,6 @@
+import type { QueryClient } from "@tanstack/react-query";
+import type { ApprovalQueueItemView, ApprovalQueueView } from "../api/types";
+
 export const v2QueryKeys = {
   threads: (status: "active" | "archived" = "active") => ["v2", "threads", status] as const,
   threadSearch: (status: "active" | "archived", title: string) =>
@@ -12,3 +15,11 @@ export const v2QueryKeys = {
   historyRecords: ["v2", "history", "records"] as const,
   usage: (period: string, utcOffsetMinutes: number, threadID = "") => ["v2", "usage", period, utcOffsetMinutes, threadID] as const,
 };
+
+export function removeDecidedApproval(client: QueryClient, runID: string, matches: (item: ApprovalQueueItemView) => boolean) {
+  client.setQueryData<ApprovalQueueView>(v2QueryKeys.approvals(runID), (queue) => {
+    if (queue?.run_id !== runID) return undefined;
+    const items = queue.items.filter((item) => item.status !== "pending" || !matches(item));
+    return items.length < queue.items.length ? { ...queue, items } : undefined;
+  });
+}
