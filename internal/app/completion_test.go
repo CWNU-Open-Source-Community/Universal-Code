@@ -165,9 +165,12 @@ var commandFlagScanTargets = map[string]string{
 	"exec":                  "execCommand",
 	"headless events":       "headlessEvents",
 	"hooks list":            "hooksList",
+	"mcp serve":             "mcpServeCommand",
 	"note create":           "noteCreate",
+	"note list":             "noteList",
 	"session create":        "sessionCreate",
 	"session send":          "sessionSend",
+	"skill import":          "skillCommand",
 	"skill list":            "skillCommand",
 	"thread create":         "threadCreate",
 	"thread list":           "threadList",
@@ -425,6 +428,7 @@ func commandFunctionBody(t *testing.T, name string) string {
 // functions that hold their nested switches; the normalized-name lookup
 // only covers top-level command functions.
 var nestedDispatchFunctions = map[string]string{
+	"skill import":         "skillCommand",
 	"skill list":           "skillCommand",
 	"context instructions": "contextCommand",
 	"context memory":       "contextMemory",
@@ -705,12 +709,22 @@ func TestFlagValueVocabularyIntegrity(t *testing.T) {
 	}
 }
 
+// flagValueSourceExceptions lists value keys whose choices come from domain
+// constants rather than literals in the dispatch source (the category help
+// string carries the default only).
+var flagValueSourceExceptions = map[string]bool{
+	"note create --category": true,
+}
+
 func TestFlagValueVocabularyMatchDispatch(t *testing.T) {
 	for key, values := range flagValueVocabulary {
 		flagIdx := strings.LastIndex(key, " --")
 		commandKey := key[:flagIdx]
 		body := commandFunctionBody(t, commandKey)
 		for _, value := range values {
+			if flagValueSourceExceptions[key] {
+				continue
+			}
 			if !strings.Contains(body, value) {
 				t.Errorf("flag value %q of %q does not appear in its dispatch source; the vocabulary drifted", value, key)
 			}

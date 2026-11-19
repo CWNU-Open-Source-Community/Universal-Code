@@ -180,9 +180,12 @@ var commandFlags = map[string][]string{
 	"context memory list":   {"--all", "--json", "--scope", "--workspace"},
 	"headless events":       {"--after-sequence", "--follow", "--max-events", "--poll-interval", "--timeout"},
 	"hooks list":            {"--json"},
+	"mcp serve":             {"--call-timeout", "--max-concurrent", "--run", "--session-ttl", "--workspace"},
 	"note create":           {"--category", "--content", "--content-file", "--owner", "--owner-agent", "--pin", "--tag", "--visibility"},
+	"note list":             {"--category", "--owner", "--owner-agent", "--status", "--visibility"},
 	"session create":        {"--route", "--title", "--workspace"},
 	"session send":          {"--operation-key"},
+	"skill import":          {"--confirm-untrusted-skill", "--operation-key", "--operator", "--surface"},
 	"skill list":            {"--profile"},
 	"thread create":         {"--json", "--phase", "--profile", "--route", "--surface", "--workspace"},
 	"thread list":           {"--include-deleted", "--status"},
@@ -199,8 +202,12 @@ var commandFlags = map[string][]string{
 var flagValueVocabulary = map[string][]string{
 	"context memory create --scope": {"project", "user"},
 	"exec --profile":                {"code", "learn", "review", "script"},
+	"note create --category":        {"decision", "hypothesis", "observation", "reference", "summary"},
 	"note create --visibility":      {"owner", "root", "run"},
+	"skill import --surface":        {"code", "cyber"},
 	"skill list --profile":          {"code", "learn", "review", "script"},
+	"thread create --phase":         {"deliver", "plan"},
+	"thread create --surface":       {"code", "cyber"},
 	"todo create --priority":        {"critical", "high", "low", "normal"},
 }
 

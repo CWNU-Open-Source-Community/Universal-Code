@@ -560,8 +560,15 @@ position is handed back to the shell, so path-shaped arguments such as
 `skill import`'s package still complete. Words starting with `-` complete
 the command's flag vocabulary where one is published — exec, headless
 events, workspace tree/read, todo create/list, thread create/send/list,
-context instructions, context memory create — plus the top-level
-`--help`/`--version` aliases.
+context instructions, context memory create/list, note create, session
+create/send, skill list — plus the top-level
+`--help`/`--version` aliases. Enum-style flags complete their documented
+values too: `exec --profile` offers code/review/learn/script,
+`todo create --priority` the four priorities, `note create --visibility`
+the three visibilities, `context memory create --scope` user/project,
+`note create --category` the five note categories, `thread create`
+surface/phase, `skill import --surface` code/cyber, and the same
+`--profile` vocabulary on exec and skill list.
 
 ```bash
 cyberagent completion bash >> ~/.bashrc
