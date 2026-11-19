@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,26 @@ func dispatchForOutput(t *testing.T, args ...string) (string, error) {
 	a := &App{out: &out}
 	err := a.dispatch(context.Background(), args)
 	return out.String(), err
+}
+
+// completionCandidatesFromOutput splits __complete output into candidate
+// lines and asserts the trailing cobra-style directive; 4 means the CLI
+// provided candidates, 0 hands the position back to the shell.
+func completionCandidatesFromOutput(t *testing.T, output string, wantDirective string) []string {
+	t.Helper()
+	var candidates []string
+	directive := ""
+	for _, line := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
+		if strings.HasPrefix(line, ":") {
+			directive = line
+			continue
+		}
+		candidates = append(candidates, line)
+	}
+	if directive != wantDirective {
+		t.Fatalf("completion directive = %q, want %q (output %q)", directive, wantDirective, output)
+	}
+	return candidates
 }
 
 // dispatchSwitchCommands extracts the literal command names handled by the
@@ -109,7 +130,18 @@ func TestCommandSubcommandsIntegrity(t *testing.T) {
 		table[spec.name] = true
 	}
 	for name, subcommands := range commandSubcommands {
-		if !table[name] {
+		parts := strings.Split(name, " ")
+		if len(parts) > 1 {
+			if !table[parts[0]] {
+				t.Fatalf("nested key %q starts from unregistered command %q", name, parts[0])
+			}
+			for i := 1; i < len(parts); i++ {
+				parent := strings.Join(parts[:i], " ")
+				if !slices.Contains(commandSubcommands[parent], parts[i]) {
+					t.Fatalf("nested key %q: %q is not a verified subcommand of %q", name, parts[i], parent)
+				}
+			}
+		} else if !table[name] {
 			t.Fatalf("subcommand map key %q is not a registered command", name)
 		}
 		if len(subcommands) == 0 {
@@ -142,6 +174,16 @@ func TestCommandSubcommandsDocumented(t *testing.T) {
 			}
 		}
 	}
+	for name, subcommands := range commandSubcommands {
+		if !strings.Contains(name, " ") {
+			continue
+		}
+		for _, sub := range subcommands {
+			if !strings.Contains(help, sub) {
+				t.Errorf("group subcommand %q of %q is missing from printHelp output; document it or verify it against the nested dispatch switch", sub, name)
+			}
+		}
+	}
 }
 
 // commandFunctionBody locates the source body of the dispatch function for
@@ -153,12 +195,19 @@ func commandFunctionBody(t *testing.T, name string) string {
 	if !ok {
 		t.Fatal("cannot locate test source file")
 	}
+	lookup := name
+	if override, ok := nestedDispatchFunctions[lookup]; ok {
+		lookup = override
+	}
 	dir := filepath.Dir(thisFile)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("read app package sources: %v", err)
 	}
-	want := strings.ToLower(strings.ReplaceAll(name, "-", "")) + "command"
+	want := strings.ToLower(strings.ReplaceAll(lookup, "-", ""))
+	if !strings.Contains(name, " ") {
+		want += "command"
+	}
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
 			continue
@@ -182,9 +231,6 @@ func commandFunctionBody(t *testing.T, name string) string {
 				continue
 			}
 			function := src[offset : offset+end]
-			if !strings.HasSuffix(function, "Command") {
-				continue
-			}
 			if strings.ToLower(strings.ReplaceAll(function, "-", "")) != want {
 				continue
 			}
@@ -197,6 +243,20 @@ func commandFunctionBody(t *testing.T, name string) string {
 	}
 	t.Fatalf("dispatch function for command %q not found in package sources", name)
 	return ""
+}
+
+// nestedDispatchFunctions maps two-level group keys to the dispatch
+// functions that hold their nested switches; the normalized-name lookup
+// only covers top-level command functions.
+var nestedDispatchFunctions = map[string]string{
+	"context instructions": "contextCommand",
+	"context memory":       "contextMemory",
+	"run delivery":         "runDeliveryCheckpoint",
+	"run fanout":           "runFanout",
+	"run plan":             "runPlanDelivery",
+	"run sandbox":          "runSandboxManifest",
+	"run standard-code":    "runStandardCode",
+	"skill catalog":        "skillCatalogCommand",
 }
 
 func TestCommandSubcommandsMatchDispatch(t *testing.T) {
@@ -235,7 +295,7 @@ func TestCompleteListsAllCommandsForEmptyPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	got := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	got := completionCandidatesFromOutput(t, out, ":4")
 	want := commandNames()
 	if len(got) != len(want) {
 		t.Fatalf("got %d candidates, want %d: %v", len(got), len(want), got)
@@ -252,7 +312,7 @@ func TestCompleteFiltersByPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	got := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	got := completionCandidatesFromOutput(t, out, ":4")
 	want := []string{"git-advanced", "git-op", "git-remote"}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -269,7 +329,7 @@ func TestCompleteCompletesHelpArgument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	if got := strings.Fields(out); len(got) != 1 || got[0] != "workspace" {
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "workspace" {
 		t.Fatalf("'help wo' must complete workspace only, got %q", out)
 	}
 }
@@ -279,22 +339,22 @@ func TestCompleteSecondLevelSubcommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	if got := strings.Split(strings.TrimSuffix(out, "\n"), "\n"); len(got) != len(commandSubcommands["workspace"]) {
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != len(commandSubcommands["workspace"]) {
 		t.Fatalf("workspace must complete its full subcommand set, got %v", got)
 	}
 	out, err = dispatchForOutput(t, "__complete", "run", "st")
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	if got := strings.Fields(out); len(got) != 4 || got[0] != "standard-code" || got[1] != "start" || got[2] != "steer" || got[3] != "step" {
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 4 || got[0] != "standard-code" || got[1] != "start" || got[2] != "steer" || got[3] != "step" {
 		t.Fatalf("'run st' must complete the four st-subcommands sorted, got %v", got)
 	}
 	out, err = dispatchForOutput(t, "__complete", "completion", "")
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	if got := strings.Fields(out); len(got) != 2 || got[0] != "bash" || got[1] != "zsh" {
-		t.Fatalf("'completion ' must complete bash and zsh, got %v", got)
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 3 || got[0] != "bash" || got[1] != "fish" || got[2] != "zsh" {
+		t.Fatalf("'completion ' must complete bash, fish, and zsh, got %v", got)
 	}
 }
 
@@ -309,8 +369,8 @@ func TestCompleteDeeperPositionsOfferNothing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("dispatch %v: %v", args, err)
 		}
-		if out != "" {
-			t.Fatalf("deep positions must offer no candidates for %v, got %q", args, out)
+		if got := completionCandidatesFromOutput(t, out, ":0"); len(got) != 0 {
+			t.Fatalf("deep positions must offer no candidates for %v, got %v", args, got)
 		}
 	}
 }
@@ -377,12 +437,18 @@ func TestCompletionCommandEmitsZshScript(t *testing.T) {
 	// Simulates Zsh passing ${(@)words[2,CURRENT]} when the cursor sits after
 	// "wo" in `cyberagent wo list` (CURRENT=2) and at end-of-line `cyberagent workspace in` (CURRENT=3).
 	midLine, err := dispatchForOutput(t, "__complete", "wo")
-	if err != nil || strings.TrimSpace(midLine) != "workspace" {
-		t.Fatalf("mid-line cursor slice must complete workspace, got %q (err=%v)", midLine, err)
+	if err != nil {
+		t.Fatalf("mid-line cursor slice failed: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, midLine, ":4"); len(got) != 1 || got[0] != "workspace" {
+		t.Fatalf("mid-line cursor slice must complete workspace, got %q", midLine)
 	}
 	endOfLine, err := dispatchForOutput(t, "__complete", "workspace", "in")
-	if err != nil || strings.TrimSpace(endOfLine) != "init" {
-		t.Fatalf("end-of-line cursor slice must complete init, got %q (err=%v)", endOfLine, err)
+	if err != nil {
+		t.Fatalf("end-of-line cursor slice failed: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, endOfLine, ":4"); len(got) != 1 || got[0] != "init" {
+		t.Fatalf("end-of-line cursor slice must complete init, got %q", endOfLine)
 	}
 }
 
@@ -406,9 +472,27 @@ func TestPrintCommandHelpListsFullDoctorAndRunVocabularies(t *testing.T) {
 }
 
 func TestCompletionCommandRejectsUnknownShell(t *testing.T) {
-	_, err := dispatchForOutput(t, "completion", "fish")
-	if err == nil || !strings.Contains(err.Error(), "bash, zsh") {
+	_, err := dispatchForOutput(t, "completion", "tcsh")
+	if err == nil || !strings.Contains(err.Error(), "bash, zsh, fish") {
 		t.Fatalf("unknown shell must list supported shells, got %v", err)
+	}
+}
+
+func TestCompletionCommandEmitsFishScript(t *testing.T) {
+	out, err := dispatchForOutput(t, "completion", "fish")
+	if err != nil {
+		t.Fatalf("dispatch completion fish: %v", err)
+	}
+	for _, want := range []string{
+		"function __cyberagent_complete",
+		"commandline -opc) (commandline -ct)",
+		"$tokens[2..-1]",
+		"complete -c cyberagent -f -a '(__cyberagent_complete)'",
+		"__fish_complete_path",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("fish script missing %q: %q", want, out)
+		}
 	}
 }
 

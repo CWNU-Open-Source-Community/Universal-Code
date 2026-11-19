@@ -548,6 +548,24 @@ cyberagent ui-evidence show <attempt-id>
 cyberagent ui-evidence artifact <attempt-id> <artifact-id> --output <new-path>
 ```
 
+### Shell completion / Shell 补全
+
+Emit completion scripts for bash, zsh, and fish; install them with the
+standard shell mechanism. All three scripts delegate to the hidden
+`cyberagent __complete` protocol: every argument is a command-line word,
+the last one is the word being completed, candidates print one per line,
+and a trailing `:<directive>` line mirrors cobra's values — `4` when the
+CLI provided candidates (file completion suppressed) and `0` when the
+position is handed back to the shell, so path-shaped arguments such as
+`skill import`'s package still complete.
+
+```bash
+cyberagent completion bash >> ~/.bashrc
+cyberagent completion zsh > "${fpath[1]}/_cyberagent"
+cyberagent completion fish > ~/.config/fish/completions/cyberagent.fish
+```
+
+
 `run delivery report` reads the same freshness-aware
 `standard_code_delivery.v1` projection used by Desktop, authenticated HTTP,
 Code Handoff, GitHub Review, and Standard Code completion. `run delivery record`

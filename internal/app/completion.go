@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -26,7 +27,7 @@ var commandTable = []commandSpec{
 	{"approval", "Review, approve, deny, and grant tool approvals", "cyberagent approval list|show|approve-once|approve-for-thread|deny|grant"},
 	{"artifact", "List, show, read, and verify run artifacts", "cyberagent artifact list|show|read|verify"},
 	{"code-intel", "Show code intelligence status and qualification", "cyberagent code-intel status|qualify"},
-	{"completion", "Emit shell completion scripts for bash or zsh", "cyberagent completion bash|zsh"},
+	{"completion", "Emit shell completion scripts for bash, zsh, or fish", "cyberagent completion bash|zsh|fish"},
 	{"context", "Compact context and manage instructions and memory", "cyberagent context compact|show|instructions|memory"},
 	{"ctf", "Scaffold CTF challenge workspaces, analysis worksheets, and writeups", "cyberagent ctf init|analyze|writeup"},
 	{"debug", "Run bounded debug queries against a run", "cyberagent debug query --run <run-id> [bounded filters] [--json]"},
@@ -64,6 +65,15 @@ var commandTable = []commandSpec{
 	{"workspace", "Initialize and inspect source workspaces", "cyberagent workspace init|list|show|tree|read|checkpoint"},
 }
 
+// Completion directives mirror cobra's values so generic tooling can
+// interop with the protocol: 0 lets the shell add its default completion
+// (file paths at positions the CLI does not complete) and 4 suppresses it
+// wherever the CLI already provided candidates.
+const (
+	completionDirectiveDefault    = 0
+	completionDirectiveNoFileComp = 4
+)
+
 func commandNames() []string {
 	names := make([]string, 0, len(commandTable))
 	for _, spec := range commandTable {
@@ -92,23 +102,26 @@ func (a *App) completeCommand(args []string) error {
 		context = args[:len(args)-1]
 		prefix = args[len(args)-1]
 	}
-	for _, candidate := range completionCandidates(context, prefix) {
+	candidates, directive := completionCandidates(context, prefix)
+	for _, candidate := range candidates {
 		fmt.Fprintln(a.out, candidate)
 	}
+	fmt.Fprintf(a.out, ":%d\n", directive)
 	return nil
 }
 
-// commandSubcommands lists the first-level dispatch vocabulary for commands
-// that take a static subcommand, verified against each command's dispatch
-// switch (several entries are absent from the help text). Entries are
-// sorted; deeper levels are not completed yet.
+// commandSubcommands lists the verified dispatch vocabulary: first-level
+// subcommands under their command name, and second-level group arguments
+// under "command group" keys, verified against each nested dispatch switch
+// (several entries are absent from the help text). Entries are sorted;
+// deeper levels are not completed yet.
 var commandSubcommands = map[string][]string{
 	"analyzer":       {"execute"},
 	"api":            {"openapi", "serve"},
 	"approval":       {"approve-for-thread", "approve-once", "deny", "grant", "list", "show"},
 	"artifact":       {"list", "read", "show", "verify"},
 	"code-intel":     {"qualify", "status"},
-	"completion":     {"bash", "zsh"},
+	"completion":     {"bash", "fish", "zsh"},
 	"context":        {"compact", "instructions", "memory", "show"},
 	"ctf":            {"analyze", "init", "writeup"},
 	"debug":          {"query"},
@@ -140,6 +153,17 @@ var commandSubcommands = map[string][]string{
 	"ui-evidence":    {"artifact", "list", "show"},
 	"web-evidence":   {"list"},
 	"workspace":      {"checkpoint", "init", "list", "read", "show", "tree"},
+
+	// Two-level groups: "command group" keys complete the first argument
+	// after the group, mirroring the nested dispatch switches.
+	"context instructions": {"scaffold"},
+	"context memory":       {"create", "delete", "disable", "edit", "enable", "export", "list", "show"},
+	"run delivery":         {"checkpoint", "list", "record", "report", "show"},
+	"run fanout":           {"execute", "execution", "plan", "report", "show"},
+	"run plan":             {"choose", "selection", "show"},
+	"run sandbox":          {"docker-admit", "docker-cancel", "docker-readiness", "docker-start", "docker-status"},
+	"run standard-code":    {"docker-cancel", "docker-execute", "docker-prepare", "docker-readiness", "docker-recover", "pause-and-configure", "preset"},
+	"skill catalog":        {"audit", "disable", "enable", "list", "pin", "revoke", "trust"},
 }
 
 // completionCandidates resolves candidate names for the current position.
@@ -148,16 +172,28 @@ var commandSubcommands = map[string][]string{
 // subcommand vocabulary completes those subcommands; deeper positions
 // return no candidates so the shell never offers a word the CLI would
 // reject.
-func completionCandidates(context []string, prefix string) []string {
-	if len(context) == 0 || (len(context) == 1 && context[0] == "help") {
-		return matchedNames(commandNames(), prefix)
-	}
-	if len(context) == 1 {
+// completionCandidates resolves the candidates and the shell directive for
+// the current position: positions with candidates suppress the shell's
+// file completion, and empty positions hand control back to the shell so
+// path-shaped arguments (skill import's package, workspace read's file)
+// still complete, cobra-style.
+func completionCandidates(context []string, prefix string) ([]string, int) {
+	var pool []string
+	switch {
+	case len(context) == 0 || (len(context) == 1 && context[0] == "help"):
+		pool = commandNames()
+	case len(context) == 1:
 		if spec, ok := findCommandSpec(context[0]); ok {
-			return matchedNames(commandSubcommands[spec.name], prefix)
+			pool = commandSubcommands[spec.name]
 		}
+	case len(context) == 2:
+		pool = commandSubcommands[context[0]+" "+context[1]]
 	}
-	return nil
+	matched := matchedNames(pool, prefix)
+	if len(matched) > 0 {
+		return matched, completionDirectiveNoFileComp
+	}
+	return nil, completionDirectiveDefault
 }
 
 func matchedNames(pool []string, prefix string) []string {
@@ -185,15 +221,19 @@ func (a *App) printCommandHelp(name string) error {
 
 func (a *App) completionCommand(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: cyberagent completion bash|zsh")
+		return errors.New("usage: cyberagent completion bash|zsh|fish")
 	}
 	switch args[0] {
 	case "bash":
 		fmt.Fprint(a.out, bashCompletionScript)
 	case "zsh":
 		fmt.Fprint(a.out, zshCompletionScript)
+	case "fish":
+		if _, err := io.WriteString(a.out, fishCompletionScript); err != nil {
+			return err
+		}
 	default:
-		return fmt.Errorf("unknown shell %q; supported shells: bash, zsh", args[0])
+		return fmt.Errorf("unknown shell %q; supported shells: bash, zsh, fish", args[0])
 	}
 	return nil
 }
@@ -215,12 +255,55 @@ _cyberagent_completions() {
   for ((i = 1; i < COMP_CWORD; i++)); do
     context_words+=("${COMP_WORDS[i]}")
   done
-  local candidates
-  candidates="$(command cyberagent __complete ${context_words[@]+"${context_words[@]}"} "$cur" 2>/dev/null)" || return 0
-  COMPREPLY=($(compgen -W "$candidates" -- "$cur"))
+  local raw candidates directive line
+  raw="$(command cyberagent __complete ${context_words[@]+"${context_words[@]}"} "$cur" 2>/dev/null)" || return 0
+  candidates=""
+  directive="4"
+  while IFS= read -r line; do
+    case "$line" in
+      :*) directive="${line#:}";;
+      "") ;;
+      *) candidates+="$line"$'\n';;
+    esac
+  done <<<"$raw"
+  candidates="${candidates%$'\n'}"
+  if [ -n "$candidates" ]; then
+    COMPREPLY=($(compgen -W "$candidates" -- "$cur"))
+  elif [ "$directive" = 0 ]; then
+    COMPREPLY=($(compgen -f -- "$cur" 2>/dev/null))
+  fi
 }
 
 complete -F _cyberagent_completions cyberagent
+`
+
+// fishCompletionScript emits a fish completer that delegates candidate
+// generation to 'cyberagent __complete' and parses the trailing directive:
+// candidates are offered as-is, and an empty result with the default
+// directive falls back to fish's path completion.
+const fishCompletionScript = `# fish completion for cyberagent
+# Delegates candidate generation to 'cyberagent __complete'. Install under
+# ~/.config/fish/completions/cyberagent.fish.
+
+function __cyberagent_complete
+    set -l tokens (commandline -opc) (commandline -ct)
+    set -l candidates
+    set -l directive 4
+    for line in (command cyberagent __complete $tokens[2..-1] 2>/dev/null)
+        if string match -q ':*' $line
+            set directive (string replace -r '^:' '' $line)
+        else
+            set -a candidates $line
+        end
+    end
+    if test (count $candidates) -gt 0
+        printf '%s\n' $candidates
+    else if test "$directive" = 0
+        __fish_complete_path (commandline -ct)
+    end
+end
+
+complete -c cyberagent -f -a '(__cyberagent_complete)'
 `
 
 // zshCompletionScript emits a zsh completer that delegates candidate
@@ -229,10 +312,20 @@ const zshCompletionScript = `#compdef cyberagent
 # Delegates candidate generation to 'cyberagent __complete'.
 
 _cyberagent() {
-  local -a candidates
-  candidates=(${(f)"$(command cyberagent __complete "${(@)words[2,CURRENT]}" 2>/dev/null)"})
+  local -a candidates lines
+  local directive=4 line
+  lines=(${(f)"$(command cyberagent __complete "${(@)words[2,CURRENT]}" 2>/dev/null)"})
+  for line in $lines; do
+    if [[ $line == :* ]]; then
+      directive=${line#:}
+    else
+      candidates+=($line)
+    fi
+  done
   if ((${#candidates[@]})); then
     _describe -t cyberagent-commands 'cyberagent command' candidates
+  elif [[ $directive == 0 ]]; then
+    _files
   fi
 }
 
