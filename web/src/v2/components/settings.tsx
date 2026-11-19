@@ -193,7 +193,7 @@ function GeneralSettings({ client, threadID, workspaces, onPermissions }: {
           </select>
         </SettingRow>
         {saveError && <p role="alert">{t("发送偏好未能保存，请检查本机存储后重试。", "Could not save the send preference. Check local storage and try again.")}</p>}
-        <SettingRow title={t("第三方字体", "Third-party fonts")} detail={"HarmonyOS Sans Fonts"}>
+        <SettingRow title={t("第三方字体", "Third-party fonts")} detail={t("中文界面使用 HarmonyOS Sans Fonts；完整许可文本随软件发布。", "Chinese text uses HarmonyOS Sans Fonts. The full license is bundled with the app.")}>
           <FontLicenseControl />
         </SettingRow>
       </div>
