@@ -2,9 +2,8 @@
 .v2-shared-settings .settings-page-section { max-width: none; padding: 0; }
 .v2-shared-settings .settings-page-section h1 { font-size: 24px; line-height: 1.4; }
 .v2-shared-settings .extension-heading { align-items: flex-start; gap: 16px; }
-.v2-shared-settings .extension-heading > div { min-width: 0; }
+.v2-shared-settings .extension-heading > h1 { min-width: 0; }
 .v2-shared-settings .extension-heading h1 { margin-top: 0; }
-.v2-shared-settings .extension-heading p,
 .v2-shared-settings .extension-facts,
 .v2-shared-settings .extension-fingerprint,
 .v2-shared-settings .extension-card p { font-size: 13px; line-height: 1.6; }

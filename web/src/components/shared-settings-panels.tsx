@@ -89,10 +89,9 @@ export function AboutSettings({ desktop, health }: { desktop: boolean; health: H
   return <section className="settings-page-section about-prayu">
     <PrayuBrand className="about-mark" variant="icon" />
     <h1>Universal-Code</h1>
-    <p>{t("本地优先的 AI Agent 工作台", "Local-first AI Agent Workbench")}</p>
     <dl className="settings-row-list">
       <div><dt>{t("应用版本", "Application version")}</dt><dd>{health?.app_version ?? "dev"}</dd></div>
-      <div><dt>API 协议</dt><dd>{health?.api_version ?? "api.v1"}</dd></div>
+      <div><dt>{t("API 协议", "API version")}</dt><dd>{health?.api_version ?? "api.v1"}</dd></div>
       <div><dt>{t("数据库", "Database")}</dt><dd>schema v{health?.schema_version ?? "-"}</dd></div>
       <div><dt>{t("运行界面", "Surface")}</dt><dd>{desktop ? t("桌面端", "Desktop") : t("网页端", "Web")}</dd></div>
     </dl>
@@ -160,11 +159,7 @@ export function ExtensionSettings({ client, selectedRunID, selectedWorkspaceID =
   const onboarding = inventory.data?.onboarding;
   return <section className="settings-page-section extension-settings">
     <header className="extension-heading">
-      <div>
-        <h1>{t("Code Intel、MCP 与 Plugin", "Code Intel, MCP and Plugins")}</h1>
-        <p>{t("选择一种接入方式，按步骤核对来源并启用。每条记录显示当前阶段和下一步；真实查询与工具调用结果在下方或任务中查看。",
-          "Choose an integration and follow its review steps. Each record shows its current stage and next action. Inspect query and tool call results below or in your task.")}</p>
-      </div>
+      <h1>{t("Code Intel、MCP 与 Plugin", "Code Intel, MCP and Plugins")}</h1>
       <button className="settings-action" disabled={inventory.isFetching || codeIntel.isFetching}
         onClick={() => { void inventory.refetch(); if (!selectedRunID || codeIntelWorkspaceID) void codeIntel.refetch(); }} type="button">
         <RefreshCw aria-hidden="true"
@@ -193,8 +188,7 @@ export function ExtensionSettings({ client, selectedRunID, selectedWorkspaceID =
         key={`${qualification.workspace_id}/${qualification.server_id}/qualification`}
         qualification={qualification} />)}
       {codeIntel.data && codeIntelCount === 0 && !codeIntel.data.configurations?.length &&
-        <ExtensionEmpty>{t("准备已安装的语言服务器，展开“配置本地 LSP”登记并审查，再用一个文件测试符号查询。",
-          "Prepare an installed language server. Open Configure local LSP to register and review it, then test symbols with one file.")}</ExtensionEmpty>}
+        <ExtensionEmpty>{t("暂无语言服务器。", "No language servers.")}</ExtensionEmpty>}
     </ExtensionCollection>
     <ExtensionCollection title="MCP Client" count={inventory.data?.mcp_servers.length ?? 0}>
       <MCPRegistrationForm capabilityKnown={Boolean(inventory.data)} client={client} enabled={Boolean(client.hasExtensionControl && onboarding?.mcp_registration)}
@@ -202,9 +196,7 @@ export function ExtensionSettings({ client, selectedRunID, selectedWorkspaceID =
       {inventory.data?.mcp_servers.map((server) => <MCPServerCard action={action}
         client={client} key={server.id} onOpenTask={onOpenTask} server={server} credentialCapability={onboarding?.mcp_credentials} />)}
       {inventory.data && inventory.data.mcp_servers.length === 0 &&
-        <ExtensionEmpty>{selectedRunID ?
-          t("此任务范围尚无 MCP Server。展开“登记 MCP Server”，填写地址后逐步发现和启用工具。", "This task scope has no MCP server yet. Open Register MCP server and enter its address, then discover and enable its tools.") :
-          t("此范围尚未登记 MCP Server。先选择工作区并登记，再单独审查。", "No MCP server registered in this scope. Select a workspace, register, then review it.")}</ExtensionEmpty>}
+        <ExtensionEmpty>{t("此范围尚未登记 MCP Server。", "No MCP servers registered in this scope.")}</ExtensionEmpty>}
     </ExtensionCollection>
     <ExtensionCollection title={t("MCP 实际调用记录", "Actual MCP calls")} count={inventory.data?.mcp_calls.length ?? 0}>
       <div className="extension-call-list">
@@ -214,10 +206,9 @@ export function ExtensionSettings({ client, selectedRunID, selectedWorkspaceID =
           <p>Run: {call.run_id} · {t("完成时间", "Completed")}: {call.completed_at}</p>
           <p>{t("结果大小", "Result size")}: {call.result_bytes} bytes · {call.truncated ? t("已截断", "Truncated") : t("未截断", "Not truncated")}</p>
           <Fingerprint label={t("本次能力指纹", "Call capability fingerprint")} value={call.capability_fingerprint} />
-          <p>{t("在任务消息和证据中查看具体返回内容。此处保留调用状态、时间与能力指纹供核对。", "Read returned content in task messages and evidence. Use the call status, time, and capability fingerprint here to verify the record.")}</p>
         </article>)}
         {inventory.data && inventory.data.mcp_calls.length === 0 && <ExtensionEmpty>{selectedRunID
-          ? t("当前任务尚无 MCP 调用记录。启用工具后，使用“生成首次调用任务草稿”在任务中发起调用，再刷新此处查看结果。", "This task has no MCP call records yet. Enable tools, use Prepare first-call task draft to make a call in the task, then refresh here to inspect the result.")
+          ? t("当前任务尚无 MCP 调用记录。", "No MCP calls for this task.")
           : t("打开一个任务以查看该执行的 MCP 调用记录。", "Open a task to inspect MCP calls for that execution.")}</ExtensionEmpty>}
       </div>
     </ExtensionCollection>
@@ -227,7 +218,7 @@ export function ExtensionSettings({ client, selectedRunID, selectedWorkspaceID =
       {inventory.data?.plugins.map((installation) => <PluginCard action={action}
         client={client} installation={installation} key={installation.id} lifecycle={onboarding?.plugin_lifecycle} />)}
       {inventory.data && inventory.data.plugins.length === 0 &&
-        <ExtensionEmpty>{t("上传 plugin.v1 ZIP，或指定固定 URL/Git 版本开始接入。导入后核对来源与指纹，审查并启用所需能力。", "Upload a plugin.v1 ZIP or select a pinned URL/Git revision. After import, inspect its source and fingerprint, then review and enable the capabilities you need.")}</ExtensionEmpty>}
+        <ExtensionEmpty>{t("暂无插件。", "No plugins.")}</ExtensionEmpty>}
     </ExtensionCollection>
     {onboarding?.hook_diagnostics && <HookDiagnostics client={client} runID={selectedRunID} workspaceID={configurationWorkspaceID}
       key={`${selectedRunID}/${configurationWorkspaceID}`} />}

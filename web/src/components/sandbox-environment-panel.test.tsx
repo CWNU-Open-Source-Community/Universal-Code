@@ -34,8 +34,7 @@ it("shows three observed backends, defaults to Local and saves without claiming 
   expect(within(picker).getByRole("button", { name: /^Local/u })).toHaveAttribute("aria-pressed", "true");
   expect(within(picker).getAllByRole("button")).toHaveLength(3);
   expect(screen.getByRole("button", { name: "保存执行环境设置" })).toBeDisabled();
-  expect(screen.getByText(/专用 traverse-runtime 命名空间/u)).toHaveTextContent("注册内置辅助服务");
-  expect(screen.getByText(/专用 traverse-runtime 命名空间/u)).toHaveTextContent("检测就绪后即可为任务选择 Docker Sandboxes");
+  expect(screen.getByText(/专用 traverse-runtime 命名空间/u)).toHaveTextContent("完整 SHA-256 摘要");
   await user.click(screen.getByRole("checkbox", { name: "启用 Docker Engine" }));
   await user.type(screen.getByLabelText("Docker 固定镜像摘要"), `sha256:${"a".repeat(64)}`);
   await user.click(within(picker).getByRole("button", { name: /^Docker Engine/u }));
@@ -43,7 +42,7 @@ it("shows three observed backends, defaults to Local and saves without claiming 
   await waitFor(() => expect(controls.saveSandboxEnvironment).toHaveBeenCalledOnce());
   expect(controls.saveSandboxEnvironment.mock.calls[0]?.[0]).toEqual({ version: "sandbox_environment.v1", expected_revision: 1,
     settings: { default_backend: "docker", docker_enabled: true, docker_image_digest: `sha256:${"a".repeat(64)}`, sbx_enabled: false, sbx_template: "" } });
-  expect(await screen.findByText(/执行环境设置已保存。重启应用后读取新配置/u)).toBeInTheDocument();
+  expect(await screen.findByText(/执行环境设置已保存/u)).toBeInTheDocument();
   expect(screen.getAllByText("当前进程待启用")).toHaveLength(2);
   expect(desktop.restart).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "重启并读取执行环境设置" }));

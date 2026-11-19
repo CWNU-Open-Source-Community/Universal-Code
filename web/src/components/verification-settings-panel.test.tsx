@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DesktopVerificationSettingsView } from "../lib/desktop-bridge";
+import { LocaleProvider } from "../lib/locale";
 import { VerificationSettingsPanel } from "./verification-settings-panel";
 
 const native = vi.hoisted(() => ({ available: vi.fn(), read: vi.fn(), save: vi.fn(), restart: vi.fn(), warning: "" }));
@@ -26,7 +27,7 @@ function view(saved = false, active = false): DesktopVerificationSettingsView {
 }
 function mount(baseURL = "/api/v1") {
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={queries}><VerificationSettingsPanel client={{ baseURL }} /></QueryClientProvider>);
+  return render(<LocaleProvider><QueryClientProvider client={queries}><VerificationSettingsPanel client={{ baseURL }} /></QueryClientProvider></LocaleProvider>);
 }
 beforeEach(() => {
   native.available.mockReset().mockReturnValue(true);
@@ -47,8 +48,8 @@ it("uses native confirmation to save exact choices, then requires a separate res
   expect(native.save).toHaveBeenCalledWith({ protocol_version: "desktop_verification_settings.v1", expected_revision: 1,
     settings: { ui_evidence_enabled: true, batch_validation_enabled: false } });
   expect(native.restart).not.toHaveBeenCalled();
-  expect(screen.getByRole("checkbox", { name: "批量验证" })).not.toBeChecked();
-  expect(screen.getAllByText("当前进程：未启用。")).toHaveLength(2);
+  expect(screen.getByRole("checkbox", { name: "批量验证（Go / npm）" })).not.toBeChecked();
+  expect(screen.getByText("当前进程：未启用")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "重启以应用验证设置" }));
   await screen.findByText("已取消重启，保存的设置仍保留。");
   expect(browser).toBeChecked();

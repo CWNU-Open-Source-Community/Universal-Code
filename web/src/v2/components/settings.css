@@ -18,7 +18,7 @@
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  min-height: 61px;
+  min-height: 50px;
   padding: 12px 18px;
   position: relative;
 }
@@ -128,7 +128,7 @@
 .v2-provider-actions button.primary:hover:not(:disabled) { background: var(--prayu-primary-hover); color: var(--prayu-primary-fg); }
 .v2-provider-editor-heading > button { height: 34px; padding: 0; width: 34px; }
 .v2-provider-editor-heading { justify-content: flex-start; }
-.v2-provider-editor-heading > div { min-width: 0; }
+.v2-provider-editor-heading > h1 { min-width: 0; overflow-wrap: anywhere; }
 .v2-provider-heading button:active:not(:disabled),
 .v2-provider-editor-heading button:active:not(:disabled),
 .v2-provider-actions button:active:not(:disabled) { transform: scale(.97); transition: transform 90ms ease-out; }
@@ -169,13 +169,14 @@
 .v2-provider-empty p { line-height: 1.5; margin: 0; max-width: 480px; }
 .v2-provider-form { display: grid; gap: 18px; }
 .v2-provider-quick .v2-provider-grid { grid-template-columns: minmax(0, 1fr); }
-.v2-provider-quick > header > div { min-width: 0; }
-.v2-provider-quick > header h2 { overflow-wrap: anywhere; }
+.v2-provider-quick > header h2 { min-width: 0; overflow-wrap: anywhere; }
 .v2-provider-form > fieldset > .v2-model-advanced-toggle { text-align: left; white-space: normal; }
 .v2-provider-operation-lock { border: 0; display: grid; gap: 18px; margin: 0; min-inline-size: 0; padding: 0; }
 .v2-provider-fields { overflow: visible; }
 .v2-provider-fields > header { align-items: center; border-bottom: 1px solid var(--v2-border); display: flex; gap: 16px; justify-content: space-between; min-height: 67px; padding: 12px 15px; }
-.v2-provider-fields > header h2 { font-size: 15px; letter-spacing: -.005em; margin: 0 0 4px; }
+.v2-provider-fields > header h2 { font-size: 15px; letter-spacing: -.005em; margin: 0; }
+.v2-provider-fields > header h2:has(+ p) { margin-block-end: 4px; }
+.v2-provider-fields > header:not(:has(p)) { min-height: 48px; }
 .v2-provider-fields > header p { color: var(--v2-muted); font-size: 12px; line-height: 1.4; margin: 0; }
 .v2-provider-grid { display: grid; gap: 14px 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px; }
 .v2-provider-grid > label,
@@ -361,7 +362,6 @@
 .v2-theme-line.is-muted { opacity: .22; }
 .v2-theme-input { fill: var(--prayu-glass-fill-strong); stroke: var(--prayu-border-strong); stroke-width: .6; }
 .theme-glass .v2-theme-sidebar, .theme-glass .v2-theme-panel { fill: rgb(255 255 255 / 40%); stroke: var(--prayu-border-strong); }
-.v2-appearance-card > p { border-top: 1px solid var(--v2-border); color: var(--v2-muted); margin: 0; padding: 13px 15px; }
 :where([data-prayu-theme="glass"]) .v2-settings-card,
 :where([data-prayu-theme="glass"]) .v2-provider-list,
 :where([data-prayu-theme="glass"]) .v2-archive-list {
@@ -512,7 +512,6 @@
 .v2-model-advanced-toggle::before { content: "▸"; display: inline-block; margin-right: 10px; }
 .v2-model-advanced-toggle[aria-expanded="true"]::before { transform: rotate(90deg); }
 .v2-model-advanced-toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
-.v2-model-advanced > p { color: var(--v2-muted); line-height: 1.5; }
 .v2-model-catalog {
   display: grid;
   gap: 12px;

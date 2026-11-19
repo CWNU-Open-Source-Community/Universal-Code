@@ -75,7 +75,7 @@ export function V2RuntimeCapabilityControl() {
     className="v2-settings-card v2-runtime-capability-card">
     <header>
       <div><span className="v2-runtime-icon"><ShieldCheck aria-hidden="true" size={18} /></span>
-        <div><h2 id={titleID}>{t("调试运行时", "Debug runtime")}</h2><p>{t("持久终端与后台进程", "Persistent terminals and background processes")}</p></div></div>
+        <h2 id={titleID}>{t("调试运行时", "Debug runtime")}</h2></div>
       <span className={`v2-runtime-status is-${current ?? "unavailable"}`}>{status.label}</span>
     </header>
     <div className="v2-runtime-capability-body">
@@ -86,7 +86,7 @@ export function V2RuntimeCapabilityControl() {
           return <article>
             <span><Bug aria-hidden="true" size={18} /></span>
             <div><strong>{t("调试模式", "Debug mode")}</strong><p>
-              {t("提供持久终端、后台进程和限时终端输入支持；实际使用还需在当前任务选择本地执行、Debug 交互并确认完全访问。", "Supports persistent terminals, background processes and time-limited terminal input. Select local execution and Debug interaction and confirm full access for the task before use.")}</p></div>
+              {t("使用持久终端和后台进程需要本地执行、Debug 交互及当前任务的完全访问权限。", "Persistent terminals and background processes require local execution, Debug interaction and full access for this task.")}</p></div>
             <button aria-label={action.label} disabled={action.disabled || mutation.isPending || restarting}
               onClick={beginActivation} type="button">
               {mutation.isPending
@@ -98,7 +98,7 @@ export function V2RuntimeCapabilityControl() {
         })()}
       </div>
       <p className="v2-runtime-boundary">
-        {t("开启调试模式会重启应用，准备持久终端和后台进程。重启后任务权限仍保留，请在当前任务重新确认完全访问。\r\n        普通启动使用标准运行时；在当前任务开启完全访问时，先暂停执行并等待资源释放完成即可。", "Enabling debug mode restarts the app to prepare persistent terminals and background processes. Task permissions remain; reconfirm full access after restart. Normal startup uses the standard runtime. Pause task execution and wait for resources to be released before enabling full access.")}</p>
+        {t("启用调试模式会重启应用。开启完全访问前，先暂停任务并等待资源释放，重启后需重新确认。", "Debug mode restarts the app. Pause the task and wait for resources to be released before enabling full access. Confirm access again after restart.")}</p>
     </div>
     <V2HighRiskActivationDialog error={mutation.isError
       ? desktopErrorMessage(mutation.error) : undefined}

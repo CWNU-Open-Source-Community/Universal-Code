@@ -128,7 +128,7 @@ export function ModelAvailabilitySettings({ client }: { client: APIClient }) {
                     </div>
                   ))}
                 </div>
-                <p>{t("保存到 code 默认路由后，新对话会优先使用此处已通过能力验证的模型；模型不可用时会在创建任务时选择其他可用模型。仍引用 code 的旧任务在后续执行中也可能使用此路由。其余命名路由保持各自的选择。", "Save to the code default route to prioritize this qualified model in new conversations. If unavailable, task creation looks for another available model. Existing tasks that reference code may also use this route in later execution; other named routes keep their own selections.")}</p>
+                <p>{t("新对话和使用 code 路由的旧任务优先使用此模型。新建任务时，如模型不可用，将选择其他可用模型。", "New chats and existing tasks on the code route prefer this model. New tasks can select another available model if needed.")}</p>
               </section>
               {routeMutation.isError && <div className="inline-warning" role="alert">
                 {routeMutation.error instanceof Error
@@ -171,14 +171,14 @@ export function ModelAvailabilitySettings({ client }: { client: APIClient }) {
                                   ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
                                   : <Activity aria-hidden="true" size={15} />}
                               </button>
-                              <button aria-label={t(`验证 ${modelReference} Harness`, `Qualify ${modelReference} Harness`)}
+                              <button aria-label={t(`检查 ${modelReference} 兼容性`, `Check ${modelReference} compatibility`)}
                                 className="icon-button"
                                 disabled={diagnosticMutation.isPending ||
                                   qualificationMutation.isPending || harness?.root_eligible === true}
                                 onClick={() => qualificationMutation.mutate({
                                   provider: provider.name, model,
                                 })}
-                                title={t("运行两次调用的 Harness 合成验证", "Run two-call synthetic Harness qualification")} type="button">
+                                title={t("兼容性检查发送两次模型调用，可能产生费用", "Runs two model calls. Charges may apply.")} type="button">
                                 {qualificationMutation.isPending &&
                                   qualificationMutation.variables?.provider === provider.name &&
                                   qualificationMutation.variables.model === model
@@ -224,7 +224,7 @@ export function ModelAvailabilitySettings({ client }: { client: APIClient }) {
                   </div>}
                   {qualificationMutation.isError && <div className="inline-warning" role="alert">
                     {qualificationMutation.error instanceof Error
-                      ? qualificationMutation.error.message : t("模型 Harness 验证失败", "Model Harness qualification failed")}
+                      ? qualificationMutation.error.message : t("模型兼容性检查失败", "Model compatibility check failed")}
                   </div>}
                 </section>
               </details>

@@ -35,8 +35,7 @@ export function NativeSkillImport({ client }: { client: APIClient }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["extensions"] }),
   });
   return <div className="settings-web-skill">
-    <p>{t("选择含 SKILL.md 的原生 Skill 目录，连同所需资源一起上传。服务端解析内容并暂存，随后在“扩展与代码智能”中审查、启用，再在任务中选择。",
-      "Upload a native Skill directory containing SKILL.md and its resources. The service parses and stages it. Review and enable it in Extensions, then select it in your task.")}</p>
+    <p>{t("目录须包含 SKILL.md。上传后可在扩展设置中审查并启用。", "The directory must contain SKILL.md. Review and enable it in Extensions after upload.")}</p>
     {!enabled && <p role="status">{inventory.isLoading ? t("正在确认目录导入能力…", "Checking directory import support…") :
       t("当前服务或连接未开放原生 Skill 目录导入，请检查服务版本与控制权限。", "Native Skill directory import is unavailable. Check the service version and control access.")}</p>}
     <input hidden multiple type="file" aria-label={t("选择原生 Skill 目录", "Choose native Skill directory")}

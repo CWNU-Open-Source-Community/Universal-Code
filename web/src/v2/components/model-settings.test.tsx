@@ -60,7 +60,7 @@ describe("V2 model settings", () => {
     const items = within(list).getAllByRole("listitem");
     expect(items).toHaveLength(4);
     expect(within(items[0]).getByRole("button", { name: "打开自定义模型配置" }))
-      .toHaveTextContent("自定义配置自定义模型");
+      .toHaveTextContent(/^自定义配置$/u);
     expect(within(items[2]).getByRole("button", {
       name: "OpenAI，GPT-5，尚未保存 API Key",
     })).toHaveTextContent("OpenAIGPT-5");

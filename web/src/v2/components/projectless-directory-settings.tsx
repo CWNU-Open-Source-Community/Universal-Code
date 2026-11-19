@@ -44,7 +44,7 @@ function ProjectlessDirectorySettings({ client }: { client: APIClient }) {
     <div className="v2-settings-card">
       <div className="v2-setting-row">
         <div><strong>{t("默认工作目录", "Default working directory")}</strong>
-          <span>{t("每个新建本地聊天使用独立文件夹。已有聊天和当前草稿保留原目录，聊天记录由应用统一保存。", "Each new local chat gets its own folder. Existing chats and the current draft keep their directories, and the app stores chat history centrally.")}</span>
+          <span>{t("新建的本地聊天各用一个子目录，更改仅影响之后创建的聊天。", "Each new local chat gets its own subfolder. Changes apply to future chats.")}</span>
           {current.data && !current.isError ? <code className="v2-projectless-path">{current.data.directory_path}</code>
             : current.isPending ? <span>{t("正在读取目录…", "Loading directory…")}</span> : null}
         </div>
@@ -56,7 +56,7 @@ function ProjectlessDirectorySettings({ client }: { client: APIClient }) {
       {editing && canImport && <form className="v2-projectless-form" onSubmit={(event) => {
         event.preventDefault(); if (path.trim() && !update.isPending) update.mutate(path);
       }}>
-        <p>{t("输入运行 Universal-Code 服务的电脑上已存在的文件夹完整路径。", "Enter the full path to an existing folder on the computer running the Universal-Code service.")}</p>
+        <p>{t("请输入已存在文件夹的完整路径。", "Enter the full path to an existing folder.")}</p>
         <label htmlFor={inputID}>{t("服务电脑上的目录", "Directory on the service computer")}</label>
         <input autoComplete="off" disabled={update.isPending} id={inputID} maxLength={4096}
           onChange={(event) => setPath(event.target.value)} required spellCheck={false} value={path} />
@@ -68,6 +68,6 @@ function ProjectlessDirectorySettings({ client }: { client: APIClient }) {
     {current.isError && <><p className="v2-inline-error" role="alert">{t("无法读取目录：", "Could not load the directory: ")}{current.error.message}</p>
       <button className="v2-setting-link" onClick={() => void current.refetch()} type="button">{t("重新读取目录", "Reload directory")}</button></>}
     {update.isError && <p className="v2-inline-error" role="alert">{t("目录未能更改：", "Could not change the directory: ")}{update.error.message}</p>}
-    {saved && <p className="v2-settings-hint" role="status">{t("默认目录已更新，将用于新建的本地聊天。", "The default directory has been updated for new local chats.")}</p>}
+    {saved && <p className="v2-settings-hint" role="status">{t("默认目录已更新。", "Default directory updated.")}</p>}
   </section>;
 }

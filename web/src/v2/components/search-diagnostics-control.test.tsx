@@ -48,7 +48,7 @@ describe("V2SearchDiagnosticsControl", () => {
       readiness={readiness} />);
 
     expect(screen.getByText("当前 Run 模型：provider / model")).toBeInTheDocument();
-    expect(screen.getByText(/不检测专业来源连接器/u)).toBeInTheDocument();
+    expect(screen.getByText(/可能产生费用/u)).toBeInTheDocument();
     expect(diagnoseThreadSearch).not.toHaveBeenCalled();
 
     const button = screen.getByRole("button", { name: "检查搜索连接" });

@@ -50,7 +50,7 @@ function mount(source: SkillPackageRegistrySource, enabled = true) {
 it("stays silent without the management capability and never reads the Registry", async () => {
   const load = vi.fn(async () => inventory([]));
   mount({ load, remove: vi.fn() }, false);
-  expect(await screen.findByText(/连接具备 Skill 管理权限的服务后/)).toBeInTheDocument();
+  expect(await screen.findByText(/安装和管理技能包需要 Skill 管理权限/)).toBeInTheDocument();
   expect(load).not.toHaveBeenCalled();
 });
 

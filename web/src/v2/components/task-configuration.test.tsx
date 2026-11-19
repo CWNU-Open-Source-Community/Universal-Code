@@ -121,7 +121,7 @@ describe("TaskConfiguration presentation fixtures", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /确认使用所选技能上下文/ }));
     expect(changed).toHaveBeenLastCalledWith({ refs: ["review@1.2.0", "code@1.0.0"], confirmUntrustedContext: true, source: "installed" });
     await waitFor(() => expect(validity).toHaveBeenLastCalledWith(true));
-    expect(screen.getByText(/已安装技能不来自项目建议/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "已安装的技能包" })).toBeInTheDocument();
     expect(client.createThread).not.toHaveBeenCalled();
   });
 
@@ -154,7 +154,7 @@ describe("TaskConfiguration presentation fixtures", () => {
     }
     render(<Host />);
     await screen.findByText("生效的执行上限");
-    expect(screen.getByText(/实际费用请查看供应商账单/)).toBeInTheDocument();
+    expect(screen.getByText(/实际费用以供应商账单为准/)).toBeInTheDocument();
     expect(screen.getAllByText("项目收窄").length).toBeGreaterThan(0);
     fireEvent.change(screen.getByRole("spinbutton", { name: "回合上限" }), { target: { value: "50" } });
     expect(changed).toHaveBeenLastCalledWith({ max_turns: 50, max_tool_calls: 40 });
@@ -242,15 +242,14 @@ describe("TaskConfiguration presentation fixtures", () => {
     expect(screen.getByRole("region", { name: "Task budget and project configuration" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "Tool call limit" })).toHaveAttribute("placeholder", "Default 100");
     expect(screen.getByRole("spinbutton", { name: "Cost limit (USD)" })).toHaveAttribute("placeholder", "0 means unlimited");
-    expect(screen.getByText(/check your provider's bill for actual charges/)).toBeInTheDocument();
+    expect(screen.getByText(/Check your provider bill for actual charges/)).toBeInTheDocument();
     expect(screen.getByText("Applied to file-tool reads, searches and edits")).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/[\u3400-\u9fff]/u);
     client.getRunTaskConfiguration.mockResolvedValue({ ...view(), budget: { max_turns: 30, max_tool_calls: 0 }, sources: view().sources.map((source) => ({ ...source, source: "snapshot" })) });
     rerender(<TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1" run={{ id: "run-legacy" } as RunView} />);
     await screen.findByText("Saved execution limits");
     expect(screen.getAllByText("Existing run snapshot").length).toBeGreaterThan(0);
-    expect(screen.getByText(/zero or omitted tool limit means unlimited/)).toBeInTheDocument();
-    expect(screen.getAllByText("Unlimited").length).toBeGreaterThan(0);
+    expect(screen.getByText("Tool call limit").nextElementSibling).toHaveTextContent("Unlimited");
     expect(container.textContent).not.toMatch(/[\u3400-\u9fff]/u);
     rerender(<TaskConfiguration client={client as unknown as APIClient} workspaceID="workspace-1" budget={{ max_turns: -1 }} />);
     expect(screen.getByRole("alert")).toHaveTextContent("Budget exceeds the supported range.");
