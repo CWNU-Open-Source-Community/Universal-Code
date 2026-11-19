@@ -63,6 +63,20 @@ it("does not round a partial cache hit to 100% and bounds the context ring", () 
   expect(screen.getByText("100%")).toBeInTheDocument();
 });
 
+it("distinguishes small cache hits from zero and marks the rate unavailable in zero-input details", async () => {
+  const value = { ...statistics(), input_tokens: 64_000, output_tokens: 10, total_tokens: 64_010, cache_read_tokens: 64 };
+  const view = show(value);
+  expect(screen.getByText("缓存命中 0.1%")).toBeInTheDocument();
+  view.rerender(<LocaleProvider><V2ComposerStats statistics={{ ...value,
+    input_tokens: 2_000_000, total_tokens: 2_000_010, cache_read_tokens: 1 }} /></LocaleProvider>);
+  expect(screen.getByText("缓存命中 <0.001%")).toBeInTheDocument();
+  view.rerender(<LocaleProvider><V2ComposerStats statistics={{ ...value,
+    input_tokens: 0, total_tokens: 10, cache_read_tokens: 0 }} /></LocaleProvider>);
+  const usage = screen.getByRole("button", { name: "10 tok" });
+  await userEvent.setup().click(usage);
+  expect(screen.getByRole("note")).toHaveTextContent("输入 0 Token（含缓存），输出 10 Token。缓存命中 —。");
+});
+
 it("hides statistics before any activity, including unsupported older servers", () => {
   const view = show();
   expect(screen.queryByRole("group")).not.toBeInTheDocument();

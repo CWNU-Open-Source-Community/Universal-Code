@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/domain"
@@ -18,6 +19,9 @@ func TestPortableSkillGuidanceRequiresOriginalNativeMainPairAfterWindowFitting(t
 	payload, _ := json.Marshal(pin)
 	read := portableSkillGuidanceRead{ToolCallID: "go-call", Read: pin, result: `{"stdout":"{\"workflow_guidance\":true,\"content\":\"Use focused checks.\"}"}`}
 	guidance := portableSkillReadGuidance{reads: []portableSkillGuidanceRead{read}, content: portableSkillGuidanceMessage([]portableSkillGuidanceRead{read})}
+	completed := time.Now().UTC()
+	calls := []domain.SupervisorToolCall{{CallID: read.ToolCallID, PayloadJSON: string(payload), ResultJSON: read.result,
+		Status: domain.SupervisorToolCompleted, CompletedAt: &completed}}
 	base := []llm.Message{
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: read.ToolCallID, Name: "skill_read", Arguments: payload}}},
 		{Role: "user", ToolResults: []llm.ToolResult{{ToolCallID: read.ToolCallID, Content: read.result}}},
@@ -62,7 +66,15 @@ func TestPortableSkillGuidanceRequiresOriginalNativeMainPairAfterWindowFitting(t
 			messages := slices.Clone(base)
 			messages[0].ToolCalls = slices.Clone(base[0].ToolCalls)
 			messages[1].ToolResults = slices.Clone(base[1].ToolResults)
-			request, retained := guidance.retainPresent(llm.ChatRequest{Messages: test.mutate(messages)})
+			messages = test.mutate(messages)
+			wantPosition := len(messages)
+			if test.want {
+				wantPosition = 2
+			}
+			if got := completedSkillReadPosition(messages, 0, calls); got != wantPosition || completedSkillReadPosition(messages, 2, calls) != len(messages) {
+				t.Fatal("the placement did not respect the original current-turn native pair")
+			}
+			request, retained := guidance.retainPresent(llm.ChatRequest{Messages: messages})
 			bound, reference := false, false
 			for _, message := range request.Messages {
 				bound = bound || message.Role == "system" && message.Content == guidance.content

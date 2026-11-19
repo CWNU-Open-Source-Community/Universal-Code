@@ -2,6 +2,7 @@ package application
 
 import (
 	"encoding/json"
+	"slices"
 
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/toolgateway"
@@ -10,7 +11,7 @@ import (
 // Project the same Go-issued snapshot used to advertise tools into actual
 // provider messages. ChatRequest.Metadata is internal and cannot teach a model
 // whether preparing a proposal or applying it requires operator review.
-func supervisorFileEditGuidance(request llm.ChatRequest, snapshot toolgateway.AgentCodeCapabilitySnapshot) llm.ChatRequest {
+func supervisorFileEditGuidance(request llm.ChatRequest, snapshot toolgateway.AgentCodeCapabilitySnapshot, historyStart int) llm.ChatRequest {
 	offered := map[string]bool{}
 	for _, tool := range request.Tools {
 		offered[tool.Name] = true
@@ -42,6 +43,6 @@ func supervisorFileEditGuidance(request llm.ChatRequest, snapshot toolgateway.Ag
 	if view.Change == "operation_policy_then_existing_proposal" {
 		text += " Eligible prepared operations can receive recorded automatic authorization under the current operation policy while their runtime authority remains current. Obtain that result through workspace_change; do not infer that an operator review is missing merely because no new proposal has been made."
 	}
-	request.Messages = append(request.Messages, llm.Message{Role: "system", Content: text})
+	request.Messages = slices.Insert(slices.Clone(request.Messages), historyStart, llm.Message{Role: "system", Content: text})
 	return request
 }
