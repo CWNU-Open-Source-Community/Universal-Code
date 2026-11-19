@@ -557,7 +557,11 @@ the last one is the word being completed, candidates print one per line,
 and a trailing `:<directive>` line mirrors cobra's values — `4` when the
 CLI provided candidates (file completion suppressed) and `0` when the
 position is handed back to the shell, so path-shaped arguments such as
-`skill import`'s package still complete.
+`skill import`'s package still complete. Words starting with `-` complete
+the command's flag vocabulary where one is published — exec, headless
+events, workspace tree/read, todo create/list, thread create/send/list,
+context instructions, context memory create — plus the top-level
+`--help`/`--version` aliases.
 
 ```bash
 cyberagent completion bash >> ~/.bashrc

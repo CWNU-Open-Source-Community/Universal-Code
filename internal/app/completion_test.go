@@ -124,6 +124,181 @@ func TestCommandTableIntegrity(t *testing.T) {
 	}
 }
 
+func TestCommandFlagsIntegrity(t *testing.T) {
+	tableFlags := make(map[string]bool, len(commandTable))
+	for _, spec := range commandTable {
+		tableFlags[spec.name] = true
+	}
+	for key, flags := range commandFlags {
+		parts := strings.Split(key, " ")
+		if key != "" {
+			if !tableFlags[parts[0]] {
+				t.Fatalf("flag map key %q starts from unregistered command %q", key, parts[0])
+			}
+			for i := 1; i < len(parts); i++ {
+				parent := strings.Join(parts[:i], " ")
+				if !slices.Contains(commandSubcommands[parent], parts[i]) {
+					t.Fatalf("flag map key %q: %q is not a verified subcommand of %q", key, parts[i], parent)
+				}
+			}
+		}
+		previous := ""
+		for _, flag := range flags {
+			if !strings.HasPrefix(flag, "-") || len(flag) < 2 {
+				t.Fatalf("flag %q of %q must carry its leading dash", flag, key)
+			}
+			if previous != "" && flag <= previous {
+				t.Fatalf("flags of %q must stay sorted and unique: %q after %q", key, flag, previous)
+			}
+			previous = flag
+		}
+	}
+}
+
+// commandFlagScanTargets maps flag keys to the dispatch function whose body
+// declares the flags (several nested groups declare flags in their
+// sub-handlers rather than the group dispatcher).
+var commandFlagScanTargets = map[string]string{
+	"context instructions":  "contextInstructions",
+	"context memory create": "contextMemoryCreate",
+	"context memory list":   "contextMemoryList",
+	"exec":                  "execCommand",
+	"headless events":       "headlessEvents",
+	"note create":           "noteCreate",
+	"session create":        "sessionCreate",
+	"session send":          "sessionSend",
+	"skill list":            "skillCommand",
+	"thread create":         "threadCreate",
+	"thread list":           "threadList",
+	"thread send":           "threadSend",
+	"todo create":           "todoCreate",
+	"todo list":             "todoList",
+	"workspace read":        "workspaceRead",
+	"workspace tree":        "workspaceTree",
+}
+
+func functionBodyByExactName(t *testing.T, functionName string) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate test source file")
+	}
+	dir := filepath.Dir(thisFile)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read app package sources: %v", err)
+	}
+	want := strings.ToLower(functionName)
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		srcBytes, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+		src := string(srcBytes)
+		marker := "func (a *App) "
+		for searchFrom := 0; ; searchFrom++ {
+			relative := strings.Index(src[searchFrom:], marker)
+			if relative < 0 {
+				break
+			}
+			position := searchFrom + relative
+			searchFrom = position
+			offset := position + len(marker)
+			end := strings.Index(src[offset:], "(")
+			if end < 0 {
+				continue
+			}
+			function := src[offset : offset+end]
+			if strings.ToLower(function) != want {
+				continue
+			}
+			bodyStart := offset + end
+			if next := strings.Index(src[bodyStart:], "\nfunc "); next >= 0 {
+				return src[bodyStart : bodyStart+next]
+			}
+			return src[bodyStart:]
+		}
+	}
+	t.Fatalf("function %q not found in package sources", functionName)
+	return ""
+}
+
+func TestCommandFlagsMatchDispatch(t *testing.T) {
+	for key, flags := range commandFlags {
+		if key == "" {
+			continue
+		}
+		body := functionBodyByExactName(t, commandFlagScanTargets[key])
+		for _, flag := range flags {
+			if !strings.Contains(body, strings.TrimLeft(flag, "-")) {
+				t.Errorf("flag %q of %q does not appear in its dispatch source; the vocabulary drifted", flag, key)
+			}
+		}
+	}
+}
+
+func TestCompleteFlags(t *testing.T) {
+	out, err := dispatchForOutput(t, "__complete", "exec", "--w")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "--workspace" {
+		t.Fatalf("'exec --w' must complete --workspace only, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "workspace", "tree", "--")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "--depth" {
+		t.Fatalf("'workspace tree --' must complete --depth only, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "todo", "create", "--p")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "--priority" {
+		t.Fatalf("'todo create --p' must complete --priority only, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "context", "memory", "create", "--s")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 2 || got[0] != "--scope" || got[1] != "--source-ref" {
+		t.Fatalf("'context memory create --s' must complete both s-flags, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "note", "create", "--c")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 3 || got[0] != "--category" || got[1] != "--content" || got[2] != "--content-file" {
+		t.Fatalf("'note create --c' must complete the three c-flags sorted, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "skill", "list", "--p")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "--profile" {
+		t.Fatalf("'skill list --p' must complete --profile only, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "workspace", "--")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 0 {
+		t.Fatalf("commands outside the flag map must offer no flag candidates, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "-")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 4 || got[0] != "--help" || got[3] != "-v" {
+		t.Fatalf("top-level flag aliases must complete, got %v", got)
+	}
+}
+
 func TestCommandSubcommandsIntegrity(t *testing.T) {
 	table := make(map[string]bool, len(commandTable))
 	for _, spec := range commandTable {
@@ -204,7 +379,7 @@ func commandFunctionBody(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatalf("read app package sources: %v", err)
 	}
-	want := strings.ToLower(strings.ReplaceAll(lookup, "-", ""))
+	want := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(lookup, "-", ""), " ", ""))
 	if !strings.Contains(name, " ") {
 		want += "command"
 	}
@@ -249,6 +424,7 @@ func commandFunctionBody(t *testing.T, name string) string {
 // functions that hold their nested switches; the normalized-name lookup
 // only covers top-level command functions.
 var nestedDispatchFunctions = map[string]string{
+	"skill list":           "skillCommand",
 	"context instructions": "contextCommand",
 	"context memory":       "contextMemory",
 	"run delivery":         "runDeliveryCheckpoint",
@@ -501,5 +677,66 @@ func TestCompletionCommandRequiresShell(t *testing.T) {
 		if _, err := dispatchForOutput(t, args...); err == nil {
 			t.Fatalf("dispatch %v must require exactly one shell", args)
 		}
+	}
+}
+
+func TestFlagValueVocabularyIntegrity(t *testing.T) {
+	for key, values := range flagValueVocabulary {
+		flagIdx := strings.LastIndex(key, " --")
+		if flagIdx < 0 {
+			t.Fatalf("flag value key %q must end with a --flag", key)
+		}
+		commandKey := key[:flagIdx]
+		flag := key[flagIdx+1:]
+		if _, ok := commandFlags[commandKey]; !ok {
+			t.Fatalf("flag value key %q: command key %q has no flag vocabulary", key, commandKey)
+		}
+		if !slices.Contains(commandFlags[commandKey], flag) {
+			t.Fatalf("flag value key %q: flag %q is not in the command's flag vocabulary", key, flag)
+		}
+		previous := ""
+		for _, value := range values {
+			if previous != "" && value <= previous {
+				t.Fatalf("values of %q must stay sorted and unique: %q after %q", key, value, previous)
+			}
+			previous = value
+		}
+	}
+}
+
+func TestFlagValueVocabularyMatchDispatch(t *testing.T) {
+	for key, values := range flagValueVocabulary {
+		flagIdx := strings.LastIndex(key, " --")
+		commandKey := key[:flagIdx]
+		body := commandFunctionBody(t, commandKey)
+		for _, value := range values {
+			if !strings.Contains(body, value) {
+				t.Errorf("flag value %q of %q does not appear in its dispatch source; the vocabulary drifted", value, key)
+			}
+		}
+	}
+}
+
+func TestCompleteFlagValues(t *testing.T) {
+	out, err := dispatchForOutput(t, "__complete", "exec", "--profile", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 4 || got[0] != "code" || got[3] != "script" {
+		t.Fatalf("'exec --profile' must complete the four profiles, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "todo", "create", "--priority", "hi")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "high" {
+		t.Fatalf("'todo create --priority hi' must complete high only, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "note", "create", "--visibility", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 3 || got[0] != "owner" || got[1] != "root" || got[2] != "run" {
+		t.Fatalf("'note create --visibility' must complete the three visibilities, got %v", got)
 	}
 }

@@ -27,7 +27,7 @@ var commandTable = []commandSpec{
 	{"approval", "Review, approve, deny, and grant tool approvals", "cyberagent approval list|show|approve-once|approve-for-thread|deny|grant"},
 	{"artifact", "List, show, read, and verify run artifacts", "cyberagent artifact list|show|read|verify"},
 	{"code-intel", "Show code intelligence status and qualification", "cyberagent code-intel status|qualify"},
-	{"completion", "Emit shell completion scripts for bash or zsh", "cyberagent completion bash|zsh"},
+	{"completion", "Emit shell completion scripts for bash, zsh, or fish", "cyberagent completion bash|zsh|fish"},
 	{"context", "Compact context and manage instructions and memory", "cyberagent context compact|show|instructions|memory"},
 	{"ctf", "Scaffold CTF challenge workspaces, analysis worksheets, and writeups", "cyberagent ctf init|analyze|writeup"},
 	{"debug", "Run bounded debug queries against a run", "cyberagent debug query --run <run-id> [bounded filters] [--json]"},
@@ -166,18 +166,61 @@ var commandSubcommands = map[string][]string{
 	"skill catalog":        {"audit", "disable", "enable", "list", "pin", "revoke", "trust"},
 }
 
-// completionCandidates resolves candidate names for the current position.
-// The top-level command position and the argument of 'help' complete
-// command names; the first argument of a command with a known static
-// subcommand vocabulary completes those subcommands; deeper positions
-// return no candidates so the shell never offers a word the CLI would
-// reject.
+// commandFlags lists the verified flag vocabulary for a curated set of
+// commands and groups, read from their flag declarations; values carry
+// their leading dashes so shell prefix matching works verbatim. The ""
+// key covers the top-level aliases accepted by dispatch.
+var commandFlags = map[string][]string{
+	"":                      {"--help", "--version", "-h", "-v"},
+	"context instructions":  {"--confirm", "--expected-fingerprint", "--expected-live-fingerprint", "--json", "--operator", "--run", "--target", "--workspace"},
+	"exec":                  {"--attach", "--confirm-full", "--continue", "--enable-danger-full-access", "--enable-permission-control", "--image", "--instructions", "--json", "--max-tokens", "--max-tool-calls", "--max-turns", "--output-last-message", "--profile", "--route", "--stdin", "--stream", "--timeout", "--workspace"},
+	"context memory create": {"--content", "--retention", "--scope", "--source-ref", "--title", "--workspace"},
+	"context memory list":   {"--all", "--json", "--scope", "--workspace"},
+	"headless events":       {"--after-sequence", "--follow", "--max-events", "--poll-interval", "--timeout"},
+	"note create":           {"--category", "--content", "--content-file", "--owner", "--owner-agent", "--pin", "--tag", "--visibility"},
+	"session create":        {"--route", "--title", "--workspace"},
+	"session send":          {"--operation-key"},
+	"skill list":            {"--profile"},
+	"thread create":         {"--json", "--phase", "--profile", "--route", "--surface", "--workspace"},
+	"thread list":           {"--include-deleted", "--status"},
+	"thread send":           {"--json", "--operation-key"},
+	"todo create":           {"--acceptance", "--depends-on", "--description", "--owner", "--owner-agent", "--priority"},
+	"todo list":             {"--limit", "--owner", "--owner-agent", "--status"},
+	"workspace read":        {"--max-bytes"},
+	"workspace tree":        {"--depth"},
+}
+
+// flagValueVocabulary completes enum-style flag values: the key is
+// "<command group> <flag>" and the values are the documented choices,
+// verified against each flag's help string in the dispatch source.
+var flagValueVocabulary = map[string][]string{
+	"context memory create --scope": {"project", "user"},
+	"exec --profile":                {"code", "learn", "review", "script"},
+	"note create --visibility":      {"owner", "root", "run"},
+	"skill list --profile":          {"code", "learn", "review", "script"},
+	"todo create --priority":        {"critical", "high", "low", "normal"},
+}
+
 // completionCandidates resolves the candidates and the shell directive for
 // the current position: positions with candidates suppress the shell's
 // file completion, and empty positions hand control back to the shell so
 // path-shaped arguments (skill import's package, workspace read's file)
 // still complete, cobra-style.
 func completionCandidates(context []string, prefix string) ([]string, int) {
+	if strings.HasPrefix(prefix, "-") {
+		key := ""
+		if len(context) >= 1 && len(context) <= 3 {
+			key = strings.Join(context, " ")
+		}
+		return matchedNames(commandFlags[key], prefix), completionDirectiveNoFileComp
+	}
+	if len(context) >= 2 {
+		last := context[len(context)-1]
+		if strings.HasPrefix(last, "-") {
+			key := strings.Join(context[:len(context)-1], " ") + " " + last
+			return matchedNames(flagValueVocabulary[key], prefix), completionDirectiveNoFileComp
+		}
+	}
 	var pool []string
 	switch {
 	case len(context) == 0 || (len(context) == 1 && context[0] == "help"):
