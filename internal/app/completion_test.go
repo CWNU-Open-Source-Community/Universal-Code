@@ -164,6 +164,7 @@ var commandFlagScanTargets = map[string]string{
 	"context memory list":   "contextMemoryList",
 	"exec":                  "execCommand",
 	"headless events":       "headlessEvents",
+	"hooks list":            "hooksList",
 	"note create":           "noteCreate",
 	"session create":        "sessionCreate",
 	"session send":          "sessionSend",
