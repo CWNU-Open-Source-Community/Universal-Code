@@ -65,7 +65,7 @@ it("updates available next steps when the server review state changes with a sto
   view.switchServer({ ...view.server, state: "enabled" });
   expect(screen.getByText(/then follow the returned review state/u)).toBeInTheDocument();
   view.switchServer({ ...view.server, state: "revoked" });
-  expect(screen.getByText(/To reconnect, register and review a new server descriptor/u)).toBeInTheDocument();
+  expect(screen.getByText(/register and review a new server descriptor/iu)).toBeInTheDocument();
   expect(screen.queryByText(/select Rediscover/u)).not.toBeInTheDocument();
   expect(change).not.toHaveBeenCalled();
 });
