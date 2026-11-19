@@ -27,6 +27,14 @@
 .v2-approval-facts dt { color: var(--v2-muted); }
 .v2-approval-facts dd { margin: 0; min-width: 0; }
 .v2-approval-facts pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.v2-command-intent ol, .v2-command-intent dl { margin: 0; padding: 0; }
+.v2-command-intent ol { display: grid; gap: 7px; list-style-position: inside; }
+.v2-command-intent li:only-child { list-style: none; }
+.v2-command-intent li > pre { background: var(--v2-control); border-radius: 6px; margin-bottom: 5px; padding: 6px 8px; }
+.v2-command-intent dl { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.v2-command-intent dl > div { align-items: baseline; display: flex; flex-wrap: wrap; gap: 2px 5px; min-width: 0; }
+.v2-command-intent dd { max-width: 100%; }
+.v2-command-intent > details { margin-top: 4px; }
 .v2-command-approvals { min-width: 0; }
 .v2-history-scope { font-size: 11px; line-height: 1.6; color: var(--v2-muted); margin: 8px 14px; }
 .v2-history-error { display: grid; gap: 4px; }
@@ -2587,7 +2595,7 @@
   .v2-runtime-actions article { align-items: start; grid-template-columns: 28px minmax(0, 1fr); }
   .v2-runtime-actions button { grid-column: 2; justify-self: start; }
   .v2-high-risk-overlay { padding: 10px; }
-  .v2-high-risk-dialog { border-radius: 20px; max-height: calc(100dvh - 20px); width: calc(100vw - 20px); }
+  .v2-high-risk-dialog { border-radius: 20px; max-height: calc(100dvh - 20px); width: min(620px, calc(100vw - 20px)); }
   .v2-high-risk-content { gap: 10px; padding: 15px 15px 12px; }
   .v2-high-risk-heading h2 { font-size: 19px; }
   .v2-high-risk-capabilities { padding-inline: 10px; }

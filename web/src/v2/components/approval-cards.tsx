@@ -3,6 +3,7 @@ import { useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileDiff, Globe2, LoaderCircle, ShieldAlert } from "lucide-react";
 import type { APIClient } from "../../api/client";
+import { isRecord } from "../../api/client/validation";
 import type { ApprovalDecisionControlRequestView, ApprovalPreviewView, ApprovalQueueItemView } from "../../api/types";
 import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 import { ComputerUsePreview } from "../../components/computer-use-preview";
@@ -35,8 +36,38 @@ function ApprovalFields({ fields }: { fields: ApprovalPreviewView["fields"] }) {
   const labels = fieldLabels(t);
   if (!fields.length) return null;
   return <dl className="v2-approval-facts">{fields.map((field, index) => <div key={`${field.name}:${index}`}>
-    <dt>{labels[field.name] ?? field.name}</dt><dd><pre>{field.value}</pre></dd>
+    <dt>{labels[field.name] ?? field.name}</dt><dd>{field.name === "intent" ? <CommandIntent value={field.value} /> : <pre>{field.value}</pre>}</dd>
   </div>)}</dl>;
+}
+
+function CommandIntent({ value }: { value: string }) {
+  const { t } = useLocale();
+  let payload: unknown;
+  try { payload = JSON.parse(value); }
+  catch { return <pre>{value}</pre>; }
+  if (!isRecord(payload) || payload.version !== "command-runtime.v2" ||
+    !["run", "start"].includes(String(payload.action)) || !Array.isArray(payload.commands) || !payload.commands.length ||
+    !payload.commands.every((command): command is Record<string, unknown> => isRecord(command) &&
+      (typeof command.script === "string" || typeof command.executable === "string"))) return <pre>{value}</pre>;
+  const labels: Record<string, string> = {
+    executable: t("可执行文件", "Executable"), arguments: t("参数", "Arguments"), profile: t("执行环境", "Shell or process"),
+    working_directory: t("工作目录", "Working directory"), network: t("网络声明", "Network policy"), credentials: t("凭据权限", "Credentials"),
+    environment: t("环境变量", "Environment"), initial_stdin: t("初始输入", "Initial input"), purpose: t("用途", "Purpose"),
+    workspace_mode: t("工作区模式", "Workspace mode"), stdin_policy: t("输入模式", "Input mode"),
+  };
+  return <div className="v2-command-intent">
+    <ol>{payload.commands.map((command, index) => <li key={index}>
+      {typeof command.script === "string" && <pre>{command.script}</pre>}
+      <dl>{Object.entries(labels).map(([key, label]) => {
+        const content = command[key];
+        if (content === undefined || (Array.isArray(content) && !content.length && key !== "arguments")) return null;
+        return <div key={key}><dt>{label}</dt><dd><pre>{typeof content === "string" ? content : JSON.stringify(content)}</pre></dd></div>;
+      })}</dl>
+    </li>)}</ol>
+    {payload.commands.length > 1 && typeof payload.failure_policy === "string" && <p>
+      {t("批量命令失败策略", "Batch failure policy")} <code>{payload.failure_policy}</code></p>}
+    <details><summary>{t("完整命令请求", "Full command request")}</summary><pre>{value}</pre></details>
+  </div>;
 }
 
 export function V2ApprovalCards({ client, runID, threadID, onReviewFile }: {

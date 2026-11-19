@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 import type { RenderOptions } from "@testing-library/react";
 import { LocaleProvider } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render as renderComponent, screen, waitFor } from "@testing-library/react";
+import { render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIClient } from "../../api/client";
 import type { ApprovalPreviewView, ApprovalQueueItemView } from "../../api/types";
@@ -33,9 +33,11 @@ function pending(overrides: Partial<ApprovalQueueItemView> = {}): ApprovalQueueI
   };
 }
 
-function renderCards(item: ApprovalQueueItemView, previewOverrides = {}, onReviewFile = vi.fn()) {
+function renderCards(item: ApprovalQueueItemView, previewOverrides: Partial<ApprovalPreviewView> = {}, onReviewFile = vi.fn(),
+  additional: { item: ApprovalQueueItemView; preview: Partial<ApprovalPreviewView> }[] = []) {
+  const requests = [{ item, preview: previewOverrides }, ...additional];
   const approvalQueue = vi.fn().mockResolvedValue({
-    protocol_version: "approval_queue.v1", run_id: "run-1", items: [item],
+    protocol_version: "approval_queue.v1", run_id: "run-1", items: requests.map((request) => request.item),
     truncated: false, process_execution_enabled: false,
     session_grant_created: false, capability_grant: false,
   });
@@ -48,15 +50,19 @@ function renderCards(item: ApprovalQueueItemView, previewOverrides = {}, onRevie
     session_grant_created: false, capability_grant: false,
     execution_resumed: true, retry_completed: true,
   });
-  const approvalPreview = vi.fn().mockResolvedValue({
-    protocol_version: "approval_queue.v1", run_id: "run-1", approval_id: item.id,
-    proposal_id: item.proposal_id, tool_name: item.tool_name, workspace_id: item.workspace_id,
-    effect: item.tool_name === "web_fetch" ? "fetch_public_https" : "dry_run",
-    working_directory: item.tool_name === "web_fetch" ? "" : ".",
-    fields: item.tool_name === "web_fetch"
-      ? [{ name: "url", value: item.canonical_url }]
-      : [{ name: "command", value: "echo inspection-only" }],
-    source_current: true, redacted: false, truncated: false, ...previewOverrides,
+  const approvalPreview = vi.fn(async (_runID: string, id: string) => {
+    const request = requests.find((entry) => entry.item.id === id)!;
+    const item = request.item;
+    return {
+      protocol_version: "approval_queue.v1", run_id: "run-1", approval_id: item.id,
+      proposal_id: item.proposal_id, tool_name: item.tool_name, workspace_id: item.workspace_id,
+      effect: item.tool_name === "web_fetch" ? "fetch_public_https" : "dry_run",
+      working_directory: item.tool_name === "web_fetch" ? "" : ".",
+      fields: item.tool_name === "web_fetch"
+        ? [{ name: "url", value: item.canonical_url }]
+        : [{ name: "command", value: "echo inspection-only" }],
+      source_current: true, redacted: false, truncated: false, ...request.preview,
+    };
   });
   const client = { hasApprovalControl: true, approvalQueue, decideApproval, approvalPreview,
   } as unknown as APIClient;
@@ -192,6 +198,56 @@ describe("V2ApprovalCards", () => {
     expect(onReviewFile).toHaveBeenCalledWith({ runID: "run-1", editID: "exact-edit", workspaceID: "original-workspace" }, button);
     expect(screen.queryByRole("button", { name: "批准一次" })).not.toBeInTheDocument();
     expect(decideApproval).not.toHaveBeenCalled();
+  });
+
+  it("keeps a move target, keyboard review and an optional denial reason with the correct queued file", async () => {
+    const user = userEvent.setup();
+    const path = "packages/desktop/integration/reviews/with-a-long-component-name/config.json";
+    const item = pending({ id: "approval-move", tool_name: "move_file", proposal_id: "move-edit", workspace_id: "ws",
+      allowed_actions: ["deny"], canonical_url: undefined, exact_target: undefined });
+    const second = { ...item, id: "approval-replace", tool_name: "replace_file", proposal_id: "replace-edit" };
+    const { onReviewFile, decideApproval } = renderCards(item, { effect: "file_review_required", fields: [
+      { name: "operation", value: "move" }, { name: "path", value: path }, { name: "destination_path", value: "new/config.json" },
+    ] }, vi.fn(), [{ item: second, preview: { effect: "file_review_required", fields: [
+      { name: "operation", value: "replace" }, { name: "path", value: "README.md" },
+    ] } }]);
+    const move = within(await screen.findByRole("article", { name: /移动文件.*config\.json/ }));
+    const replace = within(await screen.findByRole("article", { name: /替换文件内容.*README\.md/ }));
+    expect(move.getByText(path)).toBeVisible();
+    expect(move.getByText("new/config.json")).toBeVisible();
+    expect(replace.queryByText("replace")).not.toBeInTheDocument();
+    expect(replace.queryByText("工作目录")).not.toBeInTheDocument();
+    expect(replace.getByLabelText("replace_file 的拒绝原因")).not.toBeVisible();
+    const review = move.getByRole("button", { name: "审阅文件提案" });
+    review.focus();
+    await user.keyboard("{Enter}");
+    expect(onReviewFile).toHaveBeenCalledWith({ runID: "run-1", editID: "move-edit", workspaceID: "ws" }, review);
+    await user.click(replace.getByText("拒绝理由"));
+    await user.tab();
+    expect(replace.getByRole("textbox")).toHaveFocus();
+    await user.keyboard("Keep the original");
+    expect(move.getByLabelText("move_file 的拒绝原因")).not.toBeVisible();
+    await user.click(replace.getByRole("button", { name: "拒绝" }));
+    expect(decideApproval).toHaveBeenCalledWith("run-1", second.id, { version: "approval_control.v1", action: "deny", reason: "Keep the original" }, expect.any(String));
+  });
+
+  it("shows the full multiline command, its target and declared permissions before opening the exact request", async () => {
+    const script = "Write-Output 'first'\nWrite-Output 'second'";
+    const directory = "C:\\Projects\\long workspace path";
+    const payload = JSON.stringify({ version: "command-runtime.v2", action: "run", commands: [
+      { profile: "powershell", script, working_directory: directory, network: "host", credentials: "none",
+        environment: [{ name: "MODE", value: "review" }], stdin_policy: "closed" },
+    ], failure_policy: "fail_fast" });
+    renderCards(pending({ tool_name: "command_runtime", allowed_actions: ["approve_once", "deny"] }),
+      { effect: "command_process", working_directory: "", fields: [{ name: "intent", value: payload }] });
+    expect((await screen.findByText(/Write-Output 'first' Write-Output 'second'/)).textContent).toBe(script);
+    expect(screen.getByText(directory)).toBeVisible();
+    expect(screen.getByText("host")).toBeVisible();
+    expect(screen.getByText("none")).toBeVisible();
+    expect(screen.getByText('[{"name":"MODE","value":"review"}]')).toBeVisible();
+    expect(screen.getByText(payload)).not.toBeVisible();
+    await userEvent.click(screen.getByText("完整命令请求"));
+    expect(screen.getByText(payload)).toBeVisible();
   });
 
   it.each([{ run_id: "different-run" }, { approval_id: "different-approval" }, { proposal_id: "different-edit" },
