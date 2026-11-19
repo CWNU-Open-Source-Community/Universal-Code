@@ -194,6 +194,27 @@ var commandFlags = map[string][]string{
 	"todo list":             {"--limit", "--owner", "--owner-agent", "--status"},
 	"workspace read":        {"--max-bytes"},
 	"workspace tree":        {"--depth"},
+
+	// Nested subcommand flags for the data-listing and filter surface,
+	// extracted from each handler's flag declarations.
+	"approval list":     {"--limit", "--run", "--session", "--status", "--tool"},
+	"artifact list":     {"--limit", "--run", "--source", "--stream"},
+	"artifact read":     {"--max-bytes"},
+	"code-intel status": {"--config", "--json", "--start", "--workspace"},
+	"context compact":   {"--message", "--task", "--workspace"},
+	"context show":      {"--task"},
+	"ctf init":          {"--category", "--scope"},
+	"debug query":       {"--after", "--correlation-id", "--correlation-kind", "--from", "--json", "--limit", "--run", "--source-prefix", "--to", "--type-prefix"},
+	"mcp client":        {"--file", "--limit", "--run", "--workspace"},
+	"run list":          {"--limit", "--mission", "--status"},
+	"script new":        {"--language", "--workspace"},
+	"script run":        {"--idempotency-key", "--local", "--workspace"},
+	"session history":   {"--all"},
+	"thread history":    {"--all", "--json"},
+	"tool list":         {"--session", "--status"},
+	"tui":               {"--print", "--route", "--run", "--session", "--title", "--workspace"},
+	"ui-evidence list":  {"--limit", "--run", "--status"},
+	"web-evidence list": {"--limit", "--run"},
 }
 
 // flagValueVocabulary completes enum-style flag values: the key is
