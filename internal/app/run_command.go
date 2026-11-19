@@ -28,6 +28,10 @@ import (
 	"cyberagent-workbench/internal/workspace"
 )
 
+// maxRunFollowTimeout bounds the run event stream the same way the headless
+// command bounds its follow mode.
+const maxRunFollowTimeout = 24 * time.Hour
+
 func (a *App) runCommand(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("run subcommand is required")
@@ -2878,14 +2882,21 @@ func writeTransientControlledOutput(
 func (a *App) runEvents(ctx context.Context, service *application.RunService, args []string) error {
 	fs := newFlagSet("run events", a.errOut)
 	follow := fs.Bool("follow", false, "stream events as NDJSON until the run reaches a terminal status or the 10000-event ceiling")
-	if err := fs.Parse(reorderFlags(args, map[string]bool{"follow": false})); err != nil {
+	timeout := fs.Duration("timeout", 0, "optional follow timeout (bounded to 24h)")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{"follow": false, "timeout": true})); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: cyberagent run events <run-id> [--follow]")
+		return errors.New("usage: cyberagent run events <run-id> [--follow] [--timeout <duration>]")
+	}
+	if *timeout < 0 || *timeout > maxRunFollowTimeout {
+		return apperror.New(apperror.CodeInvalidArgument, "timeout must be between zero and 24h")
+	}
+	if *timeout > 0 && !*follow {
+		return errors.New("timeout requires --follow")
 	}
 	if *follow {
-		return a.streamRunEvents(ctx, fs.Arg(0))
+		return a.streamRunEvents(ctx, fs.Arg(0), *timeout)
 	}
 	items, err := service.Events(ctx, fs.Arg(0))
 	if err != nil {
@@ -2904,7 +2915,7 @@ func (a *App) runEvents(ctx context.Context, service *application.RunService, ar
 // streamRunEvents follows one run's durable events as NDJSON through the
 // same exporter the headless command and exec --stream use, ending when the
 // run reaches a terminal status.
-func (a *App) streamRunEvents(ctx context.Context, runID string) error {
+func (a *App) streamRunEvents(ctx context.Context, runID string, timeout time.Duration) error {
 	if err := a.ensureStore(); err != nil {
 		return err
 	}
@@ -2913,23 +2924,35 @@ func (a *App) streamRunEvents(ctx context.Context, runID string) error {
 	if err != nil {
 		return err
 	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	return headless.NewExporter(a.store).Export(ctx, a.out, request)
 }
 
 func (a *App) runTransition(ctx context.Context, service *application.RunService, action string, args []string) error {
 	fs := newFlagSet("run "+action, a.errOut)
 	stream := fs.Bool("stream", false, "stream run events as NDJSON until the run reaches a terminal status or the 10000-event ceiling (start only)")
-	if err := fs.Parse(reorderFlags(args, map[string]bool{"stream": false})); err != nil {
+	timeout := fs.Duration("timeout", 0, "optional stream timeout (bounded to 24h)")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{"stream": false, "timeout": true})); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
 		if action == "start" {
-			return errors.New("usage: cyberagent run start <run-id> [--stream]")
+			return errors.New("usage: cyberagent run start <run-id> [--stream] [--timeout <duration>]")
 		}
 		return fmt.Errorf("usage: cyberagent run %s <run-id>", action)
 	}
 	if *stream && action != "start" {
 		return errors.New("--stream is only valid for run start")
+	}
+	if *timeout < 0 || *timeout > maxRunFollowTimeout {
+		return apperror.New(apperror.CodeInvalidArgument, "timeout must be between zero and 24h")
+	}
+	if *timeout > 0 && !*stream {
+		return errors.New("timeout requires --stream")
 	}
 	var run domain.Run
 	var err error
@@ -2955,7 +2978,7 @@ func (a *App) runTransition(ctx context.Context, service *application.RunService
 		// another terminal, or the stream simply waits for a terminal state.
 		fmt.Fprintf(a.errOut, "run %s %s\n", run.ID, run.Status)
 		fmt.Fprintln(a.errOut, "note: lifecycle is running; use `cyberagent run step <run-id>` for one supervised turn")
-		return a.streamRunEvents(ctx, run.ID)
+		return a.streamRunEvents(ctx, run.ID, *timeout)
 	}
 	fmt.Fprintf(a.out, "run %s %s\n", run.ID, run.Status)
 	if action == "start" {

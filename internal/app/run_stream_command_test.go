@@ -134,3 +134,56 @@ func TestRunStreamFlagValidation(t *testing.T) {
 		t.Fatalf("positional-then-flag stream parsing drifted: code=%d", code)
 	}
 }
+
+func TestRunEventsFollowTimeoutEmitsDeadlineRecord(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	created, stderr, code := executeTestCommand(t, "run", "create", "run events timeout")
+	if code != 0 {
+		t.Fatalf("run create failed: %s", stderr)
+	}
+	runID := runIDPattern.FindString(created)
+	// The run is never driven, so the stream ends on the deadline alone —
+	// deterministic without a concurrent driver.
+	stdout, stderr, code := executeTestCommand(t, "run", "events", runID, "--follow", "--timeout", "300ms")
+	if code != 9 || !strings.Contains(stderr, "deadline") {
+		t.Fatalf("follow deadline exit drifted: code=%d stderr=%s", code, stderr)
+	}
+	records := decodeHeadlessCLIRecords(t, stdout)
+	end := records[len(records)-1]
+	if end.Kind != "stream.end" || end.Reason != "deadline_exceeded" || end.ExitCode != 9 || end.Terminal {
+		t.Fatalf("deadline end record drifted: %#v", end)
+	}
+}
+
+func TestRunStreamTimeoutValidation(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	created, stderr, code := executeTestCommand(t, "run", "create", "run stream timeout validation")
+	if code != 0 {
+		t.Fatalf("run create failed: %s", stderr)
+	}
+	runID := runIDPattern.FindString(created)
+
+	_, stderr, code = executeTestCommand(t, "run", "events", runID, "--timeout", "1s")
+	if code == 0 || !strings.Contains(stderr, "timeout requires --follow") {
+		t.Fatalf("timeout without follow must be rejected: stderr=%q code=%d", stderr, code)
+	}
+	_, stderr, code = executeTestCommand(t, "run", "events", runID, "--follow", "--timeout", "25h")
+	if code == 0 || !strings.Contains(stderr, "between zero and 24h") {
+		t.Fatalf("oversized timeout must be rejected: stderr=%q code=%d", stderr, code)
+	}
+	_, stderr, code = executeTestCommand(t, "run", "start", runID, "--timeout", "30m")
+	if code == 0 || !strings.Contains(stderr, "timeout requires --stream") {
+		t.Fatalf("timeout without stream must be rejected: stderr=%q code=%d", stderr, code)
+	}
+	// A rejected timeout must never transition the run.
+	_, stderr, code = executeTestCommand(t, "run", "events", runID)
+	if code != 0 || !strings.Contains(stdoutOnce(t, runID), "created") {
+		t.Fatalf("run status must stay created after rejections")
+	}
+}
+
+func stdoutOnce(t *testing.T, runID string) string {
+	t.Helper()
+	stdout, _, _ := executeTestCommand(t, "run", "show", runID)
+	return stdout
+}
