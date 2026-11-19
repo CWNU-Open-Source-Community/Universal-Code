@@ -98,10 +98,11 @@ func (a *App) completeCommand(args []string) error {
 	return nil
 }
 
-// commandSubcommands lists the first-level dispatch vocabulary for commands
-// that take a static subcommand, verified against each command's dispatch
-// switch (several entries are absent from the help text). Entries are
-// sorted; deeper levels are not completed yet.
+// commandSubcommands lists the verified dispatch vocabulary: first-level
+// subcommands under their command name, and second-level group arguments
+// under "command group" keys, verified against each nested dispatch switch
+// (several entries are absent from the help text). Entries are sorted;
+// deeper levels are not completed yet.
 var commandSubcommands = map[string][]string{
 	"analyzer":       {"execute"},
 	"api":            {"openapi", "serve"},
@@ -140,6 +141,17 @@ var commandSubcommands = map[string][]string{
 	"ui-evidence":    {"artifact", "list", "show"},
 	"web-evidence":   {"list"},
 	"workspace":      {"checkpoint", "init", "list", "read", "show", "tree"},
+
+	// Two-level groups: "command group" keys complete the first argument
+	// after the group, mirroring the nested dispatch switches.
+	"context instructions": {"scaffold"},
+	"context memory":       {"create", "delete", "disable", "edit", "enable", "export", "list", "show"},
+	"run delivery":         {"checkpoint", "list", "record", "report", "show"},
+	"run fanout":           {"execute", "execution", "plan", "report", "show"},
+	"run plan":             {"choose", "selection", "show"},
+	"run sandbox":          {"docker-admit", "docker-cancel", "docker-readiness", "docker-start", "docker-status"},
+	"run standard-code":    {"docker-cancel", "docker-execute", "docker-prepare", "docker-readiness", "docker-recover", "pause-and-configure", "preset"},
+	"skill catalog":        {"audit", "disable", "enable", "list", "pin", "revoke", "trust"},
 }
 
 // completionCandidates resolves candidate names for the current position.
@@ -156,6 +168,9 @@ func completionCandidates(context []string, prefix string) []string {
 		if spec, ok := findCommandSpec(context[0]); ok {
 			return matchedNames(commandSubcommands[spec.name], prefix)
 		}
+	}
+	if len(context) == 2 {
+		return matchedNames(commandSubcommands[context[0]+" "+context[1]], prefix)
 	}
 	return nil
 }
