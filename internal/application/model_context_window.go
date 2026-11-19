@@ -13,12 +13,17 @@ import (
 const modelMessageFramingTokens = 4
 
 type modelContextLayout struct {
-	HistoryStart int
-	HistoryCount int
+	HistoryStart        int
+	HistoryCount        int
+	recentOperatorStart int
+	recentOperatorCount int
 }
 
 func (l modelContextLayout) shifted(offset int) modelContextLayout {
 	l.HistoryStart += offset
+	if l.recentOperatorCount > 0 {
+		l.recentOperatorStart += offset
+	}
 	return l
 }
 

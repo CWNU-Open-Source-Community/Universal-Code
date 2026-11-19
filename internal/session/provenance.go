@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/redact"
 )
@@ -32,7 +33,9 @@ const (
 	SourceToolResult      = "tool_result"
 	SourceGoCommandResult = "go_command_result"
 
-	MaxContextSourceRefRunes = 512
+	MaxContextSourceRefRunes  = 512
+	MaxRecentOperatorMessages = 64
+	MaxRecentOperatorTokens   = 4096
 )
 
 // UntrustedContextPolicy is the shared model boundary for repository and tool data.
@@ -154,6 +157,22 @@ func ValidateStoredMessage(message Message) error {
 		return errors.New("stored session message content digest mismatch")
 	}
 	return nil
+}
+
+// VerifiedOperatorOriginal identifies a sealed operator row eligible for
+// independent replay after compaction.
+func VerifiedOperatorOriginal(message Message) (bool, error) {
+	if err := ValidateStoredMessage(message); err != nil {
+		return false, err
+	}
+	if message.Role != "user" || message.Provenance.Version != ContextProvenanceVersion ||
+		message.Provenance.SourceKind != SourceOperatorMessage || !message.Provenance.InstructionAuthorized {
+		return false, nil
+	}
+	if message.ID <= 0 {
+		return false, apperror.New(apperror.CodeFailedPrecondition, "stored operator message lacks a history identity")
+	}
+	return true, nil
 }
 
 func ContentSHA256(content string) string {
