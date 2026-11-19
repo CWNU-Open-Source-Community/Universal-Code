@@ -29,7 +29,6 @@
 .v2-task-pr .v2-git-preview h3 { margin-top: 0; }
 .v2-task-pr .v2-pr-notice { border-left: 2px solid var(--v2-border); padding-left: 10px; display: grid; gap: 8px; }
 .v2-task-pr .v2-pr-notice > button { justify-self: start; }
-.v2-task-pr .v2-pr-empty { color: var(--v2-muted); }
 .v2-task-pr p, .v2-task-pr code, .v2-task-pr summary { overflow-wrap: anywhere; }
 @media (max-width: 640px) {
   .v2-task-pr .v2-delivery-operation { padding: 12px; }

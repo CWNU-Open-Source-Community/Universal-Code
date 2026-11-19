@@ -55,7 +55,11 @@ async function enable(user: ReturnType<typeof userEvent.setup>) {
 it("creates with bounded defaults and clears the saved exact intent after a confirmed reply", async () => {
   const f = fixture(), user = userEvent.setup(), view = show(f);
   const before = Date.now();
-  await enable(user);
+  await user.click(await screen.findByText("设置持续跟进"));
+  expect(screen.getByText(/按任务权限和预算自动处理/)).toBeVisible();
+  const start = screen.getByRole("button", { name: "启用持续跟进" });
+  await waitFor(() => expect(start).toBeEnabled());
+  await user.click(start);
   await screen.findByText("持续跟进中");
   expect(f.client.postControl).toHaveBeenCalledOnce();
   const [path, raw, key] = f.client.postControl.mock.calls[0];
@@ -66,7 +70,6 @@ it("creates with bounded defaults and clears the saved exact intent after a conf
   expect(Date.parse(body.deadline_at)).toBeLessThanOrEqual(Date.now() + 86_400_000);
   expect(key).toMatch(/^task-pr-followup-/u);
   expect(view.store().read("thread:thread-1:pr-followup-create", null)).toBeNull();
-  expect(screen.getByText(/当前的 Full \/ Ask \/ Auto 权限与预算/)).toBeInTheDocument();
 });
 
 it("reopens an uncertain creation with GET only and replays the original key and body after selecting another PR", async () => {

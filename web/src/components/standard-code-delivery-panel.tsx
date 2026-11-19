@@ -63,8 +63,7 @@ export function StandardCodeDeliveryPanel({ client, runID, onOpenCheckpoints,
     </header>
     {query.isLoading && <LoadingState label={t("加载交付报告", "Loading delivery report")} />}
     {query.isError && (!report && query.error instanceof APIRequestError && query.error.code === "NOT_FOUND"
-      ? <p role="status">{t("交付报告暂不可用，检查结果待确认。请核对报告是否已生成及服务配置，再刷新；也可在「执行记录」查看已有结果。",
-        "The delivery report is unavailable and check results need confirmation. Check report generation and service settings, then refresh. Existing results are available in execution records.")}</p>
+      ? <p role="status">{t("交付报告暂不可用，检查结果待确认。", "The delivery report is unavailable and check results need confirmation.")}</p>
       : <ErrorState error={query.error} />)}
     {report && <>
       <section className={`delivery-truth-summary delivery-truth-${status}`}>
@@ -156,16 +155,8 @@ export function StandardCodeDeliveryPanel({ client, runID, onOpenCheckpoints,
             label={reason.code.replaceAll("_", " ")} status={reason.code} />)}</div>
           {report.uncovered_items.map((item) => <p key={item.summary_sha256}>{item.summary}</p>)}
         </section>}
-      <section className="delivery-truth-recovery"><div><RotateCcw aria-hidden="true" size={16} />
-        <span><strong>{t("恢复入口", "Recovery entry points")}</strong>
-          <small>{t("检查点恢复记录的项目内容。项目外的进程、网络或远端变化请单独检查和处理。",
-            "Checkpoints restore recorded project content. Inspect and handle processes, network effects, and remote changes outside the project separately.")}</small></span></div>
-        <div><button className="compact-command" onClick={onOpenCheckpoints} type="button">
-          {t("查看项目恢复选项", "View workspace recovery options")}</button></div>
-      </section>
-      <details className="delivery-truth-boundary"><summary>{t("报告包含哪些内容", "What the report includes")}</summary>
-        <p>{t("报告保存版本、差异摘要、脱敏后的有界命令输出和恢复入口。交付操作请在对应的提交、推送或合并入口完成。",
-          "The report saves the revision, diff summary, bounded and redacted command output, and recovery options. Complete delivery through the relevant commit, push, or merge controls.")}</p></details>
+      <button className="compact-command delivery-truth-recovery" onClick={onOpenCheckpoints} type="button">
+        <RotateCcw aria-hidden="true" size={14} />{t("查看项目恢复选项", "View workspace recovery options")}</button>
     </>}
   </section>;
 }

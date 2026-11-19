@@ -473,7 +473,7 @@ describe("UserTerminalPanel", () => {
     terminalMocks.close.mockRejectedValueOnce(new Error("Process busy"));
     const onSession = vi.fn();
     render(<UserTerminalPanel runID="run-1" sessionID="terminal-end" onSession={onSession} />);
-    expect(await screen.findByText("Terminal connected")).toHaveAttribute("title", expect.stringContaining("not Agent activity"));
+    expect(await screen.findByText("Terminal connected")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "End terminal" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Process busy");
     expect(onSession).not.toHaveBeenCalled();

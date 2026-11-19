@@ -80,7 +80,6 @@ function PRFollowupWorkspace({ client, threadID, connectionID, pullRequest, canS
 
   return <section className="v2-pr-followup" aria-label={t("持续跟进 PR", "Follow up on PR")}>
     <header><h3>{t("持续跟进 PR", "Follow up on PR")}</h3><button type="button" disabled={list.isFetching || pending} onClick={() => void list.refetch()}>{t("刷新跟进状态", "Refresh follow-up status")}</button></header>
-    <p>{t("读取新审阅、行内和普通评论及 CI 失败，按本任务当前的 Full / Ask / Auto 权限与预算继续修复和测试；遇到审批时等待你处理。应用运行时检查，关闭后暂停。", "Read new reviews, inline and general comments, and CI failures. Continue fixing and testing under this task's Full / Ask / Auto permissions and budget, waiting for required approvals. Checks run while the app is open and pause when closed.")}</p>
     {list.data && list.data.worker_state !== "running" && <p role="status" className="v2-pr-followup-muted">{t("跟进调度当前未运行，启用后的检查将在应用调度恢复后继续。", "The follow-up scheduler is stopped. Checks resume when app scheduling resumes.")}</p>}
     {list.isLoading && <p role="status">{t("正在读取持续跟进状态…", "Loading follow-up status…")}</p>}
     {list.isError && <p role="alert">{list.error.message}</p>}
@@ -106,11 +105,12 @@ function PRFollowupWorkspace({ client, threadID, connectionID, pullRequest, canS
     {create.isError && <p role="alert">{create.error.message}</p>}{transition.isError && <p role="alert">{transition.error.message}</p>}{localError && <p role="alert">{localError}</p>}
     {!unfinished && saved === null && <details className="v2-pr-followup-setup"><summary>{current ? t("重新开始持续跟进", "Restart follow-up") : t("设置持续跟进", "Configure follow-up")}</summary>
       <form onSubmit={(event) => { event.preventDefault(); begin(); }}>
+        <p>{t("跟进会按任务权限和预算自动处理审阅意见与 CI 失败，并运行测试。需要审批时等待，关闭应用后暂停。", "Follow-up automatically fixes review feedback and CI failures and runs tests within the task’s permissions and budget. It waits for approvals and pauses when the app closes.")}</p>
         <div className="v2-pr-followup-fields"><label>{t("检查间隔（分钟）", "Check interval (minutes)")}<input required type="number" min={1} max={60} step={1} value={minutes} onChange={(event) => setMinutes(event.target.value)} disabled={pending} /></label>
           <label>{t("持续时间（小时）", "Duration (hours)")}<input required type="number" min={1} max={168} step={1} value={hours} onChange={(event) => setHours(event.target.value)} disabled={pending} /></label>
           <label>{t("最多修复轮次", "Maximum fix rounds")}<input required type="number" min={1} max={20} step={1} value={turns} onChange={(event) => setTurns(event.target.value)} disabled={pending} /></label></div>
         <label className="v2-pr-followup-checkbox"><input type="checkbox" checked={includeExisting} onChange={(event) => setIncludeExisting(event.target.checked)} disabled={pending} />{t("同时处理已有评论", "Also handle existing comments")}</label>
-        <p className="v2-pr-followup-muted">{t("当前 CI 失败始终纳入；未勾选时从新评论开始跟进。", "Current CI failures are always included. Leave unchecked to start with new comments.")}</p>
+        <p className="v2-pr-followup-muted">{t("始终跟进当前 CI 失败。", "Current CI failures are always included.")}</p>
         <button type="submit" disabled={!canCreate}>{t("启用持续跟进", "Enable follow-up")}</button>
         {!canStart && <p className="v2-pr-followup-muted">{t("选择一个开放的 PR 后，可启用持续跟进。", "Select an open PR to enable follow-up.")}</p>}
         {!store && <p role="alert">{t("当前连接未提供本机恢复身份，无法保存创建请求。", "This connection has no local recovery identity. Creation requests cannot be saved.")}</p>}

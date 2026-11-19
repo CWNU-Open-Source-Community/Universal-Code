@@ -227,7 +227,7 @@ export function V2TerminalDrawer({
           ) : (
             <div className="v2-terminal-disabled-notice" role="status">
               <SquareTerminal aria-hidden="true" size={24} />
-              <p>{t("当前运行环境未启用桌面终端。仅在 Universal-Code 桌面端运行时支持本机 Debug 终端。", "The desktop terminal is unavailable in this environment. Local debug terminals require the Universal-Code desktop app.")}</p>
+              <p>{t("本机终端仅在 Universal-Code 桌面端可用。", "The local terminal requires the Universal-Code desktop app.")}</p>
             </div>
           )}
         </div>

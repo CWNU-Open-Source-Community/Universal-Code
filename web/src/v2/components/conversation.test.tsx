@@ -1459,7 +1459,7 @@ describe("V2Conversation", () => {
     await user.click(termTrigger);
 
     expect(await screen.findByRole("dialog", { name: "任务终端" })).toBeInTheDocument();
-    expect(screen.getByText("当前运行环境未启用桌面终端。仅在 Universal-Code 桌面端运行时支持本机 Debug 终端。")).toBeInTheDocument();
+    expect(screen.getByText("本机终端仅在 Universal-Code 桌面端可用。")).toBeInTheDocument();
 
     const collapseBtn = screen.getByRole("button", { name: "收起终端" });
     await user.click(collapseBtn);
