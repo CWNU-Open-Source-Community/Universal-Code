@@ -171,7 +171,6 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
       </select></label>
       {definition && <details><summary>{t("检查任务、工具和预算", "Review tasks, tools and budgets")}</summary><pre>{pretty(definition.spec)}</pre></details>}
       <label>{t("启动输入 JSON", "Launch inputs JSON")}<textarea rows={3} value={inputs} onChange={(event) => setInputs(event.target.value)} spellCheck={false} /></label>
-      <p>{t("启动后，子代理在流程预算和主代理权限内执行。工具名单留空会继承当前可委派工具。隔离交付完成时产物位于集成分支，后续共享步骤仍使用当前工作区。", "Workers execute within the workflow budgets and parent permissions. An omitted tool list inherits available worker tools. Isolated results live on an integration branch; later shared steps still use the current workspace.")}</p>
       <button type="button" className="command-button" disabled={!canControl || !selected || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "start" })}>{t("启动并运行", "Start and run")}</button>
       {runStatus !== "running" && <p>{t("先恢复当前任务，再启动或继续工作流。", "Resume the current task before starting or continuing a workflow.")}</p>}
       {!canControl && <p>{t("运行工作流需要模型控制权限。", "Model control permission is required to run workflows.")}</p>}

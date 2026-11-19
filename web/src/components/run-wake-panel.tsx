@@ -101,9 +101,7 @@ export function RunWakePanel({ client, detail }: {
       <h2><BellRing aria-hidden="true" size={15} />{t("继续排队工作", "Continue queued work")}</h2>
       <StatusBadge status={intent?.status ?? "idle"} />
     </div>
-    <p>{active ? t("继续处理已安排，可核对下次时间或取消安排。", "Continuation is scheduled. Review the next time or cancel the schedule.") :
-      queuedWork > 0 ? t("已有待处理输入。执行空闲且处于可继续状态时，可安排继续处理。", "Input is waiting. Schedule continuation when the execution is idle and open.") :
-        t("先在对话中提交待处理输入，再安排继续处理。", "Submit input in the conversation, then schedule continuation.")}</p>
+    {!active && <p>{queuedWork > 0 ? t(`待处理输入 ${queuedWork} 条`, `${queuedWork} queued inputs`) : t("暂无待处理输入", "No queued input")}</p>}
     <dl className="detail-grid compact">
       {intent && <>
         <KeyValue label={t("意图", "Intent")} value={shortID(intent.id)} />

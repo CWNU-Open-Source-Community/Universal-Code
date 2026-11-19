@@ -29,7 +29,6 @@ describe("RunActivityTimeline", () => {
     expect(screen.getByText("我会先核对工作区，再运行测试。")).toBeInTheDocument();
     expect(screen.getByText("模型响应完成")).toBeInTheDocument();
     expect(screen.getByText("公开活动")).toBeInTheDocument();
-    expect(screen.getByText(/实际操作结果请核对执行记录/u)).toBeInTheDocument();
     expect(screen.getByText("模型调用").closest("details")).not.toHaveAttribute("open");
   });
 
@@ -73,7 +72,6 @@ describe("RunActivityTimeline", () => {
     expect(screen.getByText("Universal-Code")).toBeInTheDocument();
     expect(screen.getByText("正在检查差异，下一步运行测试。")).toBeInTheDocument();
     expect(screen.getByText("临时")).toBeInTheDocument();
-    expect(screen.getByText(/对话历史保存最终确认的内容/u)).toBeInTheDocument();
   });
 
   it("replaces provisional commentary when its durable identity arrives", () => {

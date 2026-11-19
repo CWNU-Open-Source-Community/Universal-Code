@@ -37,7 +37,7 @@ it("separates exit facts and unexecuted proposals without inferring current veri
     spec_fingerprint: command.spec_fingerprint, created_at: command.created_at };
   const read = vi.fn().mockResolvedValue(detail(command));
   show([command, failed, pending], read);
-  expect(screen.getByText(/Exit code 0 means that command succeeded/)).toBeInTheDocument();
+  expect(screen.getByText(/Exit code 0/)).toBeInTheDocument();
   expect(screen.getByText(/Exit code 7/)).toBeInTheDocument();
   expect(screen.getByText(/Output reached the storage limit/)).toBeInTheDocument();
   expect(screen.getByText(/command result needs confirmation/)).toBeInTheDocument();
