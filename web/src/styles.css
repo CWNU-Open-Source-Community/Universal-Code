@@ -908,8 +908,7 @@ td code { font-size: 11px; }
 .explorer-line-warning { padding: 8px 12px; background: var(--prayu-control); color: var(--prayu-warning); border: 1px solid color-mix(in srgb, var(--prayu-border) 30%, transparent); border-radius: 6px; font-size: 12px; margin-bottom: 8px; }
 .explorer-line-notice { padding: 8px 12px; background: var(--prayu-control); color: var(--prayu-text); border: 1px solid color-mix(in srgb, var(--prayu-border) 25%, transparent); border-radius: 6px; font-size: 12px; margin-bottom: 8px; }
 .explorer-error { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-subtle); overflow: auto; overflow-wrap: anywhere; }
-.explorer-error h4 { margin: 0; font-size: 14px; font-weight: var(--prayu-weight-heading); line-height: 1.5; }
-.explorer-error-hint { color: var(--muted); font-size: 13px; line-height: 1.65; margin: 6px 0 14px; }
+.explorer-error h4 { margin: 0 0 10px; font-size: 14px; font-weight: var(--prayu-weight-heading); line-height: 1.5; }
 .explorer-error-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .explorer-error-actions .compact-command { max-width: 100%; min-height: 32px; white-space: normal; text-align: left; }
 .explorer-error-details { margin-top: 16px; font-size: 12px; color: var(--muted); }
@@ -934,7 +933,6 @@ td code { font-size: 11px; }
 .file-proposal-editor > .file-proposal-footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px 12px; font-size: 12px; }
 .file-proposal-meta, .file-proposal-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px 12px; min-width: 0; }
 .file-proposal-meta { color: var(--prayu-muted); }
-.file-proposal-actions > p { flex: 1 1 132px; margin: 0; color: var(--prayu-muted); font-size: 12px; line-height: 1.5; white-space: normal; }
 .file-proposal-actions > button, .file-proposal-actions > .proposal-created-status { flex-shrink: 0; margin-left: auto; font-size: 13px; }
 .file-proposal-actions > button { min-height: 34px; padding: 6px 10px; }
 .file-proposal-actions > .file-proposal-submit { background: var(--prayu-primary-bg); border-color: var(--prayu-primary-border); color: var(--prayu-primary-fg); }
@@ -5011,7 +5009,6 @@ samp {
   gap: 16px;
 }
 
-.checkpoint-safety-boundary,
 .checkpoint-toolbar,
 .checkpoint-timeline,
 .checkpoint-detail,
@@ -5021,16 +5018,6 @@ samp {
   border-radius: 14px;
   background: var(--surface);
 }
-
-.checkpoint-safety-boundary {
-  display: flex;
-  gap: 12px;
-  padding: 14px 16px;
-  color: var(--text);
-}
-
-.checkpoint-safety-boundary svg { flex: 0 0 auto; color: var(--accent); }
-.checkpoint-safety-boundary p { margin: 4px 0 0; color: var(--muted); line-height: 1.5; }
 
 .checkpoint-toolbar {
   display: grid;
@@ -5057,6 +5044,7 @@ samp {
   grid-template-columns: minmax(260px, .8fr) minmax(320px, 1.2fr);
   gap: 16px;
 }
+.checkpoint-timeline:only-child { grid-column: 1 / -1; }
 
 .checkpoint-timeline,
 .checkpoint-detail,
@@ -5165,7 +5153,6 @@ samp {
 }
 
 @media (forced-colors: active) {
-  .checkpoint-safety-boundary,
   .checkpoint-toolbar,
   .checkpoint-timeline,
   .checkpoint-detail,

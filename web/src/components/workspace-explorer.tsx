@@ -104,15 +104,14 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
   };
 
   if (!workspaceID) return <section className="workspace-explorer">
-    <EmptyState>{t("绑定项目后可查看文件，请返回对话核对项目选择。", "Bind a project to inspect files. Return to the conversation to review the project selection.")}</EmptyState>
+    <EmptyState>{t("未绑定项目。", "No project is bound.")}</EmptyState>
   </section>;
   if (query.isLoading) return <section className="workspace-explorer">
     <LoadingState label={t("正在加载工作区文件", "Loading Workspace files")} />
   </section>;
   if (query.isError || !query.data) return <section className="workspace-explorer">
     <div className="explorer-error">
-      <h4>{t("无法读取工作区文件", "Unable to read Workspace files")}</h4>
-      <p className="explorer-error-hint" role="alert">{t("目标路径读取失败，请重试或返回上级目录确认文件位置。", "Reading this path failed. Retry or return to the parent directory to locate the file.")}</p>
+      <h4><span role="alert">{t("无法读取工作区文件", "Unable to read Workspace files")}</span></h4>
       <div className="explorer-error-actions">
         <button className="compact-command" disabled={query.isFetching}
           onClick={() => void query.refetch()} type="button">{t("重试文件读取", "Retry file read")}</button>
@@ -223,7 +222,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
             <button aria-pressed={showPreview} className="compact-command" type="button"
               onClick={() => setLocation((current) => ({ ...current, view: "preview" }))}>{t("预览", "Preview")}</button>
           </div>}
-          <span>{t(`已显示 ${formatBytes(snapshot.returned_bytes)}`, `${formatBytes(snapshot.returned_bytes)} shown`)}</span>
+          {snapshot.returned_bytes !== snapshot.total_bytes && <span>{t(`已显示 ${formatBytes(snapshot.returned_bytes)}`, `${formatBytes(snapshot.returned_bytes)} shown`)}</span>}
           <span>{t(`共 ${formatBytes(snapshot.total_bytes)}`, `${formatBytes(snapshot.total_bytes)} total`)}</span>
         </div>
         {!showPreview && lineOutOfRange && <div className="explorer-line-warning" role="alert">

@@ -64,7 +64,6 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
       {!embedded && <header><h2>{t("应用预览", "App preview")}</h2><button aria-label={t("收起应用预览", "Close app preview")} type="button" ref={closeButton} onClick={onClose}><X size={20} /></button></header>}
       <section className="v2-preview-services" aria-label={t("应用后台服务", "App background services")}>
         <h3>{t("项目命令与后台服务", "Project commands and background services")}</h3>
-        <p className="v2-preview-help">{t("先把启动要求放回草稿，确认发送后在这里查看服务状态、启动输出和页面预览。", "Add the startup request to your draft and send it after review. Then view service status, startup output and page previews here.")}</p>
         <button type="button" disabled={!canRequestStart || startRequest?.phase === "submitting" || startRequest?.phase === "unconfirmed"}
           onClick={onRequestStart}>{t("把启动要求放回草稿", "Add startup request to draft")}</button>
         {startRequest && <p role="status">{applicationPreviewRequestCopy(startRequest, !services.isError && related.length > 0, t)}</p>}
@@ -83,8 +82,7 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
             <span>{serviceStateCopy(service, t)}{related.some((item) => item.job_id === service.job_id) ? t(" · 本次启动要求", " · This startup request") : ""}</span>
           </button></li>)}</ul>}
         {services.data?.has_more && <p role="status">{t("当前只展示最近一批后台任务，列表尚未完整。", "Only the latest background tasks are shown. This list is incomplete.")}</p>}
-        {records.length > 1 && !selected && <p role="status">{t("请选择要查看的后台任务，预览与停止操作都以所选服务为范围。", "Select a background task. Preview and stop actions apply to that service.")}</p>}
-        {selectedJobID && !selected && <p role="status">{t("所选任务不在当前列表，请重新选择或使用当前执行的手动地址。", "The selected task is not listed. Select another or enter an address for the current run manually.")}</p>}
+        {selectedJobID && !selected && <p role="status">{t("所选任务不在当前列表。", "The selected task is no longer listed.")}</p>}
         {records.length > 0 && <button type="button" onClick={() => setSelectedJobID("")}>{t("手动输入当前执行的地址", "Enter an address for the current run")}</button>}
         {source && <div className="v2-preview-service-detail">
           <details className="v2-preview-identity"><summary>{t("服务来源与标识", "Service source and identifiers")}</summary>
@@ -93,10 +91,10 @@ export function V2ApplicationPreview({ client, runID, threadID, onClose, returnF
           </details>
           <p role="status">{serviceDetail.isError || services.isError ? t("当前服务状态未确认", "Current service status unconfirmed") : serviceStateCopy(source, t)}
             {source.exit_code !== undefined && t(` · 退出码 ${source.exit_code}`, ` · Exit code ${source.exit_code}`)}</p>
-          {!source.source_message_id && <p className="v2-preview-help">{t("该服务的来源消息待确认，请结合启动输出核对它是否属于本次要求。", "The service's source message is unconfirmed. Use startup output to check whether it belongs to this request.")}</p>}
+          {!source.source_message_id && <p className="v2-preview-help">{t("服务的来源消息未确认。", "The service's source message is unconfirmed.")}</p>}
           {source.can_stop && <button disabled={!serviceReadable || stop.isPending || !client.hasRunExecution}
             onClick={stopSelected} type="button">{stop.isPending && stop.variables?.jobID === source.job_id ? t("正在请求停止命令…", "Requesting command stop…") : t("停止此命令", "Stop this command")}</button>}
-          <p className="v2-preview-help">{t("服务会在收起面板或关闭浏览器后继续运行。需要结束时，点击“停止此命令”，清理范围为所选服务。", "The service keeps running after closing this panel or browser. Select Stop this command to stop and clean up the selected service.")}</p>
+          {source.can_stop && <p className="v2-preview-help">{t("收起面板或关闭浏览器后，后台服务仍会运行。", "The background service keeps running when the panel or browser closes.")}</p>}
           {stop.isError && stop.variables?.jobID === source.job_id && <p role="alert">{t("停止服务未确认完成，请核对状态后重试。", "Service stop is unconfirmed. Check status before retrying.")}{stop.error.message}</p>}
           {serviceDetail.isLoading && <p role="status">{t("正在读取启动输出…", "Loading startup output…")}</p>}
           {serviceDetail.isError && <div role="alert"><p>{t("启动输出与当前状态读取失败。", "Could not load startup output and current status.")}</p>
@@ -162,7 +160,6 @@ function ServiceCommandEvidence({ client, source, threadID }: {
     }, enabled: open && Boolean(activityRef), retry: false });
   return <details className="v2-preview-output" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>{t("查看启动工具记录与已保存输出", "View startup tool record and saved output")}</summary>
-    <p className="v2-preview-help">{t("以下记录属于此命令的原始工具调用；一次工具调用可能包含多条命令。已保存输出按需读取。", "These records belong to the command's original tool call, which may contain multiple commands. Saved output loads on demand.")}</p>
     {evidence.isLoading && <p role="status">{t("正在读取启动工具记录…", "Loading startup tool record…")}</p>}
     {evidence.isError && <div role="alert"><p>{t("启动工具记录读取失败。", "Could not load startup tool record.")}</p>
       <button disabled={evidence.isFetching} onClick={() => void evidence.refetch()} type="button">{t("重试启动工具记录", "Reload startup tool record")}</button></div>}
@@ -175,7 +172,6 @@ function ServiceOutput({ detail }: { detail: ThreadApplicationServiceDetailView 
   const { t } = useLocale();
   const output = detail.output;
   return <details className="v2-preview-output"><summary>{t("查看原始启动输出", "View original startup output")}</summary>
-    <p className="v2-preview-help">{t("输出来自该后台任务，标准输出和标准错误分别展示保留的原始脱敏正文。输出中的地址尚未验证。", "Output belongs to this background task. Retained, redacted stdout and stderr are shown separately. Addresses in the output are unverified.")}</p>
     {!output.available ? <p role="status">{t("当前运行时无法读取此任务的保留输出。", "The runtime cannot read this task's retained output.")}</p>
       : !output.stdout && !output.stderr ? <p>{t("尚无启动输出。", "No startup output yet.")}</p>
         : <><h4>{t("标准输出", "Standard output")}</h4><pre>{output.stdout || t("尚无标准输出。", "No standard output yet.")}</pre>
@@ -286,14 +282,14 @@ function V2PreviewBrowser({ client, runID, threadID, currentRunID, sourceService
   return <section className="v2-preview-browser" aria-label={t("预览浏览器控制", "Preview browser controls")}>
       <h3>{t("浏览器", "Browser")}</h3>
       <details className="v2-preview-identity"><summary>{t("浏览器来源", "Browser source")}</summary><p>{t("来源执行 ", "Source run ")}<code>{runID}</code></p></details>
-      {!client.hasFullCDPSessionControl ? <p role="status">{t("当前连接未开放托管浏览器。后台服务状态与日志仍可在上方查看；网页预览需支持托管浏览器的服务及当前任务权限。", "Managed browsers are unavailable on this connection. View service status and logs above. Page previews require a service with managed browsers and appropriate task permissions.")}</p> : <>
+      {!client.hasFullCDPSessionControl ? <p role="status">{t("当前连接未开放托管浏览器。", "Managed browsers are unavailable on this connection.")}</p> : <>
         {sourceService && (!runUsable || !serviceAllowsOpen) && <p role="status">
           {detail.isLoading ? t("正在核对服务所属执行…", "Checking the service's source run…") : !sourceReadable ? t("服务状态尚未确认，请先重试核对。", "Service status is unconfirmed. Retry the check first.")
             : sourceService.state !== "running" ? t("此后台任务未在运行，可以查看启动输出。", "This background task is not running. View its startup output.")
               : !sourceService.can_stop ? t("保存的运行记录，当前服务状态未确认。请回对话核对服务。", "This is a saved run record. Current service status is unconfirmed; check it in the conversation.")
               : t("服务所属执行已退出或无法确认，不能打开其预览浏览器。", "The source run has exited or is unconfirmed. Its preview browser cannot be opened.")}</p>}
         {candidates && candidates.length > 0 && <div className="v2-preview-candidates" aria-label={t("输出中的候选地址", "Candidate addresses from output")}>
-          <p>{t("从启动输出发现以下地址，尚未验证页面是否可用。请选择要打开的地址。", "These addresses were found in startup output. Page availability is unverified. Choose an address to open.")}</p>
+          <p>{t("启动输出中的地址（未验证）", "Addresses from startup output (unverified)")}</p>
           {candidates.map((candidate) => <button key={candidate.url} type="button" aria-pressed={target === candidate.url}
             disabled={active || !runUsable || !serviceAllowsOpen || !localPreviewURL(candidate.url)}
             onClick={() => setTarget(candidate.url)} aria-label={t(`选择地址 ${candidate.url}`, `Select address ${candidate.url}`)}><code>{candidate.url}</code></button>)}
@@ -305,7 +301,7 @@ function V2PreviewBrowser({ client, runID, threadID, currentRunID, sourceService
           {!active ? <button type="button" disabled={busy || !canOpen || !localPreviewURL(target.trim())} onClick={() => open.mutate()}><ExternalLink size={16} />{t("打开应用", "Open app")}</button>
             : <button type="button" disabled={busy || current?.state === "closing"} onClick={() => close.mutate()}>{t("关闭浏览器", "Close browser")}</button>}
         </div>
-        {!active && <p className="v2-preview-help">{t("填写开发服务显示的本机地址。打开后，当前任务可以操作这个独立浏览器；使用临时浏览器资料，关闭或到期后清理。", "Enter the local address shown by the development service. This task can control the isolated browser once opened. Temporary browser data is cleaned up on close or expiry.")}</p>}
+        {!active && <p className="v2-preview-help">{t("当前任务可以控制打开的浏览器。临时资料在关闭或到期后清理。", "This task can control the opened browser. Its temporary profile is cleared on close or expiry.")}</p>}
         {!eligible && <div className="v2-preview-help">{t("打开预览需要先确认完全访问权限。", "Confirm full access before opening the preview.")}{runID === currentRunID ? <V2PermissionControl client={client} threadID={threadID} /> : <span>{t("此服务来自历史执行，请回到对应执行核对权限。", "This service belongs to a past run. Check permissions in that run.")}</span>}</div>}
         {eligible && !cdpEnabled && <div className="v2-preview-help">{t("浏览器控制目前关闭。启用后，当前任务能读取、操作此独立浏览器及其网络请求。", "Browser control is disabled. Enable it to let this task read and control the isolated browser and its network requests.")}{runID === currentRunID ? <button disabled={enable.isPending || !runUsable || !client.hasBrowserCDPPermissionControl || !client.hasFullCDPDebug} type="button" onClick={() => enable.mutate()}>{t("允许任务控制预览浏览器", "Allow this task to control the preview browser")}</button>
             : <span>{t("请回到服务所属执行核对浏览器权限。", "Check browser permissions in the service's source run.")}</span>}</div>}
@@ -320,7 +316,6 @@ function V2PreviewBrowser({ client, runID, threadID, currentRunID, sourceService
           {url && preview && <><p>{preview.page.title || t("应用页面", "App page")}<small>{t("观察于 ", "Observed at ")}{new Date(preview.captured_at).toLocaleTimeString(t("zh-CN", "en-US"))}</small></p>
             <img className="v2-preview-capture" src={url} alt={t(`应用页面：${preview.page.title || preview.canonical_url}`, `App page: ${preview.page.title || preview.canonical_url}`)} />
             <details className="v2-preview-interactions"><summary>{t("操作页面控件（", "Page controls (")}{visibleElements.length}）</summary>
-              <p>{t("输入会追加到页面输入框的当前光标位置；只发送给本项目页面。操作后重新读取页面，观察过期时请先刷新。", "Input is inserted at the page field's current cursor and sent only to this project page. The page is read again after each action. Refresh expired observations first.")}</p>
               {visibleElements.map((element) => {
                 const editable = (element.tag === "input" && !["button", "submit", "reset", "checkbox", "radio", "file", "password", "hidden"].includes(element.type ?? "text")) || element.tag === "textarea";
                 const blocked = element.disabled || ["password", "file", "hidden"].includes(element.type ?? "");

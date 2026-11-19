@@ -24,7 +24,7 @@ describe("EvidenceInventory", () => {
 
     expect(await screen.findByText("README.md")).toBeInTheDocument();
     expect(screen.getByText(digest)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Open README.md" }));
+    await user.click(screen.getByRole("button", { name: "Open current file README.md" }));
     expect(onOpenSource).toHaveBeenCalledWith("README.md");
     expect(screen.queryByText(/session message|attached by|operation key/i)).not.toBeInTheDocument();
   });

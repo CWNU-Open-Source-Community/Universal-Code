@@ -166,7 +166,6 @@ export function V2FileWorkspaceContent({
 
   return <>
     {runID && <div className="v2-file-drawer-context">
-      <p>{t("查看此执行绑定目录中的文件。", "View files in the directory bound to this run.")}</p>
       <V2IdentityDisclosure identity={runID} identityLabel={t("执行 ID", "Run ID")} summary={t("执行信息", "Run details")} />
     </div>}
     <div className="v2-file-drawer-body">
@@ -177,7 +176,7 @@ export function V2FileWorkspaceContent({
         </div>
       ) : workspaceQuery.isError ? (
         <div className="v2-notice" role="alert">
-          <p>{t("无法确认此执行的工作区，文件目录可能已清理或暂时无法读取。请重试确认后查看文件。", "The workspace for this run could not be confirmed. Its directory may have been cleaned up or may be temporarily unavailable. Retry before viewing files.")}</p>
+          <p>{t("无法确认此执行的工作区。", "Could not confirm the workspace for this run.")}</p>
           <button className="compact-command" disabled={workspaceQuery.isFetching} onClick={() => void workspaceQuery.refetch()} type="button">
             {t("重试工作区确认", "Retry workspace check")}
           </button>

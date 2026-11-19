@@ -119,12 +119,12 @@ it("lets the user compare and select independently saved file drafts before crea
   first.unmount(); second.unmount();
   render(providers(client, <EditorHarness client={client} />));
   await screen.findByLabelText("File editor");
-  expect(screen.getByText("Create proposal")).toBeDisabled();
+  expect(screen.getByText("Submit for review")).toBeDisabled();
   await user.click(screen.getByText("Other windows have file drafts. Review the versions."));
   const chosen = screen.getByText("draft from second window", { selector: "pre" }).parentElement!;
   await user.click(within(chosen).getByRole("button", { name: /Use version/ }));
   expect(screen.getByLabelText("File editor")).toHaveValue("draft from second window");
-  await user.click(screen.getByText("Create proposal"));
+  await user.click(screen.getByText("Submit for review"));
   expect(client.createFileEditProposal).toHaveBeenCalledWith("run-1", {
     version: "file_edit_proposal.v1", source_handle: source.source_handle, proposed_text: "draft from second window",
   });
@@ -242,11 +242,11 @@ it("retains an old draft on changed source and requires review before using its 
   const changed = { ...source, content: "upstream change", content_sha256: "c".repeat(64), source_handle: "C".repeat(43) };
   render(providers(client, <FileProposalEditor client={client} runID="run-1" source={changed} onClose={vi.fn()} />));
   expect(await screen.findByLabelText("File editor")).toHaveValue("old draft");
-  expect(screen.getByText("Create proposal")).toBeDisabled();
+  expect(screen.getByText("Submit for review")).toBeDisabled();
   await user.click(screen.getByText("Review diff"));
   expect(screen.getByLabelText("File diff")).toHaveTextContent("upstream changeold draft");
   await user.click(screen.getByText("Use current version after review"));
-  await user.click(screen.getByText("Create proposal"));
+  await user.click(screen.getByText("Submit for review"));
   expect(client.createFileEditProposal).toHaveBeenCalledWith("run-1", {
     version: "file_edit_proposal.v1", source_handle: changed.source_handle, proposed_text: "old draft",
   });

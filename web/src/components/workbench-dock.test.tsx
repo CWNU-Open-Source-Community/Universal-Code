@@ -49,7 +49,7 @@ describe("WorkbenchDock", () => {
 
     fireEvent.keyDown(window, { key: "p", ctrlKey: true });
     expect(screen.getByRole("button", { name: "文件" })).toBeInTheDocument();
-    expect(screen.getByText("绑定项目后可查看文件，请返回对话核对项目选择。")).toBeInTheDocument();
+    expect(screen.getByText("未绑定项目。")).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "j", ctrlKey: true });
     expect(screen.getByRole("region", { name: "底部面板" })).toBeInTheDocument();
