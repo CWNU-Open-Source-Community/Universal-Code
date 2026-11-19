@@ -91,7 +91,8 @@ describe.each(["v2", "legacy"] as const)("%s Computer Use approval", (kind) => {
     expect(screen.getByText('{"window_id":"window-notepad","text":"task notes"}')).toBeVisible();
     expect(screen.getByRole("button", { name: "本次允许" })).toBeEnabled();
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "本任务允许操作该应用" }));
+    if (kind === "v2") await userEvent.click(screen.getByRole("button", { name: "审批选项" }));
+    await userEvent.click(screen.getByRole(kind === "v2" ? "menuitem" : "button", { name: "本任务允许操作该应用" }));
     await waitFor(() => expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1));
     const post = fetch.mock.calls.find(([, init]) => init?.method === "POST")!;
     expect(post[0]).toBe("/api/v1/runs/run-app/approvals/approval-app/decision");
@@ -112,29 +113,38 @@ describe.each(["v2", "legacy"] as const)("%s Computer Use approval", (kind) => {
     mount(kind, { onceOnly: true });
     expect(await screen.findByText(/"key": "WIN\+D"/)).toBeVisible();
     expect(screen.getByRole("button", { name: "本次允许" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "本任务允许操作该应用" })).not.toBeInTheDocument();
+    if (kind === "v2") await userEvent.click(screen.getByRole("button", { name: "审批选项" }));
+    expect(screen.queryByRole(kind === "v2" ? "menuitem" : "button", { name: "本任务允许操作该应用" })).not.toBeInTheDocument();
     expect(screen.getByText("本次允许仅批准当前操作；后续需要授权的操作将再次询问。")).toBeVisible();
   });
 
   it("disables all decisions while submitting and ignores a duplicate click", async () => {
     const { fetch, complete } = mount(kind, { pending: true });
-    const grant = await screen.findByRole("button", { name: "本任务允许操作该应用" });
+    await screen.findByRole("button", { name: "本次允许" });
+    if (kind === "v2") {
+      await userEvent.click(screen.getByRole("button", { name: "审批选项" }));
+      await userEvent.click(screen.getByRole("menuitem", { name: "请求详情" }));
+    }
     await userEvent.click(screen.getByText("拒绝理由"));
+    if (kind === "v2") await userEvent.click(screen.getByRole("button", { name: "审批选项" }));
+    const grant = screen.getByRole(kind === "v2" ? "menuitem" : "button", { name: "本任务允许操作该应用" });
     await userEvent.dblClick(grant);
-    expect(grant).toBeDisabled();
+    if (kind === "v2") expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    else expect(grant).toBeDisabled();
     expect(screen.getByRole("button", { name: "本次允许" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "拒绝" })).toBeDisabled();
     expect(screen.getByRole("textbox", { name: "mcp_tool_call 的拒绝原因" })).toBeDisabled();
     expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
     complete();
-    await waitFor(() => expect(screen.queryByRole("button", { name: "本任务允许操作该应用" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "本次允许" })).not.toBeInTheDocument());
   });
 
   it("does not offer application authorization for an external MCP preview", async () => {
     const { fetch } = mount(kind, { external: true });
     await screen.findByRole("button", { name: kind === "v2" ? "批准一次" : "仅批准一次" });
     await waitFor(() => expect(fetch.mock.calls.some(([url]) => url.endsWith("/preview"))).toBe(true));
-    expect(screen.queryByRole("button", { name: "本任务允许操作该应用" })).not.toBeInTheDocument();
+    if (kind === "v2") await userEvent.click(screen.getByRole("button", { name: "审批选项" }));
+    expect(screen.queryByRole(kind === "v2" ? "menuitem" : "button", { name: "本任务允许操作该应用" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "本次允许" })).not.toBeInTheDocument();
   });
 });

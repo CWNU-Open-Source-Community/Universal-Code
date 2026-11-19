@@ -322,6 +322,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const composerContainerRef = useRef<HTMLDivElement>(null);
   const mainColumnRef = useRef<HTMLDivElement>(null);
   const [composerFocusRequest, setComposerFocusRequest] = useState<{ threadID: string } | null>(null);
+  const [editingDuringApproval, setEditingDuringApproval] = useState<string>();
   const [confirmedSubmission, setConfirmedSubmission] = useState<V2TurnInput | null>(null);
   const reviewTrigger = useRef<HTMLButtonElement>(null);
   const fileTrigger = useRef<HTMLButtonElement>(null);
@@ -541,13 +542,35 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const onDraftChange = managedDraft?.changeText ?? legacyDraftChange;
   const composeTarget = useRef({ draft, onDraftChange });
   composeTarget.current = { draft, onDraftChange };
+  const activeRun = detailQuery.data?.active_run;
+  const streamRunID = activeRun?.id ?? "";
+  // The approval cards own polling. Follow the same queue so a stale run status
+  // or a failed queue lookup never displaces the editor by itself.
+  const { data: pendingApproval } = useQuery({
+    queryKey: v2QueryKeys.approvals(streamRunID),
+    queryFn: ({ signal }) => client.approvalQueue(streamRunID, signal),
+    enabled: false,
+    select: (queue) => queue.items.find((item) => item.status === "pending")?.id,
+  });
+  const approvalReplacesComposer = Boolean(activeRun && pendingApproval && pendingApproval !== editingDuringApproval &&
+    (client.hasApprovalControl || !client.hasThreadControl));
+  const coveredComposerThread = useRef<string | null>(null);
+  useEffect(() => {
+    const wasCovered = coveredComposerThread.current === threadID;
+    coveredComposerThread.current = approvalReplacesComposer ? threadID : null;
+    if (wasCovered && !approvalReplacesComposer && document.activeElement === document.body) {
+      setComposerFocusRequest({ threadID });
+    }
+  }, [approvalReplacesComposer, threadID]);
+  const revealComposer = useCallback(() => {
+    setEditingDuringApproval(pendingApproval);
+    setComposerFocusRequest({ threadID });
+  }, [pendingApproval, threadID]);
   const composeMessage = useCallback((text: string) => {
     const current = composeTarget.current;
     current.onDraftChange?.(current.draft ? `${current.draft}\n\n${text}` : text, current.draft);
-    requestAnimationFrame(() => document.querySelector<HTMLElement>('.v2-conversation .v2-composer :is(textarea, [contenteditable="true"][role="textbox"])')?.focus());
-  }, []);
-  const activeRun = detailQuery.data?.active_run;
-  const streamRunID = activeRun?.id ?? "";
+    revealComposer();
+  }, [revealComposer]);
   const streamEnabled = Boolean(activeRun && ["preparing", "running", "waiting_approval"]
     .includes(activeRun.status));
   const queuedRun = activeRun;
@@ -623,21 +646,28 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     return mergePendingNarrative(liveNarrative, pending);
   }, [messageID, durableNarrative, liveNarrative, existingUserText, optimistic]);
   const transcriptSources = useMemo(() => new Map(transcriptItems.map((item) => [item.id, item])), [transcriptItems]);
-  const visibleNarrative = useMemo(() => {
+  const { visibleNarrative, preparedInTranscript } = useMemo(() => {
     // The complete queue is identity checked by readQueuedMessages. A failed
     // refresh or a different Run must keep every unconfirmed historical row.
     const queuedIDs = new Set(queueQuery.isSuccess ? queueQuery.data.items.map((item) => item.id) : []);
-    return narrative.filter((entry) => {
+    const preparedInTranscript = new Set<string>();
+    const visibleNarrative = narrative.filter((entry) => {
       if (recoveryRepresentsNotice(entry, detailQuery.data?.recovery)) return false;
       const source = entry.kind === "user" ? transcriptSources.get(entry.id) : undefined;
       // The main input stays pending until the whole task commits, including
       // internal tool continuations. Its exact task binding proves it has
       // already started; only inputs still waiting belong solely to the queue.
-      if (source?.task && source.task.input_message_id === source.canonical_id) return true;
+      if (source?.task && source.task.input_message_id === source.canonical_id) {
+        if (source.run_id === queueBinding?.runID && source.durable && !source.provisional && source.source_ref) {
+          preparedInTranscript.add(source.source_ref);
+        }
+        return true;
+      }
       return !(source?.source === "operator" && source.kind === "operator_input" && source.status === "pending" &&
         source.durable && !source.provisional && source.run_id === queueBinding?.runID &&
         source.source_ref && queuedIDs.has(source.source_ref));
     });
+    return { visibleNarrative, preparedInTranscript };
   }, [narrative, detailQuery.data?.recovery, queueBinding?.runID, queueQuery.data, queueQuery.isSuccess, transcriptSources]);
   // Contents the user already submitted: in-flight, just confirmed, or the
   // latest durable user entry. A draft identical to any of these is leftover
@@ -714,6 +744,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     setReviewFileTarget(undefined);
     setReviewToolTarget(undefined);
     setComposerFocusRequest(null);
+    setEditingDuringApproval(undefined);
     olderScrollAnchorRef.current = null;
   }, [threadID]);
   const reportReplyReading = useV2ReplyReading({ threadID, request: readRequest, reading: replyReading,
@@ -918,7 +949,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   };
 
   const agentActivity = projectAgentActivity({ threadID, runID: detail.active_run?.id,
-    runStatus: currentRun.status, archived: detail.thread.status !== "active",
+    runStatus: currentRun.status, approvalVisible: Boolean(pendingApproval), archived: detail.thread.status !== "active",
     execution: executionQuery.data, executionReadable: client.hasThreadExecutionRead === true,
     executionError: executionQuery.isError, submitting: turnSubmitting, reconciling,
     snapshot: liveSnapshot, streamStatus: publicStream.status,
@@ -933,7 +964,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     } else if (workspaceState.fullView) {
       setWorkspaceFullView(threadID, false);
     }
-    setComposerFocusRequest({ threadID });
+    revealComposer();
   };
   const addReviewComment = (content: string): ReviewCommentResult => {
     if (managedDraft) return appendReviewComment(managedDraft, content);
@@ -1110,6 +1141,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
               : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
             items[next]?.focus();
           }}>
+          {approvalReplacesComposer && client.hasThreadControl && detail.thread.status === "active" &&
+            <button onClick={() => { setMenuOpen(false); revealComposer(); }} role="menuitem" tabIndex={-1} type="button">
+              <MessageSquare aria-hidden="true" size={15} />{t("编辑聊天草稿", "Edit chat draft")}</button>}
           <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} onClick={() => {
             setMenuOpen(false);
             menuTriggerRef.current?.focus();
@@ -1190,16 +1224,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
                 }).catch(() => undefined);
               }} type="button">{t("继续提交原消息", "Continue original submission")}</button>}
             {onDraftChange && <button disabled={draft?.trim() === input.content.trim()}
-              onClick={() => onDraftChange(draft?.trim() ? `${draft}\n\n${input.content}` : input.content)}
+              onClick={() => appendDraftAndReveal(input.content)}
               type="button">{draft?.trim() ? t("添加到草稿", "Add to draft") : t("放回输入框", "Restore to editor")}</button>}
           </div>)}
         {(eventStream.error || publicStream.error) && working && <div className="v2-notice tone-warning"
           role="status">{t("实时进度暂不可用；持久工作记录仍会继续同步。", "Live progress is temporarily unavailable. Saved work history will continue to sync.")}</div>}
         {detail.active_run && <MCPInputCards client={client} runID={currentRun.id} />}
-        {detail.active_run && <V2ApprovalCards client={client}
-          runID={currentRun.id} threadID={threadID} onReviewFile={(target, trigger) => {
-            reviewReturnFocus.current = trigger; setReviewToolTarget(undefined); setReviewFileTarget(target); openSingletonSurface("review");
-          }} />}
         {detail.active_run && <div className="v2-command-approvals">
           <ControlledCommandProposalPanel client={client} runID={currentRun.id} threadID={threadID} />
           <HostCommandProposalPanel client={client} runID={currentRun.id} threadID={threadID} />
@@ -1229,7 +1259,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       {scrollMemory.unreadCount > 0 && <span className="v2-jump-latest-badge" data-testid="scroll-unread-badge">{scrollMemory.unreadCount}</span>}
     </button>}
     </div>
-    <div className="v2-composer-dock">
+    <div className={`v2-composer-dock${pendingApproval ? " has-pending-approval" : ""}`}>
       {(agentActivity || currentRun.status === "paused") && <div className="v2-composer-status">
       <V2AgentActivity activity={agentActivity} />
       {currentRun.status === "paused" && <V2PausedThreadControl client={client} threadID={threadID} runID={currentRun.id} />}
@@ -1252,15 +1282,22 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       {executionQuery.data?.state === "idle" && executionQuery.data.last_turn_interrupted &&
         <p className="v2-composer-caption" role="status">{t("上次执行已中断。可以发送新消息继续，已完成的修改会保留。", "The previous execution was interrupted. Send a new message to continue; completed changes are kept.")}</p>}
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
-        paused={working || contextOpen || modalVisible || stageFullView || menuOpen} onReply={replyToPinProposal}
+        paused={working || approvalReplacesComposer || contextOpen || modalVisible || stageFullView || menuOpen} onReply={replyToPinProposal}
         onClose={() => setComposerFocusRequest({ threadID })} />}
       <div className="v2-queue-composer-stack">
       {queueBinding && <V2QueuedMessages client={client} {...queueBinding} running={working || runActive}
+        preparedInTranscript={pendingApproval ? preparedInTranscript : undefined}
         canPromote={client.hasThreadExecutionRead === true
           ? executionQuery.isSuccess && executionQuery.data.state === "running" &&
             executionQuery.data.execution_id === queueQuery.data?.execution_id
           : !executionQuery.isError && canSteer} />}
-      <div className="v2-shared-composer" ref={composerContainerRef} data-thread-id={threadID}>
+      {activeRun && <div className="v2-approval-dock">
+        <V2ApprovalCards client={client} key={activeRun.id} runID={activeRun.id} threadID={threadID}
+          onReviewFile={(target, trigger) => {
+            reviewReturnFocus.current = trigger; setReviewToolTarget(undefined); setReviewFileTarget(target); openSingletonSurface("review");
+          }} />
+      </div>}
+      <div className="v2-shared-composer" ref={composerContainerRef} data-thread-id={threadID} hidden={approvalReplacesComposer}>
       <V2Composer client={client} disabled={!client.hasThreadControl ||
         detail.thread.status !== "active"}
         submitDisabled={reconciling || executionQuery.data?.state === "stopping" ||
