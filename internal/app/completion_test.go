@@ -20,6 +20,26 @@ func dispatchForOutput(t *testing.T, args ...string) (string, error) {
 	return out.String(), err
 }
 
+// completionCandidatesFromOutput splits __complete output into candidate
+// lines and asserts the trailing cobra-style directive; 4 means the CLI
+// provided candidates, 0 hands the position back to the shell.
+func completionCandidatesFromOutput(t *testing.T, output string, wantDirective string) []string {
+	t.Helper()
+	var candidates []string
+	directive := ""
+	for _, line := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
+		if strings.HasPrefix(line, ":") {
+			directive = line
+			continue
+		}
+		candidates = append(candidates, line)
+	}
+	if directive != wantDirective {
+		t.Fatalf("completion directive = %q, want %q (output %q)", directive, wantDirective, output)
+	}
+	return candidates
+}
+
 // dispatchSwitchCommands extracts the literal command names handled by the
 // dispatch switch in app.go so the switch and commandTable cannot drift
 // apart silently.
@@ -275,7 +295,7 @@ func TestCompleteListsAllCommandsForEmptyPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	got := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	got := completionCandidatesFromOutput(t, out, ":4")
 	want := commandNames()
 	if len(got) != len(want) {
 		t.Fatalf("got %d candidates, want %d: %v", len(got), len(want), got)
@@ -292,7 +312,7 @@ func TestCompleteFiltersByPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	got := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	got := completionCandidatesFromOutput(t, out, ":4")
 	want := []string{"git-advanced", "git-op", "git-remote"}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -309,7 +329,7 @@ func TestCompleteCompletesHelpArgument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	if got := strings.Fields(out); len(got) != 1 || got[0] != "workspace" {
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "workspace" {
 		t.Fatalf("'help wo' must complete workspace only, got %q", out)
 	}
 }
@@ -319,22 +339,22 @@ func TestCompleteSecondLevelSubcommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	if got := strings.Split(strings.TrimSuffix(out, "\n"), "\n"); len(got) != len(commandSubcommands["workspace"]) {
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != len(commandSubcommands["workspace"]) {
 		t.Fatalf("workspace must complete its full subcommand set, got %v", got)
 	}
 	out, err = dispatchForOutput(t, "__complete", "run", "st")
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	if got := strings.Fields(out); len(got) != 4 || got[0] != "standard-code" || got[1] != "start" || got[2] != "steer" || got[3] != "step" {
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 4 || got[0] != "standard-code" || got[1] != "start" || got[2] != "steer" || got[3] != "step" {
 		t.Fatalf("'run st' must complete the four st-subcommands sorted, got %v", got)
 	}
 	out, err = dispatchForOutput(t, "__complete", "completion", "")
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	if got := strings.Fields(out); len(got) != 2 || got[0] != "bash" || got[1] != "zsh" {
-		t.Fatalf("'completion ' must complete bash and zsh, got %v", got)
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 3 || got[0] != "bash" || got[1] != "fish" || got[2] != "zsh" {
+		t.Fatalf("'completion ' must complete bash, fish, and zsh, got %v", got)
 	}
 }
 
@@ -349,8 +369,8 @@ func TestCompleteDeeperPositionsOfferNothing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("dispatch %v: %v", args, err)
 		}
-		if out != "" {
-			t.Fatalf("deep positions must offer no candidates for %v, got %q", args, out)
+		if got := completionCandidatesFromOutput(t, out, ":0"); len(got) != 0 {
+			t.Fatalf("deep positions must offer no candidates for %v, got %v", args, got)
 		}
 	}
 }
@@ -417,12 +437,18 @@ func TestCompletionCommandEmitsZshScript(t *testing.T) {
 	// Simulates Zsh passing ${(@)words[2,CURRENT]} when the cursor sits after
 	// "wo" in `cyberagent wo list` (CURRENT=2) and at end-of-line `cyberagent workspace in` (CURRENT=3).
 	midLine, err := dispatchForOutput(t, "__complete", "wo")
-	if err != nil || strings.TrimSpace(midLine) != "workspace" {
-		t.Fatalf("mid-line cursor slice must complete workspace, got %q (err=%v)", midLine, err)
+	if err != nil {
+		t.Fatalf("mid-line cursor slice failed: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, midLine, ":4"); len(got) != 1 || got[0] != "workspace" {
+		t.Fatalf("mid-line cursor slice must complete workspace, got %q", midLine)
 	}
 	endOfLine, err := dispatchForOutput(t, "__complete", "workspace", "in")
-	if err != nil || strings.TrimSpace(endOfLine) != "init" {
-		t.Fatalf("end-of-line cursor slice must complete init, got %q (err=%v)", endOfLine, err)
+	if err != nil {
+		t.Fatalf("end-of-line cursor slice failed: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, endOfLine, ":4"); len(got) != 1 || got[0] != "init" {
+		t.Fatalf("end-of-line cursor slice must complete init, got %q", endOfLine)
 	}
 }
 
@@ -446,9 +472,27 @@ func TestPrintCommandHelpListsFullDoctorAndRunVocabularies(t *testing.T) {
 }
 
 func TestCompletionCommandRejectsUnknownShell(t *testing.T) {
-	_, err := dispatchForOutput(t, "completion", "fish")
-	if err == nil || !strings.Contains(err.Error(), "bash, zsh") {
+	_, err := dispatchForOutput(t, "completion", "tcsh")
+	if err == nil || !strings.Contains(err.Error(), "bash, zsh, fish") {
 		t.Fatalf("unknown shell must list supported shells, got %v", err)
+	}
+}
+
+func TestCompletionCommandEmitsFishScript(t *testing.T) {
+	out, err := dispatchForOutput(t, "completion", "fish")
+	if err != nil {
+		t.Fatalf("dispatch completion fish: %v", err)
+	}
+	for _, want := range []string{
+		"function __cyberagent_complete",
+		"commandline -opc) (commandline -ct)",
+		"$tokens[2..-1]",
+		"complete -c cyberagent -f -a '(__cyberagent_complete)'",
+		"__fish_complete_path",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("fish script missing %q: %q", want, out)
+		}
 	}
 }
 
