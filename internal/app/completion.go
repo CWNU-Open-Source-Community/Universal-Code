@@ -27,7 +27,7 @@ var commandTable = []commandSpec{
 	{"approval", "Review, approve, deny, and grant tool approvals", "cyberagent approval list|show|approve-once|approve-for-thread|deny|grant"},
 	{"artifact", "List, show, read, and verify run artifacts", "cyberagent artifact list|show|read|verify"},
 	{"code-intel", "Show code intelligence status and qualification", "cyberagent code-intel status|qualify"},
-	{"completion", "Emit shell completion scripts for bash or zsh", "cyberagent completion bash|zsh"},
+	{"completion", "Emit shell completion scripts for bash, zsh, or fish", "cyberagent completion bash|zsh|fish"},
 	{"context", "Compact context and manage instructions and memory", "cyberagent context compact|show|instructions|memory"},
 	{"ctf", "Scaffold CTF challenge workspaces, analysis worksheets, and writeups", "cyberagent ctf init|analyze|writeup"},
 	{"debug", "Run bounded debug queries against a run", "cyberagent debug query --run <run-id> [bounded filters] [--json]"},
