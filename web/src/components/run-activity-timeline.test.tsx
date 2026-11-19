@@ -123,7 +123,7 @@ describe("RunActivityTimeline", () => {
 
     expect(screen.getByText("read_file")).toBeInTheDocument();
     expect(screen.getByText("正在准备调用 · 32 字节")).toBeInTheDocument();
-    expect(screen.getByText(/服务端验证通过后执行/u)).toBeInTheDocument();
+    expect(screen.getByText("临时")).toBeInTheDocument();
     expect(screen.queryByText(/README\.md/u)).not.toBeInTheDocument();
   });
 

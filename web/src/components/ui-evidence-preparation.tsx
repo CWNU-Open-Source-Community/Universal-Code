@@ -110,7 +110,7 @@ export function UIEvidencePreparation({ client, runID, threadID, pending, unreso
       {draft.store && <button type="button" className="compact-command" disabled={pending || unresolved || preparing}
         onClick={() => { try { draft.discard(); setReviewed(false); setError(""); } catch (failure) { setError(String(failure)); } }}>{t("放弃未保存草稿", "Discard unsaved draft")}</button>}
     </div>}
-    <p>{t("选择应用服务的启动记录，或填写项目启动方式。验证会启动本次专用服务和浏览器，完成后清理；请选用测试数据与空闲端口。", "Choose an application service's launch record or enter the project's launch settings. Verification starts its own service and browser and cleans them up afterward. Use test data and a free port.")}</p>
+    <p>{t("验证会启动临时服务和浏览器，请使用测试数据与空闲端口。", "Verification starts a temporary service and browser. Use test data and a free port.")}</p>
     <details><summary>{t("准备本次执行权限", "Prepare execution authority")}</summary><p>{t("在任务设置选择 Code、Local 和 Deliver，并在任务权限中激活 Full 与 restricted 浏览器控制。启动时会核对当前根执行租约。", "Choose Code, Local, and Deliver in task settings, then activate Full and restricted browser control in task permissions. Starting verifies the current root execution lease.")}</p></details>
     <fieldset disabled={locked || preparing}>
       {threadID && <><label>{t("应用服务", "Application service")}<select value={serviceID} onChange={(event) => { setServiceID(event.target.value); invalidate(); }}>
@@ -123,7 +123,7 @@ export function UIEvidencePreparation({ client, runID, threadID, pending, unreso
           ? t("该服务没有可复用的启动记录，请按项目启动方式填写下方表单。", "This service has no reusable launch record. Fill in the project's launch settings below.")
           : t("读取启动记录后核对下方命令，并把地址改为本次专用空闲端口。", "Read the launch record, review the command below and change the address to a free port dedicated to this verification.")}</p>
         {(source.isError || service.isError) && <ErrorState error={source.error || service.error} />}</>}
-      {services.data?.services.filter((entry) => entry.run_id === runID).length === 0 && <p>{t("当前执行尚无应用服务记录。可填写项目启动命令，或回任务要求启动应用后再读取。", "This execution has no application service records yet. Enter its launch command or ask the task to start the application, then read the records again.")}</p>}</>}
+      {services.data?.services.filter((entry) => entry.run_id === runID).length === 0 && <p>{t("此执行暂无服务启动记录", "No service launch records for this run")}</p>}</>}
       <label>{t("应用名称", "Application name")}<input maxLength={256} value={name} onChange={(event) => { setName(event.target.value); invalidate(); }} /></label>
       <label>{t("启动命令（PowerShell）", "Launch command (PowerShell)")}<textarea rows={3} maxLength={65536} value={command} onChange={(event) => { setCommand(event.target.value); invalidate(); }} /></label>
       <label>{t("项目内工作目录", "Working directory in project")}<input maxLength={4096} value={directory} onChange={(event) => { setDirectory(event.target.value); invalidate(); }} /></label>

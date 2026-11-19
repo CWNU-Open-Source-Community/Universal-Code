@@ -61,7 +61,6 @@
   .v2-review-body .file-review-workspace.is-reviewing,
 .v2-review-body .checkpoint-layout,
 .v2-review-body .delivery-truth-columns { grid-template-columns: minmax(0, 1fr); }
-  .v2-review-drawer > footer > span { display: none; }
 }
 @container workspace-dock (max-width: 680px) {
   .v2-review-drawer.is-embedded .v2-review-body { padding: 12px; }

@@ -47,17 +47,12 @@ export function MemoryCandidatesPanel({ client, workspaceID, onOpenRun }: {
   return <section className="context-memory-candidates" aria-label={t("待确认经验", "Experience candidates")}>
     <header className="context-section-header">
       <div><span><strong>{t("待确认经验", "Experience candidates")}</strong>
-        <small>{t("查看结论和来源，确认后保存为当前项目记忆。", "Review the conclusion and its source, then save it as project memory.")}</small>
       </span></div>
       <button type="button" className="compact-command" disabled={candidates.isFetching || review.isPending}
         onClick={() => { review.reset(); void candidates.refetch(); }}>
         <RefreshCw aria-hidden="true" size={13} />{t("刷新候选", "Refresh candidates")}
       </button>
     </header>
-    <p className="context-empty">{t(
-      "候选来自已完成回复或交付记录中的决策、总结笔记，内容仍需你核实。确认前不会用于后续任务；保存后可在下方编辑、禁用或删除。",
-      "Candidates come from decision or summary notes linked to finished replies or delivery records. Verify the content before confirming. Pending candidates are excluded from later tasks; saved memories can be edited, disabled, or deleted below.",
-    )}</p>
     {review.isError && <ErrorState error={review.error} />}
     {candidates.isLoading ? <LoadingState label={t("加载候选经验", "Loading experience candidates")} /> :
       candidates.isError ? <ErrorState error={candidates.error} /> :
@@ -68,10 +63,6 @@ export function MemoryCandidatesPanel({ client, workspaceID, onOpenRun }: {
                 <summary><strong>{candidate.title}</strong>
                   <span>{t("待核实", "Needs review")} · {formatDate(candidate.created_at)}</span></summary>
                 <p className="context-candidate-content">{candidate.content}</p>
-                <p className="context-empty">{candidate.source.completion_kind === "thread_reply" ? t(
-                  "来源回复已结束；任务或计划是否完成仍需单独核实。",
-                  "The source reply finished. Task or plan completion still needs separate verification.",
-                ) : t("来源有完成记录，结论的正确性和适用范围仍需核实。", "The source has a completion record. Verify the conclusion and where it applies.")}</p>
                 <dl className="context-candidate-source">
                   <dt>{t("来源任务", "Source run")}</dt><dd>{onOpenRun ?
                     <button className="compact-command" type="button" onClick={() => onOpenRun(candidate.source.run_id)}>
@@ -89,7 +80,7 @@ export function MemoryCandidatesPanel({ client, workspaceID, onOpenRun }: {
                 <div className="context-row-actions">
                   <button className="compact-command" type="button" disabled={!client.hasControl || review.isPending}
                     onClick={() => review.mutate({ candidate, confirm: true })}>
-                    {t("确认并保存到项目", "Confirm and save to project")}</button>
+                    {t("确认并保存为项目记忆", "Save as project memory")}</button>
                   <button className="compact-command" type="button" disabled={!client.hasControl || review.isPending}
                     onClick={() => review.mutate({ candidate, confirm: false })}>
                     {t("忽略此候选", "Dismiss candidate")}</button>

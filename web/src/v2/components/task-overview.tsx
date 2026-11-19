@@ -70,24 +70,17 @@ export function TaskOverview({ client, threadID, onFeedback, onAddComment, onGit
           <div><dt>{t("读取时间", "Read at")}</dt><dd>{new Date(review.observed_at).toLocaleString(t("zh-CN", "en-US"))} {t(" · 覆盖 ", " · Covering ")}{review.runs.length} / {review.total_runs} {t(" 次执行", " runs")}</dd></div></dl>
         </details>
         {review.partial && <p role="status">{t("此审阅覆盖部分记录。请在执行记录和提交页面核对其余改动与检查。", "This review covers only some records. Check execution records and the commit page for remaining changes and checks.")}</p>}
-        <p className="v2-delivery-muted">{t("下方汇总已记录的文件编辑。命令、手动编辑等产生的其他变化，请在提交页面核对。", "Recorded file edits are summarized below. Review command-generated, manual and other changes on the commit page.")}</p>
         {(review.reasons.length > 0 || review.revision.reasons.length > 0) && <details><summary>{t("审阅范围与缺失信息", "Review scope and missing information")}</summary>
           <ul>{[...new Set([...review.reasons, ...review.revision.reasons])].map((reason) => <li key={reason}>{reason}</li>)}</ul></details>}
       </div>
-      <div className="v2-overview-next">
-        <div className="v2-overview-next-label">
-          <strong>{t("交付与下一步操作", "Delivery and next actions")}</strong>
-          <span>{t("查看当前目录的全部改动，选择本次提交范围、进入 PR 或查看完整检查报告。", "View all changes in the current directory, select a commit scope, open the PR or view full check reports.")}</span>
-        </div>
-        <div className="v2-overview-next-actions">
+      {(onGit || onPullRequest || onChecks) && <div className="v2-overview-next-actions">
           {onGit && <button className="v2-delivery-primary" onClick={onGit} type="button">
             {t("选择文件并提交", "Select files and commit")}<ArrowRight size={15} aria-hidden="true" /></button>}
           {onPullRequest && <button className="v2-delivery-secondary" onClick={onPullRequest} type="button">
             <GitPullRequest size={15} aria-hidden="true" />{t("PR 状态与交付", "PR status and delivery")}</button>}
           {onChecks && <button className="v2-delivery-secondary" onClick={onChecks} type="button">
             <ShieldCheck size={15} aria-hidden="true" />{t("完整检查与环境", "All checks and environment")}</button>}
-        </div>
-      </div>
+      </div>}
       {currentRunDetail?.plan_delivery && <section className="v2-overview-plan-delivery" aria-label={t("交付计划", "Delivery plan")}>
         <h3>{t("当前执行的交付计划", "Current run's delivery plan")}</h3>
         <PlanDeliveryPanel client={client} detail={currentRunDetail}
@@ -100,7 +93,7 @@ export function TaskOverview({ client, threadID, onFeedback, onAddComment, onGit
         .map((change) => <TaskChange key={`${change.run_id}:${change.edit_id}`} change={change} observedAt={review.observed_at}
           onFeedback={feedback} onAddComment={onAddComment} onReviewFile={onReviewFile} />)}
       <h3>{t("已应用的编辑 ", "Applied edits")}<span>({review.applied_changes.length})</span></h3>
-      {!review.applied_changes.length && <p>{t("尚无已记录的应用编辑。工作目录的其他改动可在提交页面核对。", "No recorded applied edits. Check other working directory changes on the commit page.")}</p>}
+      {!review.applied_changes.length && <p>{t("暂无已应用的编辑", "No applied edits recorded")}</p>}
       {review.applied_changes.map((change) => <TaskChange key={`${change.run_id}:${change.edit_id}`} change={change} observedAt={review.observed_at} onFeedback={feedback} onAddComment={onAddComment} />)}
       </section><section aria-label={t("任务检查", "Task checks")}>
       <h3>{t("检查结果 ", "Check results")}<span>({review.checks.length})</span></h3>

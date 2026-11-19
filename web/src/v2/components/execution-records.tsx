@@ -186,11 +186,8 @@ function ExecutionRecordDetail({ client, threadID, item }: { client: APIClient; 
   const { t } = useLocale();
   return <div className="v2-execution-records-detail-content">
     <h3>{item.tool_name || item.title}</h3>
-    <p className="v2-execution-records-origin">{sourceLabels(t)[item.source]} · {item.stage === "running" && item.durable && !item.provisional ? t("记录时执行中", "Running when recorded") : stageLabels(t)[item.stage]}
+    <p className="v2-execution-records-origin">{sourceLabels(t)[item.source]} · {(item.stage === "running" || item.status === "running" && item.sequence !== 0) && item.durable && !item.provisional ? t("记录时执行中", "Running when recorded") : stageLabels(t)[item.stage]}
       {item.provisional ? t("· 尚未落盘", " · Not saved yet") : t("· 已保存", " · Saved")}</p>
-    {item.durable && !item.provisional && item.status === "running" && item.sequence !== 0 &&
-      <p className="v2-execution-records-origin">{t("这是记录保存时的执行状态。Agent 的当前活动请查看对话上方的工作状态。", "This was the execution state when the record was saved. Check the conversation's activity status for what the agent is doing now.")}</p>}
-    {item.source === "model" && <p className="v2-execution-records-origin">{t("公开模型内容；实际执行结果以对应工具记录为准。", "Public model content. Tool records show the actual execution results.")}</p>}
     {item.detail && (item.activity_type === "message" && item.source === "model" ? <SafeMarkdown>{item.detail}</SafeMarkdown> :
       <pre className="v2-execution-records-record-text">{item.detail}</pre>)}
     {item.source === "operator" && <V2ImagePreview client={client} images={item.images ?? []} />}

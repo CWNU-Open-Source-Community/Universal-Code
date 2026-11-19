@@ -266,7 +266,6 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
             working={working} onFeedback={onRequestChange} />
           <section aria-label={t("编码环境与计划", "Coding environment and plan")}>
             <h2>{t("编码环境与计划", "Coding environment and plan")}</h2>
-            <p>{t("查看所选执行的编码环境与计划。选择计划方向后进入交付，检查和执行进度可在对话与工作记录中查看。", "View the selected run's coding environment and plan. Choose a plan to proceed to delivery. Check progress in the conversation and work records.")}</p>
             {(runDetail.isLoading || readiness.isLoading) && <p role="status">{t("正在读取编码环境与计划…", "Loading coding environment and plan…")}</p>}
             {(runDetail.isError || readiness.isError) && <p role="alert">{t("编码环境或计划读取失败，已有输入保留。", "Could not load the coding environment or plan. Existing input is preserved.")}<button onClick={() => { void runDetail.refetch(); void readiness.refetch(); }} type="button">{t("重试编码环境与计划", "Reload coding environment and plan")}</button></p>}
             {runDetail.data && readiness.data && <>
@@ -325,14 +324,13 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
             runID={reviewedRunID} runStatus={selectedRun.status} />
         </>}
       </div>
-      <footer className={onAddComment ? "v2-review-comment-status" : undefined}>
-        {onAddComment ? <p role={commentResult === "unsaved" ? "alert" : "status"}>{commentResult === "unsaved"
-          ? t("意见已加入本窗口草稿，但保存或版本有问题。请返回草稿处理，暂勿刷新或退出。", "Comment added in this window, but the draft has a storage or version issue. Return to the draft before reloading or leaving.")
-          : commentResult === "added" ? t("意见已加入聊天草稿，尚未发送。可继续评论其他行。", "Comment added to the chat draft, not sent. You can comment on more lines.")
-          : t("点击差异行旁的 + 写意见，加入聊天草稿后再发送。", "Use + beside a diff line to add feedback to your chat draft, then send from chat.")}</p> : <span>{t("关闭面板会保留当前改动。", "Closing this panel preserves current changes.")}</span>}
+      {(!embedded || commentResult) && <footer className={onAddComment ? "v2-review-comment-status" : undefined}>
+        {(commentResult === "added" || commentResult === "unsaved") && <p role={commentResult === "unsaved" ? "alert" : "status"}>{commentResult === "unsaved"
+          ? t("草稿尚未保存。请返回草稿处理后再关闭窗口。", "The draft is unsaved. Return to it before closing this window.")
+          : t("意见已加入草稿，尚未发送。", "Comment added to draft, not sent.")}</p>}
         <button onClick={onAddComment ? () => onRequestChange("") : onClose} type="button">
           {onAddComment ? t("返回聊天草稿", "Return to chat draft") : t("返回对话", "Back to conversation")}</button>
-      </footer>
+      </footer>}
   </>;
   if (embedded) return <div className="v2-review-drawer is-embedded">{reviewInner}</div>;
   return createPortal(<div className="v2-detail-backdrop" role="presentation"

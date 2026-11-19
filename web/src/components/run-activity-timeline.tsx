@@ -95,8 +95,6 @@ export function RunActivityTimeline({ activity, liveCommentary = null,
       <header className="run-activity-header">
         <div>
           <h2>{t("活动", "Activity")}</h2>
-          <p>{t("公开模型更新与 Go 记录的执行事实",
-            "Public model updates and execution facts recorded by Go")}</p>
         </div>
         <span className="run-activity-safety"
           title={t("显示公开摘要和已保存的操作事件",
@@ -157,8 +155,6 @@ function LiveToolPreparation({ item, t }: {
         <div className="run-activity-detail">{t(...label)}
           {item.argument_bytes ? ` · ${item.argument_bytes} ${t("字节", "bytes")}` : ""}
         </div>
-        <small>{t("正在准备工具请求，服务端验证通过后执行。这里显示准备状态和参数大小。",
-          "Preparing the tool request; execution follows service validation. Preparation status and argument size appear here.")}</small>
       </div>
     </li>
   );

@@ -25,7 +25,6 @@
 .connection-field { display: grid; gap: 7px; min-width: 0; }
 .connection-field label { font-size: 14px; font-weight: 600; }
 .connection-field label span { margin-inline-start: 4px; font-size: 12px; font-weight: 400; color: var(--prayu-muted); }
-.connection-field p { margin: 0; color: var(--prayu-muted); font-size: 12px; line-height: 1.55; }
 .connection-field input {
   width: 100%;
   min-width: 0;

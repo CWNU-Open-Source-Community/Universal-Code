@@ -145,7 +145,6 @@ export function ConnectionGate() {
             autoComplete="off"
             autoCorrect="off"
             id="read-token"
-            aria-describedby="read-token-help"
             name="read-token"
             onChange={(event) => setToken(event.target.value)}
             placeholder="CYBERAGENT_API_TOKEN"
@@ -153,7 +152,6 @@ export function ConnectionGate() {
             type="password"
             value={token}
           />
-          <p id="read-token-help">{t("使用服务提供的令牌查看项目、对话和执行记录。", "Use the token from your service to view projects, conversations and execution history.")}</p>
         </div>
         <div className="connection-field">
           <label htmlFor="control-token">{t("操作令牌", "Control access token")} <span>{t("可选", "optional")}</span></label>
@@ -162,7 +160,6 @@ export function ConnectionGate() {
             autoComplete="off"
             autoCorrect="off"
             id="control-token"
-            aria-describedby="control-token-help"
             name="control-token"
             onChange={(event) => setControlToken(event.target.value)}
             placeholder="CYBERAGENT_API_CONTROL_TOKEN"
@@ -170,7 +167,6 @@ export function ConnectionGate() {
             type="password"
             value={controlToken}
           />
-          <p id="control-token-help">{t("创建任务和执行操作时填写，具体操作范围取决于服务设置。", "Add this token to create tasks and use the actions enabled by your service.")}</p>
         </div>
         {error && <div className="connection-error" role="alert">{error}</div>}
         <button className="connection-submit" disabled={!token.trim() || connecting} type="submit">

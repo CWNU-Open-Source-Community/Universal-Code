@@ -89,7 +89,7 @@ describe("V2 saved conversation search", () => {
     await userEvent.click(screen.getByRole("button", { name: "当前聊天" }));
     await screen.findByRole("button", { name: current.title });
     expect(screen.queryByRole("button", { name: other.title })).not.toBeInTheDocument();
-    expect(input).toHaveAccessibleDescription(/包括尚未加载的历史/);
+    expect(input).toHaveAttribute("placeholder", "搜索当前聊天的消息…");
     expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads/search", {
       q: "needle", include_archived: false, thread_id: current.id, limit: 50 }, ""]);
     await userEvent.click(screen.getByRole("checkbox", { name: "包含已归档对话" }));
@@ -205,7 +205,7 @@ describe("V2 saved conversation search", () => {
     fireEvent.change(input, { target: { value: "needle" } });
     expect(await screen.findByRole("button", { name: older.title })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: current.title })).not.toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("搜索结果：已加载 1 条匹配记录；全部匹配结果已加载");
+    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("1 条匹配记录");
     expect(listCalls()).toHaveLength(2);
     expect(listCalls()[1]).toEqual(["/threads/search", { limit: 50, include_archived: false, q: "needle" }, "", expect.any(AbortSignal)]);
     expect(client.get).not.toHaveBeenCalled();
@@ -334,7 +334,7 @@ describe("V2 saved conversation search", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "加载更多匹配记录" }));
     await screen.findByRole("button", { name: older.title });
     expect(screen.getAllByRole("button", { name: first.title })).toHaveLength(1);
-    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("已加载 2 条匹配记录；还有更多匹配结果");
+    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("2 条匹配记录");
     expect(listCalls().at(-1)?.slice(0, 3)).toEqual(["/threads/search", { limit: 50, include_archived: false, q: "alpha" }, "more-alpha"]);
     await userEvent.setup().click(screen.getByRole("button", { name: "加载更多匹配记录" }));
     await screen.findByRole("button", { name: "正在加载更多匹配记录…" });
@@ -367,10 +367,10 @@ describe("V2 saved conversation search", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "重试加载对话" }));
     await screen.findByRole("button", { name: older.title });
     expect(listCalls().at(-1)?.[2]).toBe("retry-cursor");
-    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("全部匹配结果已加载");
+    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("2 条匹配记录");
     fireEvent.change(input, { target: { value: "empty" } });
     expect(await screen.findByText("没有匹配的标题或消息")).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("已加载 0 条匹配记录；全部匹配结果已加载");
+    expect(screen.getByRole("status", { name: "对话列表状态" })).toHaveTextContent("0 条匹配记录");
   });
 
   it("keeps an initial search failure distinct from an empty result and retries the same title", async () => {

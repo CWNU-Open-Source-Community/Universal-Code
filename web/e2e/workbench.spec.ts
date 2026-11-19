@@ -53,7 +53,7 @@ async function importProject(page: Page) {
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
   await page.keyboard.press("Enter");
-  await dialog.getByRole("button", { name: "添加", exact: true }).click();
+  await dialog.getByRole("button", { name: "添加文件夹", exact: true }).click();
   await dialog.getByRole("textbox", { name: "项目文件夹路径" }).fill(metadata().workspace);
   await dialog.getByRole("button", { name: "添加", exact: true }).click();
   await input.focus();

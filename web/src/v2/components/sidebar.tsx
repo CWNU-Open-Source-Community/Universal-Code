@@ -197,7 +197,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     {moveError && <p className="v2-history-scope" role="alert">{moveError}</p>}
     {searchOpen && <div className="v2-sidebar-search"><Search aria-hidden="true" size={15} />
       <input aria-label={t("搜索对话", "Search conversations")} aria-invalid={searchTooLong || undefined}
-        aria-describedby={`v2-thread-search-scope${searchTooLong ? " v2-thread-search-error" : ""}`} autoFocus
+        aria-describedby={searchTooLong ? "v2-thread-search-error" : undefined} autoFocus
         onChange={(event) => onSearchChange?.(event.target.value)}
         onCompositionStart={() => onSearchCompositionChange?.(true)}
         onCompositionEnd={(event) => {
@@ -211,22 +211,19 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
       <button type="button" aria-pressed={!searchCurrentThread} onClick={() => onSearchCurrentThreadChange(false)}>{t("所有聊天", "All chats")}</button>
       <button type="button" aria-pressed={searchCurrentThread} disabled={!selectedThreadID}
         onClick={() => onSearchCurrentThreadChange(true)}>{t("当前聊天", "Current chat")}</button>
-    </div>}<p className="v2-history-scope" id="v2-thread-search-scope">{searchCurrentThread
-      ? t("搜索当前聊天全部已保存的用户、助手正文，包括尚未加载的历史。英文字母忽略大小写，其他文字按原文匹配。",
-        "Search all saved user or assistant text in this chat, including history not loaded yet. English letters are case-insensitive; other text matches exactly.")
-      : t("搜索全部已保存的对话标题与用户、助手正文。英文字母忽略大小写，其他文字按原文匹配。",
-        "Search all saved conversation titles and user or assistant text. English letters are case-insensitive; other text matches exactly.")}</p>
+    </div>}
       <label className="v2-search-archived"><input type="checkbox" checked={includeArchived}
         onChange={(event) => onIncludeArchivedChange?.(event.target.checked)} />{t("包含已归档对话", "Include archived conversations")}</label></>}
     {searchTooLong && <p className="v2-history-scope" id="v2-thread-search-error" role="alert">{t("搜索最多支持 256 个字符，请缩短搜索词。", "Searches support up to 256 characters. Shorten your search.")}</p>}
     <div aria-busy={!searchTooLong && (searchPending || loading || refreshing || loadingMore)} className="v2-thread-scroll">
-      <p className={searchOpen || loading || loadFailed || truncated || hasMore ? "v2-history-scope" : "v2-thread-state-description"} role="status" aria-label={t("对话列表状态", "Conversation list status")} aria-live="polite" aria-atomic="true">
-        {searchTooLong ? t("请缩短搜索词后继续。", "Shorten your search to continue.") : searchPending ? t("正在准备搜索…", "Preparing search…") : loading ? (searching ? t("正在搜索对话…", "Searching conversations…") : t("正在加载对话…", "Loading conversations…"))
-          : loadFailed ? (loadMoreFailed ? t("更多记录读取失败，当前列表尚未加载完毕。", "More records could not be loaded. The list is incomplete.") : t("对话列表读取失败，当前执行状态未知。", "The conversation list could not be read. Execution status is unknown."))
+      <p className={!searchTooLong && (searching && resultCount > 0 || loading || loadFailed || truncated) ? "v2-history-scope" : "v2-thread-state-description"} role="status" aria-label={t("对话列表状态", "Conversation list status")} aria-live="polite" aria-atomic="true">
+        {searchTooLong ? "" : searchPending ? t("正在准备搜索…", "Preparing search…") : loading ? (searching ? t("正在搜索对话…", "Searching conversations…") : t("正在加载对话…", "Loading conversations…"))
+          : loadFailed ? (loadMoreFailed ? t("更多记录读取失败", "Could not load more records") : t("对话列表读取失败，当前执行状态未知。", "The conversation list could not be read. Execution status is unknown."))
           : refreshing ? t("正在刷新对话列表…", "Refreshing conversations…")
-          : `${searching ? t("搜索结果：", "Search results: ") : ""}${searching ? t(`已加载 ${resultCount} 条匹配记录；`, `Loaded ${resultCount} ${resultCount === 1 ? "match" : "matches"}; `) : t(`已加载 ${resultCount} 条对话；`, `Loaded ${resultCount} ${resultCount === 1 ? "conversation" : "conversations"}; `)}${truncated
-            ? searching ? t("结果达到读取上限，请缩小搜索范围。", "The result limit was reached. Narrow your search.") : t("结果达到读取上限，请用搜索查找更早记录。", "The result limit was reached. Use search to find earlier records.")
-            : hasMore ? searching ? t("还有更多匹配结果。", "More matches are available.") : t("还有更早记录。", "Earlier records are available.") : searching ? t("全部匹配结果已加载。", "All matches are loaded.") : t("当前列表已加载完毕。", "The current list is fully loaded.")}`}</p>
+          : truncated ? (searching ? t("结果达到读取上限，请缩小搜索范围。", "Result limit reached. Narrow your search.")
+            : t("结果达到读取上限，可搜索更早记录。", "List limit reached. Search for earlier records."))
+          : searching ? t(`${resultCount} 条匹配记录`, `${resultCount} ${resultCount === 1 ? "match" : "matches"}`)
+          : t(`${resultCount} 条对话`, `${resultCount} ${resultCount === 1 ? "conversation" : "conversations"}`)}</p>
       {!searchPending && !loading && !loadFailed && !truncated && resultCount === 0 && (searching || workspaces.length === 0 && !projectAction) && <div className="v2-sidebar-empty"><MessagesSquare aria-hidden="true" size={16} />
         {searching ? searchCurrentThread ? t("当前聊天没有匹配的消息", "No matching messages in this chat")
           : t("没有匹配的标题或消息", "No matching titles or messages") : t("暂无对话", "No conversations yet")}</div>}
@@ -365,7 +362,7 @@ export function V2SettingsSidebar({ section, onBack, onSelect }: {
             type="button"><Icon aria-hidden="true" size={16} />{t(...label)}</button>;
         })}</section>)}
     </nav>
-    <div className="v2-settings-archive"><span>{t("已归档", "Archived")}</span>
+    <div className="v2-settings-archive">
       <button aria-current={section === "archived" ? "page" : undefined}
         className={section === "archived" ? "is-active" : ""}
         onClick={() => onSelect("archived")} type="button">

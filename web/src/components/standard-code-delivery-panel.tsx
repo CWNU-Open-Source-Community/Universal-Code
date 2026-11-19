@@ -69,14 +69,11 @@ export function StandardCodeDeliveryPanel({ client, runID, onOpenCheckpoints,
     {report && <>
       <section className={`delivery-truth-summary delivery-truth-${status}`}>
         <div><strong>{heading}</strong>
-          <p>{t("下方显示报告记录的版本与命令结果。核对失败或内容变化后，请重新验证当前版本。",
-            "The recorded revision and command results appear below. After a failed check or content change, verify the current revision again.")}</p>
           {reason && <p>{t(...(observationReasons[reason] ?? ["报告需要重新核对", "The report needs to be checked again"]))}</p>}
         </div>
         <StatusBadge status={status} />
       </section>
-      <p>{t("检查范围：隔离工作区中记录的版本。提交、合并和发布需分别操作。打开文件可查看该工作区的当前内容，请与报告版本核对。",
-        "Checks cover the recorded revision in the isolated workspace. Commit, merge, and publish are separate actions. Opening a file shows the workspace's current contents; compare them with the reported revision.")}</p>
+      <p>{t("检查版本来自隔离工作区。打开文件会显示当前内容。", "Checks cover the isolated workspace revision. Files open at their current contents.")}</p>
       <dl className="handoff-grid delivery-truth-grid">
         <KeyValue label={t("受影响文件", "Affected files")} value={String(report.diff.changed_count)} />
         <KeyValue label={t("已跟踪 / 未跟踪", "Tracked / untracked")}

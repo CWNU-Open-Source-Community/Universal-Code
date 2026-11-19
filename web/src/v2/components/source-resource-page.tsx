@@ -25,10 +25,7 @@ export function SourceResourcePage({ client, title, resourceID, threadID, onBack
         <summary>{t("来源与设置", "Source and settings")}<ChevronDown aria-hidden="true" size={14} /></summary>
         <div className="v2-resource-details-content">
           {resourceID && <p>{t("当前记录：", "Current record: ")}<code>{resourceID}</code></p>}
-          {threadID ? <>
-            <p>{t("来源对话：", "Source conversation: ")}<code>{threadID}</code></p>
-            <p>{t("上方显示来源对话的当前活动；下方是所选记录，可能来自较早的执行。", "The source conversation's current activity appears above. The selected record below may come from an earlier run.")}</p>
-          </> : <p>{t("此记录尚未绑定来源对话。", "This record is not linked to a source conversation.")}</p>}
+          {threadID && <p>{t("来源对话：", "Source conversation: ")}<code>{threadID}</code></p>}
           <button onClick={() => onOpenSettings("general")} type="button">{t("设置", "Settings")}</button>
         </div>
       </details>

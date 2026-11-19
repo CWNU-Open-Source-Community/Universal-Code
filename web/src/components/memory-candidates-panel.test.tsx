@@ -23,11 +23,11 @@ describe("MemoryCandidatesPanel", () => {
     expect(screen.getByText(candidate.content!)).not.toBeVisible();
     await user.click(screen.getByText("Use the stable API"));
     expect(screen.getByText(candidate.content!)).toBeVisible();
-    expect(screen.getByText(/Task or plan completion still needs separate verification/)).toBeVisible();
+    expect(screen.getByText(/Needs review/)).toBeVisible();
     expect(screen.getByText("note-1")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "source-run" }));
     expect(onOpenRun).toHaveBeenCalledWith("source-run");
-    await user.click(screen.getByRole("button", { name: "Confirm and save to project" }));
+    await user.click(screen.getByRole("button", { name: "Save as project memory" }));
     expect(postControl).toHaveBeenCalledExactlyOnceWith("/memory-candidates/candidate-1/confirm", {
       workspace_id: "workspace-1", expected_version: 1,
       expected_fingerprint: "a".repeat(64), expected_source_version: 3, confirm: true,
@@ -42,7 +42,7 @@ describe("MemoryCandidatesPanel", () => {
     const postControl = vi.fn().mockResolvedValue({ candidate: { ...candidateView(), status: "rejected" }, replayed: false });
     const { rerender, queryClient } = renderPanel({ hasControl: false, get, postControl } as unknown as APIClient);
     await user.click(await screen.findByText("Use the stable API"));
-    expect(screen.getByRole("button", { name: "Confirm and save to project" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save as project memory" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Dismiss candidate" })).toBeDisabled();
     expect(postControl).not.toHaveBeenCalled();
     rerender(<QueryClientProvider client={queryClient}><MemoryCandidatesPanel
@@ -66,7 +66,7 @@ describe("MemoryCandidatesPanel", () => {
     });
     renderPanel({ hasControl: true, get, postControl } as unknown as APIClient);
     await user.click(await screen.findByText(candidate.title!));
-    await user.click(screen.getByRole("button", { name: "Confirm and save to project" }));
+    await user.click(screen.getByRole("button", { name: "Save as project memory" }));
     expect(await screen.findByText("The corrected conclusion.")).toBeVisible();
     expect(within(screen.getByRole("alert")).getByText(/Source changed/)).toBeVisible();
     expect(postControl).toHaveBeenCalledTimes(1);

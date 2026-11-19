@@ -108,13 +108,10 @@ export function ProjectDialog({ client, workspace, onClose, onSaved, returnFocus
                   if (event.key !== "Enter" || event.nativeEvent.isComposing || event.keyCode === 229) return;
                   event.preventDefault();
                   addPath();
-                }} placeholder={t("文件夹的完整路径", "Full folder path")} ref={path} spellCheck={false} value={pathInput} /></label>
-              <p>{t("输入运行 Universal-Code 的电脑上的文件夹路径。", "Enter the folder path on the computer running Universal-Code.")}</p>
+                }} placeholder={t("服务端文件夹的完整路径", "Full folder path on the server")} ref={path} spellCheck={false} value={pathInput} /></label>
               <button disabled={!pathInput.trim() || busy} onClick={addPath} type="button"><FolderPlus aria-hidden="true" size={16} />{t("添加", "Add")}</button>
-            </div> : !directory && <><p>{native ? t("在此电脑上添加文件夹", "Add a folder on this computer")
-              : t("添加项目的源文件夹", "Add the project's source folder")}</p>
-              {canCreate && <button disabled={busy} onClick={() => { if (native) choosing.mutate(); else setEditingPath(true); }} type="button">
-                {choosing.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={16} /> : <FolderPlus aria-hidden="true" size={17} />}{t("添加", "Add")}</button>}</>}
+            </div> : !directory && canCreate && <button disabled={busy} onClick={() => { if (native) choosing.mutate(); else setEditingPath(true); }} type="button">
+              {choosing.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={16} /> : <FolderPlus aria-hidden="true" size={17} />}{t("添加文件夹", "Add folder")}</button>}
           {displayedDirectory && !editingPath && <><FolderOpen aria-hidden="true" size={22} /><div className="v2-project-source-path">
             <strong>{displayedDirectory.replace(/[\\/]+$/, "").split(/[\\/]/).at(-1)}</strong><span>{displayedDirectory}</span>
           </div>{!workspace && <button disabled={busy} onClick={() => {
@@ -123,7 +120,6 @@ export function ProjectDialog({ client, workspace, onClose, onSaved, returnFocus
         </div>
         {!workspace && !canCreate && <p className="v2-notice" role="status">{t("此连接尚未启用目录导入。在服务启动命令中加入", "Directory import is disabled. Add")}
           <code> --enable-workspace-import</code>{t("，并使用控制令牌重新连接。", " to the service startup command and reconnect with a control token.")}</p>}
-        {workspace && <p className="v2-project-folder-note">{t("修改名称后，项目内的聊天和源文件夹保持原位。", "Renaming keeps the project's chats and source folder in place.")}</p>}
         {choosing.isError && <p className="v2-inline-error" role="alert">{t("未能选择文件夹，请重试。", "Could not select a folder. Try again.")}</p>}
         {saving.isError && <p className="v2-inline-error" role="alert">{error === "CONFLICT" ? t("这个项目名称已被使用，请换一个名称。", "This project name is already in use. Choose another name.")
           : error === "INVALID_ARGUMENT" ? t("请检查项目名称和文件夹路径，目录必须已存在。", "Check the project name and folder path. The folder must exist.")

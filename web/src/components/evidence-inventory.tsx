@@ -31,7 +31,7 @@ export function EvidenceInventory({ client, runID, onOpenSource }: {
     </header>
     {query.isLoading && <LoadingState label={t("正在加载已附加证据", "Loading attached evidence")} />}
     {query.isError && <ErrorState error={query.error} />}
-    {query.data?.items.length === 0 && <EmptyState>{t("还没有附加证据。在对话中附加参考文件后，可在这里核对来源。", "No attached evidence yet. Attach reference files in the conversation to review their sources here.")}</EmptyState>}
+    {query.data?.items.length === 0 && <EmptyState>{t("暂无附件证据", "No attached evidence")}</EmptyState>}
     {query.data && query.data.items.length > 0 && <div className="evidence-inventory-list">
       {query.data.items.map((item) => <div key={item.attachment_id}>
         <ShieldCheck aria-hidden="true" size={16} />

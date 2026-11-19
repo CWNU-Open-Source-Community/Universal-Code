@@ -1098,10 +1098,6 @@ td code { font-size: 11px; }
 .workspace-import-control strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-import-control small { color: var(--muted); font-size: 11px; font-weight: 400; }
 .context-continuity { display: grid; gap: 18px; }
-.context-boundary { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding: 13px 15px; border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border)); border-radius: 6px; background: color-mix(in srgb, var(--warning) 9%, var(--surface)); color: var(--warning); }
-.context-boundary > svg { margin-top: 1px; }
-.context-boundary strong { font-size: 13px; }
-.context-boundary p { margin: 4px 0 0; font-size: 11px; line-height: 1.55; }
 .context-section { min-width: 0; padding: 15px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); }
 .context-section-header { min-height: 36px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
 .context-section-header > div:first-child { min-width: 0; display: flex; align-items: flex-start; gap: 9px; }

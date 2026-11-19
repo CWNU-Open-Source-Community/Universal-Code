@@ -1768,14 +1768,12 @@
 .v2-settings-nav { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px 10px 16px; }
 .v2-settings-nav section + section { margin-top: 14px; }
 .v2-settings-no-results { margin: 8px 10px; color: var(--v2-muted); font-size: 13px; }
-.v2-settings-nav h2,
-.v2-settings-archive > span { color: var(--v2-muted); font-size: 12px; font-weight: 500; margin: 0; padding: 4px 10px 5px; }
+.v2-settings-nav h2 { color: var(--v2-muted); font-size: 12px; font-weight: 500; margin: 0; padding: 4px 10px 5px; }
 .v2-settings-nav button,
 .v2-settings-archive button { min-height: 32px; overflow-wrap: anywhere; }
 .v2-settings-nav button.is-active,
 .v2-settings-archive button.is-active { background: var(--v2-control-hover); }
 .v2-settings-archive { border-top: 1px solid color-mix(in srgb, var(--v2-border) 55%, transparent); padding: 8px 10px; }
-.v2-settings-archive > span { display: block; }
 .v2-permission-downgrade {
   align-items: center;
   background: color-mix(in srgb, var(--v2-accent) 7%, var(--v2-control));

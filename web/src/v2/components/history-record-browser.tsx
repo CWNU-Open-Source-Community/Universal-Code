@@ -56,9 +56,8 @@ function RecordList({ client, kind, onOpen }: {
       <input aria-label={t(`搜索${label}`, `Search ${label}`)} onChange={(event) => setSearch(event.target.value)} type="search"
         placeholder={kind === "run" ? t("搜索已加载的运行 ID", "Search loaded run IDs") : t("搜索已加载的会话标题或 ID", "Search loaded session titles or IDs")} value={search} />
     </label>
-    <p className="v2-record-search-scope">{t(`搜索 ${loaded.length} 条已加载${kind === "run" ? "运行 ID" : "会话标题和 ID"}，不含消息正文。`, `Search ${loaded.length} loaded ${kind === "run" ? "run IDs" : "session titles and IDs"}. Message text is excluded.`)}</p>
     {query.isPending && <p role="status">{t(`正在读取${label}…`, `Loading ${label.toLowerCase()}…`)}</p>}
-    {query.isError && <p role="alert">{t(`${label}加载失败，已加载记录仍可打开。`, `Could not load ${label.toLowerCase()}. Previously loaded records remain available.`)}
+    {query.isError && <p role="alert">{t(`${label}加载失败`, `Could not load ${label.toLowerCase()}`)}
       <button onClick={() => void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch())}
         type="button">{t(`重试${label}`, `Retry ${label.toLowerCase()}`)}</button></p>}
     {!query.isPending && !query.isError && visible.length === 0 && <p role="status">
