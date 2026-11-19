@@ -509,6 +509,8 @@ cyberagent run steer drain <run-id> --max-steps 1
 cyberagent run steer list <run-id> --limit 100
 cyberagent run steer show <steering-id>
 cyberagent run events <run-id>
+cyberagent run events <run-id> --follow
+# --follow streams NDJSON (headless.v1) until a terminal status; receipt lines go to stderr
 cyberagent headless events <run-id> --max-events 1000
 cyberagent headless events <run-id> --after-sequence <n> --follow --timeout 30m
 cyberagent run start <run-id>

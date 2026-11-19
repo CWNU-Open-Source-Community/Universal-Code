@@ -15,6 +15,7 @@ import (
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/coordinator"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/headless"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/pricing"
 	"cyberagent-workbench/internal/projectconfig"
@@ -2876,11 +2877,15 @@ func writeTransientControlledOutput(
 
 func (a *App) runEvents(ctx context.Context, service *application.RunService, args []string) error {
 	fs := newFlagSet("run events", a.errOut)
-	if err := fs.Parse(args); err != nil {
+	follow := fs.Bool("follow", false, "stream events as NDJSON until the run reaches a terminal status or the 10000-event ceiling")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{"follow": false})); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: cyberagent run events <run-id>")
+		return errors.New("usage: cyberagent run events <run-id> [--follow]")
+	}
+	if *follow {
+		return a.streamRunEvents(ctx, fs.Arg(0))
 	}
 	items, err := service.Events(ctx, fs.Arg(0))
 	if err != nil {
@@ -2896,13 +2901,35 @@ func (a *App) runEvents(ctx context.Context, service *application.RunService, ar
 	return nil
 }
 
+// streamRunEvents follows one run's durable events as NDJSON through the
+// same exporter the headless command and exec --stream use, ending when the
+// run reaches a terminal status.
+func (a *App) streamRunEvents(ctx context.Context, runID string) error {
+	if err := a.ensureStore(); err != nil {
+		return err
+	}
+	request, err := (headless.Request{RunID: runID, Follow: true,
+		MaxEvents: headless.MaxEvents}).Normalize()
+	if err != nil {
+		return err
+	}
+	return headless.NewExporter(a.store).Export(ctx, a.out, request)
+}
+
 func (a *App) runTransition(ctx context.Context, service *application.RunService, action string, args []string) error {
 	fs := newFlagSet("run "+action, a.errOut)
-	if err := fs.Parse(args); err != nil {
+	stream := fs.Bool("stream", false, "stream run events as NDJSON until the run reaches a terminal status or the 10000-event ceiling (start only)")
+	if err := fs.Parse(reorderFlags(args, map[string]bool{"stream": false})); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
+		if action == "start" {
+			return errors.New("usage: cyberagent run start <run-id> [--stream]")
+		}
 		return fmt.Errorf("usage: cyberagent run %s <run-id>", action)
+	}
+	if *stream && action != "start" {
+		return errors.New("--stream is only valid for run start")
 	}
 	var run domain.Run
 	var err error
@@ -2920,6 +2947,15 @@ func (a *App) runTransition(ctx context.Context, service *application.RunService
 	}
 	if err != nil {
 		return err
+	}
+	if *stream {
+		// The NDJSON stream owns stdout; the transition receipt and the
+		// driving hint go to stderr, matching exec --stream's reply routing.
+		// The run must be driven by a scheduler, worker, or `run step` in
+		// another terminal, or the stream simply waits for a terminal state.
+		fmt.Fprintf(a.errOut, "run %s %s\n", run.ID, run.Status)
+		fmt.Fprintln(a.errOut, "note: lifecycle is running; use `cyberagent run step <run-id>` for one supervised turn")
+		return a.streamRunEvents(ctx, run.ID)
 	}
 	fmt.Fprintf(a.out, "run %s %s\n", run.ID, run.Status)
 	if action == "start" {
