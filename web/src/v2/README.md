@@ -35,7 +35,7 @@
 
 - 界面使用 4px 间距网格。对话正文默认 16px，代码默认 15px，两项均可在外观设置中单独调整。对话正文的行高为字号加 8px，字距为 `normal`。连续含汉字的段落间距为 4px，普通段落间距为 11px，段落与列表之间为 10px。
 - 界面与正文使用系统比例字体（Windows 使用 Segoe UI），中文使用内置 HarmonyOS Sans SC 的 400、500、600、700 字重。代码与快捷键使用 JetBrains Mono Variable。四个中文 TTF 使用华为官方归档原件，许可文本与产品内使用声明随软件发布。
-- 内容最大宽度 48rem；toolbar padding 16px；Composer overhang 24px；消息间隔 16px，组内 4px。
+- 对话正文、输入框和待批准卡使用同一条居中内容列，默认最大宽度 736px。工具栏内边距 16px，消息间隔 16px，组内间距 4px。
 - 圆角基值 2/4/6/8/10/12/16/20/24px；支持时采用 `superellipse(1.5)`。
 - 模糊层级 4/8/12/16/24/40/64px。项目材质继续使用 titlebar 28px、sidebar/panel 34px、glass 46px 的高斯模糊；2026-10-10 用户要求收敛为中性白色填充，背景使用原始饱和度。
 - prominent elevation：0.5px hairline、`0 3px 7.5px #0000000a`、`0 0 20px #0000000d`；Composer 另叠加项目液态玻璃的高光和柔和阴影。
@@ -127,10 +127,10 @@ Existing Harness Core（Run、Tools、Events、Approval、Recovery）
 
 - 顶部只显示对话标题和简洁操作；不显示 Thread/Run/Mission ID。
 - 中部显示自然语言和聚合后的工具叙事。
-- Composer 永远位于可见视口底部；窗口缩短时中间叙事滚动，输入框不被挤出。
+- 底部保留给输入框或待决定的审批。缩短窗口时，上方对话可独立滚动。
 - 权限 popover 锚定 Composer 权限 chip；状态来自真实 Thread permission API，不能根据 Run 状态自行猜测。
 - archive/restore/delete 使用真实 Thread lifecycle API，并按 `hasThreadControl` 禁用写操作。
-- Approval Card 仅在 active Run 真实处于 `waiting_approval` 且 queue 非空时出现。
+- 当前任务的审批队列有待决定的请求时，批准卡占用输入框的位置。命令和文件路径可换行，决定按钮靠右。草稿在原编辑器中保留，可从对话操作菜单继续编辑。文件提案须打开对应差异后才能应用。
 - 执行记录由任务标题菜单打开，宽屏与聊天和输入框并列；全局历史记录不继承当前任务身份。运行与会话详情始终绑定指定记录 ID。
 
 ## Apple 式材质与交互约束
