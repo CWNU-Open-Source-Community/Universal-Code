@@ -20,6 +20,10 @@ func assertFreshInputDelivery(t *testing.T, request llm.ChatRequest, original st
 	}
 	for i := len(request.Messages) - 1; i >= 0; i-- {
 		message := request.Messages[i]
+		// A previous completed reply ends the search even when both submissions have identical text.
+		if message.Role == "assistant" && len(message.ToolCalls) == 0 {
+			break
+		}
 		if message.Role != "user" || len(message.ToolResults) != 0 {
 			continue
 		}
