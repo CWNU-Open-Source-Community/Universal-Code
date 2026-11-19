@@ -80,7 +80,7 @@ import { CommandPalette, type CommandPaletteCommand } from "./command-palette";
 import { CodeJourney } from "./code-journey";
 import { CodeHandoffPanel } from "./code-handoff-panel";
 import { EvidenceInventory } from "./evidence-inventory";
-import { FileEditPanel } from "./file-edit-panel";
+import { FileEditPanel, type FileEditReviewTarget } from "./file-edit-panel";
 import { OperationReceiptHistory } from "./operation-receipt-history";
 import { OperatorActionCenter } from "./operator-action-center";
 import { RunWakePanel } from "./run-wake-panel";
@@ -239,6 +239,7 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
 }) {
   const { t } = useLocale();
   const [tab, changeTab] = useState<RunTab>(initialTab);
+  const [approvalEdit, setApprovalEdit] = useState<FileEditReviewTarget>();
   const leaveFileEdit = useFileEditLeave();
   const setTab = useCallback((next: RunTab) => leaveFileEdit(() => changeTab(next)), [leaveFileEdit]);
   const [inputOpen, setInputOpen] = useState(false);
@@ -419,8 +420,10 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
         {tab === "actions" && <OperatorActionCenter client={client} runID={runID}
           onNavigate={(destination) => setTab(destination === "approvals" ? "approvals" :
             destination === "diffs" ? "diffs" : "overview")} />}
-        {tab === "approvals" && <ApprovalPanel client={client} runID={runID} />}
-        {tab === "diffs" && <FileEditPanel client={client} runID={runID} runStatus={detail.run.status} />}
+        {tab === "approvals" && <ApprovalPanel client={client} runID={runID}
+          onReviewFile={(target) => { setApprovalEdit(target); setTab("diffs"); }} />}
+        {tab === "diffs" && <FileEditPanel client={client} runID={runID} runStatus={detail.run.status}
+          initialTarget={approvalEdit?.runID === runID ? approvalEdit : undefined} />}
         {tab === "repository" && <div className="projection-stack">
           <div className="resource-repository-heading"><h2>{t("当前运行的仓库工具", "Repository tools for this Run")}</h2>
           </div>

@@ -157,6 +157,7 @@ describe("V2ApprovalCards", () => {
   it("reviews each command with explicit bounded Run limits and preserves retry intent", async () => {
     const item = pending({tool_name:"command_runtime",action_class:"command_process",allowed_actions:["approve_once","approve_for_run","deny"],canonical_url:undefined,exact_target:undefined});
     const {decideApproval}=renderCards(item,{effect:"command_process",fields:[{name:"review_scope",value:"local verification"}]});
+    await userEvent.click(await screen.findByText("本次执行的限时、限次审批"));
     const button=await screen.findByRole("button",{name:"确认本条命令并计入有界审批"});
     await userEvent.clear(screen.getByLabelText("有界审批命令次数"));
     await userEvent.type(screen.getByLabelText("有界审批命令次数"),"9");
@@ -171,6 +172,7 @@ describe("V2ApprovalCards", () => {
   it("keeps the original limits for a matching active Run scope", async () => {
     const item=pending({tool_name:"command_runtime",action_class:"command_process",allowed_actions:["approve_once","approve_for_run","deny"],canonical_url:undefined,exact_target:undefined});
     const {decideApproval}=renderCards(item,{effect:"command_process",fields:[{name:"grant_ttl_seconds",value:"300"},{name:"grant_max_uses",value:"4"},{name:"grant_uses_remaining",value:"2"},{name:"grant_expires_at",value:"2026-10-03T16:00:00Z"}]});
+    await userEvent.click(await screen.findByText("本次执行的限时、限次审批"));
     const button=await screen.findByRole("button",{name:"确认本条命令并计入有界审批"});
     await waitFor(()=>expect(screen.getByLabelText("有界审批有效秒数")).toHaveValue(300));
     expect(screen.getByLabelText("有界审批有效秒数")).toBeDisabled();
@@ -307,7 +309,9 @@ describe("V2ApprovalCards", () => {
       <V2ApprovalCards client={client} runID="run-1" threadID="thread-1" />
     </QueryClientProvider>);
     expect(await screen.findByText("package.json")).toBeInTheDocument();
-    expect(screen.getByText(/批准、差异审阅和写入请使用任务的「审阅改动」入口/)).toBeInTheDocument();
+    expect(screen.getByText("创建文件")).toBeVisible();
+    expect(screen.getByText(/在任务的「审阅改动」中查看差异并批准/)).toBeVisible();
+    expect(screen.queryByText("create")).not.toBeInTheDocument();
     expect(screen.queryByText("操作预览读取失败，请重新读取后确认批准范围。")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批准一次" })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.every(([url]) => String(url).includes("/runs/run-1/approvals"))).toBe(true);

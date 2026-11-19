@@ -239,7 +239,7 @@ export function V2TaskReview({ client, detail, working, onClose, onRequestChange
         {!["overview", "git", "pr"].includes(tab) && !selectedRun && <p role="alert">{t("无法找到目标执行记录 ", "Could not find the target execution record ")}{selectedRunID}{t("，尚未打开审阅工具。请刷新任务后重试，或明确选择另一次执行。", ". Review tools have not opened. Refresh the task and retry, or select another run.")}</p>}
         {tab === "tools" && selectedRun && <TaskReviewTools client={client} runID={reviewedRunID}
           key={`${detail.thread.id}:${reviewedRunID}`} threadID={detail.thread.id}
-          retainedReviews={toolMemory.current?.reviews}
+          retainedReviews={toolMemory.current?.reviews} onReviewFile={reviewFile}
           initialTool={initialToolTarget?.runID === reviewedRunID ? initialToolTarget.tool : undefined}
           onGitReviewChange={(review) => retainToolReview("git", review)}
           onGithubReviewChange={(review) => retainToolReview("github", review)}

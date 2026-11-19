@@ -29,7 +29,7 @@ describe("ApprovalPanel", () => {
       decideApproval,
     } as unknown as APIClient;
     renderPanel(client);
-    expect(await screen.findByText("shell")).toBeInTheDocument();
+    expect(await screen.findByText("Simulate command")).toBeVisible();
     expect(screen.queryByText("echo secret command")).not.toBeInTheDocument();
     expect(screen.getByText("Process execution: off")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Approve once" }));

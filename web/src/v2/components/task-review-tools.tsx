@@ -3,6 +3,7 @@ import { lazy, Suspense, useState } from "react";
 import { Camera, GitBranch, GitPullRequest, Layers } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import type { GitAdvancedReviewResultView, GitHubReviewWriteReviewResultView } from "../../api/types";
+import type { FileEditReviewTarget } from "../../components/file-edit-panel";
 
 const BatchDeliveriesPanel = lazy(() => import("../../components/run-projections")
   .then((module) => ({ default: module.BatchDeliveriesPanel })));
@@ -32,11 +33,12 @@ export interface TaskReviewToolMemory {
 }
 
 export function TaskReviewTools({ client, runID, threadID, onOpenDelivery, retainedReviews,
-  onGitReviewChange, onGithubReviewChange, initialTool }: {
+  onGitReviewChange, onGithubReviewChange, onReviewFile, initialTool }: {
   client: APIClient; runID: string; threadID: string; onOpenDelivery: () => void;
   retainedReviews?: TaskReviewToolReviews;
   onGitReviewChange: (review: GitAdvancedReviewResultView | null) => void;
   onGithubReviewChange: (review: GitHubReviewWriteReviewResultView | null) => void;
+  onReviewFile?: (target: FileEditReviewTarget) => void;
   initialTool?: "github-review";
 }) {
   const { t } = useLocale();
@@ -63,7 +65,7 @@ export function TaskReviewTools({ client, runID, threadID, onOpenDelivery, retai
       <Suspense fallback={<p role="status">{t("正在加载交付工具…", "Loading delivery tool…")}</p>}>
         {showApprovals ? <>
           <button className="compact-command" type="button" onClick={() => setShowApprovals(false)}>{t("返回所选工具", "Back to selected tool")}</button>
-          <ApprovalPanel client={client} runID={runID} threadID={threadID} />
+          <ApprovalPanel client={client} runID={runID} threadID={threadID} onReviewFile={onReviewFile} />
         </> : <>
           {selected === "batch" && <BatchDeliveriesPanel client={client} runID={runID} />}
           {selected === "git-advanced" && <GitAdvancedPanel client={client} runID={runID}

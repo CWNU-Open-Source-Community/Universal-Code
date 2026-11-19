@@ -21,8 +21,9 @@
   --v2-control-hover: var(--prayu-control-hover);
 }
 
-.v2-approval-facts { margin: 12px 0; display: grid; gap: 8px; font-size: 12px; }
-.v2-approval-facts > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; }
+.v2-approval-facts { margin: 0; display: grid; gap: 5px; font-size: 12px; }
+.v2-approval-facts > div { display: grid; grid-template-columns: minmax(4em, auto) minmax(0, 1fr); gap: 8px; }
+.v2-approval-facts dt { max-width: 10em; }
 .v2-approval-facts dt { color: var(--v2-muted); }
 .v2-approval-facts dd { margin: 0; min-width: 0; }
 .v2-approval-facts pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
@@ -80,7 +81,7 @@
 .v2-header-actions > .v2-review-trigger { width: auto; padding-inline: 8px; gap: 5px; font-size: 12px; }
 @media (max-width: 760px) {
   .v2-header-actions > .v2-review-trigger span { display: none; }
-  .v2-approval-facts > div, .v2-command-approvals .host-command-envelope { grid-template-columns: minmax(0, 1fr); }
+  .v2-command-approvals .host-command-envelope { grid-template-columns: minmax(0, 1fr); }
 }
 
 .v2-drawer-backdrop {
@@ -1687,22 +1688,47 @@
 .v2-network-popover > footer button.primary { background: var(--prayu-primary-bg); border-color: var(--prayu-primary-border); color: var(--prayu-primary-fg); box-shadow: 0 2px 8px var(--prayu-primary-shadow), inset 0 1px 0 var(--prayu-glass-highlight); }
 .v2-network-popover > footer button:disabled { opacity: .45; }
 
-.v2-approval-stack { display: grid; gap: 10px; margin-top: 22px; }
+.v2-approval-stack { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 8px; margin-block: 12px 0; }
+.v2-approval-stack:empty { display: none; }
 .v2-approval-card {
-  background: var(--v2-floating-surface);
-  border: 1px solid var(--v2-border-strong);
-  border-radius: 15px;
-  box-shadow: var(--prayu-elevation-panel);
-  padding: 14px;
+  background: var(--v2-main-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: 12px;
+  box-sizing: border-box;
+  color: var(--v2-ink);
+  display: grid;
+  font-size: 13px;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  line-height: 1.45;
+  max-width: min(100%, 44rem);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  width: fit-content;
 }
-.v2-approval-card header { align-items: center; display: flex; gap: 10px; }
-.v2-approval-card header > span { align-items: center; background: var(--v2-control); border-radius: 9px; color: var(--v2-ink); display: flex; height: 31px; justify-content: center; width: 31px; }
-.v2-approval-card header > div { display: grid; gap: 2px; }
-.v2-approval-card header small,
-.v2-approval-card p { color: var(--v2-muted); }
-.v2-approval-card p code { overflow-wrap: anywhere; }
-.v2-approval-card input { background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 9px; height: 34px; padding: 0 10px; width: 100%; }
-.v2-approval-card footer { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; margin-top: 11px; }
+.v2-approval-card > header { align-items: flex-start; display: flex; gap: 7px; }
+.v2-approval-card > header > svg { color: var(--v2-muted); flex: none; margin-top: 2px; }
+.v2-approval-card > header h3 { align-items: baseline; display: flex; flex-wrap: wrap; font-size: 14px; font-weight: 600; gap: 2px 8px; margin: 0; min-width: 0; }
+.v2-approval-card > header code { font: 12px/1.5 var(--v2-mono); min-width: 0; white-space: pre-wrap; }
+.v2-approval-card p { color: var(--v2-muted); margin: 0; }
+.v2-approval-card [role="alert"] { color: var(--v2-danger); }
+.v2-approval-card input { background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 7px; height: 30px; padding: 0 8px; width: 100%; }
+.v2-approval-card summary { color: var(--v2-muted); cursor: pointer; font-size: 12px; width: fit-content; }
+.v2-approval-card summary:hover { color: var(--v2-ink); }
+.v2-approval-card details[open] > summary { margin-bottom: 5px; }
+.v2-approval-card footer { align-items: center; display: flex; flex-wrap: wrap; gap: 4px 7px; }
+.v2-approval-card footer:empty { display: none; }
+.v2-approval-card footer details { min-width: 0; }
+.v2-approval-card footer details[open] { flex-basis: 100%; }
+.v2-approval-card footer summary { line-height: 28px; }
+.v2-approval-card .approval-denial-reason input { max-width: 24em; }
+.v2-approval-card .v2-approval-workspace code { font: 12px/1.5 var(--v2-mono); }
+.v2-approval-grant { align-items: center; border: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 0; min-width: 0; padding: 3px 0; }
+.v2-approval-grant p, .v2-approval-grant dl { flex-basis: 100%; }
+.v2-approval-grant label { align-items: center; display: inline-flex; flex-wrap: wrap; font-size: 12px; gap: 6px; }
+.v2-approval-grant input { width: 4.5em; }
+.v2-approval-card .v2-approval-grant button,
 .v2-approval-card footer button,
 .v2-dialog footer button {
   align-items: center;
@@ -1717,6 +1743,10 @@
 }
 .v2-approval-card footer button.secondary,
 .v2-dialog footer button { background: var(--v2-control); }
+.v2-approval-card .v2-approval-grant button,
+.v2-approval-card footer button { flex: 0 1 auto; font-size: 12px; font-weight: 550; max-width: 100%; min-height: 28px; min-width: 0; padding: 4px 9px; width: auto; }
+.v2-approval-card .v2-approval-grant button { background: var(--v2-control); }
+.v2-approval-card button.secondary:hover:not(:disabled) { background: var(--v2-control-hover); }
 .v2-approval-card footer button.primary,
 .v2-dialog footer button.primary { background: var(--prayu-primary-bg); border-color: var(--prayu-primary-border); color: var(--prayu-primary-fg); box-shadow: 0 2px 8px var(--prayu-primary-shadow), inset 0 1px 0 var(--prayu-glass-highlight); }
 .v2-network-popover > footer button.primary:hover:not(:disabled),
@@ -1724,7 +1754,7 @@
 .v2-dialog footer button.primary:hover:not(:disabled) { background: var(--prayu-primary-hover); }
 
 .v2-mcp-input { min-width: 0; overflow-wrap: anywhere; }
-.v2-mcp-input h3 { color: var(--v2-ink); font-size: 15px; margin: 0 0 10px; }
+.v2-mcp-input h3 { color: var(--v2-ink); font-size: 14px; margin: 0; }
 .v2-mcp-input p { font-size: 13px; line-height: 1.6; }
 .v2-mcp-input label { display: grid; gap: 7px; }
 .v2-mcp-input label small { display: block; }
@@ -2127,6 +2157,12 @@
 .v2-dialog > p { color: var(--v2-muted); line-height: 1.55; margin: 0; padding: 19px 18px; overflow-wrap: anywhere; word-break: break-word; }
 .v2-dialog footer { align-items: center; border-top: 1px solid var(--v2-border); display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding: 12px 16px; }
 .v2-dialog footer button.danger { background: var(--prayu-danger-fill); border-color: transparent; color: var(--prayu-on-danger); }
+.v2-dialog.v2-confirm-dialog { max-height: calc(100dvh - 24px); max-width: min(27rem, calc(100% - 24px)); overflow: auto; width: fit-content; }
+.v2-confirm-dialog > header { gap: 7px; min-height: 43px; padding: 5px 10px; }
+.v2-confirm-dialog h2 { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
+.v2-confirm-dialog > p { padding: 12px 14px; }
+.v2-confirm-dialog footer { gap: 6px; padding: 8px 12px; }
+.v2-confirm-dialog footer button { min-height: 30px; padding: 4px 10px; }
 
 .v2-high-risk-overlay {
   animation: v2-high-risk-scrim-in 180ms ease-out both;
@@ -2146,10 +2182,10 @@
   max-height: calc(100dvh - 32px);
   max-width: 100%;
   overflow: auto;
-  width: min(744px, calc(100vw - 32px));
+  width: min(620px, calc(100vw - 32px));
 }
 .v2-high-risk-dialog form { display: flex; flex-direction: column; min-height: 0; }
-.v2-high-risk-content { display: grid; gap: 18px; padding: 29px 30px 20px; }
+.v2-high-risk-content { display: grid; gap: 12px; padding: 19px 20px 14px; }
 .v2-high-risk-heading { align-items: center; display: flex; gap: 11px; }
 .v2-high-risk-heading > svg { flex: 0 0 auto; }
 .v2-high-risk-heading h2 {
@@ -2164,16 +2200,15 @@
 .v2-high-risk-capabilities {
   background: color-mix(in srgb, var(--v2-control) 84%, var(--v2-floating-surface));
   border: 1px solid color-mix(in srgb, var(--v2-border) 70%, transparent);
-  border-radius: 19px;
-  padding: 9px 20px;
+  border-radius: 12px;
+  padding: 3px 12px;
 }
 .v2-high-risk-capability {
   align-items: center;
   display: grid;
-  gap: 15px;
-  grid-template-columns: 30px minmax(0, 1fr);
-  min-height: 68px;
-  padding: 10px 5px;
+  gap: 10px;
+  grid-template-columns: 25px minmax(0, 1fr);
+  padding: 8px 2px;
   position: relative;
 }
 .v2-high-risk-capability + .v2-high-risk-capability::before {
@@ -2235,11 +2270,11 @@
   display: flex;
   gap: 14px;
   justify-content: space-between;
-  min-height: 67px;
-  padding: 12px 26px 15px;
+  flex-wrap: wrap;
+  padding: 9px 18px;
 }
 .v2-high-risk-actions > span { color: var(--v2-muted); font-size: 12px; }
-.v2-high-risk-actions > div { display: flex; gap: 10px; margin-left: auto; }
+.v2-high-risk-actions > div { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .v2-high-risk-actions button {
   align-items: center;
   background: color-mix(in srgb, var(--v2-control) 88%, transparent);
@@ -2250,10 +2285,9 @@
   font: inherit;
   font-weight: 600;
   gap: 7px;
-  height: 42px;
+  min-height: 32px;
   justify-content: center;
-  min-width: 94px;
-  padding: 0 19px;
+  padding: 4px 12px;
 }
 .v2-high-risk-actions button:hover:not(:disabled) { background: var(--v2-control-hover); }
 .v2-high-risk-actions button:active:not(:disabled) { transform: scale(.98); transition: transform 90ms ease-out; }
@@ -2554,13 +2588,10 @@
   .v2-runtime-actions button { grid-column: 2; justify-self: start; }
   .v2-high-risk-overlay { padding: 10px; }
   .v2-high-risk-dialog { border-radius: 20px; max-height: calc(100dvh - 20px); width: calc(100vw - 20px); }
-  .v2-high-risk-content { gap: 15px; padding: 23px 20px 17px; }
+  .v2-high-risk-content { gap: 10px; padding: 15px 15px 12px; }
   .v2-high-risk-heading h2 { font-size: 19px; }
-  .v2-high-risk-capabilities { padding-inline: 14px; }
-  .v2-high-risk-capability { gap: 11px; grid-template-columns: 27px minmax(0, 1fr); min-height: 63px; }
-  .v2-high-risk-actions { align-items: stretch; flex-direction: column; padding: 11px 17px 15px; }
-  .v2-high-risk-actions > div { margin-left: 0; }
-  .v2-high-risk-actions button { flex: 1; }
+  .v2-high-risk-capabilities { padding-inline: 10px; }
+  .v2-high-risk-actions { gap: 6px; padding: 8px 13px; }
 }
 
 @container conversation (max-width: 600px) {
