@@ -98,3 +98,56 @@ func TestHooksListRejectsUnknownSubcommand(t *testing.T) {
 		t.Fatalf("unknown subcommand must be rejected: stderr=%q code=%d", stderr, code)
 	}
 }
+
+func TestHooksValidateReportsValidConfiguration(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	seedScriptHook(t, "validate-hook")
+	stdout, stderr, code := executeTestCommand(t, "hooks", "validate")
+	if code != 0 || stderr != "" {
+		t.Fatalf("hooks validate failed: stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	if !strings.Contains(stdout, "hooks configuration valid") ||
+		!strings.Contains(stdout, "hook=validate-hook\tevent=pre_tool") {
+		t.Fatalf("valid configuration must list the declarations: %q", stdout)
+	}
+}
+
+func TestHooksValidateRejectsDriftedScript(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	seedScriptHook(t, "drift-hook")
+	home := os.Getenv("CYBERAGENT_HOME")
+	script := filepath.Join(home, "hooks.d", "drift-hook.py")
+	if err := os.WriteFile(script, []byte("print(2)\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code := executeTestCommand(t, "hooks", "validate")
+	if code == 0 || !strings.Contains(stderr, "hooks configuration is invalid") {
+		t.Fatalf("drifted script must fail validation: stderr=%q code=%d", stderr, code)
+	}
+}
+
+func TestHooksValidateRejectsMalformedDeclaration(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	hooksDir := filepath.Join(os.Getenv("CYBERAGENT_HOME"), "hooks.d")
+	if err := os.MkdirAll(hooksDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooksDir, "broken.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code := executeTestCommand(t, "hooks", "validate")
+	if code == 0 || !strings.Contains(stderr, "declaration is not valid JSON") {
+		t.Fatalf("malformed declaration must be diagnosed: stderr=%q code=%d", stderr, code)
+	}
+}
+
+func TestHooksValidateMissingDirectoryIsValid(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	stdout, stderr, code := executeTestCommand(t, "hooks", "validate")
+	if code != 0 || stderr != "" {
+		t.Fatalf("missing hooks.d must be valid: stderr=%q code=%d", stderr, code)
+	}
+	if !strings.Contains(stdout, "declarations: 0") {
+		t.Fatalf("missing directory must report zero declarations: %q", stdout)
+	}
+}
