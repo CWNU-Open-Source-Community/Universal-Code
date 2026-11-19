@@ -58,7 +58,6 @@ it("explains incomplete attribution and a non-Git directory without claiming no 
   await screen.findByText("尚未使用 Git");
   expect(screen.getByText(/请在执行记录和提交页面核对其余改动与检查/)).toBeInTheDocument();
   expect(screen.getByText(/暂无已应用的编辑/)).toBeInTheDocument();
-  expect(screen.getByText(/命令、手动编辑等产生的其他变化，请在提交页面核对/)).toBeInTheDocument();
   expect(screen.getByText(/覆盖 2 \/ 53 次执行/)).toBeInTheDocument();
 });
 

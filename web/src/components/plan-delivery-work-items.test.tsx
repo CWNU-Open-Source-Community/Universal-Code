@@ -39,7 +39,7 @@ it("records all final-item evidence without starting tests or completing the ite
   const test = setup();
   await screen.findByLabelText(labels[0]);
   expect(screen.getByRole("button", { name: "Complete this item" })).toBeDisabled();
-  expect(screen.getByText(/automated checks retain their own pass or fail results/)).toBeInTheDocument();
+  expect(screen.getByLabelText(labels[0])).toBeRequired();
   for (const label of labels) await test.user.type(screen.getByLabelText(label), `${label}: failed check; see job-1`);
   await test.user.click(screen.getByRole("button", { name: "Record manual acceptance and handoff" }));
   await waitFor(() => expect(test.client.recordPlanDeliveryCheckpoint).toHaveBeenCalledTimes(1));

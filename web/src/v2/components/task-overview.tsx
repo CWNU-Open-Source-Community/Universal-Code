@@ -74,12 +74,12 @@ export function TaskOverview({ client, threadID, onFeedback, onAddComment, onGit
           <ul>{[...new Set([...review.reasons, ...review.revision.reasons])].map((reason) => <li key={reason}>{reason}</li>)}</ul></details>}
       </div>
       {(onGit || onPullRequest || onChecks) && <div className="v2-overview-next-actions">
-          {onGit && <button className="v2-delivery-primary" onClick={onGit} type="button">
-            {t("选择文件并提交", "Select files and commit")}<ArrowRight size={15} aria-hidden="true" /></button>}
-          {onPullRequest && <button className="v2-delivery-secondary" onClick={onPullRequest} type="button">
-            <GitPullRequest size={15} aria-hidden="true" />{t("PR 状态与交付", "PR status and delivery")}</button>}
-          {onChecks && <button className="v2-delivery-secondary" onClick={onChecks} type="button">
-            <ShieldCheck size={15} aria-hidden="true" />{t("完整检查与环境", "All checks and environment")}</button>}
+        {onGit && <button className="v2-delivery-primary" onClick={onGit} type="button">
+          {t("选择文件并提交", "Select files and commit")}<ArrowRight size={15} aria-hidden="true" /></button>}
+        {onPullRequest && <button className="v2-delivery-secondary" onClick={onPullRequest} type="button">
+          <GitPullRequest size={15} aria-hidden="true" />{t("PR 状态与交付", "PR status and delivery")}</button>}
+        {onChecks && <button className="v2-delivery-secondary" onClick={onChecks} type="button">
+          <ShieldCheck size={15} aria-hidden="true" />{t("完整检查与环境", "All checks and environment")}</button>}
       </div>}
       {currentRunDetail?.plan_delivery && <section className="v2-overview-plan-delivery" aria-label={t("交付计划", "Delivery plan")}>
         <h3>{t("当前执行的交付计划", "Current run's delivery plan")}</h3>

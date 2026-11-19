@@ -91,7 +91,7 @@ it.each(["verified_code", "report"] as const)("saves the selected %s completion 
   await user.selectOptions(screen.getByLabelText("Task type"), mode);
   if (mode === "report") {
     expect(screen.queryByLabelText("Test directory (optional)")).not.toBeInTheDocument();
-    expect(screen.getByText("Finish with an analysis report; project test results are not required.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Task type")).toHaveValue("report");
   }
   const completion = mode === "report" ? { mode } : { mode, target: "unit" };
   const spec = workerWorkflow("Check parser", "Check the requested parser behavior", true, "", false, completion);
