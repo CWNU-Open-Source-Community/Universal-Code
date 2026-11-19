@@ -152,8 +152,17 @@ func supervisorMessagesWithLayout(history []session.Message, input string,
 	for _, item := range externalSkillContext.Items {
 		messages = append(messages, externalSkillGuidanceMessage(item, "root"))
 	}
+	// Work items and notes can change between replies. Deliver the current
+	// records after the reusable conversation, outside the trimmable history.
+	var currentWork []llm.Message
 	for _, section := range memory.Sections {
-		messages = append(messages, llm.Message{Role: "user", Content: section.Content})
+		message := llm.Message{Role: "user", Content: section.Content}
+		switch section.Kind {
+		case "work_board", "note":
+			currentWork = append(currentWork, message)
+		default:
+			messages = append(messages, message)
+		}
 	}
 	layout := modelContextLayout{HistoryStart: len(messages)}
 	for _, message := range history {
@@ -163,6 +172,7 @@ func supervisorMessagesWithLayout(history []session.Message, input string,
 			layout.HistoryCount++
 		}
 	}
+	messages = append(messages, currentWork...)
 	return append(messages, llm.Message{Role: "user", Content: input}), layout
 }
 

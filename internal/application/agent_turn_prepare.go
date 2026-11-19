@@ -275,6 +275,12 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	}
 	standardCodeGuidance := ""
 	if standardCode != nil {
+		harness, err := s.router.HarnessProfile(ref)
+		if err != nil {
+			return nil, result, s.recordFailure(ctx, &result, err, 0)
+		}
+		standardCode.initialStateRole = supervisorHostStateRole(harness.TransportProtocol)
+		standardCode.initialStateText = standardCode.runtimeState()
 		standardCodeGuidance = standardCode.Guidance()
 	}
 	boundaryReceipt, err := s.boundaryReceiptPlan(ctx, turn.Checkpoint, turn.Run.SessionID)
@@ -319,6 +325,7 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	if err != nil {
 		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
+	messages = supervisorInitialStandardCodeState(messages, standardCode)
 	messages = append(messages, mcpMessages...)
 	boundaryContext := boundaryReceipt.Content
 	if boundaryContext != "" {
