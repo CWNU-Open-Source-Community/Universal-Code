@@ -95,6 +95,115 @@ func TestManualThreadCompactShrinksNextRequestKeepsOriginalAndReplaysAfterReopen
 		t.Fatalf("durable replay=%+v err=%v calls=%d", replay, err, p.generatedCount())
 	}
 }
+func TestThreadManualThenAutomaticCompactionKeepsRefundCorrectionInProviderRequest(t *testing.T) {
+	const goal = "Reject negative amount_cents for all ledger entries."
+	const correction = "Accept negative amount_cents for refunds. Zero is valid."
+	const stale = "The ledger rejects all negative amount_cents, including returns."
+	const report = "List unresolved checks when reporting progress."
+
+	path := filepath.Join(t.TempDir(), "ledger.db")
+	st := openHistoryRecallStore(t, path)
+	defer func() { _ = st.Close() }()
+	const workspace = "ledger-workspace"
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{
+		ID: workspace, Name: workspace, RootPath: t.TempDir(), CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, run, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{
+		Goal: goal, Profile: "code", WorkspaceID: workspace, ModelRoute: "tool-loop/model",
+		Interactive: true, Budget: domain.Budget{MaxTurns: 20, MaxToolCalls: 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := newGeneratedProtocolProvider()
+	p.auxiliary = func(_ context.Context, _ llm.ChatRequest, round int) (*llm.ChatResponse, error) {
+		summary := correction
+		if round == 2 {
+			summary = stale + " Preserve the CSV header and category column, keep reporting errors on stderr and write a regression test for duplicate IDs. Import validation remains unfinished."
+		}
+		return &llm.ChatResponse{Text: historyRecallJSON(map[string]string{
+			"version": contextmgr.GeneratedHandoffVersion, "summary": summary,
+		})}, nil
+	}
+	p.normal = func(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+		if strings.Contains(req.Messages[len(req.Messages)-1].Content, report) {
+			// A long progress report brings the following ordinary turn to the automatic threshold.
+			return textResponse(rootActionResponse(domain.RootActionFinish, strings.Repeat("历史样例。", 560), "End this reply", "")), nil
+		}
+		return historyRecallFinish(), nil
+	}
+	turns, _ := generatedThreadServices(st, p, nil)
+	sequence := 0
+	submit := func(input string) domain.OperatorSteeringMessage {
+		t.Helper()
+		sequence++
+		result, err := turns.Execute(t.Context(), application.ExecuteThreadTurnRequest{
+			Version: domain.ThreadMessageProtocolVersion, ThreadID: domain.InitialThreadID(run.ID), Content: input,
+			OperationKey: fmt.Sprintf("ledger-correction-input-%02d", sequence), RequestedBy: "test_operator",
+		})
+		assertHistoryRecallSettled(t, result, err)
+		return result.Submission.Message
+	}
+	submit(goal)
+	operator := submit(correction)
+	submit("Keep the ledger output in cents.")
+	submit("Report diagnostics on stderr.")
+	first, err := application.NewThreadContextCompactionService(st, generatedFixtureRouter(p)).
+		Compact(t.Context(), manualCompactRequest(run, "ledger-initial"))
+	if err != nil || !first.Generated {
+		t.Fatalf("first manual compaction = %+v, error = %v", first, err)
+	}
+
+	// The later examples push the correction outside the separate recent-originals allowance.
+	submit("Keep the import header unchanged. Reference examples:\n" + strings.Repeat("旧表账目。", 158))
+	submit("Keep the category column unchanged. Reference examples:\n" + strings.Repeat("账务示例。", 158))
+	submit("Write a regression test for duplicate row IDs.")
+	submit(report)
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st = openHistoryRecallStore(t, path)
+	turns, _ = generatedThreadServices(st, p, nil)
+	submit("Continue the validation work.")
+
+	summary, found, err := st.LatestContextSummary(t.Context(), run.SessionID)
+	if err != nil || !found || summary.PreviousSummaryID != first.SummaryID || p.generatedCount() != 2 {
+		t.Fatalf("automatic compaction after reopen: previous = %d, calls = %d, error = %v", summary.PreviousSummaryID, p.generatedCount(), err)
+	}
+	_, normal := p.splitRequests()
+	next := generatedRequestText(normal[len(normal)-1].Request)
+	if !strings.Contains(next, correction) {
+		t.Fatalf("next provider request lost the refund correction from message %d; stale conclusion present = %t",
+			operator.SessionMessageID, strings.Contains(next, stale))
+	}
+	if !strings.Contains(next, summary.Content) {
+		t.Fatal("next provider request did not contain the committed summary")
+	}
+	var envelope struct {
+		Records []struct {
+			Role                  string
+			SourceMessageID       int64  `json:"source_message_id"`
+			SourceKind            string `json:"source_kind"`
+			SourceContentSHA256   string `json:"source_content_sha256"`
+			InstructionAuthorized bool   `json:"instruction_authorized"`
+			Content               string
+		}
+	}
+	if err := json.Unmarshal([]byte(summary.Content), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range envelope.Records {
+		if record.SourceMessageID == operator.SessionMessageID && record.Role == "user" && record.SourceKind == session.SourceOperatorMessage &&
+			record.InstructionAuthorized && record.SourceContentSHA256 == operator.ContentSHA256 && record.Content == correction {
+			return
+		}
+	}
+	t.Fatalf("delivered summary lost the wording or operator provenance of message %d", operator.SessionMessageID)
+}
+
 func TestManualThreadCompactBusyDoesNotCancelBusinessTurn(t *testing.T) {
 	st, p, run, _ := manualCompactFixture(t)
 	defer st.Close()

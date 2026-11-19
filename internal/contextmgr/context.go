@@ -195,8 +195,12 @@ func (m *Manager) PrepareCandidate(ctx context.Context, taskID string, workspace
 	} else {
 		previous = Summary{}
 	}
-	content, compactedCount, newlyCompacted, err := buildHandoffMemory(ctx, taskID, workspaceID, previous,
-		hasPrevious, older, len(preserved), m.config, m.strategy)
+	sources, newlyCompacted, err := collectHandoffSources(taskID, workspaceID, previous,
+		hasPrevious, older, len(preserved), m.config.MaxLineChars)
+	if err != nil {
+		return Result{}, err
+	}
+	content, err := fitHandoffRecords(ctx, sources, sources.Records, m.config.MaxSummaryChars, m.strategy)
 	if err != nil {
 		return Result{}, err
 	}
@@ -213,8 +217,8 @@ func (m *Manager) PrepareCandidate(ctx context.Context, taskID string, workspace
 		PreviousSummaryID:     previous.ID,
 		Content:               content,
 		ContentSHA256:         handoffContentSHA256(content),
-		CompactedMessageCount: compactedCount,
-		SourceMessageCount:    saturatingTokenAdd(compactedCount, len(preserved)),
+		CompactedMessageCount: sources.CompactedMessageCount,
+		SourceMessageCount:    saturatingTokenAdd(sources.CompactedMessageCount, len(preserved)),
 		PreservedMessageCount: len(preserved),
 		TokenEstimate:         EstimateTokens(content),
 		CreatedAt:             time.Now().UTC(),
@@ -223,7 +227,7 @@ func (m *Manager) PrepareCandidate(ctx context.Context, taskID string, workspace
 	if m.generator != nil {
 		candidate, generationErr := m.generateHandoff(ctx, taskID, workspaceID, older, previous, hasPrevious)
 		if generationErr == nil {
-			summary, generationErr = applyGeneratedHandoff(summary, candidate, m.config.MaxSummaryChars, m.strategy)
+			summary, generationErr = applyGeneratedHandoff(ctx, summary, sources, candidate, m.config.MaxSummaryChars, m.strategy)
 			generated = generationErr == nil
 		}
 		if generationErr != nil {

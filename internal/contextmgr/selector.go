@@ -19,10 +19,12 @@ var ErrRequiredContextBudget = errors.New("required context exceeds the token bu
 type Section struct {
 	Kind     string
 	SourceID string
-	Content  string
-	Priority int
-	Required bool `json:",omitempty"`
-	Excluded bool `json:",omitempty"`
+	// Digest of a verified stored original, before request-local redaction.
+	SourceContentSHA256 string `json:",omitempty"`
+	Content             string
+	Priority            int
+	Required            bool `json:",omitempty"`
+	Excluded            bool `json:",omitempty"`
 }
 
 type Source struct {
