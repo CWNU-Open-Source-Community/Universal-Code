@@ -69,7 +69,7 @@ it("opens GitHub tools for the explicit historical Run and never substitutes an 
   expect(onOpenGithubReview).toHaveBeenCalledExactlyOnceWith("run-history");
   view.rerender(draw("run-missing"));
   expect(screen.getByRole("button", { name: /GitHub 连接与审阅/ })).toBeDisabled();
-  expect(screen.getByText(/选择一条执行记录后进入 GitHub 审阅/)).toBeInTheDocument();
+  expect(screen.getByText(/在任务中选择一条执行记录/)).toBeInTheDocument();
   expect(onOpenGithubReview).toHaveBeenCalledTimes(1);
 });
 
@@ -250,7 +250,7 @@ describe("V2 general permission summary", () => {
     const defaultPermissions = screen.getByRole("button", { name: "管理当前任务权限" });
     expect(defaultPermissions).not.toHaveAttribute("aria-pressed");
     expect(screen.queryByRole("button", { name: "管理完整访问权限" })).not.toBeInTheDocument();
-    expect(screen.getByText("选择界面语言，立即生效并保存在本机。")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "界面语言" })).getByRole("button", { name: "中文" })).toHaveAttribute("aria-pressed", "true");
     const licenseButton = screen.getByRole("button", { name: "查看许可" });
     await user.click(licenseButton);
     const dialog = screen.getByRole("dialog", { name: "HarmonyOS Sans Fonts 许可" });
@@ -336,7 +336,7 @@ describe("V2 permission settings hierarchy", () => {
     expect(screen.queryByRole("group", { name: "执行权限档位" })).not.toBeInTheDocument();
     expect(within(debugGroup).getByRole("button")).toBeDisabled();
     expect(screen.getByText("当前页面没有可验证的桌面运行时能力信息。")).toBeVisible();
-    expect(screen.getByText(/在当前任务开启完全访问时，先暂停执行并等待资源释放完成即可/u))
+    expect(screen.getByText(/开启完全访问前，先暂停任务并等待资源释放/u))
       .toBeInTheDocument();
     expect(getThreadExecutionPermission).not.toHaveBeenCalled();
     expect(get).not.toHaveBeenCalled();

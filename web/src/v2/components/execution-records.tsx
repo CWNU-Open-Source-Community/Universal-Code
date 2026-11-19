@@ -12,6 +12,7 @@ import { mergeThreadTranscriptItems, VirtualTranscriptList,
   type TranscriptReadingPosition } from "../../components/thread-transcript";
 import { ActivityItemDetail } from "./activity-detail";
 import { V2ImagePreview } from "./image-input";
+import "./secondary-page.css";
 import "./execution-records.css";
 
 export interface V2ExecutionRecordsProps {
@@ -110,15 +111,12 @@ function ExecutionRecordsContent({ client, threadID, detail, durableItems, liveS
   }, [update]);
   const currentRunID = detail.thread.active_run_id || detail.thread.last_run_id;
   const hasFilters = ui.filter !== "all" || ui.search !== "" || ui.runID !== "";
+  const matchCount = hasFilters ? visible.filter((item) => item.sequence !== 0).length : 0;
   const reset = () => update({ filter: "all", search: "", runID: "", position: undefined });
   return <section className={`v2-execution-records-content${ui.selected ? " has-selection" : ""}`} aria-label={t("执行记录", "Execution records")}>
     <header className="v2-execution-records-controls">
-      <div className="v2-execution-records-range">
-        <span>{t(`已加载 ${durableItems.length} 条`, `${durableItems.length} records loaded`)}{hasOlder ? t(" · 还有更早记录", " · Earlier records available") : t(" · 已到最早记录", " · Earliest record reached")}</span>
-        {items.some((item) => item.provisional) && <span>{t("含未落盘的实时内容", "Includes unsaved live content")}</span>}
-      </div>
       <div className="v2-execution-records-tools">
-        <div className="v2-execution-records-filters" role="group" aria-label={t("记录类型", "Record type")}>
+        <div className="v2-page-segments" role="group" aria-label={t("记录类型", "Record type")}>
           {(Object.keys(filterLabels(t)) as Filter[]).map((filter) => <button key={filter} type="button"
             aria-pressed={ui.filter === filter} onClick={() => update({ filter, position: undefined })}>{filterLabels(t)[filter]}</button>)}
         </div>
@@ -133,10 +131,17 @@ function ExecutionRecordsContent({ client, threadID, detail, durableItems, liveS
             {t("执行", "Run")}{ordinal}{runID === currentRunID ? t("· 当前", " · Current") : t("· 历史只读", " · Historical, read only")}</option>)}
         </select></label>}
       </div>
-      <div className="v2-execution-records-scope"><span>{t(`显示 ${visible.filter((item) => item.sequence !== 0).length} 条记录 · 查找仅覆盖已加载内容`, `${visible.filter((item) => item.sequence !== 0).length} records shown · Search covers loaded content only`)}</span>
-        {hasFilters && <button type="button" onClick={reset}>{t("清除筛选", "Clear filters")}</button>}
-        <button type="button" onClick={() => { reset(); setLatestRequest((value) => value + 1); }}>
-          <ArrowDown size={14} aria-hidden="true" />{t("回到最新", "Jump to latest")}</button>
+      <div className="v2-execution-records-scope">
+        <div className="v2-execution-records-range">
+          <span>{t(`已加载 ${durableItems.length} 条`, `${durableItems.length} records loaded`)}{hasOlder ? t(" · 还有更早记录", " · Earlier records available") : t(" · 已到最早记录", " · Earliest record reached")}</span>
+          {hasFilters && <span>{t(`显示 ${matchCount} 条记录`, `${matchCount} records shown`)}</span>}
+          {items.some((item) => item.provisional) && <span>{t("含未落盘的实时内容", "Includes unsaved live content")}</span>}
+        </div>
+        <div className="v2-execution-records-actions">
+          {hasFilters && <button type="button" onClick={reset}>{t("清除筛选", "Clear filters")}</button>}
+          <button type="button" onClick={() => { reset(); setLatestRequest((value) => value + 1); }}>
+            <ArrowDown size={14} aria-hidden="true" />{t("回到最新", "Jump to latest")}</button>
+        </div>
       </div>
     </header>
     <div className="v2-execution-records-body">
@@ -169,7 +174,7 @@ function ExecutionRecordsContent({ client, threadID, detail, durableItems, liveS
           if (event.nativeEvent.isComposing || event.keyCode === 229) return;
           event.preventDefault(); closeDetail();
         }}>
-        <header><strong>{t("记录详情", "Record details")}</strong><button ref={closeRef} type="button" aria-label={t("关闭记录详情", "Close record details")} onClick={closeDetail}><X size={18} /></button></header>
+        <header><h2>{t("记录详情", "Record details")}</h2><button ref={closeRef} type="button" aria-label={t("关闭记录详情", "Close record details")} onClick={closeDetail}><X aria-hidden="true" size={16} /></button></header>
         {selected ? <ExecutionRecordDetail key={`${selected.run_id}:${selected.id}`} client={client} threadID={threadID} item={selected} /> :
           <p>{t("选中记录暂不在已加载范围内。可加载更早记录后继续查看。", "The selected record is outside the loaded history. Load earlier records to view it.")}</p>}
       </aside>}
@@ -181,11 +186,8 @@ function ExecutionRecordDetail({ client, threadID, item }: { client: APIClient; 
   const { t } = useLocale();
   return <div className="v2-execution-records-detail-content">
     <h3>{item.tool_name || item.title}</h3>
-    <p className="v2-execution-records-origin">{sourceLabels(t)[item.source]} · {item.stage === "running" && item.durable && !item.provisional ? t("记录时执行中", "Running when recorded") : stageLabels(t)[item.stage]}
+    <p className="v2-execution-records-origin">{sourceLabels(t)[item.source]} · {(item.stage === "running" || item.status === "running" && item.sequence !== 0) && item.durable && !item.provisional ? t("记录时执行中", "Running when recorded") : stageLabels(t)[item.stage]}
       {item.provisional ? t("· 尚未落盘", " · Not saved yet") : t("· 已保存", " · Saved")}</p>
-    {item.durable && !item.provisional && item.status === "running" && item.sequence !== 0 &&
-      <p className="v2-execution-records-origin">{t("这是记录保存时的执行状态。Agent 的当前活动请查看对话上方的工作状态。", "This was the execution state when the record was saved. Check the conversation's activity status for what the agent is doing now.")}</p>}
-    {item.source === "model" && <p className="v2-execution-records-origin">{t("公开模型内容；实际执行结果以对应工具记录为准。", "Public model content. Tool records show the actual execution results.")}</p>}
     {item.detail && (item.activity_type === "message" && item.source === "model" ? <SafeMarkdown>{item.detail}</SafeMarkdown> :
       <pre className="v2-execution-records-record-text">{item.detail}</pre>)}
     {item.source === "operator" && <V2ImagePreview client={client} images={item.images ?? []} />}

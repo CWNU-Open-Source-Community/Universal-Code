@@ -48,7 +48,7 @@ describe("V2RuntimeCapabilityControl", () => {
 
     expect(screen.getByRole("heading", { name: "调试运行时" })).toBeInTheDocument();
     expect(screen.getByText("标准运行时")).toBeInTheDocument();
-    expect(screen.getByText(/在当前任务开启完全访问时，先暂停执行并等待资源释放完成即可/u))
+    expect(screen.getByText(/开启完全访问前，先暂停任务并等待资源释放/u))
       .toBeInTheDocument();
     const debug = screen.getByRole("button", { name: "启用调试模式并重启" });
     expect(screen.queryByRole("button", { name: /启用完全访问并重启/u })).not.toBeInTheDocument();

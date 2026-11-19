@@ -114,8 +114,7 @@ export function PlanDeliveryPanel({ state, client, detail, threadID }: {
         {state.selection && state.delivery_gate_enforced && !manualRequired && <span>{t("人工说明按需记录；计划项仍须实际完成", "Manual notes on demand; Plan items still require actual completion")}</span>}
         {state.selection && !state.delivery_gate_enforced && <span>{t("此旧版计划沿用原有执行与检查要求，按原验收流程交付。", "This legacy Plan retains its original execution and verification requirements. Use its original acceptance workflow to deliver.")}</span>}
       </div>
-      {!state.proposal && <p>{t("回到对话描述目标，准备计划。方案形成后，在这里选择方向并确认进入交付。",
-        "Describe the goal in the conversation to prepare a plan. Once proposals are ready, choose a direction here and confirm delivery.")}</p>}
+      {!state.proposal && <p>{t("暂无待选方案", "No proposals yet")}</p>}
       {detail?.mode.phase === "plan" && detail.run.status === "running" && state.proposal && <div className="plan-delivery-actions">
         <p>{t("选择方向或进入交付前，需暂停当前执行。", "Pause the current execution before selecting a direction or entering Deliver.")}</p>
         {client?.hasRunLifecycle && <button className="command-button" disabled={selecting || Boolean(detail.execution_lease?.active)}

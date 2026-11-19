@@ -87,17 +87,17 @@ export function UsageSettings({ client, threadID = "", onOpenThread }: { client:
         <div><dt>{t("缓存读取", "Cache read")}</dt><dd>{data.totals.cache_usage_reported_calls > 0 ? number(data.totals.cache_read_tokens) : "—"}</dd></div>
         <div><dt>{t("缓存写入", "Cache write")}</dt><dd>{data.totals.cache_usage_reported_calls > 0 ? number(data.totals.cache_creation_tokens) : "—"}</dd></div>
       </dl>
-      <p className="v2-usage-coverage">{t("缓存已包含在输入中。", "Cache tokens are included in input.")}{" "}
+      {data.totals.calls > 0 && <p className="v2-usage-coverage">{t("缓存已包含在输入中。", "Cache tokens are included in input.")}{" "}
         {t(`${number(data.totals.cache_usage_reported_calls)} / ${number(data.totals.calls)} 次调用返回缓存明细。`,
           `${number(data.totals.cache_usage_reported_calls)} / ${number(data.totals.calls)} calls reported cache details.`)}
         {data.totals.usage_reported_calls < data.totals.calls && <> {t(
           `另有 ${number(data.totals.calls - data.totals.usage_reported_calls)} 次调用未返回 Token 用量。`,
           `Calls without token usage: ${number(data.totals.calls - data.totals.usage_reported_calls)}.`)}</>}
-      </p>
+      </p>}
       {data.totals.calls === 0 && <p className="v2-usage-empty-period" role="status">{t(
-        "这段时间还没有模型调用。开始一次对话后，用量会显示在这里。", "No model calls in this period. Start a conversation to see usage here.")}</p>}
+        "这段时间没有模型调用。", "No model calls in this period.")}</p>}
       <UsageTrend days={daily} />
-      <div className="v2-usage-lists">
+      {data.totals.calls > 0 && <div className="v2-usage-lists">
         <section aria-labelledby="usage-models-title"><header className="v2-usage-section-heading"><h2 id="usage-models-title">{t("模型", "Models")}</h2>
           <span>{t("Token 占比", "Token share")}</span></header>
           {!data.models.length && <p className="v2-usage-empty">{t("暂无模型用量记录", "No model usage yet")}</p>}
@@ -128,15 +128,13 @@ export function UsageSettings({ client, threadID = "", onOpenThread }: { client:
             `${number(data.unassigned_calls)} 次历史调用未关联对话，已计入总量。`,
             `${number(data.unassigned_calls)} calls have no conversation and are included in totals.`)}</p>}
         </section>
-      </div>
+      </div>}
       <UsageActivity days={activity} />
-      <footer className="v2-usage-footer"><span>{timezone} / {t("按此偏移统计日期", "Dates use this UTC offset")}</span>
+      <footer className="v2-usage-footer"><span>{timezone}</span>
         <span>{t("更新于", "Updated")} {new Date(data.generated_at).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}</span></footer>
       <details className="v2-usage-method"><summary>{t("统计说明", "How usage is counted")}</summary><p>{t(
-        "包含 Universal-Code 主代理、子代理、并行调用和上下文压缩的已完成调用。失败但已经产生用量的调用也会统计；Token 以供应商返回的用量为准。",
-        "Includes completed calls from Universal-Code’s main agent, subagents, parallel calls, and context compaction. Failed calls with usage are included. Token counts come from provider receipts.")}</p><p>{t(
-        "Token 按调用完成时间统计；费用按结算时间统计，仅累加已有完整价格记录的本地估算。尚未计价或尚未结算的调用不包含在金额内，实际费用以供应商账单为准。",
-        "Tokens are grouped by call completion time. Costs use settlement time and include only local estimates with complete pricing. Unpriced and unsettled calls are excluded from the amount; provider billing is authoritative.")}</p></details>
+        "按调用完成时间统计供应商返回的 Token，包括失败调用产生的用量。", "Tokens reported by providers are counted when calls end, including failed calls that used tokens.")}</p><p>{t(
+        "费用按结算时间估算，仅计入价格完整的调用。实际费用以供应商账单为准。", "Estimated costs are grouped by settlement time and include only fully priced calls. Check your provider bill for actual charges.")}</p></details>
     </>}
   </div>;
 }

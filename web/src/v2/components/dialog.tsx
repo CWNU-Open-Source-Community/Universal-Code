@@ -22,7 +22,7 @@ export function V2ConfirmDialog({ open, title, description, confirmLabel, danger
   return createPortal(<div className="v2-overlay" role="presentation" onMouseDown={(event) => {
     if (event.target === event.currentTarget && !busy) onCancel();
   }}>
-    <section aria-labelledby="v2-confirm-title" aria-modal="true" className="v2-dialog"
+    <section aria-labelledby="v2-confirm-title" aria-describedby="v2-confirm-description" aria-modal="true" className="v2-dialog v2-confirm-dialog"
       ref={ref} role="dialog" tabIndex={-1}>
       <header><span className={danger ? "danger" : ""}>
         <AlertTriangle aria-hidden="true" size={17} /></span>
@@ -31,7 +31,7 @@ export function V2ConfirmDialog({ open, title, description, confirmLabel, danger
           <X aria-hidden="true" size={16} />
         </button>
       </header>
-      <p>{description}</p>
+      <p id="v2-confirm-description">{description}</p>
       <footer><button disabled={busy} onClick={onCancel} type="button">{t("取消", "Cancel")}</button>
         <button className={danger ? "danger" : "primary"} disabled={busy}
           onClick={onConfirm} type="button">{busy ? t("正在处理…", "Processing…") : confirmLabel}</button></footer>

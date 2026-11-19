@@ -41,7 +41,7 @@ describe("FileProposalEditor", () => {
     expect(editor).toHaveAttribute("data-theme", "vs-dark");
     await user.clear(editor);
     await user.type(editor, "after");
-    await user.click(screen.getByRole("button", { name: "Create proposal" }));
+    await user.click(screen.getByRole("button", { name: "Submit for review" }));
     await waitFor(() => expect(createFileEditProposal).toHaveBeenCalledWith("run-1", {
       version: "file_edit_proposal.v1", source_handle: source.source_handle,
       proposed_text: "after",
@@ -77,7 +77,7 @@ describe("FileProposalEditor", () => {
     await user.click(screen.getByRole("button", { name: "Refresh source" }));
     await waitFor(() => expect(reissueFileEditProposalSource)
       .toHaveBeenCalledWith("run-1", "README.md", "a".repeat(64)));
-    await user.click(screen.getByRole("button", { name: "Create proposal" }));
+    await user.click(screen.getByRole("button", { name: "Submit for review" }));
     await waitFor(() => expect(createFileEditProposal).toHaveBeenCalledWith("run-1", {
       version: "file_edit_proposal.v1", source_handle: renewed.source_handle,
       proposed_text: "retained draft",

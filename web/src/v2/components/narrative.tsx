@@ -25,9 +25,7 @@ function extractTextFromNode(node: React.ReactNode): string {
   if (typeof node === "number") return String(node);
   if (!node) return "";
   if (Array.isArray(node)) return node.map(extractTextFromNode).join("");
-  if (typeof node === "object" && "props" in node && (node as any).props) {
-    return extractTextFromNode((node as any).props.children);
-  }
+  if (isValidElement<{ children?: React.ReactNode }>(node)) return extractTextFromNode(node.props.children);
   return "";
 }
 
@@ -65,7 +63,7 @@ function MarkdownCodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreE
 
   return <div className="v2-markdown-code-block">
     <div className="v2-markdown-code-header">
-      <span className="v2-markdown-code-lang">{!language || language === "text" || language === "plaintext" ? t("文本", "Text") : language}</span>
+      {language && <span className="v2-markdown-code-lang">{language === "text" || language === "plaintext" ? t("文本", "Text") : language}</span>}
       <button
         aria-label={copied === "success" ? t("已复制代码", "Code copied") : copied === "error" ? t("复制失败", "Copy failed") : t("复制代码", "Copy code")}
         className={`v2-copy-code-button${copied === "success" ? " is-copied" : copied === "error" ? " is-error" : ""}`}
@@ -165,7 +163,8 @@ function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, us
     : copied === "error" ? t("复制失败", "Copy failed") : user ? t("复制消息", "Copy message") : t("复制回复", "Copy response");
   const branchLabel = branching ? t("正在创建新聊天…", "Creating new chat…") : t("分支到新聊天", "Branch into new chat");
 
-  return <><div className={`v2-assistant-actions${user ? " v2-user-actions" : ""}`}>
+  return <><div aria-label={user ? t("消息操作", "Message actions") : t("回复操作", "Response actions")}
+    className={`v2-assistant-actions${user ? " v2-user-actions" : ""}`} role="group">
     <button
       aria-label={copyLabel}
       className={`v2-assistant-action-btn${copied === "success" ? " is-copied" : copied === "error" ? " is-error" : ""}`}
@@ -219,6 +218,9 @@ interface NarrativeRowProps {
 const StreamRevealSpan: Components["span"] = ({ node, children, ...props }) =>
   <span key={String(node?.properties.dataStreamStart ?? "")} {...props}>{children}</span>;
 
+const MessageParagraph: Components["p"] = ({ node: _node, children, ...props }) =>
+  <p {...props} dir="auto" data-han-text={/\p{Script=Han}/u.test(extractTextFromNode(children)) || undefined}>{children}</p>;
+
 function MessageMarkdown({ entry, onOpenFile }: {
   entry: Extract<NarrativeEntry, { kind: "user" | "assistant" }>;
   onOpenFile: NarrativeRowProps["onOpenFile"];
@@ -234,6 +236,7 @@ function MessageMarkdown({ entry, onOpenFile }: {
   }
   const runID = "runId" in entry ? entry.runId : undefined;
   const components = useMemo<Components>(() => ({
+    p: MessageParagraph,
     a: ({ href, children }) => <ResourceLink href={href} runID={runID} onOpenFile={onOpenFile}>{children}</ResourceLink>,
     img: ({ src, alt }) => <ResourceImage src={typeof src === "string" ? src : undefined} alt={alt} runID={runID} onOpenFile={onOpenFile} />,
     pre: ({ node: _node, children, ...props }) => <MarkdownCodeBlock {...props}>{children}</MarkdownCodeBlock>,
@@ -258,7 +261,7 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
         <V2FileAttachments client={client} attachments={entry.attachments ?? []} /></div>
     </details></li>;
   if (entry.kind === "user") return <li className="v2-user-turn" data-conv-entry-key={entry.id} data-message-ids={entry.id} tabIndex={-1}>
-    <div><div className="v2-user-markdown"><MessageMarkdown entry={entry} onOpenFile={onOpenFile} /></div><V2ImagePreview client={client} images={entry.images ?? []} />
+    <div className="v2-user-bubble"><div className="v2-user-markdown"><MessageMarkdown entry={entry} onOpenFile={onOpenFile} /></div><V2ImagePreview client={client} images={entry.images ?? []} />
       <V2FileAttachments client={client} attachments={entry.attachments ?? []} />{entry.status === "cancelled" &&
       <small className="v2-message-status">{t("已取消，不会继续处理", "Cancelled; will not be processed")}</small>}
       {entry.status === "pending" && <small className="v2-message-status">{t("已接收", "Received")}</small>}
@@ -273,7 +276,7 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
       }} />}</li>;
   if (entry.kind === "assistant") return <li aria-live={entry.provisional ? "polite" : undefined}
     data-conv-entry-key={entry.id} data-message-ids={(entry.messageIDs ?? [entry.id]).join(" ")} tabIndex={-1}
-    hidden={hidden} className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}${presentation === "process" || !entry.task ? " is-task-progress" : ""}`}>
+    hidden={hidden} className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}${presentation === "process" ? " is-task-progress" : ""}`}>
     <MessageMarkdown entry={entry} onOpenFile={onOpenFile} />
   </li>;
   if (entry.kind === "activity") return <li hidden={hidden} className="v2-activity-turn" data-conv-entry-key={entry.id} tabIndex={-1}>

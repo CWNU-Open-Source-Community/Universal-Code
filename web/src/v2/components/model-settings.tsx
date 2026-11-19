@@ -76,8 +76,7 @@ export function V2ModelSettings({ client, presets, onSelectPreset, prepareForDra
         <button aria-label={t("打开自定义模型配置", "Open custom model configuration")} className="v2-model-card is-custom"
           onClick={() => setView("custom")} ref={customTriggerRef} type="button">
           <span aria-hidden="true" className="v2-model-card-icon"><Settings2 /></span>
-          <span className="v2-model-card-copy"><strong>{t("自定义配置", "Custom configuration")}</strong>
-            <span>{t("自定义模型", "Custom models")}</span></span>
+          <span className="v2-model-card-copy"><strong>{t("自定义配置", "Custom configuration")}</strong></span>
         </button>
       </li>
       <li>

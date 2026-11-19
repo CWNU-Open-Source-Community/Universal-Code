@@ -13,8 +13,6 @@ export function CodeHandoffHostCommands({ client, commands }: { client: APIClien
   const { t } = useLocale();
   return <section aria-label={t("宿主命令执行记录", "Recorded host commands")}>
     <h3>{t("宿主命令执行记录", "Recorded host commands")}</h3>
-    <p>{t("以下显示已审命令的历史结果。退出码 0 表示该次命令成功；交付前请核对当前文件版本和全部验收项。",
-      "These are historical results for reviewed commands. Exit code 0 means that command succeeded; check the current file revision and all acceptance criteria before delivery.")}</p>
     {commands.items.length === 0 && <p>{t("尚无宿主命令提案。", "No host command proposals recorded.")}</p>}
     {commands.items.map((command) => <HostCommand key={`${command.proposal_id}:${command.result_id ?? "pending"}`}
       client={client} command={command} />)}

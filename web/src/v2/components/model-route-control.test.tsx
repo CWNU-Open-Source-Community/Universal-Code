@@ -69,11 +69,11 @@ function renderControl(client: TestRouteClient = routeClient(), options: {
     queries: { retry: false }, mutations: { retry: false },
   } });
   const onManageModels = options.onManageModels ?? vi.fn();
-  render(<QueryClientProvider client={queryClient}>
+  const { container } = render(<QueryClientProvider client={queryClient}>
     <V2ModelRouteControl client={client} onManageModels={onManageModels}
       runActive={options.runActive} threadID="thread-1" />
   </QueryClientProvider>);
-  return { client, onManageModels };
+  return { client, container, onManageModels };
 }
 
 describe("V2ModelRouteControl", () => {
@@ -119,9 +119,14 @@ describe("V2ModelRouteControl", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("does not open over another menu, a dialog, recording, editors, terminals or composition", () => {
-    const { client } = renderControl();
+  it("ignores the model shortcut in an inert surface or when another control owns the keyboard", () => {
+    const { client, container } = renderControl();
     const key = { key: "m", code: "KeyM", ctrlKey: true, shiftKey: true };
+    container.setAttribute("inert", "");
+    const sidebarShortcut = new KeyboardEvent("keydown", { ...key, cancelable: true });
+    fireEvent(window, sidebarShortcut);
+    expect(sidebarShortcut.defaultPrevented).toBe(false);
+    container.removeAttribute("inert");
     for (const className of ["monaco-editor", "xterm"]) {
       const editor = document.createElement("input"); editor.className = className; document.body.append(editor);
       fireEvent.keyDown(editor, key);

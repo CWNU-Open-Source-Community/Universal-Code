@@ -80,7 +80,7 @@ export function V2FileContext({ client, workspaceID, files, onChange, disabled, 
         ref={dialog} role="dialog" tabIndex={-1}>
         <header><strong>{t("引用项目文件", "Reference project files")}</strong><button aria-label={t("关闭文件选择", "Close file picker")} onClick={onClose}
           ref={close} type="button"><X aria-hidden="true" size={17} /></button></header>
-        <p>{t("最多选择 4 个文件，发送时会校验并附加为参考资料。发送前可移除，发送后可在“审阅改动”的“参考资料”中查看；执行操作按任务权限审批。", "Choose up to 4 files. They are validated and attached as references when sent. Remove them before sending or view them later under Review changes → References. Actions use the task's permissions.")}</p>
+        <p>{t("最多引用 4 个文件，发送时附加。", "Attach up to 4 file references when you send.")}</p>
         {error && <p role="alert">{error}</p>}
         <WorkspaceExplorer client={client} workspaceID={workspaceID} onSelectReference={(file) => {
           if (disabled || unavailableReason) return;

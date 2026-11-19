@@ -39,13 +39,10 @@ export function SkillPackageRegistry({ enabled, source }: {
   });
 
   if (!enabled) {
-    return <p role="status">{t("连接具备 Skill 管理权限的服务后，可在这里查看和移除已登记的技能包。",
-      "Select a connection with Skill management to review and remove registered packages.")}</p>;
+    return <p role="status">{t("安装和管理技能包需要 Skill 管理权限。", "Installing and managing skills requires skill management permission.")}</p>;
   }
   const items = list.data?.items ?? [];
   return <div className="skill-package-registry">
-    <p className="v2-settings-help">{t("这里列出本机已登记的历史技能包。移除只停止后续可选用，不删除已完成的改动记录。",
-      "This lists historical packages registered on this machine. Removal only stops future selection; completed work stays recorded.")}</p>
     <div className="skill-package-registry-controls">
       <button className="settings-action" disabled={list.isFetching || removal.isPending}
         onClick={() => void list.refetch()} type="button">

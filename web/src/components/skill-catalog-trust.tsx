@@ -38,8 +38,7 @@ function CatalogControls({ client }: { client: APIClient }) {
   const enabled = client.hasSkillInstallation && list.data?.control_enabled === true && !list.isError;
   const change = (update: () => void) => { update(); setConfirmed(false); trust.reset(); };
   return <>
-    <p>{t("管理旧 Skill Catalog 的发布者公钥，影响其版本固定与后续启用。Plugin 发布者信任在扩展界面管理。",
-      "Manage publisher keys used by the legacy Skill Catalog for version pinning and later enablement. Manage Plugin publishers in Extensions.")}</p>
+    <p>{t("信任的公钥用于固定和启用 Catalog 版本。", "Trusted keys are used to pin and enable Catalog versions.")}</p>
     <button className="settings-action" type="button" disabled={list.isFetching || trust.isPending}
       onClick={() => void list.refetch()}>{t("刷新发布者", "Refresh publishers")}</button>
     {list.isPending && <p role="status">{t("正在读取发布者…", "Loading publishers…")}</p>}

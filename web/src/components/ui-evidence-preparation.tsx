@@ -110,8 +110,8 @@ export function UIEvidencePreparation({ client, runID, threadID, pending, unreso
       {draft.store && <button type="button" className="compact-command" disabled={pending || unresolved || preparing}
         onClick={() => { try { draft.discard(); setReviewed(false); setError(""); } catch (failure) { setError(String(failure)); } }}>{t("放弃未保存草稿", "Discard unsaved draft")}</button>}
     </div>}
-    <p>{t("选择应用服务的启动记录，或填写项目启动方式。验证会启动本次专用服务和浏览器，完成后清理；请选用测试数据与空闲端口。", "Choose an application service's launch record or enter the project's launch settings. Verification starts its own service and browser and cleans them up afterward. Use test data and a free port.")}</p>
-    <details><summary>{t("准备本次执行权限", "Prepare execution authority")}</summary><p>{t("在任务设置选择 Code、Local 和 Deliver，并在任务权限中激活 Full 与 restricted 浏览器控制。启动时会核对当前根执行租约。", "Choose Code, Local, and Deliver in task settings, then activate Full and restricted browser control in task permissions. Starting verifies the current root execution lease.")}</p></details>
+    <p>{t("验证会启动临时服务和浏览器，请使用测试数据与空闲端口。", "Verification starts a temporary service and browser. Use test data and a free port.")}</p>
+    <details><summary>{t("所需权限", "Required permissions")}</summary><p>{t("需要 Code、Local、Deliver、完全访问和受限浏览器控制。进程与凭据操作须单独授权。", "Requires Code, Local, Deliver, full access and restricted browser control. Process and credential actions require separate authorization.")}</p></details>
     <fieldset disabled={locked || preparing}>
       {threadID && <><label>{t("应用服务", "Application service")}<select value={serviceID} onChange={(event) => { setServiceID(event.target.value); invalidate(); }}>
         <option value="">{t("手动填写项目启动方式", "Enter project launch settings")}</option>
@@ -120,17 +120,16 @@ export function UIEvidencePreparation({ client, runID, threadID, pending, unreso
       {services.isError && <ErrorState error={services.error} />}
       {selected && <><button type="button" className="compact-command" disabled={!source.data || !service.data} onClick={useService}>{t("使用所选启动记录", "Use selected launch record")}</button>
         <p>{!selected.source_call_id
-          ? t("该服务没有可复用的启动记录，请按项目启动方式填写下方表单。", "This service has no reusable launch record. Fill in the project's launch settings below.")
-          : t("读取启动记录后核对下方命令，并把地址改为本次专用空闲端口。", "Read the launch record, review the command below and change the address to a free port dedicated to this verification.")}</p>
+          ? t("该服务没有可复用的启动记录。", "This service has no reusable launch record.")
+          : t("本次验证需要独立的空闲端口。", "This verification requires a dedicated unused port.")}</p>
         {(source.isError || service.isError) && <ErrorState error={source.error || service.error} />}</>}
-      {services.data?.services.filter((entry) => entry.run_id === runID).length === 0 && <p>{t("当前执行尚无应用服务记录。可填写项目启动命令，或回任务要求启动应用后再读取。", "This execution has no application service records yet. Enter its launch command or ask the task to start the application, then read the records again.")}</p>}</>}
+      {services.data?.services.filter((entry) => entry.run_id === runID).length === 0 && <p>{t("此执行暂无服务启动记录", "No service launch records for this run")}</p>}</>}
       <label>{t("应用名称", "Application name")}<input maxLength={256} value={name} onChange={(event) => { setName(event.target.value); invalidate(); }} /></label>
       <label>{t("启动命令（PowerShell）", "Launch command (PowerShell)")}<textarea rows={3} maxLength={65536} value={command} onChange={(event) => { setCommand(event.target.value); invalidate(); }} /></label>
       <label>{t("项目内工作目录", "Working directory in project")}<input maxLength={4096} value={directory} onChange={(event) => { setDirectory(event.target.value); invalidate(); }} /></label>
       <label>{t("本次页面地址", "Page address for this verification")}<input type="url" maxLength={4096} value={url} onChange={(event) => { setURL(event.target.value); invalidate(); }} /></label>
       <label>{t("页面尺寸", "Page size")}<select value={viewport} onChange={(event) => { setViewport(event.target.value as "desktop" | "mobile"); invalidate(); }}><option value="desktop">1440 × 900</option><option value="mobile">390 × 844</option></select></label>
       <label>{t("主题", "Theme")}<select value={theme} onChange={(event) => { setTheme(event.target.value as "light" | "dark"); invalidate(); }}><option value="light">{t("浅色", "Light")}</option><option value="dark">{t("深色", "Dark")}</option></select></label>
-      <p>{t("先打开页面并收集截图、结构、无障碍与错误记录。按需要添加后续检查。", "The first step opens the page and collects screenshots, structure, accessibility, and errors. Add further checks as needed.")}</p>
       {steps.map((step, index) => <div key={step.id} className="ui-evidence-draft-step">
         <label>{t(`步骤 ${index + 2}`, `Step ${index + 2}`)}<select value={step.kind} onChange={(event) => { setSteps((current) => current.map((entry) => entry.id === step.id ? { ...entry, kind: event.target.value as StepKind } : entry)); invalidate(); }}>{kinds.map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</select></label>
         {step.kind !== "capture" && <label>{t("页面选择器", "Page selector")}<input value={step.selector} onChange={(event) => { setSteps((current) => current.map((entry) => entry.id === step.id ? { ...entry, selector: event.target.value } : entry)); invalidate(); }} /></label>}
@@ -140,7 +139,7 @@ export function UIEvidencePreparation({ client, runID, threadID, pending, unreso
       <button type="button" disabled={steps.length >= 63} onClick={() => { setSteps((current) => [...current, { id: `step-${crypto.randomUUID()}`, kind: "assert_present", selector: "", input: "" }]); invalidate(); }}>{t("添加检查步骤", "Add check step")}</button>
       <button type="button" className="command-button" onClick={() => void prepare()}>{preparing ? t("正在生成清单", "Preparing manifest") : t("预览验证清单", "Preview verification manifest")}</button>
     </fieldset>
-    {prepared && <><p>{t("本次会执行下列启动命令和浏览器步骤，并保存截图与检查结果。", "This verification runs the launch command and browser steps below and saves screenshots and check results.")}</p>
+    {prepared && <>
       <pre aria-label={t("本次精确验证清单", "Exact verification manifest")}>{JSON.stringify(prepared, null, 2)}</pre>
       <details><summary>{t("高级：编辑完整 JSON", "Advanced: edit complete JSON")}</summary>
         <textarea aria-label={t("精确 UI 证据启动 JSON", "Exact UI evidence launch JSON")} disabled={locked} value={advanced} onChange={(event) => { setAdvanced(event.target.value); setReviewed(false); setPrepared(null); }} />

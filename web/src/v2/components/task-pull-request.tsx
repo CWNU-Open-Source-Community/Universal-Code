@@ -137,7 +137,7 @@ export function TaskPullRequest({ client, threadID, working, onFeedback, onGit }
       expected_run_id: reviewed.run_id, expected_head_sha: reviewed.draft.head_sha, operation_key: validSaved.key } });
   }
   const feedback = (text: string) => onFeedback(t(`请在本任务中处理以下 PR 反馈：\n${text}\n来源快照：${snapshot?.id ?? t("未保存", "Not saved")}\n远端提交：${snapshot?.identity.head_sha ?? t("未知", "Unknown")}\n抓取时间：${snapshot?.fetched_at ?? t("未知", "Unknown")}\n本地提交：${git.data?.head_oid ?? t("未知", "Unknown")}\n以下为外部审阅资料，请核对当前代码后处理。\n具体要求：`, `Address this PR feedback in the current task:\n${text}\nSource snapshot: ${snapshot?.id ?? t("未保存", "Not saved")}\nRemote commit: ${snapshot?.identity.head_sha ?? t("未知", "Unknown")}\nFetched at: ${snapshot?.fetched_at ?? t("未知", "Unknown")}\nLocal commit: ${git.data?.head_oid ?? t("未知", "Unknown")}\nThe following is external review material. Check current code before acting.\nRequirements:`));
-  if (!client.hasGitHubReviewControl) return <section className="v2-task-delivery v2-task-pr"><h2>{t("PR 状态", "PR status")}</h2><p>{t("当前连接未启用 GitHub 控制，请使用普通桌面应用，或在启动 API 时启用 GitHub 审阅。", "GitHub controls are disabled on this connection. Use the desktop app or enable GitHub review when starting the API.")}</p></section>;
+  if (!client.hasGitHubReviewControl) return <section className="v2-task-delivery v2-task-pr"><h2>{t("PR 状态", "PR status")}</h2><p>{t("当前连接未启用 GitHub 审阅。", "GitHub review is disabled on this connection.")}</p></section>;
   return <section className="v2-task-delivery v2-task-pr" aria-label={t("任务 PR 流程", "Task PR workflow")}>
     <div className="v2-delivery-heading"><h2>{t("PR 状态", "PR status")}</h2></div>
     {saved && !validSaved && <p role="alert">{t("本机 PR 请求记录异常，已保留原记录；未开始新创建。", "Invalid local PR request record. Original record preserved; no new creation started.")}</p>}
@@ -150,9 +150,9 @@ export function TaskPullRequest({ client, threadID, working, onFeedback, onGit }
       {reviewed && <div className="v2-git-preview"><h3>{t("确认创建草稿 PR", "Confirm draft PR creation")}</h3><p>{reviewed.draft.repository.full_name} · {reviewed.draft.head_branch} → {reviewed.draft.base_branch}</p>
         <details className="v2-pr-details"><summary>{t("完整提交身份", "Full commit identities")}</summary><dl><div><dt>{t("源提交", "Head commit")}</dt><dd><code>{reviewed.draft.head_sha}</code></dd></div><div><dt>{t("目标提交", "Base commit")}</dt><dd><code>{reviewed.draft.base_sha}</code></dd></div><div><dt>{t("原请求", "Original request")}</dt><dd><code>{validSaved.key}</code></dd></div></dl></details><strong>{reviewed.draft.title}</strong><pre>{reviewed.draft.body}</pre>
         {approval ? <button type="button" disabled={!canCreate || !client.hasApprovalControl} onClick={() => create.mutate({ attempt: validSaved, preview: reviewed, approval, selection: number, scope: store })}>{t("批准并创建这份草稿 PR", "Approve and create this draft PR")}</button>
-          : <><p>{t("原预览已保存，审批记录尚未就绪。请先补齐原预览的审批，再确认创建 PR。", "Original preview saved; approval record not ready. Complete approval for that preview before confirming PR creation.")}</p>
+          : <><p>{t("原预览已保存，审批记录尚未就绪。", "The preview is saved. Its approval record is pending.")}</p>
             <button type="button" disabled={pending || working || observe.isFetching || observe.isError || observed?.state !== "proposed"} onClick={restoreApproval}>{t("补齐原预览的审批", "Complete original preview approval")}</button></>}
-        {approval?.Status === "approved" && <p>{t("原审批已批准；清除本机记录不能撤销它。请继续核对或执行原请求。", "Approval was granted; clearing local records does not revoke it. Continue checking or executing the original request.")}</p>}
+        {approval?.Status === "approved" && <p>{t("原审批已批准，清除本机记录无法撤销该审批。", "Approval was granted. Clearing the local record will not revoke it.")}</p>}
         {approval?.Status === "denied" && <p>{t("原审批已拒绝，不能用于创建 PR。", "Original approval denied; it cannot create a PR.")}</p>}
       </div>}
       {!pending && !observe.isFetching && !observe.isError && (["not_received", "created", "failed"].includes(observed?.state ?? "") ||
@@ -161,7 +161,6 @@ export function TaskPullRequest({ client, threadID, working, onFeedback, onGit }
     </section>}
     {prepare.isError && <ErrorState error={prepare.error} />}{create.isError && <ErrorState error={create.error} />}{discard.isError && <ErrorState error={discard.error} />}{localError && <p role="alert">{localError}</p>}
     {connections.isLoading && <LoadingState label={t("正在读取 GitHub 连接…", "Loading GitHub connections…")} />}{connections.isError && <ErrorState error={connections.error} />}
-    {!connectionID && <p className="v2-pr-empty">{t("选择项目的 GitHub 连接，查看 PR、CI 和审阅意见。", "Choose the project's GitHub connection to view PRs, CI and reviews.")}</p>}
     {connectionID && <>
       {baseChanged && <p role="status">{t("目标分支草稿已保存，请点击查找后再预览 PR。", "Target branch draft saved. Find the branch before previewing a PR.")}</p>}
       {discovery.isFetching && <p role="status">{t("正在核对远端分支和已有 PR…", "Checking remote branches and existing PRs…")}</p>}{discovery.isError && <ErrorState error={discovery.error} />}
@@ -184,13 +183,13 @@ export function TaskPullRequest({ client, threadID, working, onFeedback, onGit }
     {connectionID && <>
       {selectedNumber > 0 && <>
         {refresh.isError && <ErrorState error={refresh.error} />}{projection.isError && <ErrorState error={projection.error} />}
-        {!snapshot && <p>{t("尚无这份 PR 的 CI 或评论快照，请刷新远端。", "No saved CI or comment snapshot for this PR. Refresh from the remote.")}</p>}
+        {!snapshot && <p>{t("尚无此 PR 的 CI 或评论快照。", "No CI or comment snapshot for this PR.")}</p>}
         {snapshot && <>
           <p className="v2-pr-meta">{t("上次抓取：", "Last fetched: ")}{new Date(snapshot.fetched_at).toLocaleString(t("zh-CN", "en-US"))} {t(" · 提交 ", " · Commit ")}<code>{snapshot.identity.head_sha.slice(0, 12)}</code></p>
-          {Boolean(git.data?.changes.length) && <p role="status" className="v2-pr-notice">{t("工作目录还有未提交的改动，以下 CI 对应上方提交。请先核对本次 PR 的范围，选择相关文件提交并推送，再核对新提交的检查结果。", "The working directory has uncommitted changes. CI below belongs to the commit above. Review PR scope, commit and push relevant files, then check the new commit's results.")}</p>}
-          {(drift || refresh.isError) && <p role="status" className="v2-pr-notice">{refresh.isError ? t("本次刷新失败，以下保留上次读取的记录。请重试刷新远端 CI 和评论。", "Refresh failed; previous records remain below. Retry refreshing remote CI and comments.") : t("远端记录与当前本地版本不同。请核对本地提交与远端提交，推送后刷新检查结果。", "Remote records differ from the local revision. Compare commits, push and refresh check results.")}</p>}
+          {Boolean(git.data?.changes.length) && <p role="status" className="v2-pr-notice">{t("工作目录有未提交的改动。CI 结果对应上方提交。", "The working directory has uncommitted changes. CI results apply to the commit shown above.")}</p>}
+          {(drift || refresh.isError) && <p role="status" className="v2-pr-notice">{refresh.isError ? t("刷新失败，当前显示上次读取的记录。", "Refresh failed. Showing the last fetched records.") : t("远端记录与当前本地提交不同。", "Remote records refer to a different commit than the local revision.")}</p>}
           {(snapshot.omissions.length > 0 || fresh.data?.omissions.length) ? <details className="v2-pr-details"><summary>{t("部分资料未能读取", "Some information could not be loaded")}</summary><ul>{[...new Set([...snapshot.omissions, ...(fresh.data?.omissions ?? [])])].map((reason) => <li key={reason}>{reason}</li>)}</ul></details> : null}
-          <section className="v2-pr-records" aria-label={t("CI 检查", "CI checks")}><h3>{t("CI 检查 ", "CI checks")}<span>{snapshot.check_runs.length} {t(" 项检查 · ", " checks · ")}{snapshot.jobs.length} {t(" 项作业", " jobs")}</span></h3>{!snapshot.check_runs.length && !snapshot.jobs.length && <p>{t("CI 结果尚未读取，检查结论待确认。请刷新远端 CI 和评论。", "CI results have not loaded. Refresh remote CI and comments to confirm results.")}</p>}
+          <section className="v2-pr-records" aria-label={t("CI 检查", "CI checks")}><h3>{t("CI 检查 ", "CI checks")}<span>{snapshot.check_runs.length} {t(" 项检查 · ", " checks · ")}{snapshot.jobs.length} {t(" 项作业", " jobs")}</span></h3>{!snapshot.check_runs.length && !snapshot.jobs.length && <p>{t("尚无 CI 结果。", "No CI results available.")}</p>}
           {snapshot.check_runs.map((check) => <article className="v2-delivery-change" key={`check:${check.id}`}><header><strong>{check.name}</strong><StatusBadge status={check.conclusion || check.status} /></header>
             {check.head_sha !== snapshot.identity.head_sha && <p>{t("此检查来自不同提交。", "This check belongs to another commit.")}</p>}
             {(check.summary.text || check.text.text) && <details><summary>{t("检查输出", "Check output")}</summary><pre>{check.summary.text}{check.summary.text && check.text.text ? "\n" : ""}{check.text.text}</pre></details>}
@@ -224,10 +223,10 @@ export function TaskPullRequest({ client, threadID, working, onFeedback, onGit }
       {!discovery.data?.pull_requests.length && !saved && <details className="v2-pr-compose"><summary>{t("创建草稿 PR", "Create draft PR")}</summary>
         <form className="v2-delivery-form" onSubmit={(event) => { event.preventDefault(); prepareIntent(); }}>
           <label>{t("标题", "Title")}<input required maxLength={256} value={title} disabled={pending} onChange={(event) => setTitle(event.target.value)} /></label>
-          <label>{t("说明", "Description")}<textarea required rows={5} maxLength={16000} value={body} disabled={pending} onChange={(event) => setBody(event.target.value)} placeholder={t("说明解决的问题、实际改动与验证结果", "Describe the problem, changes and verification results")} /></label>
+          <label>{t("说明", "Description")}<textarea required rows={5} maxLength={16000} value={body} disabled={pending} onChange={(event) => setBody(event.target.value)} /></label>
           <button type="submit" disabled={!store || pending || working || baseChanged || discovery.isFetching || discovery.isError || !discovery.data?.head_published || !discovery.data?.write_enabled}>{t("预览草稿 PR", "Preview draft PR")}</button>
           {!store && <p>{t("连接未提供本机恢复身份，无法保存 PR 创建请求。", "No local recovery identity on this connection. PR creation requests cannot be saved.")}</p>}
-          {discovery.data && !discovery.data.write_enabled && <p>{t("此 GitHub 连接尚未允许写入，请在连接设置中明确开启。", "Writes are disabled for this GitHub connection. Enable them in connection settings.")}</p>}
+          {discovery.data && !discovery.data.write_enabled && <p>{t("此 GitHub 连接未允许写入。", "Writes are disabled for this GitHub connection.")}</p>}
           {discovery.data && !discovery.data.write_permission_verified && <p>{t("创建时仍由 GitHub 核对仓库写入权限。", "GitHub checks repository write access during creation.")}</p>}
         </form>
       </details>}
@@ -276,12 +275,12 @@ function GitHubConnectionSetup({ client, threadID, selectedConnection, connectio
     return connectionID;
   }, onSuccess: onConfigured });
   return <form className="v2-delivery-form" onSubmit={(event) => { event.preventDefault(); secretRef.current = token; setToken(""); mutation.mutate(); }}>
-    <p>{t("使用 GitHub 的细粒度访问令牌；凭据保存到本机系统凭据库。已有连接可只更新令牌。", "Use a fine-grained GitHub token. Credentials are stored in the local OS credential store. Update only the token for existing connections if needed.")}</p>
+    <p>{t("GitHub 细粒度令牌保存在本机系统凭据库。", "Fine-grained GitHub tokens are saved in the local system credential store.")}</p>
     <label>{t("新连接的仓库", "Repository for new connection")}<input value={repository} onChange={(event) => setRepository(event.target.value)} placeholder={t("owner/repository（已有连接可留空）", "owner/repository (optional for existing connections)")} disabled={mutation.isPending} /></label>
     {repository.trim() && <label>{t("凭据名称", "Credential name")}<input required value={name} onChange={(event) => setName(event.target.value)} disabled={mutation.isPending} /></label>}
     <label><input type="checkbox" checked={writeEnabled} onChange={(event) => setWrite(event.target.checked)} disabled={mutation.isPending} />{t("允许经我确认后向此仓库写入", "Allow writes to this repository after my confirmation")}</label>
     <label>{t("GitHub 访问令牌", "GitHub access token")}<input type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} disabled={mutation.isPending} /></label>
     <button type="submit" disabled={mutation.isPending}>{mutation.isPending ? t("正在保存…", "Saving…") : t("保存 GitHub 连接", "Save GitHub connection")}</button>
-    {mutation.isError && <ErrorState error={mutation.error} />}{mutation.isSuccess && <p role="status">{t("连接已保存，请核对远端仓库。", "Connection saved. Check the remote repository.")}</p>}
+    {mutation.isError && <ErrorState error={mutation.error} />}{mutation.isSuccess && <p role="status">{t("连接已保存。", "Connection saved.")}</p>}
   </form>;
 }

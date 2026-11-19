@@ -33,8 +33,8 @@
 
 参考源与截图共同证明的 token：
 
-- 基础网格 4px；字号 11/12/14/16/18/20/24px；正文 14–16px。
-- 字体：**全部英文（UI 与代码）使用 JetBrains Mono Variable**；中文使用内置 HarmonyOS Sans SC（四字重 400/500/600/700）。字体栈 `"JetBrains Mono Variable", "JetBrains Mono", "HarmonyOS Sans SC", "Microsoft YaHei UI", sans-serif`。四个 TTF 均从华为官方归档逐字节复制，不做转码或子集化；归档、文件哈希、许可文本与产品内使用声明必须一起提交。
+- 界面使用 4px 间距网格。对话正文默认 16px，代码默认 15px，两项均可在外观设置中单独调整。对话正文的行高为字号加 8px，字距为 `normal`。连续含汉字的段落间距为 4px，普通段落间距为 11px，段落与列表之间为 10px。
+- 界面与正文使用系统比例字体（Windows 使用 Segoe UI），中文使用内置 HarmonyOS Sans SC 的 400、500、600、700 字重。代码与快捷键使用 JetBrains Mono Variable。四个中文 TTF 使用华为官方归档原件，许可文本与产品内使用声明随软件发布。
 - 内容最大宽度 48rem；toolbar padding 16px；Composer overhang 24px；消息间隔 16px，组内 4px。
 - 圆角基值 2/4/6/8/10/12/16/20/24px；支持时采用 `superellipse(1.5)`。
 - 模糊层级 4/8/12/16/24/40/64px。项目材质继续使用 titlebar 28px、sidebar/panel 34px、glass 46px 的高斯模糊；2026-10-10 用户要求收敛为中性白色填充，背景使用原始饱和度。

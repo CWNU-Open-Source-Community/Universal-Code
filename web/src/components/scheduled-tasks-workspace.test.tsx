@@ -22,7 +22,7 @@ describe("ScheduledTasksWorkspace", () => {
       diagnosticBundle: vi.fn(),
     });
 
-    await screen.findByText("No time schedules yet. Choose a task and trigger time to begin.");
+    await screen.findByText("No schedules yet");
     await user.click(screen.getByRole("button", { name: "Read-only observation" }));
     await user.click(screen.getByRole("button", { name: "Create and observe" }));
     await waitFor(() => expect(createScheduledJob).toHaveBeenCalledTimes(1));
@@ -184,7 +184,7 @@ describe("ScheduledTasksWorkspace", () => {
     await waitFor(() => expect(screen.getByLabelText("Existing task")).toHaveValue("thread-1"));
     await user.click(screen.getByRole("button", { name: "Read-only observation" }));
     await user.selectOptions(screen.getByLabelText("Existing task"), "");
-    const target = screen.getByLabelText("Target Run ID (or select a task above)");
+    const target = screen.getByLabelText("Target Run ID");
     await user.clear(target);
     await user.type(target, "run-other");
     await user.click(screen.getByRole("button", { name: "Create and observe" }));

@@ -126,8 +126,7 @@ it("registers MCP only on submit, reviews each pinned stage, and reads actual ca
   expect(mutations[0].body).toMatchObject({ descriptor: { workspace_id: "project-one", scope: "workspace" } });
   await user.click(screen.getByRole("checkbox", { name: "我已核对描述符，允许连接并发现能力" }));
   await user.click(discovery);
-  await screen.findByText(/发现审查已通过/);
-  expect(screen.getByText("批准并发现").closest("li")).toHaveAttribute("aria-current", "step");
+  await waitFor(() => expect(screen.getByText("批准并发现").closest("li")).toHaveAttribute("aria-current", "step"));
   expect(mutations).toHaveLength(2);
   expect(mutations[1].body).toMatchObject({ action: "approve_discovery", expected_descriptor_fingerprint: "a".repeat(64) });
   await user.click(screen.getByRole("button", { name: "重新发现" }));
@@ -149,7 +148,7 @@ it("registers MCP only on submit, reviews each pinned stage, and reads actual ca
     started_at: "2026-10-07T01:00:00Z", completed_at: "2026-10-07T01:00:01Z" });
   await user.click(screen.getByRole("button", { name: "刷新" }));
   expect(await screen.findByText("调用状态: completed")).toBeInTheDocument();
-  expect(screen.getByText(/在任务消息和证据中查看具体返回内容/)).toBeInTheDocument();
+  expect(screen.getByText(/结果大小: 65 bytes/)).toBeInTheDocument();
 });
 
 it("refreshes saved MCP health after rediscovery fails and clears errors after recovery", async () => {
@@ -245,7 +244,7 @@ it("preserves the Plugin file and exact upload on failure, then requires separat
   await user.click(within(screen.getByRole("group", { name: "启用 Plugin 能力" })).getByRole("checkbox", { name: "hooks" }));
   await user.click(screen.getByRole("checkbox", { name: /我已核对包指纹/ }));
   await user.click(enable);
-  await screen.findByText(/已启用的贡献可由任务加载/);
+  await waitFor(() => expect(screen.getByText("任务中使用").closest("li")).toHaveAttribute("aria-current", "step"));
   expect(reviews).toEqual([
     expect.objectContaining({ action: "approve", confirm_untrusted: true, expected_generation: 1 }),
     expect.objectContaining({ action: "enable", confirm_untrusted: true, capabilities: ["hooks"], expected_generation: 2 }),

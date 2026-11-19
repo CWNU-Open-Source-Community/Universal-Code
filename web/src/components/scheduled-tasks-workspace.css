@@ -18,7 +18,9 @@
 .scheduled-tasks-workspace p.automation-wide-field { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .automation-list-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 24px 0 10px; font-size: 12px; }
 .automation-list-heading > span { color: var(--muted); font-size: 11px; }
+.scheduled-form-heading, .automation-list-heading h2 { font-size: 15px; font-weight: 600; line-height: 1.45; margin: 0; }
 .scheduled-tasks-workspace .scheduled-task-layout { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); margin-top: 0; }
+.scheduled-task-list:only-child { grid-column: 1 / -1; }
 .scheduled-tasks-workspace .scheduled-task-list .status-badge,
 .scheduled-tasks-workspace .scheduled-task-detail > header > .status-badge { flex-shrink: 0; }
 .automation-result-link { display: inline-block; margin-top: 14px; }

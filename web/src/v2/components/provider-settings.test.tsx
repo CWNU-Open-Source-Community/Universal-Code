@@ -264,9 +264,9 @@ describe("V2 custom Provider settings", () => {
     queryClient.setQueryData(threadRouteKey, { harness_ready: false });
     render(<QueryClientProvider client={queryClient}><V2ProviderSettings client={controls.client} /></QueryClientProvider>);
     await user.click(await screen.findByRole("button", { name: /official-deepseek/u }));
-    await user.click(screen.getByRole("button", { name: "测试并验证 Harness" }));
-    await user.click(within(screen.getByRole("dialog", { name: "测试并验证 Harness？" })).getByRole("button", { name: "开始验证" }));
-    expect(await screen.findByRole("status", { name: "Harness 验证结果" })).toHaveTextContent("验证通过");
+    await user.click(screen.getByRole("button", { name: "测试连接与模型" }));
+    await user.click(within(screen.getByRole("dialog", { name: "测试连接与模型？" })).getByRole("button", { name: "开始验证" }));
+    expect(await screen.findByRole("status", { name: "模型兼容性检查结果" })).toHaveTextContent("验证通过");
     await waitFor(() => expect(screen.getByRole("button", { name: "保存" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "保存" }));
     await screen.findByRole("button", { name: /official-deepseek/u });
@@ -299,7 +299,7 @@ describe("V2 custom Provider settings", () => {
       request_headers: { "X-Region": "west", Authorization: { template: "Bearer ${secret}", $credential: "acme" } },
       request_body: { metadata: { enabled: true, tags: ["a", "b"] }, temperature: 0 },
     }, null, 4) } });
-    expect(screen.getByRole("button", { name: "测试并验证 Harness" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "测试连接与模型" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "保存" }));
     await screen.findByRole("button", { name: /Acme AI/u });
     expect(controls.upsertProviderDefinition).not.toHaveBeenCalled();
@@ -414,7 +414,7 @@ describe("V2 custom Provider settings", () => {
     expect(controls.discoverProviderModels).toHaveBeenCalledWith({ version: "provider_model_discovery.v1", provider_id: "acme",
       endpoint_url: "https://api.acme.example/v1/chat/completions", transport: "openai_chat_completions",
       advanced_config: advanced, confirm_discovery: true, expected_definition_revision: 4 }, expect.any(AbortSignal));
-    expect(screen.getByText(/本次结果未完整返回/u)).toBeInTheDocument();
+    expect(screen.getByText(/结果不完整/u)).toBeInTheDocument();
     expect(screen.getByText(/输入 200,000 token · 输出 64,000 token/u)).toBeInTheDocument();
     expect(screen.getByLabelText("模型列表")).toHaveValue("acme-pro");
     expect(controls.upsertProviderDefinition).not.toHaveBeenCalled();
@@ -672,10 +672,10 @@ describe("V2 custom Provider settings", () => {
     expect(within(row).getByText("本机 · 可不填密钥")).toBeInTheDocument();
     await user.click(row);
     expect(screen.getByText(/本机模型未引用凭据，可留空并进行连接验证/u)).toBeInTheDocument();
-    const verify = screen.getByRole("button", { name: "测试并验证 Harness" });
+    const verify = screen.getByRole("button", { name: "测试连接与模型" });
     expect(verify).toBeEnabled();
     await user.click(verify);
-    const dialog = screen.getByRole("dialog", { name: "测试并验证 Harness？" });
+    const dialog = screen.getByRole("dialog", { name: "测试连接与模型？" });
     await user.click(within(dialog).getByRole("button", { name: "开始验证" }));
     await waitFor(() => expect(controls.qualifyModelHarness).toHaveBeenCalledTimes(1));
     expect(controls.diagnoseProvider).toHaveBeenCalledTimes(1);
@@ -696,7 +696,7 @@ describe("V2 custom Provider settings", () => {
     const user = userEvent.setup();
     renderSettings(controls.client);
     await user.click(await screen.findByRole("button", { name: /Acme AI/u }));
-    expect(screen.getByRole("button", { name: "测试并验证 Harness" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "测试连接与模型" })).toBeDisabled();
     expect(screen.getByText(/请先把 API Key 保存到系统凭据管理器/u)).toBeInTheDocument();
     expect(controls.diagnoseProvider).not.toHaveBeenCalled();
     expect(controls.qualifyModelHarness).not.toHaveBeenCalled();
@@ -979,7 +979,7 @@ describe("V2 custom Provider settings", () => {
     renderSettings(controls.client);
 
     await user.click(await screen.findByRole("button", { name: "添加供应商" }));
-    const verifyButton = screen.getByRole("button", { name: "测试并验证 Harness" });
+    const verifyButton = screen.getByRole("button", { name: "测试连接与模型" });
     expect(verifyButton).toBeDisabled();
     expect(screen.getByText("先保存供应商配置后才能验证。")).toBeInTheDocument();
     expect(controls.diagnoseProvider).not.toHaveBeenCalled();
@@ -999,7 +999,7 @@ describe("V2 custom Provider settings", () => {
 
     expect(screen.getByLabelText("搜索策略")).toHaveValue("auto");
     expect(screen.getByLabelText("声明供应商具备原生 Web Search")).not.toBeChecked();
-    expect(screen.getByText(/先确认供应商提供哪种搜索能力/u)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "供应商原生" })).toBeEnabled();
 
     await user.selectOptions(screen.getByLabelText("搜索策略"), "provider_native");
     expect(screen.getByLabelText("声明供应商具备原生 Web Search")).toBeChecked();
@@ -1096,11 +1096,11 @@ describe("V2 custom Provider settings", () => {
     renderSettings(controls.client);
 
     await user.click(await screen.findByRole("button", { name: /Acme AI/u }));
-    const verifyButton = screen.getByRole("button", { name: "测试并验证 Harness" });
+    const verifyButton = screen.getByRole("button", { name: "测试连接与模型" });
     expect(verifyButton).toBeEnabled();
     await user.click(verifyButton);
 
-    const dialog = screen.getByRole("dialog", { name: "测试并验证 Harness？" });
+    const dialog = screen.getByRole("dialog", { name: "测试连接与模型？" });
     expect(dialog).toHaveTextContent("通常还需要两次模型调用");
     expect(dialog).toHaveTextContent("可能按这些调用计费");
     expect(controls.diagnoseProvider).not.toHaveBeenCalled();
@@ -1122,7 +1122,7 @@ describe("V2 custom Provider settings", () => {
     expect(controls.diagnoseProvider.mock.invocationCallOrder[0])
       .toBeLessThan(controls.qualifyModelHarness.mock.invocationCallOrder[0]);
 
-    const result = await screen.findByRole("status", { name: "Harness 验证结果" });
+    const result = await screen.findByRole("status", { name: "模型兼容性检查结果" });
     expect(result).toHaveTextContent("验证通过");
     expect(result).toHaveTextContent("2 次");
     expect(result).toHaveTextContent("有效期至");
@@ -1130,9 +1130,9 @@ describe("V2 custom Provider settings", () => {
 
     await user.clear(screen.getByLabelText("显示名称"));
     await user.type(screen.getByLabelText("显示名称"), "Acme Team");
-    expect(screen.getByRole("button", { name: "测试并验证 Harness" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "测试连接与模型" })).toBeDisabled();
     expect(screen.getByText(/当前更改尚未保存/u)).toBeInTheDocument();
-    expect(screen.queryByRole("status", { name: "Harness 验证结果" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "模型兼容性检查结果" })).not.toBeInTheDocument();
   });
 
   it("requires a second confirmation, migrates exactly one plaintext secret, and never sends it in the definition", async () => {

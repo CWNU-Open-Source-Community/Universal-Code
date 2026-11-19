@@ -96,10 +96,6 @@ export function PlanDeliveryWorkItems({ client, detail, state, threadID }: {
   const locked = Boolean(intent.data);
   return <section aria-label={t("计划项与验收", "Plan items and acceptance")} className="plan-manual-delivery">
     <h3>{t("计划项与验收", "Plan items and acceptance")}</h3>
-    <p>{manualRequired ? t("在这里保存实际检查结果、改动审阅和交接说明。测试请在验证入口执行，自动检查保留各自的通过或失败结果。",
-      "Save actual check results, change reviews, and handoff notes here. Run tests through verification; automated checks retain their own pass or fail results.") :
-      t("按实际结果完成计划项，按需补充人工说明。测试请在验证入口执行，计划进度与自动检查结果分别记录。",
-        "Complete Plan items from actual results and add manual notes as needed. Run tests through verification; plan progress and automated check results are recorded separately.")}</p>
     {!mutable && <p>{!client.hasPlanDelivery ? t("当前可查看验收记录。连接计划交付控制后可更新。", "Acceptance records are available for review. Connect plan delivery control to update them.") :
       !state.delivery_gate_enforced ? t("此旧版计划沿用原验收流程，可在这里查看现有记录。", "This legacy Plan uses its original acceptance workflow. Existing records are available here.") :
       t("请在交付阶段暂停任务并等待执行结束后，再更新计划项。", "Pause the task in Deliver and wait for execution to end before updating Plan items.")}</p>}
@@ -168,7 +164,6 @@ export function PlanDeliveryWorkItems({ client, detail, state, threadID }: {
                       [item.id]: { ...emptyDraft, ...current?.[item.id], [key]: text } }));
                   }} />
               </label>)}
-              <p>{t("请写明执行了什么、实际结果和未解决问题；可附检查记录标识。", "Describe what ran, the actual result, and unresolved issues; include check record references where available.")}</p>
               <button className="command-button" type="submit">{t("记录人工验收与交接", "Record manual acceptance and handoff")}</button>
             </fieldset>
           </form>}

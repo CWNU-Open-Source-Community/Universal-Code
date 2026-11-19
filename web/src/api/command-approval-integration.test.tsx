@@ -55,7 +55,7 @@ describe("Command approval through the strict HTTP client", () => {
       <V2ApprovalCards client={new APIClient("read", "/api/v1", "control")} runID={data.preview.run_id} threadID="thread-command" />
     </QueryClientProvider>);
     expect(await screen.findByText(/exact review intent/)).toBeInTheDocument();
-    expect(screen.getByText(/请按宿主文件与网络可能可达的范围评估影响/)).toBeInTheDocument();
+    expect(screen.getByText(/可能访问宿主文件和网络/)).toBeVisible();
     expect(screen.queryByRole("button", { name: "允许本对话" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "批准一次" }));
     expect(await screen.findByText(/Agent 已继续处理/)).toBeInTheDocument();

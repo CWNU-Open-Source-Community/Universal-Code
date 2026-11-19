@@ -119,6 +119,7 @@ describe.each(["v2", "legacy"] as const)("%s Computer Use approval", (kind) => {
   it("disables all decisions while submitting and ignores a duplicate click", async () => {
     const { fetch, complete } = mount(kind, { pending: true });
     const grant = await screen.findByRole("button", { name: "本任务允许操作该应用" });
+    await userEvent.click(screen.getByText("拒绝理由"));
     await userEvent.dblClick(grant);
     expect(grant).toBeDisabled();
     expect(screen.getByRole("button", { name: "本次允许" })).toBeDisabled();

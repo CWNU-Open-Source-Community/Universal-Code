@@ -1,5 +1,5 @@
 import { Fragment, useId, useMemo, useRef, useState, type Ref } from "react";
-import { WrapText } from "lucide-react";
+import { Plus, WrapText } from "lucide-react";
 import type { ReviewCommentResult } from "../review-comment-draft";
 import "./review-diff-comment.css";
 import { useLocale, type LocaleText } from "../../lib/locale";
@@ -91,7 +91,7 @@ export function ReviewDiff({ patch, source, onFeedback, onAddComment, wrapLines:
               trigger.current = event.currentTarget; setText(""); setBlocked(false);
               setComment({ patch, hunk: ordinal, line: index, context: lineContext(source, hunk, line, t), text: line.text,
                 label: t(`${line.kind === "remove" ? "旧" : "新"}第 ${line.newLine ?? line.oldLine} 行的意见`, `Comment on ${line.kind === "remove" ? "old" : "new"} line ${line.newLine ?? line.oldLine}`) });
-            }}>+</button>}
+            }}><Plus aria-hidden="true" size={14} /></button>}
           <code>{line.text || " "}</code>
         </div>
         {comment?.patch === patch && comment.hunk === ordinal && comment.line === index && editor}

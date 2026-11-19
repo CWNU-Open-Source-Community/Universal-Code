@@ -131,9 +131,9 @@ describe("ModelAvailabilitySettings", () => {
       <ModelAvailabilitySettings client={client} />
     </QueryClientProvider>);
     await user.click(await screen.findByText("Per-model diagnostics"));
-    expect(screen.getByRole("button", { name: "Qualify mimo/model-primary Harness" }))
+    expect(screen.getByRole("button", { name: "Check mimo/model-primary compatibility" }))
       .toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Qualify mimo/model-secondary Harness" }));
+    await user.click(screen.getByRole("button", { name: "Check mimo/model-secondary compatibility" }));
     await waitFor(() => expect(qualifyModelHarness).toHaveBeenCalledWith({
       version: "model_harness_qualification.v1", provider: "mimo", model: "model-secondary",
       confirm_qualification: true,
@@ -217,7 +217,7 @@ describe("ModelAvailabilitySettings", () => {
     expect(diagnoseProvider).toHaveBeenCalledWith({ version: "provider_diagnostic.v1",
       provider: "openai", model: "gpt-4.1-mini", confirm_diagnostic: true });
     await user.click(screen.getByRole("button", {
-      name: "Qualify openai/gpt-4.1-mini Harness",
+      name: "Check openai/gpt-4.1-mini compatibility",
     }));
     await waitFor(() => expect(qualifyModelHarness).toHaveBeenCalledWith({
       version: "model_harness_qualification.v1", provider: "openai",

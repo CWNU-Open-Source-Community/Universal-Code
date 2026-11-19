@@ -97,8 +97,7 @@ export function ProjectPreparationPanel({ view, operation, disabled = false, bus
     {view.reason && <p className="v2-delivery-muted">{view.reason}</p>}
     <fieldset className="v2-preparation-downloads" disabled={blocked || !view.available}>
       <legend>{t("本次准备的依赖下载", "Dependency downloads for this preparation")}</legend>
-      <p>{t("勾选允许下载的依赖源。留空时使用已有缓存。授权按本次锁文件生效，网页搜索使用任务中的独立设置。",
-        "Select the package sources to allow. Leave them unchecked to use existing cache. Authorization applies to this lockfile; web search uses the task's separate setting.")}</p>
+      <p>{t("下载授权仅适用于本次锁文件。", "Download authorization applies only to this lockfile.")}</p>
       {view.plan.sources.length > 0 ? view.plan.sources.map((source) => <label key={source}>
         <input type="checkbox" checked={allowedSources.includes(source)} onChange={(event) => setAllowedSources((current) =>
           event.target.checked ? [...current, source] : current.filter((item) => item !== source))} />
@@ -231,8 +230,6 @@ function ProjectPreparationForRun({ client, runID, threadID, working = false, on
   return <section className="v2-task-delivery v2-project-preparation" aria-label={t("准备项目", "Prepare project")}>
     <div className="v2-delivery-heading"><h2>{t("准备项目", "Prepare project")}</h2>
       <button type="button" disabled={plan.isFetching} onClick={() => void plan.refetch()}>{t("刷新检测", "Refresh detection")}</button></div>
-    <p className="v2-delivery-muted">{t("检测项目工具链和锁文件，获取依赖后在所选环境安装。准备完成后可运行下方的项目测试。",
-      "Detect the toolchain and lockfiles, then fetch and install dependencies in the selected environment. Run the project tests below when preparation finishes.")}</p>
     <form className="v2-preparation-target" onSubmit={(event) => {
       event.preventDefault();
       let next: string;

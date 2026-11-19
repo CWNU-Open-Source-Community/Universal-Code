@@ -1,18 +1,182 @@
+.workspace-explorer .explorer-toolbar {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 0;
+  border: 0;
+}
+
+.explorer-location,
+.explorer-toolbar-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.explorer-location {
+  flex: 1 1 13rem;
+}
+
+.explorer-location > :not(code) {
+  flex: none;
+}
+
+.explorer-toolbar-actions {
+  flex-wrap: wrap;
+}
+
+:is(.explorer-location, .explorer-search, .explorer-search-results) .icon-button {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--prayu-radius-inner, 8px);
+  background: transparent;
+}
+
+:is(.explorer-toolbar-actions, .explorer-view-switch, .explorer-error-actions) .compact-command {
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 12px;
+  border-color: var(--prayu-border);
+  border-radius: var(--prayu-radius-control, 10px);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.workspace-explorer .explorer-search {
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 6px;
+  min-height: 36px;
+  margin-block: 8px 2px;
+  padding: 2px 4px 2px 12px;
+  border: 1px solid var(--prayu-border);
+  border-radius: var(--prayu-radius-control, 10px);
+  background: var(--prayu-control);
+}
+
+.workspace-explorer .explorer-search input {
+  height: 30px;
+  font-size: 13px;
+}
+
+.workspace-explorer .explorer-search:has(input:focus-visible) {
+  outline: 2px solid var(--prayu-focus);
+  outline-offset: 1px;
+}
+
+.workspace-explorer .explorer-search input:focus-visible {
+  outline: none;
+}
+
+.workspace-explorer .explorer-provenance {
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+}
+
+.workspace-explorer .explorer-list {
+  gap: 2px;
+  border: 0;
+}
+
+.workspace-explorer .explorer-list button,
+.workspace-explorer .search-result-open {
+  gap: 10px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--prayu-radius-inner, 8px);
+  font-size: 13px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.workspace-explorer .explorer-list button {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+}
+
+.workspace-explorer .explorer-list button:disabled {
+  cursor: default;
+}
+
+.workspace-explorer .explorer-list svg,
+.workspace-explorer .search-result-open > svg {
+  color: var(--prayu-muted);
+}
+
+.workspace-explorer .explorer-list small {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-explorer .explorer-search-results > header {
+  padding-inline: 12px 4px;
+}
+
+.workspace-explorer .explorer-search-result {
+  display: flex;
+  gap: 4px;
+  border-top: 0;
+}
+
+.workspace-explorer .search-result-open {
+  flex: 1;
+  grid-template-columns: 16px minmax(0, 1fr);
+}
+
+.workspace-explorer .search-result-open svg {
+  margin-top: 2px;
+}
+
+:is(.explorer-toolbar, .explorer-search, .explorer-search-results, .explorer-error-actions) button:hover:enabled,
+.explorer-view-switch .compact-command:hover:enabled {
+  background: var(--prayu-control-hover);
+}
+
+.workspace-explorer :is(.explorer-list button, .search-result-open):focus-visible {
+  outline-offset: -2px;
+}
+
 .explorer-file > .explorer-file-summary {
   flex-wrap: wrap;
   padding: 6px 0;
 }
 
 .explorer-view-switch {
-  display: flex;
-  gap: 4px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--prayu-radius-control, 10px);
+  background: var(--prayu-control);
   margin-right: auto;
 }
 
-.explorer-view-switch .compact-command[aria-pressed="true"] {
-  background: var(--prayu-control);
+.workspace-explorer .explorer-view-switch .compact-command {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--prayu-radius-inner, 8px);
+  background: transparent;
+  color: var(--prayu-muted);
+}
+
+.workspace-explorer .explorer-view-switch .compact-command[aria-pressed="true"] {
+  background: var(--prayu-surface-solid);
+  border-color: var(--prayu-border);
   color: var(--prayu-text);
   font-weight: 600;
+}
+
+.workspace-explorer .explorer-file-lines,
+.explorer-markdown-preview {
+  border-radius: var(--prayu-radius-control, 10px);
+}
+
+.workspace-explorer .explorer-file-lines {
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .explorer-markdown-preview {
@@ -21,7 +185,6 @@
   padding: 16px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 5px;
   background: var(--prayu-surface-solid);
   color: var(--prayu-text);
   font-size: 13px;

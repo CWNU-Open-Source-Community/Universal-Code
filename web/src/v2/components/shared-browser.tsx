@@ -125,7 +125,7 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
           onClick={() => { onActivate?.(); if (tab.tab_id !== state.active_tab_id) void command("select_tab", { tab_id: tab.tab_id }); }} onKeyDown={sharedWorkspaceTabKey}>
           {tab.loading ? <LoaderCircle size={14} aria-hidden="true" className="v2-browser-spinner" /> : attached ? <Bot size={14} aria-hidden="true" /> : <Globe size={14} aria-hidden="true" />}
           <span className="v2-workspace-tab-title">{title}</span>
-        </button><button type="button" className="v2-workspace-tab-close" disabled={!canEdit} aria-label={t(`关闭 ${title}`, `Close ${title}`)}
+        </button><button type="button" className="v2-workspace-tab-close" disabled={!canEdit} tabIndex={selected ? 0 : -1} aria-label={t(`关闭 ${title}`, `Close ${title}`)}
           onClick={() => void command("close_tab", { tab_id: tab.tab_id })}><X size={13} aria-hidden="true" /></button>
       </div>;
     })}
@@ -163,7 +163,8 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
         aria-label={state?.fullscreen ? t("退出全屏", "Exit fullscreen") : t("全屏浏览器", "Fullscreen browser")}
         onClick={() => void command(state?.fullscreen ? "exit_fullscreen" : "enter_fullscreen")}>{state?.fullscreen ? <Shrink size={17} aria-hidden="true" /> : <Expand size={17} aria-hidden="true" />}</button>
     </div>
-    {visibleError && <div className="v2-browser-error" role="alert">{visibleError}<button type="button" onClick={() => setRetry((value) => value + 1)}>{t("重试", "Retry")}</button></div>}
+    {visibleError && <div className="v2-browser-error" role="alert"><span>{visibleError}</span>
+      <button type="button" onClick={() => setRetry((value) => value + 1)}>{t("重试", "Retry")}</button></div>}
     <div className={`v2-browser-native-surface${isStartPage ? " is-start-page" : ""}`} ref={surfaceRef} role="region" aria-label={t("网页内容", "Web page content")}>
       {!state && !error && <span role="status">{t("正在打开浏览器…", "Opening browser…")}</span>}
       {state?.state === "failed" && <span role="alert">{state.error || t("浏览器启动失败。", "Browser failed to start.")}</span>}
@@ -173,9 +174,13 @@ export function V2SharedBrowser({ workspaceID, threadID, runID, onFullscreenChan
         </section>}
         {history.length > 0 && <section className="v2-browser-recent" aria-label={t("最近访问", "Recently visited")}>
           <h2><History size={14} aria-hidden="true" />{t("最近", "Recent")}</h2>
-          {history.map((entry) => <button type="button" key={entry.url} disabled={!canEdit} onClick={() => navigate(entry.url)} title={entry.url}>
-            <Globe size={15} aria-hidden="true" /><span>{entry.title || new URL(entry.url).hostname}</span><small>{new URL(entry.url).hostname}</small>
-          </button>)}
+          {history.map((entry) => {
+            const host = new URL(entry.url).hostname;
+            const label = entry.title || host || entry.url;
+            return <button type="button" key={entry.url} disabled={!canEdit} onClick={() => navigate(entry.url)} title={entry.url}>
+              <Globe size={15} aria-hidden="true" /><span>{label}</span>{host && host !== label && <small>{host}</small>}
+            </button>;
+          })}
         </section>}
       </section>}
     </div>

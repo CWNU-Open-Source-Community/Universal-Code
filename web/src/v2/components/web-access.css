@@ -16,7 +16,6 @@
 }
 .v2-web-access-select:disabled { opacity: .5; }
 .v2-web-access-select option:disabled { color: var(--v2-muted); }
-.v2-web-access-unavailable { color: var(--v2-muted); font-size: 12px; margin: 0; padding: 10px 15px 14px; }
 .v2-web-access-settings .v2-setting-row > div:first-child span { overflow-wrap: anywhere; }
 .v2-web-access-target-editor { border-top: 1px solid var(--v2-border); display: grid; gap: 10px; padding: 15px; }
 .v2-web-access-target-editor label { display: grid; gap: 7px; }

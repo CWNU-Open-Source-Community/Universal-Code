@@ -33,7 +33,6 @@ export function TerminalSettingsPanel() {
   const shell = view?.shells.find(item => item.id === value?.default_shell);
   return <section className="v2-settings-section terminal-settings" aria-labelledby="terminal-settings-title">
     <h2 id="terminal-settings-title">{t("内置终端", "Integrated terminal")}</h2>
-    <p>{t("手动运行命令、查看日志，也可以让 Agent 操作这个终端。Agent 自己的命令执行工具继续遵循任务权限。", "Run commands and inspect output yourself, or allow the Agent to use this terminal. The Agent’s own command tool continues to follow task permissions.")}</p>
     {!available ? <p>{t("请在桌面应用中设置终端。", "Configure the terminal in the desktop app.")}</p>
       : !value ? <p role={query.isError ? "alert" : "status"}>{query.isError ? desktopErrorMessage(query.error) : t("正在读取终端设置…", "Loading terminal settings…")}</p>
       : <fieldset disabled={save.isPending || !view?.can_save}>

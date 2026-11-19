@@ -133,10 +133,9 @@ it("offers only original-request confirmation while a configured run's report re
   renderReview(client as unknown as APIClient, queryClient);
   await openHistory(user, "检查与交付");
   await user.click(screen.getByRole("button", { name: "生成当前交付报告" }));
-  await screen.findByText(/report response lost/);
+  expect(await screen.findByText(/report response lost/)).toHaveTextContent("上次报告结果尚未确认。");
   expect(screen.queryByRole("button", { name: "生成当前交付报告" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "确认上次报告" })).toBeEnabled();
-  expect(screen.getByText(/请先点击“确认上次报告”/)).toBeInTheDocument();
   const original = record.mock.calls[0];
   await user.click(screen.getByRole("button", { name: "确认上次报告" }));
   await waitFor(() => expect(record).toHaveBeenCalledTimes(2));
@@ -215,13 +214,13 @@ it("requires an explicit configured preset and can read an older execution's exi
   renderReview(client, new QueryClient({ defaultOptions: { queries: { retry: false } } }), detail);
   expect(get.mock.calls.some(([path]) => String(path).startsWith("/runs/"))).toBe(false);
   await openHistory(user, "检查与交付");
-  expect(screen.getByText(/此执行使用普通编码流程/)).toBeInTheDocument();
+  expect(screen.getByText("Ordinary Code handoff run-2")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "生成当前交付报告" })).not.toBeInTheDocument();
   expect(get).toHaveBeenCalledWith("/runs/run-2", {}, expect.any(AbortSignal));
   await user.selectOptions(screen.getByRole("combobox", { name: "选择审阅的执行记录" }), "run-1");
   await screen.findByRole("button", { name: "重试交付配置" });
   expect(screen.queryByRole("button", { name: "生成当前交付报告" })).not.toBeInTheDocument();
-  expect(screen.queryByText(/此执行使用普通编码流程/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Ordinary Code handoff/)).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "重试交付配置" }));
   await user.click(await screen.findByRole("button", { name: "生成当前交付报告" }));
   expect(get).toHaveBeenCalledWith("/runs/run-1", {}, expect.any(AbortSignal));
@@ -257,7 +256,7 @@ it("offers coding configuration and the exact plan within the current task while
     version: "standard_code_preset.v1", backend_intent: "local", confirm_workspace_trust: false }, expect.any(String));
   expect(screen.getByRole("combobox", { name: "选择审阅的执行记录" })).toHaveValue("run-2");
   await user.selectOptions(screen.getByRole("combobox", { name: "选择审阅的执行记录" }), "run-1");
-  expect(await screen.findByText(/当前未结束的 Code 执行；历史执行仍可审阅/)).toBeInTheDocument();
+  expect(await screen.findByText("仅可配置当前未结束的 Code 执行。")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /检查并配置 Local/ })).toBeDisabled();
 });
 

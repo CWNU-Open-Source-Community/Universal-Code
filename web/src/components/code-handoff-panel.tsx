@@ -95,7 +95,7 @@ export function CodeHandoffPanel({ client, runID, onOpenDelivery, onOpenReceiptR
         </section>
         <section className="handoff-coverage"><h3>{t("验证覆盖", "Verification coverage")}</h3>
           {query.data.verification_coverage.items.length === 0 ?
-            <EmptyState>{t("还没有检查项。可在验证页核对计划与覆盖范围。", "No checklist items yet. Review verification plans and coverage in Verify.")}</EmptyState> :
+            <EmptyState>{t("暂无检查项。", "No checklist items yet.")}</EmptyState> :
             <div className="handoff-reference-list">{query.data.verification_coverage.items.map((item) => {
               const contradictory = item.pass_count > 0 && item.fail_count > 0;
               return <div key={`${item.plan_id}:${item.ordinal}`}><span>

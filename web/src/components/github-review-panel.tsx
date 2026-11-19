@@ -427,10 +427,10 @@ function GitHubReviewWorkspace({ client, runID, onOpenApprovals,
           {form.connection ? t("更新连接", "Update connection") : t("创建连接", "Create connection")}
         </button>
       </div>
-      <small>{form.connection ? t(
+      {form.connection && <small>{t(
         `正在编辑 ${form.connection.repository.full_name}；设置版本 ${form.connection.generation}。`,
         `Editing ${form.connection.repository.full_name}; settings version ${form.connection.generation}.`,
-      ) : t("填写仓库与 GitHub App 信息创建连接，再使用设备登录授权。", "Enter the repository and GitHub App details to create a connection, then authorize it with device sign-in.")}</small>
+      )}</small>}
       {connectionID && <div className="github-review-actions">
         <button disabled={pending} onClick={() => { startRequest(); reload.mutate(scope()); }} type="button">
           {t("重新载入最新设置", "Reload latest settings")}</button>
@@ -463,7 +463,6 @@ function GitHubReviewWorkspace({ client, runID, onOpenApprovals,
 
     {connectionID && <section className="github-review-section">
       <h3>{t("查看 PR", "Inspect a PR")}</h3>
-      <p>{t("填写 PR 编号，先检查访问条件，再获取最新快照。", "Enter a PR number, check access, then fetch the latest snapshot.")}</p>
       <div className="github-review-form"><input aria-label={t("PR 编号", "PR number")} min={1}
         onChange={(event) => { clearReview(); setPullRequest(Number(event.target.value)); }} type="number" value={pullRequest || ""} />
         <button disabled={pending || pullRequest < 1} onClick={() => {

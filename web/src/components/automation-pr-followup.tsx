@@ -30,7 +30,7 @@ export function AutomationPRFollowup({ client, threadID }: { client: APIClient; 
           {discovery.data?.pull_requests.map((item) => <option key={item.number} value={item.number}>#{item.number} {item.title.text}</option>)}
         </select></label>}
       </div>
-      {discovery.isSuccess && !discovery.data.pull_requests.length && <p>{t("此任务当前分支没有 PR。请先在任务中创建或选择 PR。", "This task’s branch has no PR. Create or select a PR in the task first.")}</p>}
+      {discovery.isSuccess && !discovery.data.pull_requests.length && <p>{t("当前分支暂无 PR", "No PR for this branch")}</p>}
       {connections.error && <p role="alert">{connections.error.message}</p>}
       {discovery.error && <p role="alert">{discovery.error.message}</p>}
       <TaskPRFollowup client={client} threadID={threadID} connectionID={connectionID} pullRequest={selected?.number || 0}

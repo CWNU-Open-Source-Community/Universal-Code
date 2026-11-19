@@ -33,7 +33,6 @@ it("configures new conversations without requiring an open task and exposes all 
   ]);
   expect(within(select).getByRole("option", { name: "缓存搜索（待支持）" })).toBeDisabled();
   expect(within(select).getByRole("option", { name: "索引搜索（待支持）" })).toBeDisabled();
-  expect(screen.getByText("缓存搜索、索引搜索：待支持")).toBeVisible();
   await user.selectOptions(select, "cached"); await user.selectOptions(select, "indexed");
   expect(fixture.onChange).not.toHaveBeenCalled();
   expect(fixture.get).not.toHaveBeenCalled();

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { APIClient } from "../api/client";
 import { LocaleProvider } from "../lib/locale";
@@ -26,7 +26,7 @@ describe("WorkbenchDock", () => {
 
     fireEvent.click(sidecar);
     expect(screen.getByRole("complementary", { name: "右侧工具栏" })).toBeInTheDocument();
-    expect(screen.getByText("选择并绑定项目后可查看仓库摘要。")).toBeInTheDocument();
+    expect(within(screen.getByRole("complementary", { name: "摘要" })).getByText("未绑定项目。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "关闭右侧栏" }));
     expect(screen.queryByRole("complementary", { name: "右侧工具栏" })).not.toBeInTheDocument();
@@ -39,17 +39,17 @@ describe("WorkbenchDock", () => {
 
     fireEvent.keyDown(window, { key: "g", ctrlKey: true, shiftKey: true });
     expect(screen.getByText("审阅")).toBeInTheDocument();
-    expect(screen.getByText("选择并绑定项目后可审阅差异。")).toBeInTheDocument();
+    expect(screen.getByText("未绑定项目。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "添加右侧工具" }));
     expect(screen.getByRole("group", { name: "工作区" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "运行" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "即将推出" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitemradio", { name: /浏览器.*预留/ })).toBeDisabled();
+    expect(screen.getByRole("menuitemradio", { name: "浏览器" })).toBeDisabled();
 
     fireEvent.keyDown(window, { key: "p", ctrlKey: true });
     expect(screen.getByRole("button", { name: "文件" })).toBeInTheDocument();
-    expect(screen.getByText("绑定项目后可查看文件，请返回对话核对项目选择。")).toBeInTheDocument();
+    expect(screen.getByText("未绑定项目。")).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "j", ctrlKey: true });
     expect(screen.getByRole("region", { name: "底部面板" })).toBeInTheDocument();

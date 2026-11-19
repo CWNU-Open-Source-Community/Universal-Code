@@ -7,6 +7,7 @@ describe("task elapsed time",()=>{
   it("uses the full task lifecycle rather than the last model step",()=>{
     expect(taskDurationLabel(task,t)).toBe("用时30分钟29秒");
     expect(taskDurationLabel({...task,finishedAt:"2026-11-12T01:02:03Z"},t)).toBe("用时1小时2分钟3秒");
+    expect(taskDurationLabel({...task,finishedAt:"2026-11-12T00:00:00.750Z"},t)).toBeUndefined();
   });
   it("does not fabricate missing, invalid or reversed times",()=>{
     for(const value of [{...task,startedAt:undefined},{...task,finishedAt:undefined},

@@ -82,7 +82,7 @@ export function DesktopSkillPreviewDialog({ open, onClose, installationEnabled =
         <header>
           <div>
             <span className="dialog-icon"><FileArchive aria-hidden="true" size={18} /></span>
-            <div><h2 id="desktop-skill-title">{t("Skill 包预览", "Skill package preview")}</h2><small>{t("本地结构校验", "Local structure validation")}</small></div>
+            <h2 id="desktop-skill-title">{t("Skill 包预览", "Skill package preview")}</h2>
           </div>
           <button aria-label={t("关闭", "Close")} autoFocus className="icon-button" disabled={loading} onClick={onClose} title={t("关闭", "Close")} type="button">
             <X aria-hidden="true" size={17} />

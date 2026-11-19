@@ -44,7 +44,7 @@ describe("History record browser", () => {
     expect(onOpen).toHaveBeenCalledExactlyOnceWith("run", "run-old");
     expect(getPage).toHaveBeenLastCalledWith("/runs", { limit: 50 }, "older", expect.any(AbortSignal));
     expect(getPage).toHaveBeenCalledTimes(2);
-    expect(screen.getByText(/搜索 2 条已加载运行 ID/)).toHaveTextContent("不含消息正文");
+    expect(screen.getByRole("searchbox")).toHaveAttribute("placeholder", "搜索已加载的运行 ID");
     expect(screen.getByRole("searchbox")).toHaveValue("run-old");
   });
 
@@ -60,7 +60,7 @@ describe("History record browser", () => {
     expect(screen.getByRole("button", { name: "打开会话记录 session-a" })).toHaveTextContent("未关闭");
     expect(onOpen).toHaveBeenCalledExactlyOnceWith("session", "session-b");
     expect(getPage).toHaveBeenCalledExactlyOnceWith("/sessions", { limit: 50 }, "", expect.any(AbortSignal));
-    expect(screen.getByText(/会话标题和 ID/)).toHaveTextContent("不含消息正文");
+    expect(screen.getByRole("searchbox")).toHaveAttribute("placeholder", "搜索已加载的会话标题或 ID");
   });
 
   it("retains loaded records on older-page failure and retries the same cursor", async () => {
@@ -72,7 +72,7 @@ describe("History record browser", () => {
     await user.click(screen.getByRole("button", { name: "运行记录" }));
     await screen.findByRole("button", { name: "打开运行记录 run-kept" });
     await user.click(screen.getByRole("button", { name: "加载更早运行记录" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("已加载记录仍可打开");
+    expect(await screen.findByRole("alert")).toHaveTextContent("运行记录加载失败");
     expect(screen.getByRole("button", { name: "打开运行记录 run-kept" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "加载更早运行记录" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "重试运行记录" })).toHaveLength(1);

@@ -264,7 +264,16 @@ describe("native shared-browser controls", () => {
     expect(nativeTab).toHaveFocus();
     expect(nativeTab).toHaveAttribute("aria-selected", "true");
     expect(rpc.open).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "新建或切换工作区标签" }));
+    const addTab = screen.getByRole("button", { name: "新建或切换工作区标签" });
+    fireEvent.keyDown(addTab, { key: "ArrowUp" });
+    expect(screen.getAllByRole("menuitem").at(-1)).toHaveFocus();
+    const firstItem = screen.getByRole("menuitem", { name: "新建文件标签" });
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(firstItem).toHaveFocus();
+    fireEvent.keyDown(firstItem, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(addTab).toHaveFocus();
+    fireEvent.click(addTab);
     fireEvent.click(screen.getByRole("menuitem", { name: "关闭浏览器面板" }));
     expect(screen.queryByRole("tab", { name: "Example" })).toBeNull();
     expect(await screen.findByText("真实记录面板")).toBeVisible();

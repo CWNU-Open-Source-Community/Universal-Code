@@ -126,8 +126,6 @@ function ThreadContextContent({ client, threadID, detail, onClose, onRequestChan
           <button disabled={!bound} onClick={() => onOpenRecovery("checkpoints")} type="button">{t("工作区恢复", "Workspace recovery")}</button></>}
         {onOpenSession && <button disabled={!bound} onClick={onOpenSession} type="button">{t("会话原始记录", "Original session records")}</button>}
       </nav>}
-      {onOpenRecovery && <p className="v2-context-help">{t("续接与记忆保留对话来源；工作区恢复使用所选执行的文件检查点。恢复操作仍需预览和当前权限。", "Continuation and memory preserve conversation sources. Workspace recovery uses file checkpoints from the selected run. Recovery requires a preview and current permissions.")}</p>}
-      <p className="v2-context-help">{t("查看此执行保存的项目指令、引用和摘要。需要补充目标或纠正理解时，可在下方写好要求并带回对话。", "View the project instructions, references and summaries saved for this run. Add goals or corrections below and bring them back to the conversation.")}</p>
       {!bound ? <p role="alert">{t("任务与执行记录尚未对应，暂不显示上下文。", "The task and run records do not match yet. Context is unavailable.")}</p> : <>
         <div className="v2-context-toolbar"><span>{detail.thread.title}</span><button type="button" disabled={busy} onClick={refresh}><RefreshCw size={15} />{busy ? t("正在读取", "Loading") : t("重新读取", "Reload")}</button></div>
         <details className="v2-context-identities"><summary>{t("查看来源标识", "View source identifiers")}</summary><dl><dt>{t("任务", "Task")}</dt><dd>{threadID}</dd><dt>{t("执行", "Run")}</dt><dd>{run.id}</dd><dt>{t("会话", "Session")}</dt><dd>{sessionID}</dd><dt>{t("项目", "Project")}</dt><dd>{workspaceID || t("未绑定项目", "No linked project")}</dd></dl></details>
@@ -138,12 +136,10 @@ function ThreadContextContent({ client, threadID, detail, onClose, onRequestChan
             {!instructions.data.pinned_present ? <p>{t("此执行没有已固定的项目指令快照。", "This run has no pinned project instruction snapshot.")}</p> : !instructions.data.pinned.snapshot.sources.length ? <p>{t("已固定的快照中没有项目指令文件。", "The pinned snapshot has no project instruction files.")}</p> : <ul className="v2-context-sources">
               {instructions.data.pinned.snapshot.sources.map((source) => <li key={`${source.ordinal}:${source.path}`}><strong>{source.path}</strong><span>{source.kind === "agents" || source.kind === "agents_md" ? t("项目指令", "Project instructions") : source.kind} {t("· 作用范围：", " · Scope: ")}{source.scope === "" || source.scope === "." ? t("项目根目录", "Project root") : source.scope}</span><details><summary>{t("来源与版本", "Source and version")}</summary><dl><dt>SHA256</dt><dd>{source.content_sha256}</dd><dt>{t("载入时间", "Loaded at")}</dt><dd>{source.loaded_at}</dd><dt>{t("采用原因", "Reason applied")}</dt><dd>{source.why_effective}</dd><dt>{t("相对顺序", "Relative order")}</dt><dd>{source.ordinal}</dd></dl>{source.redacted && <p>{t("来源内容已脱敏。", "Source content is redacted.")}</p>}</details></li>)}
             </ul>}
-            <p className="v2-context-help">{t("展开“来源与版本”可核对指令文件、作用范围和载入时间。", "Expand Source and version to check the instruction file, scope and load time.")}</p>
           </>}
         </section>
         <section aria-labelledby="context-references"><h3 id="context-references">{t("已附加的引用", "Attached references")}</h3>
           {!workspaceID ? <p>{t("此执行没有项目引用目录。", "This run has no project reference inventory.")}</p> : evidence.isError ? <ContextError label={t("引用", "References")} error={evidence.error} /> : !evidence.data ? <p role="status">{t("正在读取引用…", "Loading references…")}</p> : <ContextReferences value={evidence.data} />}
-          <p className="v2-context-help">{t("以下记录已附加的参考资料及其版本。每次请求采用的内容与摘要可能不同；工具读取的其他文件可在工作记录中核对。", "The records below list attached references and their versions. Each request may use different content or summaries. Check the work log for other files read by tools.")}</p>
         </section>
         {!summary.isError && summary.data && <ContextDiagnosticsPanel value={summary.data.diagnostics} unavailable={summary.data.diagnostics_unavailable}
           recovery={detail.recovery} runID={run.id} runStatus={run.status} />}
@@ -158,13 +154,13 @@ function ThreadContextContent({ client, threadID, detail, onClose, onRequestChan
               <details><summary>{t("继承来源与长期信息引用", "Inherited sources and memory references")}</summary><dl><dt>{t("来源执行", "Source run")}</dt><dd>{inherited.source_run_id}</dd><dt>{t("来源会话", "Source session")}</dt><dd>{inherited.source_session_id}</dd><dt>{t("快照指纹", "Snapshot fingerprint")}</dt><dd>{inherited.fingerprint}</dd><dt>{t("摘要原文 SHA256", "Summary text SHA256")}</dt><dd>{inherited.summary_content_sha256 || t("无", "None")}</dd></dl>
                 {inherited.memories.map((memory) => <p key={`${memory.scope}:${memory.scope_id}:${memory.id}`}>{memory.scope === "user" ? t("用户", "User") : t("项目", "Project")}{t("信息：", " memory: ")}{memory.id} {t("· 版本", " · Version ")}{memory.version}<br />SHA256 {memory.content_sha256}</p>)}
               </details></div>}
-            <p className="v2-context-help">{t("摘要可能省略细节，消息计数记录压缩当时的范围。持续要求可在上方固定；执行操作仍按当前任务权限审批。", "Summaries can omit details. Message counts reflect the scope at compaction time. Pin ongoing requirements above; actions use the current task permissions.")}</p>
           </>}
           <V2ThreadCompactControl key={run.id} client={client} threadID={threadID} runID={run.id} />
         </section>
         <section className="v2-context-correction" aria-labelledby="context-correction"><h3 id="context-correction">{t("补充与纠正", "Additions and corrections")}</h3>
-          <label htmlFor="thread-context-correction">{t("需要继续保留的目标、限制或纠正", "Goals, constraints or corrections to retain")}</label><textarea id="thread-context-correction" value={correction} onChange={(event) => setCorrection(event.target.value)} rows={4} placeholder={t("例如：继续原目标，但不要改动已有接口；刚才关于输出格式的判断应改为…", "For example: continue the goal without changing existing interfaces; revise the output format to…")} />
-          <p className="v2-context-help">{t("点击后将这些要求加入原对话草稿，确认内容后发送给 Agent 处理。", "Add these requirements to the conversation draft, then review and send them to the agent.")}</p><button type="button" disabled={!correction.trim()} onClick={requestChange}>{t("补充到对话输入", "Add to conversation draft")}</button>
+          <label htmlFor="thread-context-correction">{t("需要继续保留的目标、限制或纠正", "Goals, constraints or corrections to retain")}</label>
+          <textarea id="thread-context-correction" value={correction} onChange={(event) => setCorrection(event.target.value)} rows={4} />
+          <button type="button" disabled={!correction.trim()} onClick={requestChange}>{t("补充到对话输入", "Add to conversation draft")}</button>
         </section>
       </>}
     </section>
@@ -232,7 +228,7 @@ function SummaryText({ content, redacted, truncated }: { content: string; redact
   const excerpts = truncated ? null : summaryExcerpts(content);
   return <div className="v2-context-summary-text">{redacted && <p role="status">{t("显示文本已脱敏，SHA256 对应存储原文。", "Displayed text is redacted. SHA256 identifies the stored original.")}</p>}{truncated && <p role="status">{t("显示文本达到 16 KiB 上限，当前只展示部分摘要。", "Displayed text reached the 16 KiB limit; only part of the summary is shown.")}</p>}
     {excerpts ? <>{excerpts.rolling && <p role="status">{t("这是用于继续对话的滚动摘要，可能省略细节。较早内容仍保留，模型可按来源回读原文。", "This rolling summary supports conversation continuation and may omit details. Earlier content is retained and the model can retrieve the originals by source.")}</p>}
-      {Boolean(excerpts.generated?.length) && <><h4>{t("模型生成的摘要", "Model-generated summary")}</h4>{excerpts.generated?.map((item, index) => <div key={index}><p className="v2-context-generated-text">{item.text}</p>{item.excerpted && <p role="status">{t("受摘要容量限制，这里保留了生成说明的部分内容。", "Only part of the generated explanation fits within the summary limit.")}</p>}</div>)}<p className="v2-context-help">{t("生成说明可能有遗漏或误解；可对照原文摘录，并在下方补充纠正。", "Generated explanations may omit or misunderstand details. Compare the original excerpts and add corrections below.")}</p><h4>{t("原文摘录", "Original excerpts")}</h4></>}
+      {Boolean(excerpts.generated?.length) && <><h4>{t("模型生成的摘要", "Model-generated summary")}</h4>{excerpts.generated?.map((item, index) => <div key={index}><p className="v2-context-generated-text">{item.text}</p>{item.excerpted && <p role="status">{t("受摘要容量限制，这里保留了生成说明的部分内容。", "Only part of the generated explanation fits within the summary limit.")}</p>}</div>)}<h4>{t("原文摘录", "Original excerpts")}</h4></>}
       {excerpts.texts.map((line, index) => <p key={index}>{line}</p>)}{excerpts.omitted > 0 && <p role="status">{t("这份摘要记录了", "This summary records ")}{excerpts.omitted} {t("条条目省略。", " omitted entries.")}</p>}<details><summary>{t("查看保存的摘要文本", "View saved summary text")}</summary><pre>{content}</pre></details></> : <pre>{content}</pre>}
   </div>;
 }

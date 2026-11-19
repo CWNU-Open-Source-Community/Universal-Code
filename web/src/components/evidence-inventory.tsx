@@ -31,14 +31,14 @@ export function EvidenceInventory({ client, runID, onOpenSource }: {
     </header>
     {query.isLoading && <LoadingState label={t("正在加载已附加证据", "Loading attached evidence")} />}
     {query.isError && <ErrorState error={query.error} />}
-    {query.data?.items.length === 0 && <EmptyState>{t("还没有附加证据。在对话中附加参考文件后，可在这里核对来源。", "No attached evidence yet. Attach reference files in the conversation to review their sources here.")}</EmptyState>}
+    {query.data?.items.length === 0 && <EmptyState>{t("暂无附件证据", "No attached evidence")}</EmptyState>}
     {query.data && query.data.items.length > 0 && <div className="evidence-inventory-list">
       {query.data.items.map((item) => <div key={item.attachment_id}>
         <ShieldCheck aria-hidden="true" size={16} />
         <span><strong>{item.source_ref}</strong><code>{item.content_sha256}</code>{item.instruction_authorized && <small>{t("含授权指令", "instruction authorized")}</small>}</span>
         <time dateTime={item.attached_at}>{formatDate(item.attached_at)}</time>
-        <button aria-label={t(`打开 ${item.source_ref}`, `Open ${item.source_ref}`)} className="icon-button"
-          onClick={() => onOpenSource(item.source_ref)} title={t("打开来源", "Open source")} type="button">
+        <button aria-label={t(`打开当前文件 ${item.source_ref}`, `Open current file ${item.source_ref}`)} className="icon-button"
+          onClick={() => onOpenSource(item.source_ref)} title={t("打开当前文件", "Open current file")} type="button">
           <Eye aria-hidden="true" size={15} />
         </button>
       </div>)}
