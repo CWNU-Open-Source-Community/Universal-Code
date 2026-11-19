@@ -51,7 +51,7 @@ it("compares every complete version and selects its exact ref only after explici
   expect(screen.getByText("SHA256 " + "a".repeat(64), { selector: ".v2-draft-conflict-version > ul code" })).toBeInTheDocument();
   expect(screen.getByText("SHA256 " + "b".repeat(64), { selector: ".v2-draft-conflict-version > ul code" })).toBeInTheDocument();
   expect(screen.getByText("此版本没有文字。")).toBeInTheDocument();
-  expect(screen.getByText(/整份文字、文件引用、图片和附件/)).toBeVisible();
+  expect(screen.getByText(/替换当前草稿的文字、文件引用、图片和附件/)).toBeVisible();
   await waitFor(() => expect(api.downloadWorkspaceImage).toHaveBeenCalledTimes(2));
   expect(api.downloadWorkspaceImage).toHaveBeenCalledWith(heads[0].snapshot.images[0], expect.any(AbortSignal));
   await screen.findByRole("img", { name: "a.png" });
