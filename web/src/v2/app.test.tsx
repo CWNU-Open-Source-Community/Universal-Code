@@ -932,7 +932,7 @@ describe("V2Workbench first turn", () => {
     await user.click(screen.getByRole("button", { name: "发送消息" }));
     await user.click(screen.getByRole("button", { name: "接入项目" }));
     const dialog = screen.getByRole("dialog", { name: "创建项目" });
-    await user.click(within(dialog).getByRole("button", { name: "添加" }));
+    await user.click(within(dialog).getByRole("button", { name: "添加文件夹" }));
     await user.type(within(dialog).getByRole("textbox", { name: "项目文件夹路径" }), "D:\\later-workspace");
     await user.click(within(dialog).getByRole("button", { name: "添加" }));
     await user.click(within(dialog).getByRole("button", { name: "创建项目" }));
@@ -964,7 +964,7 @@ describe("V2Workbench first turn", () => {
     await user.click(screen.getByRole("button", { name: "发送消息" }));
     await user.click(screen.getByRole("button", { name: "接入项目" }));
     const dialog = screen.getByRole("dialog", { name: "创建项目" });
-    await user.click(within(dialog).getByRole("button", { name: "添加" }));
+    await user.click(within(dialog).getByRole("button", { name: "添加文件夹" }));
     await user.type(within(dialog).getByRole("textbox", { name: "项目文件夹路径" }), "D:\\round-trip-workspace");
     await user.click(within(dialog).getByRole("button", { name: "添加" }));
     await user.click(within(dialog).getByRole("button", { name: "创建项目" }));
@@ -1134,7 +1134,7 @@ describe("V2Workbench first turn", () => {
     await user.type(await screen.findByRole("textbox", { name: "开始新对话" }), "在新项目中继续这份需求");
     await user.click(screen.getByRole("button", { name: "接入项目" }));
     const dialog = screen.getByRole("dialog", { name: "创建项目" });
-    await user.click(within(dialog).getByRole("button", { name: "添加" }));
+    await user.click(within(dialog).getByRole("button", { name: "添加文件夹" }));
     await user.type(within(dialog).getByRole("textbox", { name: "项目文件夹路径" }), "D:\\older project");
     await user.click(within(dialog).getByRole("button", { name: "添加" }));
     await user.click(within(dialog).getByRole("button", { name: "创建项目" }));
@@ -1179,12 +1179,12 @@ describe("V2Workbench first turn", () => {
     await user.type(composer, "在选择项目之前写下的需求");
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "接入项目" }));
-    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("button", { name: "添加文件夹" }));
     await user.click(screen.getByRole("button", { name: "取消" }));
     expect(composer).toHaveValue("在选择项目之前写下的需求");
     expect(create).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "接入项目" }));
-    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("button", { name: "添加文件夹" }));
     await screen.findByText("D:\\project");
     await user.click(screen.getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(screen.getByRole("combobox", { name: "选择工作区" })).toHaveValue(workspace.id));
