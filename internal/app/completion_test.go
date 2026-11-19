@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -109,7 +110,18 @@ func TestCommandSubcommandsIntegrity(t *testing.T) {
 		table[spec.name] = true
 	}
 	for name, subcommands := range commandSubcommands {
-		if !table[name] {
+		parts := strings.Split(name, " ")
+		if len(parts) > 1 {
+			if !table[parts[0]] {
+				t.Fatalf("nested key %q starts from unregistered command %q", name, parts[0])
+			}
+			for i := 1; i < len(parts); i++ {
+				parent := strings.Join(parts[:i], " ")
+				if !slices.Contains(commandSubcommands[parent], parts[i]) {
+					t.Fatalf("nested key %q: %q is not a verified subcommand of %q", name, parts[i], parent)
+				}
+			}
+		} else if !table[name] {
 			t.Fatalf("subcommand map key %q is not a registered command", name)
 		}
 		if len(subcommands) == 0 {
@@ -142,6 +154,16 @@ func TestCommandSubcommandsDocumented(t *testing.T) {
 			}
 		}
 	}
+	for name, subcommands := range commandSubcommands {
+		if !strings.Contains(name, " ") {
+			continue
+		}
+		for _, sub := range subcommands {
+			if !strings.Contains(help, sub) {
+				t.Errorf("group subcommand %q of %q is missing from printHelp output; document it or verify it against the nested dispatch switch", sub, name)
+			}
+		}
+	}
 }
 
 // commandFunctionBody locates the source body of the dispatch function for
@@ -153,12 +175,19 @@ func commandFunctionBody(t *testing.T, name string) string {
 	if !ok {
 		t.Fatal("cannot locate test source file")
 	}
+	lookup := name
+	if override, ok := nestedDispatchFunctions[lookup]; ok {
+		lookup = override
+	}
 	dir := filepath.Dir(thisFile)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("read app package sources: %v", err)
 	}
-	want := strings.ToLower(strings.ReplaceAll(name, "-", "")) + "command"
+	want := strings.ToLower(strings.ReplaceAll(lookup, "-", ""))
+	if !strings.Contains(name, " ") {
+		want += "command"
+	}
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
 			continue
@@ -182,9 +211,6 @@ func commandFunctionBody(t *testing.T, name string) string {
 				continue
 			}
 			function := src[offset : offset+end]
-			if !strings.HasSuffix(function, "Command") {
-				continue
-			}
 			if strings.ToLower(strings.ReplaceAll(function, "-", "")) != want {
 				continue
 			}
@@ -197,6 +223,20 @@ func commandFunctionBody(t *testing.T, name string) string {
 	}
 	t.Fatalf("dispatch function for command %q not found in package sources", name)
 	return ""
+}
+
+// nestedDispatchFunctions maps two-level group keys to the dispatch
+// functions that hold their nested switches; the normalized-name lookup
+// only covers top-level command functions.
+var nestedDispatchFunctions = map[string]string{
+	"context instructions": "contextCommand",
+	"context memory":       "contextMemory",
+	"run delivery":         "runDeliveryCheckpoint",
+	"run fanout":           "runFanout",
+	"run plan":             "runPlanDelivery",
+	"run sandbox":          "runSandboxManifest",
+	"run standard-code":    "runStandardCode",
+	"skill catalog":        "skillCatalogCommand",
 }
 
 func TestCommandSubcommandsMatchDispatch(t *testing.T) {
