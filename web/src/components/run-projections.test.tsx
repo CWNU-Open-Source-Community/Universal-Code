@@ -39,7 +39,7 @@ describe("Run projection panels", () => {
     } else {
       expect(container.textContent).toContain("Go/npm validation is disabled");
       expect(container.textContent).toContain("operation approval");
-      expect(screen.getByRole("region", { name: "验证功能设置" })).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "Verification settings" })).toBeInTheDocument();
     }
     expect(screen.queryByRole("button", { name: "Merge in dependency order" })).not.toBeInTheDocument();
   });
