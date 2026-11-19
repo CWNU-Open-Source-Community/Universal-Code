@@ -997,7 +997,7 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			})
 			modelContextLayout = modelContextLayout.shifted(1)
 		}
-		modelRequest, skillReadGuidance, err := s.requestWithBuiltinSkillReads(ctx, turn, modelRequest)
+		modelRequest, skillReadGuidance, err := s.requestWithBuiltinSkillReads(ctx, turn, modelRequest, modelContextLayout.HistoryStart+modelContextLayout.HistoryCount)
 		if err != nil {
 			return result, s.recordFailure(ctx, &result, err, 0)
 		}

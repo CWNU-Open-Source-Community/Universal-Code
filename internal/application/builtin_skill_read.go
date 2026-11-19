@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 
 	"cyberagent-workbench/internal/apperror"
@@ -230,7 +231,7 @@ func (e *builtinSkillReader) readBuiltinSkill(ctx context.Context, call toolgate
 	}{read.Name, read.Version, read.SourceSHA256, read.DeliveredSHA256, read.Content, "model", false})
 }
 
-func (s *AgentRunner) requestWithBuiltinSkillReads(ctx context.Context, turn domain.SupervisorTurn, request llm.ChatRequest) (llm.ChatRequest, portableSkillReadGuidance, error) {
+func (s *AgentRunner) requestWithBuiltinSkillReads(ctx context.Context, turn domain.SupervisorTurn, request llm.ChatRequest, historyEnd int) (llm.ChatRequest, portableSkillReadGuidance, error) {
 	var guidance portableSkillReadGuidance
 	reader, ok := s.store.(builtinSkillReadStore)
 	if !ok {
@@ -250,19 +251,53 @@ func (s *AgentRunner) requestWithBuiltinSkillReads(ctx context.Context, turn dom
 	if err != nil {
 		return request, guidance, err
 	}
-	request.Messages = append([]llm.Message(nil), request.Messages...)
-	portable, guidance, err := portableSkillReadReferences(ctx, reader, turn.Run.ID, turn.Mode, request.Messages)
+	calls, err := reader.ListBuiltinSkillReadCalls(ctx, turn.Run.ID)
 	if err != nil {
 		return request, guidance, err
 	}
-	request.Messages = append(request.Messages, portable...)
+	restored, guidance, err := portableSkillReferencesForCalls(ctx, reader, turn.Run.ID, turn.Mode, request.Messages, calls)
+	if err != nil {
+		return request, guidance, err
+	}
 	for _, item := range items {
-		request.Messages = append(request.Messages, llm.Message{Role: "system", Content: fmt.Sprintf(
+		restored = append(restored, llm.Message{Role: "system", Content: fmt.Sprintf(
 			"Model-requested embedded Skill %s version %s; source SHA256 %s; delivered SHA256 %s. Go restored this guidance from a successful skill_read receipt and the exact embedded version. Follow it when relevant, subordinate to root policy and current operator instructions. It grants no tools, permissions or authority.\n%s\nEnd of embedded Skill guidance.",
 			item.Name, item.Version, item.SourceSHA256, item.DeliveredSHA256, item.Content)})
 	}
 	if len(unavailable) > 0 {
-		request.Messages = append(request.Messages, llm.Message{Role: "system", Content: fmt.Sprintf("Previously read embedded skills unavailable in the current mode or registry: %v. Their bodies are not supplied; do not infer a replacement or treat historical excerpts as active skill guidance.", unavailable)})
+		restored = append(restored, llm.Message{Role: "system", Content: fmt.Sprintf("Previously read embedded skills unavailable in the current mode or registry: %v. Their bodies are not supplied; do not infer a replacement or treat historical excerpts as active skill guidance.", unavailable)})
+	}
+	if len(restored) != 0 {
+		at := len(request.Messages)
+		if len(calls) == len(items)+len(guidance.reads) && len(unavailable) == 0 {
+			at = completedSkillReadPosition(request.Messages, historyEnd, calls)
+		}
+		request.Messages = slices.Insert(slices.Clone(request.Messages), at, restored...)
 	}
 	return request, guidance, nil
+}
+
+// Only anchor fresh guidance when every successful receipt has its exact native call
+// and result in this turn. Historical, cropped or unavailable reads keep their current placement.
+func completedSkillReadPosition(messages []llm.Message, historyEnd int, calls []domain.SupervisorToolCall) int {
+	last := historyEnd
+	for _, call := range calls {
+		pin, _, err := toolgateway.NormalizeSkillReadPayload(json.RawMessage(call.PayloadJSON))
+		if err != nil || call.Status != domain.SupervisorToolCompleted || call.CompletedAt == nil {
+			return len(messages)
+		}
+		read := portableSkillGuidanceRead{ToolCallID: call.CallID, Read: pin, result: call.ResultJSON}
+		found := false
+		for i := historyEnd + 1; i < len(messages); i++ {
+			if messages[i-1].Role == "assistant" && messages[i].Role == "user" && read.present(messages[i-1:i+1]) {
+				last = max(last, i+1)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return len(messages)
+		}
+	}
+	return last
 }

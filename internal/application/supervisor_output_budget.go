@@ -71,7 +71,11 @@ func supervisorRuntimeFacts(request llm.ChatRequest, window llm.ContextWindow, c
 		// The Messages API supports text in the same result turn. Chat, Responses
 		// and Ollama map that text to a new operator turn, which can end replay.
 		if role == "system" {
-			request.Messages = slices.Insert(request.Messages, i+1, llm.Message{Role: "system", Content: text})
+			after := i + 1
+			for after < len(request.Messages) && request.Messages[after].Role == "system" {
+				after++ // Keep guidance bound to this completed read ahead of transient facts.
+			}
+			request.Messages = slices.Insert(request.Messages, after, llm.Message{Role: role, Content: text})
 		} else if msg.Content == "" {
 			msg.Content = text
 		} else {
