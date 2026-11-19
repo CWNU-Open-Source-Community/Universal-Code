@@ -172,6 +172,50 @@ func TestOpenAILegacyDeepSeekCacheUsage(t *testing.T) {
 	}
 }
 
+func TestDeepSeekChatRejectedOutputPreservesValidatedUsage(t *testing.T) {
+	const usage = `{"prompt_tokens":100,"completion_tokens":5,"total_tokens":105,"prompt_cache_hit_tokens":90,"prompt_cache_miss_tokens":10}`
+	const invalidTool = `{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"test_tool","arguments":"{"}}]}`
+	const text = `{"role":"assistant","content":"unexpected text"}`
+	for _, test := range []struct {
+		name, model, message, usage string
+		wantReceipt                 bool
+	}{
+		{"invalid_tool_arguments", "deepseek-flash", invalidTool, usage, true},
+		{"tool_finish_without_calls", "deepseek-flash", text, usage, true},
+		{"invalid_model", "", text, usage, false},
+		{"omitted_usage", "deepseek-flash", text, "null", false},
+		{"empty_usage", "deepseek-flash", text, "{}", false},
+		{"inconsistent_usage", "deepseek-flash", text, strings.Replace(usage, `"prompt_cache_miss_tokens":10`, `"prompt_cache_miss_tokens":11`, 1), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"model":%q,"choices":[{"index":0,"message":%s,"finish_reason":"tool_calls"}],"usage":%s}`, test.model, test.message, test.usage)
+			}))
+			defer server.Close()
+			provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{Name: "deepseek", BaseURL: server.URL,
+				DefaultModel: "deepseek-v4-flash", Runtime: keylessTestRuntime{allow: true}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := provider.Chat(t.Context(), ChatRequest{Messages: []Message{{Role: "user", Content: "test"}}})
+			if ProviderErrorReason(err) != ProviderFailureProtocolIncompatible {
+				t.Fatalf("expected rejected output, got response=%+v err=%v", response, err)
+			}
+			if !test.wantReceipt {
+				if response != nil {
+					t.Fatalf("received an unverified receipt: %+v", response)
+				}
+				return
+			}
+			want := Usage{InputTokens: 100, OutputTokens: 5, TotalTokens: 105, CacheReadTokens: 90, CacheUsageReported: true}
+			if response == nil || response.Usage != want || response.Model != "deepseek-v4-flash" || response.Provider != "deepseek" ||
+				response.Text != "" || len(response.ToolCalls) != 0 || response.Replay != nil {
+				t.Fatalf("invalid output escaped or verified cache receipt lost: %+v", response)
+			}
+		})
+	}
+}
+
 func TestAnthropicCacheUsageCumulativeMerge(t *testing.T) {
 	var wire anthropicUsage
 	if err := json.Unmarshal([]byte(`{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":6,"cache_creation_input_tokens":5,"cache_creation":{"ephemeral_5m_input_tokens":2,"ephemeral_1h_input_tokens":3}}`), &wire); err != nil {
