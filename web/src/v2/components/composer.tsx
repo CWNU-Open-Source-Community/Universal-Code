@@ -241,7 +241,6 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     pendingSubmissions.some(({ input }) => JSON.stringify([input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments), mcpReferenceIdentities(input.mcpReferences)]) === fingerprint);
   const ready = !disabled && !submitDisabled && !creatingLocalChat && !managedDraft?.state.conflict && !managedDraft?.state.error && !images.uploading && !images.pending && !attachments.uploading && !attachments.pending && !nativeClipboard.pending && !nativeClipboard.busy && !importStatus.busy && (!images.images.length || imageCapability.allowed) && !sameMessagePending && Boolean(workspaceID) && (byteLength > 0 || images.images.length > 0 || attachments.attachments.length > 0 || mcp.references.length > 0) &&
     byteLength <= maximumContentBytes && !(fileReferenceUnavailableReason && (references.files.length > 0 || mcp.references.length > 0));
-  // Low-priority hints share a single caption line instead of stacking.
   const draftSavedLocally = Boolean(recovery) && !persistenceWarning &&
     (!managedDraft || managedDraft.state.persisted && !managedDraft.state.error) &&
     (content || references.files.length > 0 || images.images.length > 0 || attachments.attachments.length > 0 || mcp.references.length > 0);
@@ -529,13 +528,10 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     {importStatus.textNotice && <p className="v2-composer-caption" role="status">{importStatus.textNotice}</p>}
     {modeSaveError && <p className="v2-composer-caption" role="status">{t("编辑模式已切换，但偏好未能保存；下次打开时会使用默认模式。", "Editor mode changed, but the preference could not be saved. The default mode will be used next time.")}</p>}
     {images.uploading && <p className="v2-composer-caption" role="status">{t("正在保存图片，完成后可发送…", "Saving images. You can send them when saving finishes…")}</p>}
-    {(showImageCapability || draftSavedLocally) && <p className="v2-composer-caption" role="status">
-      {showImageCapability && <>{imageCapability.hint}
-        {!imageCapability.allowed && onManageModels && <button className="v2-composer-chip" type="button"
-          onClick={() => onManageModels(false)}>{t("模型设置", "Model settings")}</button>}</>}
-      {showImageCapability && draftSavedLocally && " · "}
-      {draftSavedLocally && t("草稿与附件保存在此设备", "Draft and attachments saved on this device")}
-    </p>}
+    {showImageCapability && <p className="v2-composer-caption" role="status">{imageCapability.hint}
+      {!imageCapability.allowed && onManageModels && <button className="v2-composer-chip" type="button"
+        onClick={() => onManageModels(false)}>{t("模型设置", "Model settings")}</button>}</p>}
+    {draftSavedLocally && <span className="sr-only" role="status">{t("草稿与附件保存在此设备", "Draft and attachments saved on this device")}</span>}
     {images.error && <p className="v2-composer-error" role="alert">{images.error}</p>}
     {attachments.notice}
     {nativeClipboard.notice}

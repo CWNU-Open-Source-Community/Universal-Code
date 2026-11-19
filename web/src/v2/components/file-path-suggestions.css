@@ -9,4 +9,4 @@
 .v2-file-path-suggestions [role="option"][aria-selected="true"], .v2-file-path-suggestions [role="option"]:hover { background: var(--v2-control-hover); }
 .v2-file-path-suggestions p { margin: 6px; color: var(--v2-muted); overflow-wrap: anywhere; }
 .v2-file-path-suggestions [role="alert"] { color: var(--v2-danger); }
-.v2-file-path-suggestions .v2-file-path-help { font-size: 11px; }
+.v2-file-path-suggestions [role="option"] > kbd { margin-inline-start: auto; color: var(--v2-muted); font: inherit; }

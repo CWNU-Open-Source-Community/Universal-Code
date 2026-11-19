@@ -1,7 +1,7 @@
 .v2-markdown-input-host { min-width: 0; position: relative; z-index: 2; }
 .v2-markdown-input {
   color: var(--v2-ink);
-  font: 400 var(--prayu-message-size, 16px)/1.5 var(--prayu-font-ui);
+  font: 400 var(--prayu-message-size, 16px)/calc(1em + 8px) var(--prayu-font-ui);
   max-height: min(240px, 32dvh);
   min-height: max(50px, calc(1.5em + 20px));
   overflow: auto;
@@ -19,14 +19,16 @@
   color: var(--v2-muted); content: attr(data-placeholder); position: absolute; pointer-events: none;
 }
 .v2-markdown-input p { margin: 0; }
-.v2-markdown-input > * + * { margin-top: .65em; }
-.v2-markdown-input :is(h1, h2, h3, h4, h5, h6) { font-size: 1.1em; font-weight: var(--prayu-weight-heading); line-height: 1.5; margin-block: .7em .35em; }
+.v2-markdown-input :is(h1, h2, h3, h4, h5, h6) { font-size: 1.0625em; font-weight: var(--prayu-weight-heading); line-height: 1.3; margin: 0; }
+.v2-markdown-input h1 { font-size: 1.25em; margin-bottom: .5rem; }
+.v2-markdown-input h2 { font-size: 1.125em; }
 .v2-markdown-input > :first-child { margin-top: 0; }
-.v2-markdown-input :is(ul, ol) { margin-block: .4em; padding-inline-start: 1.6em; }
-.v2-markdown-input blockquote { border-inline-start: 2px solid var(--v2-border-strong); margin-inline: 0; padding-inline-start: .8em; }
-.v2-markdown-input pre { background: var(--v2-control-hover); border: 1px solid var(--v2-border); border-radius: 8px; max-width: 100%; overflow-x: auto; padding: 10px 12px; white-space: pre; }
-.v2-markdown-input code { font-family: var(--prayu-font-mono); font-size: .93em; }
-.v2-markdown-input :not(pre) > code { background: var(--v2-control-hover); border-radius: 4px; padding: .1em .25em; }
+.v2-markdown-input :is(ul, ol) { margin: 0; padding-inline-start: 1.5rem; }
+.v2-markdown-input blockquote { border-inline-start: 2px solid var(--v2-border-strong); margin: 0; padding-inline-start: .75rem; }
+.v2-markdown-input pre { background: var(--v2-control-hover); border: 1px solid var(--v2-border); border-radius: 8px; margin: .25rem 0; max-width: 100%; overflow-x: auto; padding: 8px; white-space: pre; font-size: var(--prayu-code-size, 15px); line-height: calc(1em + 5px); }
+.v2-markdown-input code { font-family: var(--prayu-font-mono); }
+.v2-markdown-input pre code { font-size: inherit; }
+.v2-markdown-input :not(pre) > code { background: var(--v2-control-hover); border-radius: 4px; padding-inline: .25rem; font-size: .92em; }
 .v2-markdown-input a { color: inherit; text-decoration: underline; cursor: text; }
 .v2-markdown-input img { max-width: 100%; height: auto; }
 .v2-markdown-input table { border-collapse: collapse; table-layout: fixed; width: 100%; }

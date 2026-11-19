@@ -102,7 +102,7 @@ function V2PromptCommandManager({ storage, onClose }: {
       <header><strong>{t("管理自定义指令", "Manage custom commands")}</strong>
         <button aria-label={t("关闭", "Close")} type="button" onClick={onClose}>✕</button></header>
       <p className="v2-prompt-command-hint">
-        {t("指令是保存在本机的常用提示词模板。在输入框键入 / 加指令名即可把内容填入草稿；正文里的 $ARGUMENTS 会被替换为指令名后输入的文字。发送前仍可编辑。", "Commands are locally saved prompt templates. Type / plus a command name in the composer to fill the draft; $ARGUMENTS in the body is replaced by whatever you type after the name. You can still edit before sending.")}
+        {t("正文中的 $ARGUMENTS 会替换为指令名后输入的文字。", "$ARGUMENTS in the template expands to the text after the command name.")}
       </p>
       <form className="v2-prompt-command-form" onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <div className="v2-prompt-command-row">

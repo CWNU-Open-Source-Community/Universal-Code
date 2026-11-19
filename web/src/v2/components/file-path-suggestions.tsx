@@ -70,7 +70,8 @@ export function FilePathSuggestions({ client, workspaceID, target, listID, input
     <div className="v2-file-path-heading"><span>{t("项目路径", "Project paths")} · <code>{target.parent}</code></span>
       <button type="button" aria-label={t("关闭路径补全", "Close path suggestions")} onClick={onClose}>
         <X aria-hidden="true" size={14} /></button></div>
-    <div id={listID} role="listbox" aria-label={t("项目路径候选", "Project path suggestions")} aria-busy={directory.isFetching || reading}>
+    <div id={listID} role="listbox" aria-label={t("项目路径候选", "Project path suggestions")} aria-busy={directory.isFetching || reading}
+      aria-keyshortcuts="ArrowDown ArrowUp Enter Tab Escape">
       {entries.map((entry, item) => {
         const Icon = entry.kind === "directory" ? Folder : File;
         return <button type="button" role="option" tabIndex={-1} id={`${listID}-${item}`} key={entry.path}
@@ -79,6 +80,7 @@ export function FilePathSuggestions({ client, workspaceID, target, listID, input
           onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()}
           onClick={() => void select(entry)}>
           <Icon aria-hidden="true" size={15} /><span>{entry.name}{entry.kind === "directory" ? "/" : ""}</span>
+          {index === item && !reading && <kbd aria-hidden="true">Tab</kbd>}
         </button>;
       })}
     </div>
@@ -88,6 +90,5 @@ export function FilePathSuggestions({ client, workspaceID, target, listID, input
         directory.isPending ? <p role="status">{t("正在列出目录…", "Listing directory…")}</p> :
           !entries.length ? <p role="status">{t("当前目录没有匹配项。", "No matches in this directory.")}</p> : null}
     {directory.data?.truncated && <p>{t("仅列出部分目录条目；可输入完整父目录路径。", "Only part of this directory is listed. You can type the full parent path.")}</p>}
-    <p className="v2-file-path-help">{t("↑↓ 选择 · Enter / Tab 补全 · Esc 关闭", "↑↓ select · Enter / Tab complete · Esc close")}</p>
   </div>;
 }
