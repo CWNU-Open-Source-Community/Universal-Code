@@ -17,6 +17,11 @@ type OperatorRestatement struct {
 	Text                   string `json:"text"`
 }
 
+func boundedOperatorQuote(text string) bool {
+	const maxQuoteTokens = 96
+	return text != "" && len(text) <= 4*maxQuoteTokens && EstimateTokens(text) <= maxQuoteTokens && redact.String(text) == text
+}
+
 // LatestOperatorRestatement identifies a new submission of identical original
 // text with another operator submission in between. Only the new submission
 // is quoted. Earlier messages remain available by their original identities.
@@ -37,8 +42,7 @@ func (s Section) LatestOperatorRestatement(messages []Message) *OperatorRestatem
 		}
 		item.digest = digest
 		// Earlier sources need only their digest. A new quotation must fit whole.
-		const maxQuoteTokens = 96
-		if submitted && len(text) <= 4*maxQuoteTokens && EstimateTokens(text) <= maxQuoteTokens && redact.String(text) == text {
+		if submitted && boundedOperatorQuote(text) {
 			item.text = text
 		}
 		sources[id] = item
@@ -122,29 +126,35 @@ func (s Section) withReplayedRestatement(view, replayedFooter string, replayed m
 	if fact == nil {
 		return view
 	}
-	var note strings.Builder
-	fmt.Fprintf(&note, "\n\nReplayed user submissions, earliest to latest\n%s → %s → %s\nAt %s the user repeated %s verbatim\n%s",
-		fact.EarlierIdenticalSource, fact.InterveningSource, fact.SourceID, fact.SourceID, fact.EarlierIdenticalSource, quoteHandoffText(fact.Text))
+	order := fmt.Sprintf("\n\nReplayed user submissions, earliest to latest\n%s → %s → %s", fact.EarlierIdenticalSource, fact.InterveningSource, fact.SourceID)
+	lastQuote := fmt.Sprintf("\nAt %s the user repeated %s verbatim\n%s", fact.SourceID, fact.EarlierIdenticalSource, quoteHandoffText(fact.Text))
 	slices.SortFunc(originals, func(a, b Message) int { return cmp.Compare(a.SourceMessageID, b.SourceMessageID) })
 	refs := make([]string, len(originals))
 	for i, original := range originals {
 		refs[i] = fmt.Sprintf("message:%d", original.SourceMessageID)
 	}
+	var following string
 	if later := refs[slices.Index(refs, fact.SourceID)+1:]; len(later) > 0 {
-		fmt.Fprintf(&note, "\nLater replayed user messages include %s.", strings.Join(later, ", "))
+		following = fmt.Sprintf("\nLater replayed user messages include %s.", strings.Join(later, ", "))
 	}
+	reservedTokens := EstimateTokens(s.Content)
+	fits := func(text string) bool { return len(text) <= len(s.Content) && EstimateTokens(text) <= reservedTokens }
 	if s.archive != nil && s.archive.matches(originals) {
-		projected := s.archive.text + replayedFooter + note.String()
-		if len(projected) <= len(s.Content) && EstimateTokens(projected) <= EstimateTokens(s.Content) {
+		prefix := s.archive.text + replayedFooter + order
+		// The intervening identity was selected from the same complete, verified user replays as the repeat.
+		if middle := replayed[fact.InterveningSource].Content; boundedOperatorQuote(middle) {
+			const guidance = "\nFor a current value, use the later user statement about the same subject, unless a subsequent user message changes it."
+			pair := fmt.Sprintf("\nAt %s the user said\n%s", fact.InterveningSource, quoteHandoffText(middle))
+			if projected := prefix + pair + lastQuote + guidance + following; fits(projected) {
+				return projected
+			}
+		}
+		if projected := prefix + lastQuote + following; fits(projected) {
 			return projected
 		}
 	}
-	if len(view)+note.Len() > len(s.Content) {
-		return view
+	if withNote := view + order + lastQuote + following; fits(withNote) {
+		return withNote
 	}
-	withNote := view + note.String()
-	if EstimateTokens(withNote) > EstimateTokens(s.Content) {
-		return view
-	}
-	return withNote
+	return view
 }

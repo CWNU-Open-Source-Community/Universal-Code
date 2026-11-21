@@ -143,8 +143,14 @@ func assertQualityRequestSources(t *testing.T, tc compactionQualityCase, st *sto
 		}
 		actualTokens, reservedTokens := contextmgr.EstimateTokens(handoff), contextmgr.EstimateTokens(reserved.Content)
 		t.Logf("final handoff used %d bytes / %d estimated tokens of %d bytes / %d reserved", len(handoff), actualTokens, len(reserved.Content), reservedTokens)
-		if len(handoff) > len(reserved.Content) || actualTokens > reservedTokens || !strings.Contains(handoff, "\n\nReplayed user submissions, earliest to latest\n") {
+		_, chronology, found := strings.Cut(handoff, "\n\nReplayed user submissions, earliest to latest\n")
+		if len(handoff) > len(reserved.Content) || actualTokens > reservedTokens || !found {
 			t.Fatal("the final handoff exceeded its reservation or lost the verified submission order")
+		}
+		middle := strings.Index(chronology, "\n> "+tc.Rounds[0][2]+"\nAt ")
+		later := strings.Index(chronology, "\n> "+tc.Rounds[0][3]+"\nFor a current value,")
+		if (middle >= 0 && later > middle) != archiveFits {
+			t.Fatal("the two submitted statements were not paired within the complete archive reservation")
 		}
 	}
 	history, err := st.ListSessionMessages(t.Context(), run.Session, true)

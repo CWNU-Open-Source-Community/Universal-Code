@@ -29,15 +29,20 @@ func TestCompleteArchiveReplacesTheInterpretationOnlyForAnActualReplayedRestatem
 		func(_ context.Context, r SummaryGenerationRequest) (SummaryGenerationResponse, error) {
 			return SummaryGenerationResponse{Text: strings.Repeat("The previous report says to keep the temporary name. ", 12), Receipt: generationReceipt(r)}, nil
 		}), handoffContentSHA256("archive-regression"))
-	result, err := manager.PrepareCandidate(t.Context(), "archive", "ws", append(append([]Message{}, input...), msg(18, "assistant", "Live tail.", "model_response", false)), Summary{}, false)
-	if err != nil || !result.Generated {
-		t.Fatalf("generate historical handoff: %v", err)
+	prepare := func(t *testing.T, rows []Message) Section {
+		t.Helper()
+		result, err := manager.PrepareCandidate(t.Context(), "archive", "ws", append(slices.Clone(rows), msg(18, "assistant", "Live tail.", "model_response", false)), Summary{}, false)
+		if err != nil || !result.Generated {
+			t.Fatalf("generate historical handoff: %v", err)
+		}
+		result.Summary.ID = 7
+		base, err := HandoffSection(result.Summary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return base
 	}
-	result.Summary.ID = 7
-	base, err := HandoffSection(result.Summary)
-	if err != nil {
-		t.Fatal(err)
-	}
+	base := prepare(t, input)
 	count, through, limit := base.ArchiveWindow()
 	if count != len(input) || through != input[len(input)-1].SourceMessageID || limit != len(base.Content) {
 		t.Fatal("the store lookup was not bounded by the committed count, last ID and actual reservation")
@@ -52,6 +57,43 @@ func TestCompleteArchiveReplacesTheInterpretationOnlyForAnActualReplayedRestatem
 	got := candidate.WithReplayedOperators(replayed).Content
 	if !strings.Contains(got, "Archived messages, earliest to latest") || strings.Contains(got, "Previous model's handoff") {
 		t.Fatalf("the archived evidence did not replace the earlier model interpretation: %s", got)
+	}
+	const guidance = "For a current value, use the later user statement about the same subject, unless a subsequent user message changes it."
+	middleQuote := "At message:6 the user said\n" + quoteHandoffText(b.Content) + "\n"
+	repeatedQuote := "At message:9 the user repeated message:2 verbatim\n" + quoteHandoffText(repeat.Content)
+	if !strings.Contains(got, middleQuote+repeatedQuote+"\n"+guidance+"\nLater replayed user messages include message:12.") {
+		t.Fatal("the complete handoff omitted the two verified adjacent quotations or the subsequent user's source")
+	}
+	basic := strings.Replace(strings.Replace(got, middleQuote, "", 1), guidance+"\n", "", 1)
+	for _, reservation := range []string{basic, strings.Repeat("x", len(got))} {
+		tight := candidate
+		tight.Content = reservation
+		if actual := tight.WithReplayedOperators(replayed).Content; actual != basic {
+			t.Fatal("the extra quotation displaced a complete archive that already fit with its original footer")
+		}
+	}
+	t.Run("long intervening original", func(t *testing.T) {
+		rows := slices.Clone(input)
+		long := msg(6, "user", strings.Repeat("界", 34), "operator_message", true)
+		rows[2] = long
+		view, err := prepare(t, rows).WithCompleteArchive(rows)
+		if err != nil {
+			t.Fatal(err)
+		}
+		delivered := map[string]Message{"message:2": a, "message:6": long, "message:9": repeat, "message:12": c}
+		content := view.WithReplayedOperators(delivered).Content
+		if !strings.Contains(content, "Archived messages, earliest to latest") || !strings.Contains(content, repeatedQuote) ||
+			strings.Contains(content, "At message:6 the user said") || strings.Contains(content, guidance) {
+			t.Fatal("a long intervening original changed the original full-archive footer")
+		}
+	})
+	for _, kind := range []string{"tool_result", "model_response"} {
+		external := b
+		external.SourceKind, external.InstructionAuthorized = kind, false
+		delivered := map[string]Message{"message:2": a, "message:6": external, "message:9": repeat, "message:12": c}
+		if content := candidate.WithReplayedOperators(delivered).Content; strings.Contains(content, middleQuote) || strings.Contains(content, guidance) {
+			t.Fatal("external evidence was presented as the user's intervening words")
+		}
 	}
 	if !strings.Contains(got, "message:2 → message:6 → message:9") || !strings.Contains(got, "Later replayed user messages include message:12.") ||
 		!strings.Contains(got, "message:14 (tool, tool_result, \"source-14\", SHA-256 "+tool.ContentSHA256+")\n> Old draft\n> "+b.Content) ||

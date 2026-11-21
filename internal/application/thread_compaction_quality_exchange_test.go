@@ -377,9 +377,10 @@ func runThreadCompactionQuality(t *testing.T, dir string, mode qualityMode) {
 						if i < 2 {
 							report := qualityStaleHandoff(tc)
 							if i == 1 && archiveFits {
-								// A longer second report reserves enough space for all thirteen source rows.
+								// Reserve enough for the thirteen archived rows and both user quotations.
 								report += "\n\n用户还要求沿用渠道名称的原有拼写。助手已读取上周的 README.md，将草稿中写明的分组方式以及其中勾选的事项一并告知用户。" +
-									"已有的工具回执仅涉及读取旧草稿。用户要求记录本周的待办项，针对本周清单的核对尚未执行。"
+									"已有的工具回执仅涉及读取旧草稿。用户要求记录本周的待办项，针对本周清单的核对尚未执行。" +
+									"草稿中勾选的是上周的记录，这次读取没有检查 staging-04 的 manifest.json。"
 							}
 							text = historyRecallJSON(map[string]string{"version": "generated_handoff.v1", "summary": report})
 						}
