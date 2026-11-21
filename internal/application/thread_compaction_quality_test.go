@@ -81,8 +81,10 @@ func assertQualityDecisionInSecondSummary(t *testing.T, tc compactionQualityCase
 		}
 	}
 	if len(req.Messages) != 2 || json.Unmarshal([]byte(req.Messages[1].Content), &data) != nil || len(data.Timeline) != 3 ||
-		!strings.Contains(data.Timeline[1].Previous, qualityStaleHandoff(tc)) || len(data.Timeline[2].Messages) == 0 {
-		t.Fatal("second summary did not receive the older model handoff before the newer originals")
+		strings.Contains(data.Timeline[1].Previous, qualityStaleHandoff(tc)) ||
+		!strings.Contains(data.Timeline[1].Previous, tc.Rounds[0][2]) || !strings.Contains(data.Timeline[1].Previous, "收到。") ||
+		len(data.Timeline[2].Messages) == 0 {
+		t.Fatal("second summary did not receive the complete older source records before the newer originals")
 	}
 	history, err := st.ListSessionMessages(t.Context(), run.Session, true)
 	if err != nil {

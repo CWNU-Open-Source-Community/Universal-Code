@@ -82,6 +82,50 @@ type qualityRun struct {
 	ContextWindow *llm.ContextWindow `json:",omitempty"`
 }
 
+// Older manifests recorded only the total, so their other limits still come
+// from the settings used to replay them.
+func (run qualityRun) replayWindow(configured llm.ContextWindow, requested *int) (llm.ContextWindow, error) {
+	window := configured
+	if run.ContextWindow != nil {
+		window = *run.ContextWindow
+	}
+	if err := window.Validate(); err != nil {
+		return llm.ContextWindow{}, fmt.Errorf("invalid replay context window: %w", err)
+	}
+	if run.Window != window.WindowTokens || (requested != nil && *requested != run.Window) {
+		return llm.ContextWindow{}, fmt.Errorf("saved context window of %d tokens conflicts with the replay settings", run.Window)
+	}
+	return window, nil
+}
+
+func TestQualityReplayRestoresRecordedContextWindow(t *testing.T) {
+	fallback := llm.DefaultContextWindow()
+	provider := llm.ContextWindow{ProtocolVersion: llm.ContextWindowProtocolVersion, WindowTokens: 1000000,
+		SafetyMarginTokens: 2048, DefaultOutputTokens: 8192, MaxOutputTokens: 393216, Source: "provider_model_metadata"}
+	run := qualityRun{Window: provider.WindowTokens, ContextWindow: &provider}
+	for _, override := range []*int{nil, &provider.WindowTokens} {
+		if got, err := run.replayWindow(fallback, override); err != nil || got != provider {
+			t.Fatalf("expected the full saved provider settings, got %+v: %v", got, err)
+		}
+	}
+	if _, err := run.replayWindow(fallback, &fallback.WindowTokens); err == nil {
+		t.Fatal("accepted an explicit window that conflicts with the saved run")
+	}
+	legacy := qualityRun{Window: fallback.WindowTokens}
+	if got, err := legacy.replayWindow(fallback, nil); got != fallback || err != nil {
+		t.Fatalf("legacy replay limits: %+v, %v", got, err)
+	}
+	run.Window++
+	if _, err := run.replayWindow(fallback, nil); err == nil {
+		t.Fatal("accepted inconsistent total limits in the manifest")
+	}
+	run.Window = provider.WindowTokens
+	provider.DefaultOutputTokens = provider.MaxOutputTokens + 1
+	if _, err := run.replayWindow(fallback, nil); err == nil {
+		t.Fatal("accepted invalid output limits from the manifest")
+	}
+}
+
 func qualityDialog(t *testing.T, st *store.SQLiteStore, router *llm.Router, p *qualityExchangeProvider, runID string, tc compactionQualityCase, round int) {
 	t.Helper()
 	turns := application.NewThreadTurnService(st, application.NewRunLifecycleControlService(st), application.NewRunExecutionHandoffService(st, router, policy.NewDefaultChecker()))
@@ -221,16 +265,6 @@ func runThreadCompactionQuality(t *testing.T, dir string, mode qualityMode) {
 	}
 	for _, tc := range compactionQualityCases(t) {
 		t.Run(tc.ID, func(t *testing.T) {
-			p := &qualityExchangeProvider{generatedProtocolProvider: newGeneratedProtocolProvider(), ref: ref}
-			router := llm.NewRouter(ref)
-			router.RegisterProvider(p)
-			if err := router.SetContextWindow(ref, window); err != nil {
-				t.Fatal(err)
-			}
-			stageRouter := router
-			if liveRouter != nil {
-				stageRouter = liveRouter
-			}
 			out := filepath.Join(dir, tc.ID)
 			workspace := filepath.Join(out, "workspace")
 			if err := os.MkdirAll(workspace, 0700); err != nil {
@@ -242,8 +276,37 @@ func runThreadCompactionQuality(t *testing.T, dir string, mode qualityMode) {
 			manifest := filepath.Join(out, "run.json")
 			dbPath := filepath.Join(out, "snapshot-0.sqlite")
 			temporary := filepath.Join(t.TempDir(), "working.sqlite")
-			if raw, err := os.ReadFile(manifest); errors.Is(err, os.ErrNotExist) {
-				run = qualityRun{CaseHash: caseHash, Route: route, Window: window.WindowTokens, ContextWindow: &window}
+			caseWindow := window
+			raw, err := os.ReadFile(manifest)
+			newRun := errors.Is(err, os.ErrNotExist)
+			if !newRun {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal(raw, &run); err != nil || run.CaseHash != caseHash || run.Route != route {
+					t.Fatalf("saved experiment inputs differ: %+v, %v", run, err)
+				}
+				if mode == qualityFromFiles {
+					caseWindow, err = run.replayWindow(window, requestedWindow)
+					if err != nil {
+						t.Fatal(err)
+					}
+				} else if run.Window != window.WindowTokens || (run.ContextWindow != nil && *run.ContextWindow != window) {
+					t.Fatal("the saved experiment used a different context window")
+				}
+			}
+			p := &qualityExchangeProvider{generatedProtocolProvider: newGeneratedProtocolProvider(), ref: ref}
+			router := llm.NewRouter(ref)
+			router.RegisterProvider(p)
+			if err := router.SetContextWindow(ref, caseWindow); err != nil {
+				t.Fatal(err)
+			}
+			stageRouter := router
+			if liveRouter != nil {
+				stageRouter = liveRouter
+			}
+			if newRun {
+				run = qualityRun{CaseHash: caseHash, Route: route, Window: caseWindow.WindowTokens, ContextWindow: &caseWindow}
 				if tc.ToolTurn != nil {
 					if err := os.WriteFile(filepath.Join(workspace, tc.ToolTurn.Path), []byte(tc.ToolTurn.Content), 0600); err != nil {
 						t.Fatal(err)
@@ -268,11 +331,6 @@ func runThreadCompactionQuality(t *testing.T, dir string, mode qualityMode) {
 				}
 				copyQualitySnapshot(t, temporary, dbPath)
 				writeQualityArtifact(t, manifest, run)
-			} else if err != nil {
-				t.Fatal(err)
-			} else if err := json.Unmarshal(raw, &run); err != nil || run.CaseHash != caseHash || run.Route != route || run.Window != window.WindowTokens ||
-				(run.ContextWindow != nil && *run.ContextWindow != window) {
-				t.Fatalf("saved experiment inputs differ: %+v, %v", run, err)
 			}
 
 			var lastSummaryID int64

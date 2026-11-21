@@ -86,7 +86,7 @@ func TestStandaloneSendKeepsEndOfLongOperatorMessageAndEarlierRequirement(t *tes
 	}
 	_, normal := p.splitRequests()
 	request := normal[len(normal)-1].Request
-	checkLongChecklistRequest(t, request, source, true)
+	checkLongChecklistRequest(t, request, source, false)
 	if hasToolSpec(request, "history_read") {
 		t.Fatal("test configuration expected a standalone Session with no history_read tool")
 	}
@@ -108,7 +108,7 @@ func TestStandaloneSendKeepsEndOfLongOperatorMessageAndEarlierRequirement(t *tes
 		}
 		_, normal = p.splitRequests()
 		request = normal[len(normal)-1].Request
-		checkLongChecklistRequest(t, request, source, true)
+		checkLongChecklistRequest(t, request, source, false)
 		tokens := 8
 		for _, message := range request.Messages {
 			tokens += contextmgr.EstimateMessageTokens(message.Role, message.Content)
@@ -146,6 +146,13 @@ func TestThreadCanReadEndOfLongOperatorMessageAndKeepEarlierRequirement(t *testi
 		t.Fatalf("compaction=%+v error=%v", result, err)
 	}
 	source := archivedChecklistSource(t, st, run.SessionID, inputs[1])
+	for i := 1; i <= 12; i++ {
+		submitHistoryRecall(t, turns, run.ID, fmt.Sprintf("long-checklist-later-observation-%02d", i),
+			fmt.Sprintf("For release record %02d use artifact package-%02d.", i, i))
+	}
+	if result, err := compactor.Compact(t.Context(), manualCompactRequest(run, "second-long-checklist")); err != nil || result.Status != "completed" {
+		t.Fatalf("second compaction=%+v error=%v", result, err)
+	}
 	window.WindowTokens = 32 * 1024
 	if err := router.SetContextWindow(ref, window); err != nil {
 		t.Fatal(err)
@@ -154,7 +161,7 @@ func TestThreadCanReadEndOfLongOperatorMessageAndKeepEarlierRequirement(t *testi
 	p.normal = func(_ context.Context, request llm.ChatRequest) (*llm.ChatResponse, error) {
 		requests = append(requests, request)
 		if len(requests) == 1 {
-			checkLongChecklistRequest(t, request, source, false)
+			checkLongChecklistRequest(t, request, source, true)
 			if !hasToolSpec(request, "history_read") {
 				t.Fatal("missing native history_read tool for exact source")
 			}
@@ -190,7 +197,7 @@ func TestThreadCanReadEndOfLongOperatorMessageAndKeepEarlierRequirement(t *testi
 	assertHistoryRecallNativeRequests(t, requests, []string{trailingChecklistCorrection})
 }
 
-func checkLongChecklistRequest(t *testing.T, request llm.ChatRequest, source session.Message, requireTail bool) {
+func checkLongChecklistRequest(t *testing.T, request llm.ChatRequest, source session.Message, requireUserExcerpt bool) {
 	t.Helper()
 	earlier, referenced, markedTail := false, false, false
 	for _, message := range request.Messages {
@@ -203,14 +210,17 @@ func checkLongChecklistRequest(t *testing.T, request llm.ChatRequest, source ses
 		if strings.Contains(message.Content, fmt.Sprintf("message:%d", source.ID)) && strings.Contains(message.Content, source.Provenance.ContentSHA256) {
 			referenced = true
 			if strings.Contains(message.Content, trailingChecklistCorrection) && strings.Contains(message.Content, "middle omitted") {
-				markedTail = true
+				if message.Role == "system" || !strings.Contains(message.Content, "录入工作记录。") {
+					t.Fatal("the excerpt lost its original role or leading text")
+				}
+				markedTail = markedTail || !requireUserExcerpt || message.Role == "user"
 			}
 		}
 	}
 	if !earlier || !referenced {
 		t.Fatal("the next request lost the earlier requirement or the exact source of the long message")
 	}
-	if requireTail && !markedTail {
-		t.Fatal("the standalone request lost the last-line correction or did not identify the excerpt")
+	if !markedTail {
+		t.Fatal("the request lost the last-line correction or did not identify the excerpt")
 	}
 }

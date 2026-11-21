@@ -270,14 +270,14 @@ func (m *Manager) BuildPrompt(system string, summary Summary, recent []Message, 
 		})
 	}
 	if handoff.Content != "" {
-		replayed := make(map[string]string, len(originals))
+		replayed := make(map[string]Message, len(originals))
 		for _, original := range originals {
 			if original.Role != "user" || original.SourceKind != "operator_message" || !original.InstructionAuthorized ||
 				original.SourceMessageID <= 0 || !validHandoffDigest(original.ContentSHA256) {
 				return nil, errors.New("compacted operator original lacks a verified source")
 			}
 			out = append(out, original)
-			replayed[fmt.Sprintf("message:%d", original.SourceMessageID)] = original.ContentSHA256
+			replayed[fmt.Sprintf("message:%d", original.SourceMessageID)] = original
 		}
 		handoffRole := "user"
 		if len(originals) > 0 {

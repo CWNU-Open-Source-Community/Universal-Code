@@ -775,27 +775,26 @@ func (m *Manager) compactedOperatorOriginals(ctx context.Context, sessionID stri
 		return nil, err
 	}
 	var originals []contextmgr.Message
-	var newestOmitted Message
+	var newestOmitted contextmgr.Message
 	upperID, initialBudget := beforeID, remaining
 	for _, message := range messages {
 		if message.SessionID != sessionID || !message.Compacted || message.ID >= beforeID {
 			return nil, apperror.New(apperror.CodeFailedPrecondition, "compacted operator history does not match the Session prefix")
 		}
 		beforeID = message.ID
-		verified, err := VerifiedOperatorOriginal(message)
+		projected, verified, err := ProjectCompactedOperator(message)
 		if err != nil {
 			return nil, err
 		}
 		if !verified {
 			continue
 		}
-		projected := ProjectContextMessage(message)
 		cost := contextmgr.EstimateMessageTokens(projected.Role, projected.Content)
 		if cost <= remaining {
 			remaining -= cost
 			originals = append(originals, projected)
-		} else if newestOmitted.ID == 0 {
-			newestOmitted = message
+		} else if newestOmitted.SourceMessageID == 0 {
+			newestOmitted = projected
 		}
 	}
 	slices.Reverse(originals)
@@ -805,25 +804,25 @@ func (m *Manager) compactedOperatorOriginals(ctx context.Context, sessionID stri
 	if oversized, ok := m.store.(interface {
 		LatestOversizedSessionOperator(context.Context, string, int64, int64, int) (Message, bool, error)
 	}); ok {
-		message, found, err := oversized.LatestOversizedSessionOperator(ctx, sessionID, newestOmitted.ID, upperID, initialBudget)
+		message, found, err := oversized.LatestOversizedSessionOperator(ctx, sessionID, newestOmitted.SourceMessageID, upperID, initialBudget)
 		if err != nil {
 			return nil, err
 		}
 		if found {
-			if message.SessionID != sessionID || !message.Compacted || message.ID <= newestOmitted.ID || message.ID >= upperID {
+			if message.SessionID != sessionID || !message.Compacted || message.ID <= newestOmitted.SourceMessageID || message.ID >= upperID {
 				return nil, apperror.New(apperror.CodeFailedPrecondition, "oversized operator source does not match the Session prefix")
 			}
-			verified, err := VerifiedOperatorOriginal(message)
+			projected, verified, err := ProjectCompactedOperator(message)
 			if err != nil {
 				return nil, err
 			}
 			if verified {
-				newestOmitted = message
+				newestOmitted = projected
 			}
 		}
 	}
-	if newestOmitted.ID != 0 {
-		projected := ProjectContextMessage(newestOmitted)
+	if newestOmitted.SourceMessageID != 0 {
+		projected := newestOmitted
 		if contextmgr.EstimateMessageTokens(projected.Role, projected.Content) > remaining {
 			excerpt, fits, err := contextmgr.FitOperatorExcerpt(projected, summary, remaining)
 			if err != nil || !fits {

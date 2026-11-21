@@ -1079,7 +1079,8 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			}
 		}
 		modelMemory := prepared.context.memory
-		modelRequest, modelContextLayout, modelMemory, err = fitRecentOperatorRequest(modelRequest, modelContextLayout, modelMemory, inputLimit, prepared.context.recentOperatorSections)
+		excerptLimit := supervisorRunInputLimit(inputLimit, modelRequest.PlannedOutputTokens(modelWindow), turn.Run.Budget, turn.Checkpoint)
+		modelRequest, modelContextLayout, modelMemory, err = fitRecentOperatorRequest(modelRequest, modelContextLayout, modelMemory, inputLimit, prepared.context.recentOperatorSections, excerptLimit)
 		if err != nil {
 			return result, s.recordFailure(ctx, &result, err, 0)
 		}
@@ -1178,6 +1179,12 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 						}
 						if compactErr != nil {
 							return result, s.recordFailure(ctx, &result, compactErr, 0)
+						}
+						// Restored operator originals are fitted after the request is assembled.
+						// The claimed ceiling then bounds the actual retry below the rejected input.
+						_, canFitRecovery := s.store.(supervisorContextRecoveryLimitStore)
+						if compacted && canFitRecovery && prepared.layout.recentOperatorCount > 0 && ctx.Err() == nil {
+							continue
 						}
 						if estimateModelRequestTokens(request) >= before {
 							trySegmentReceipt()

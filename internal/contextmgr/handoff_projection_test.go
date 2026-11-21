@@ -25,6 +25,29 @@ func TestPromptHandoffUsesGeneratedTextAndSourceEvidence(t *testing.T) {
 	if err != nil || !result.Generated {
 		t.Fatalf("generate fixture: %+v %v", result, err)
 	}
+	prior, err := HandoffSection(result.Summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcript := prior.ForNextSummary()
+	if strings.Contains(transcript, narrative) || !strings.Contains(transcript, inputs[2].Content) ||
+		!strings.Contains(transcript, `message:4 (external_evidence, tool_result, "source-4")`) || !strings.Contains(transcript, "> exit=7\n> Earlier user message:") {
+		t.Fatalf("next summary lost the complete, source-attributed transcript: %s", transcript)
+	}
+	missing := *prior.handoff
+	missing.records = missing.records[1:]
+	incomplete := prior
+	incomplete.handoff = &missing
+	if incomplete.ForNextSummary() != prior.Content {
+		t.Fatal("a prior model handoff was discarded despite a missing source")
+	}
+	partial := *prior.handoff
+	partial.records = append([]handoffMemoryRecord(nil), partial.records...)
+	partial.records[0].SourceContentSHA256 = handoffContentSHA256("full source with an omitted middle")
+	incomplete.handoff = &partial
+	if incomplete.ForNextSummary() != prior.Content {
+		t.Fatal("a partial source was treated as the complete original")
+	}
 	prompt, err := manager.BuildPrompt("Runtime instructions.", result.Summary, result.Preserved)
 	if err != nil {
 		t.Fatal(err)
@@ -64,13 +87,13 @@ func TestExtractiveHandoffDeduplicatesOnlyTheDeliveredSource(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name     string
-		replayed map[string]string
+		replayed map[string]Message
 		wantUser bool
 	}{
 		{"no originals", nil, true},
-		{"same text from a different row", map[string]string{"message:8": source.ContentSHA256}, true},
-		{"different digest for same row", map[string]string{"message:1": handoffContentSHA256("another source")}, true},
-		{"matching verified row", map[string]string{"message:1": source.ContentSHA256, "message:3": evidence.ContentSHA256}, false},
+		{"same text from a different row", map[string]Message{"message:8": source}, true},
+		{"different digest for same row", map[string]Message{"message:1": {ContentSHA256: handoffContentSHA256("another source")}}, true},
+		{"matching verified row", map[string]Message{"message:1": source, "message:3": evidence}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			view := section.WithReplayedOperators(tc.replayed).Content

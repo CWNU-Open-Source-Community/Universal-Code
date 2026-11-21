@@ -68,6 +68,10 @@ func String(value string) string {
 }
 
 func Text(value string) Result {
+	return textResult(value, false)
+}
+
+func textResult(value string, preserveQuotedPlaceholders bool) Result {
 	out := value
 	counts := map[string]int{}
 	order := make([]string, 0, len(defaultRules))
@@ -80,7 +84,11 @@ func Text(value string) Result {
 			order = append(order, rule.label)
 		}
 		counts[rule.label] += len(matches)
-		out = rule.pattern.ReplaceAllString(out, rule.replacement)
+		if preserveQuotedPlaceholders && rule.label == "assigned-secret" {
+			out = replaceQuotedAssignments(rule, out)
+		} else {
+			out = rule.pattern.ReplaceAllString(out, rule.replacement)
+		}
 	}
 	findings := make([]Finding, 0, len(order))
 	for _, label := range order {

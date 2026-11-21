@@ -46,7 +46,7 @@ func TestCompactionReplaysOriginalUserMessagesBeforeSummary(t *testing.T) {
 	const current = "Continue testing."
 	messages, layout := supervisorMessagesWithLayout([]session.Message{session.NewMessage("session", "assistant", tail)},
 		current, memory, skills.ContextAssembly{}, skills.ExternalContextAssembly{}, domain.RunModeSnapshot{}, true)
-	request, _, _, err := fitRecentOperatorRequest(llm.ChatRequest{Messages: messages}, layout, memory, 100000, sections)
+	request, _, _, err := fitRecentOperatorRequest(llm.ChatRequest{Messages: messages}, layout, memory, 100000, sections, 100000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestCompactedOriginalsUseSpareWindowWithoutDisplacingCurrentWork(t *testing
 				t.Fatal(err)
 			}
 			messages, layout := supervisorMessagesWithLayout(nil, "What is the public callback?", selection, skills.ContextAssembly{}, skills.ExternalContextAssembly{}, domain.RunModeSnapshot{}, true)
-			fitted, _, _, err := fitRecentOperatorRequest(llm.ChatRequest{Messages: messages}, layout, selection, 100000, originals)
+			fitted, _, _, err := fitRecentOperatorRequest(llm.ChatRequest{Messages: messages}, layout, selection, 100000, originals, 100000)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -267,7 +267,7 @@ func TestRecentOperatorRequestFitsActualCapacityWithoutChangingPinsOrHistory(t *
 		{"mandatory overflow remains", withoutCost - 1, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			fitted, nextLayout, selected, err := fitRecentOperatorRequest(request, layout, memory, tc.limit, originals)
+			fitted, nextLayout, selected, err := fitRecentOperatorRequest(request, layout, memory, tc.limit, originals, tc.limit)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -291,6 +291,76 @@ func TestRecentOperatorRequestFitsActualCapacityWithoutChangingPinsOrHistory(t *
 			if !reflect.DeepEqual(request.Messages, originalMessages) || !reflect.DeepEqual(request.Metadata, originalMetadata) || !reflect.DeepEqual(memory.Sections, originalSections) ||
 				!reflect.DeepEqual(memory.IncludedSources, originalSources) {
 				t.Fatal("per-request fitting mutated the base request or selection")
+			}
+		})
+	}
+}
+
+func TestOperatorExcerptUsesSpareWindowAndKeepsItsOriginalReadback(t *testing.T) {
+	long := session.NewMessage("s", "user", "temporary")
+	long.ID = 3
+	long.Content = "HEAD password=example-credential\n" + strings.Repeat("资料", 2100) + "\nEND correction."
+	long.Provenance.ContentSHA256 = session.ContentSHA256(long.Content)
+	earlier := session.NewMessage("s", "user", "Keep the earlier requirement.")
+	earlier.ID = 1
+	sources, err := loadRecentOperatorContext(t.Context(), recentOperatorFixture{long, earlier}, "run", 1000)
+	if err != nil || len(sources) != 2 || sources[0].Kind != recentOperatorReference {
+		t.Fatalf("expected a long source with a stored readback: %v", err)
+	}
+	const work = "Existing work and notes stay in context."
+	sections := append(slices.Clone(sources), contextmgr.Section{Kind: "work_board", SourceID: "active", Content: work, Priority: 900})
+	memory, err := selectSupervisorContextSections(sections, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, layout := supervisorMessagesWithLayout(nil, "Next question", memory, skills.ContextAssembly{}, skills.ExternalContextAssembly{}, domain.RunModeSnapshot{}, true)
+	base := llm.ChatRequest{Messages: messages}
+	initial := estimateModelRequestTokens(base)
+	for _, tc := range []struct {
+		name                       string
+		modelSpare, runSpare       int
+		noMemorySpare, wantExcerpt bool
+	}{
+		{"only reference fits", 0, 500, false, false},
+		{"Run input allocation full", 500, 0, false, false},
+		{"memory allocation full", 500, 500, true, false},
+		{"bounded excerpt", 80, 500, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			selected := memory
+			if tc.noMemorySpare {
+				selected.TokenBudget = selected.EstimatedTokens
+			}
+			request, final, audit, err := fitRecentOperatorRequest(base, layout, selected, initial+tc.modelSpare, sources, initial+tc.runSpare)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows := request.Messages[final.recentOperatorStart : final.recentOperatorStart+final.recentOperatorCount]
+			if len(rows) != 2 || rows[0].Role != "user" || rows[0].Content != earlier.Content ||
+				!slices.ContainsFunc(request.Messages, func(m llm.Message) bool { return m.Content == work }) {
+				t.Fatal("the optional excerpt displaced earlier operator text or current work")
+			}
+			message := rows[1]
+			if !strings.Contains(message.Content, "message:3") || !strings.Contains(message.Content, long.Provenance.ContentSHA256) ||
+				strings.Contains(message.Content, "example-credential") || (message.Role == "user") != tc.wantExcerpt {
+				t.Fatal("the excerpt or reference lost its role, redaction or stored identity")
+			}
+			kind := recentOperatorReference
+			if tc.wantExcerpt {
+				kind = recentOperatorExcerpt
+				if !strings.Contains(message.Content, "HEAD") || !strings.HasSuffix(message.Content, "END correction.") || !strings.Contains(message.Content, "middle omitted") {
+					t.Fatal("the marked excerpt did not fit both ends")
+				}
+				retry, next, _, err := fitRecentOperatorRequest(request, final, audit, initial, sources, initial)
+				if err != nil || retry.Messages[next.recentOperatorStart+1].Content != sources[0].Content {
+					t.Fatalf("narrower retry lost the original reference: %v", err)
+				}
+			} else if message.Role != "system" || message.Content != sources[0].Content {
+				t.Fatal("an exhausted allocation changed the reference")
+			}
+			if !containsContextSource(audit.IncludedSources, kind, "message:3") || supervisorModelContextAudit(audit).Validate() != nil ||
+				estimateModelRequestTokens(request) > initial+min(tc.modelSpare, tc.runSpare) || request.Metadata["memory_tokens"] != strconv.Itoa(audit.EstimatedTokens) {
+				t.Fatal("the delivered source or token count differs from the request audit")
 			}
 		})
 	}

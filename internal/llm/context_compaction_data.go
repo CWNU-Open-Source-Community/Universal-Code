@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"unicode/utf8"
+
+	"cyberagent-workbench/internal/redact"
 )
 
-const maxContextCompactionDataBytes = 4 * 1024 * 1024
+const maxContextCompactionDataBytes = redact.MaxModelDataBytes
 
 // ContextCompactionDataMessage builds an inert user data message. Every string
 // leaf (including JSON stored inside summary/continuity Content strings) is
@@ -31,8 +33,7 @@ func ContextCompactionDataMessage(raw json.RawMessage) (Message, error) {
 	if _, ok := value.(map[string]any); !ok {
 		return Message{}, errors.New("compaction data must be a JSON object")
 	}
-	nodes := 0
-	safe, err := redactModelJSONValueMode(value, 0, &nodes, true)
+	safe, err := redact.ModelJSONValue(value, true)
 	if err != nil {
 		return Message{}, err
 	}

@@ -161,25 +161,37 @@ func ValidateStoredMessage(message Message) error {
 	return nil
 }
 
-// VerifiedOperatorOriginal identifies a sealed operator row eligible for
-// independent replay after compaction.
-func VerifiedOperatorOriginal(message Message) (bool, error) {
+// ProjectCompactedOperator verifies an original before replay and protects its
+// complete text before request fitting can turn it into a head/tail excerpt.
+func ProjectCompactedOperator(message Message) (contextmgr.Message, bool, error) {
 	if err := ValidateStoredMessage(message); err != nil {
-		return false, err
+		return contextmgr.Message{}, false, err
 	}
 	if message.Role != "user" || message.Provenance.Version != ContextProvenanceVersion ||
 		message.Provenance.SourceKind != SourceOperatorMessage || !message.Provenance.InstructionAuthorized {
-		return false, nil
+		return contextmgr.Message{}, false, nil
 	}
 	if message.ID <= 0 {
-		return false, apperror.New(apperror.CodeFailedPrecondition, "stored operator message lacks a history identity")
+		return contextmgr.Message{}, false, apperror.New(apperror.CodeFailedPrecondition, "stored operator message lacks a history identity")
 	}
-	return true, nil
+	content, err := redact.ModelHistoryText(message.Content)
+	if err != nil {
+		return contextmgr.Message{}, false, err
+	}
+	return projectStoredContent(message, message.Provenance, content), true, nil
 }
 
 func ContentSHA256(content string) string {
 	sum := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(sum[:])
+}
+
+func projectStoredContent(message Message, provenance ContextProvenance, content string) contextmgr.Message {
+	return contextmgr.Message{
+		Role: message.Role, Content: content, CreatedAt: message.CreatedAt, SourceMessageID: message.ID,
+		SourceKind: provenance.SourceKind, SourceRef: provenance.SourceRef,
+		ContentSHA256: provenance.ContentSHA256, InstructionAuthorized: provenance.InstructionAuthorized,
+	}
 }
 
 // ProjectContextMessage preserves trusted conversational roles and wraps every evidence source as data.
@@ -195,16 +207,7 @@ func ProjectContextMessage(message Message) contextmgr.Message {
 	if provenance.ContentSHA256 == "" {
 		provenance.ContentSHA256 = ContentSHA256(redact.String(message.Content))
 	}
-	projected := contextmgr.Message{
-		Role:                  message.Role,
-		Content:               redact.String(message.Content),
-		CreatedAt:             message.CreatedAt,
-		SourceMessageID:       message.ID,
-		SourceKind:            provenance.SourceKind,
-		SourceRef:             provenance.SourceRef,
-		ContentSHA256:         provenance.ContentSHA256,
-		InstructionAuthorized: provenance.InstructionAuthorized,
-	}
+	projected := projectStoredContent(message, provenance, redact.String(message.Content))
 	if provenance.SourceKind == SourceOperatorMessage || provenance.SourceKind == SourceModelResponse ||
 		provenance.SourceKind == SourceGoControl {
 		return projected

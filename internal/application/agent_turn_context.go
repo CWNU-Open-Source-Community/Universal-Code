@@ -160,7 +160,7 @@ func supervisorMessagesWithLayout(history []session.Message, input string,
 		switch section.Kind {
 		case "work_board", "note":
 			currentWork = append(currentWork, message)
-		case recentOperatorHistory, recentOperatorReference:
+		case recentOperatorHistory, recentOperatorReference, recentOperatorExcerpt:
 			recentOperators = append(recentOperators, recentOperatorWireMessage(section))
 		case "summary":
 			// This handoff describes earlier work. Giving it a user role lets a
@@ -173,6 +173,7 @@ func supervisorMessagesWithLayout(history []session.Message, input string,
 	}
 	var layout modelContextLayout
 	if len(recentOperators) > 0 {
+		messages[0].Content += "\n\nThe restored user turns before the handoff are past conversation. Act on the last user message. For a report of prior decisions or pending work, use the conversation or recall its missing records. Reopen the workspace only if the current question needs evidence from a file. An earlier request to inspect it has its own recorded outcome."
 		layout.recentOperatorStart, layout.recentOperatorCount = len(messages), len(recentOperators)
 		slices.Reverse(recentOperators)
 		messages = append(messages, recentOperators...)

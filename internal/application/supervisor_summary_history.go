@@ -17,19 +17,19 @@ type summaryHistoryBlock struct {
 }
 
 type summaryModelInput struct {
-	TaskID         string                           `json:"task_id"`
-	WorkspaceID    string                           `json:"workspace_id"`
-	SourceSHA256   string                           `json:"source_sha256"`
-	MaxOutputChars int                              `json:"max_output_chars"`
-	Focus          string                           `json:"optional_summary_focus,omitempty"`
-	Omitted        int                              `json:"input_messages_omitted"`
-	Timeline       []summaryHistoryBlock            `json:"timeline"`
-	Chronology     []contextmgr.OperatorRestatement `json:"verified_operator_chronology,omitempty"`
+	TaskID         string                          `json:"task_id"`
+	WorkspaceID    string                          `json:"workspace_id"`
+	SourceSHA256   string                          `json:"source_sha256"`
+	MaxOutputChars int                             `json:"max_output_chars"`
+	Focus          string                          `json:"optional_summary_focus,omitempty"`
+	Omitted        int                             `json:"input_messages_omitted"`
+	Timeline       []summaryHistoryBlock           `json:"timeline"`
+	Chronology     *contextmgr.OperatorRestatement `json:"verified_operator_chronology,omitempty"`
 }
 
 const quotedSubmissionGuidance = `
 
-For the subject of verified_operator_chronology, report what the user wrote. Start the summary string with the later listed submission's source_id and its exact text, including punctuation. It is a separate user submission after the intervening message. If a still later user message in the timeline changes that subject, give its source_id and exact words next. Let the quotations stand on their own. Omit any paraphrase, conclusion or proposed action on that subject. Use the remaining space for independent user constraints, observed progress, attributed tool evidence, and still-pending work. Preserve any restriction on carrying it out.`
+The client retains verified_operator_chronology and its original user text separately. Leave that submission and its ordering to the source record. Use the summary for other requirements, subsequent changes, observed work and remaining tasks. Attribute statements about an older document to that document. A tool call completed in the history is already done.`
 
 // ContextCompactionDataMessage re-encodes object keys during redaction.
 // The array keeps the original goal and older handoff before newer source turns.
@@ -44,7 +44,7 @@ func addSummaryHistory(request *llm.ChatRequest, window llm.ContextWindow, runIn
 		if err != nil {
 			return err
 		}
-		payload.Timeline = append(payload.Timeline, summaryHistoryBlock{PreviousHandoff: prior.Content})
+		payload.Timeline = append(payload.Timeline, summaryHistoryBlock{PreviousHandoff: prior.ForNextSummary()})
 	}
 	payload.Timeline = append(payload.Timeline, summaryHistoryBlock{Messages: input.Messages})
 	render := func() (llm.Message, error) {
@@ -67,7 +67,7 @@ func addSummaryHistory(request *llm.ChatRequest, window llm.ContextWindow, runIn
 		if err != nil {
 			return err
 		}
-		payload.Chronology = []contextmgr.OperatorRestatement{*fact}
+		payload.Chronology = fact
 		annotated, err := render()
 		// A citation at the JSON byte or node bound can also be left out.
 		// Rendering the original payload below still reports errors in source data.
@@ -75,7 +75,7 @@ func addSummaryHistory(request *llm.ChatRequest, window llm.ContextWindow, runIn
 			base := request.Messages[0].Content
 			request.Messages[0].Content = base + quotedSubmissionGuidance
 			available := min(int64(limit), runInputLimit) - int64(estimateModelRequestTokens(*request))
-			if int64(estimateModelMessageTokens(annotated)) <= available {
+			if int64(estimateModelMessageTokens(annotated)) <= available && exactSummaryQuotation(annotated, *fact) {
 				data = annotated
 			} else {
 				request.Messages[0].Content = base
@@ -92,4 +92,14 @@ func addSummaryHistory(request *llm.ChatRequest, window llm.ContextWindow, runIn
 	request.Messages = slices.Insert(request.Messages, 1, data)
 	request.Metadata["input_fingerprint"] = session.ContentSHA256(data.Content)
 	return nil
+}
+
+// Nested JSON strings can change during provider redaction even after the
+// original row passed plain-text redaction. Only label unchanged words as exact.
+func exactSummaryQuotation(data llm.Message, expected contextmgr.OperatorRestatement) bool {
+	var delivered struct {
+		Chronology *contextmgr.OperatorRestatement `json:"verified_operator_chronology"`
+	}
+	return json.Unmarshal([]byte(data.Content), &delivered) == nil &&
+		delivered.Chronology != nil && *delivered.Chronology == expected
 }

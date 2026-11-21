@@ -84,17 +84,21 @@ func TestSummaryGenerationPlacesNewerUserReversalAfterPreviousHandoff(t *testing
 			data := request.Messages[1].Content
 			var payload summaryModelInput
 			if err := json.Unmarshal([]byte(data), &payload); err != nil || len(payload.Timeline) != 3 ||
-				payload.Timeline[0].OriginalGoal != goal || !strings.Contains(payload.Timeline[1].PreviousHandoff, stale) ||
+				payload.Timeline[0].OriginalGoal != goal || strings.Contains(payload.Timeline[1].PreviousHandoff, stale) ||
+				!strings.Contains(payload.Timeline[1].PreviousHandoff, "Recorded the private entry point.") ||
 				!slices.Equal(payload.Timeline[2].Messages, input.Messages) {
 				t.Fatal("timeline lost a source identity, user authority, or original tool observation")
 			}
+			quote := contextmgr.OperatorRestatement{EarlierIdenticalSource: "message:1", InterveningSource: "message:3", SourceID: "message:5", Text: a}
 			if !strings.Contains(payload.Timeline[1].PreviousHandoff, constraint) || !strings.Contains(data, first.Summary.ContentSHA256) ||
-				len(payload.Chronology) != 1 || payload.Chronology[0].EarlierIdenticalSource != "message:1" ||
-				payload.Chronology[0].Submissions != [2]contextmgr.OperatorSubmission{{SourceID: "message:3", Text: b}, {SourceID: "message:5", Text: a}} {
+				payload.Chronology == nil || *payload.Chronology != quote {
 				t.Fatal("the source chronology must distinguish the later submission from the earlier identical source")
 			}
 			if !strings.Contains(request.Messages[0].Content, "verified_operator_chronology") {
 				t.Fatal("the summary writer has no guidance for the delivered source chronology")
+			}
+			if !strings.Contains(payload.Timeline[1].PreviousHandoff, b) || strings.Count(data, b) != 1 {
+				t.Fatal("the citation repeated an intervening user's words outside the historical source")
 			}
 			// With room only for the actual inputs, drop the optional citation.
 			request.Messages = slices.Delete(slices.Clone(request.Messages), 1, 2)
@@ -113,7 +117,7 @@ func TestSummaryGenerationPlacesNewerUserReversalAfterPreviousHandoff(t *testing
 				t.Fatal(err)
 			}
 			var narrow summaryModelInput
-			if err := json.Unmarshal([]byte(request.Messages[1].Content), &narrow); err != nil || len(narrow.Chronology) != 0 ||
+			if err := json.Unmarshal([]byte(request.Messages[1].Content), &narrow); err != nil || narrow.Chronology != nil ||
 				len(narrow.Timeline) != 3 || !slices.Equal(narrow.Timeline[2].Messages, input.Messages) || narrow.Timeline[1].PreviousHandoff != payload.Timeline[1].PreviousHandoff ||
 				int64(estimateModelRequestTokens(request)) != sourceBudget {
 				t.Fatal("a tight budget displaced source history to keep an optional chronology")
@@ -147,6 +151,7 @@ func TestSummaryGenerationPlacesNewerUserReversalAfterPreviousHandoff(t *testing
 			}
 			var nextInput summaryModelInput
 			if err := json.Unmarshal([]byte(next.Messages[1].Content), &nextInput); err != nil || len(nextInput.Timeline) != 3 ||
+				nextInput.Chronology == nil || *nextInput.Chronology != quote ||
 				!slices.Equal(nextInput.Timeline[2].Messages, more.Messages) || next.Metadata["input_fingerprint"] != session.ContentSHA256(next.Messages[1].Content) ||
 				next.Metadata["input_fingerprint"] == request.Metadata["input_fingerprint"] {
 				t.Fatal("the historical quotation displaced a subsequent new user decision or reused the previous input receipt")
@@ -196,7 +201,7 @@ func TestSummaryChronologyOnlyQuotesVerbatimProviderText(t *testing.T) {
 	}
 	last := payload.Timeline[len(payload.Timeline)-1].Messages[2]
 	if !strings.Contains(last.Content, "[REDACTED") || last.ContentSHA256 != session.ContentSHA256(original) ||
-		len(payload.Chronology) != 0 || strings.Contains(req.Messages[0].Content, "verified_operator_chronology") {
+		payload.Chronology != nil || strings.Contains(req.Messages[0].Content, "verified_operator_chronology") {
 		t.Fatal("a redacted projection was described as an exact original user quotation")
 	}
 }

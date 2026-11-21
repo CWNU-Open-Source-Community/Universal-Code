@@ -20,10 +20,11 @@ type recentOperatorContextStore interface {
 const (
 	recentOperatorHistory   = "recent_operator_history"
 	recentOperatorReference = "recent_operator_reference"
+	recentOperatorExcerpt   = "recent_operator_excerpt"
 )
 
 func isRecentOperatorSection(kind string) bool {
-	return kind == recentOperatorHistory || kind == recentOperatorReference
+	return kind == recentOperatorHistory || kind == recentOperatorReference || kind == recentOperatorExcerpt
 }
 
 func operatorReadback(section contextmgr.Section) contextmgr.Section {
@@ -55,16 +56,16 @@ func loadRecentOperatorContext(ctx context.Context, store any, runID string, mem
 	remaining := min(session.MaxRecentOperatorTokens, memoryBudget)
 	var sections []contextmgr.Section
 	for _, message := range messages {
-		user, err := session.VerifiedOperatorOriginal(message)
+		projected, user, err := session.ProjectCompactedOperator(message)
 		if err != nil {
 			return nil, err
 		}
 		if !user {
 			continue
 		}
-		projected := session.ProjectContextMessage(message)
 		section := contextmgr.Section{Kind: recentOperatorHistory, SourceID: fmt.Sprintf("message:%d", message.ID),
 			Content: projected.Content, SourceContentSHA256: message.Provenance.ContentSHA256, Priority: 950}
+		section = section.WithOperatorExcerptSource(projected)
 		cost := estimateModelMessageTokens(recentOperatorWireMessage(section))
 		if len(section.Content) > contextmgr.MaxContextSectionBytes || cost > remaining {
 			section = operatorReadback(section)
@@ -136,7 +137,7 @@ func fitRecentOperatorContext(sections []contextmgr.Section, budget int) ([]cont
 
 // Use the Go-owned positions and source IDs to fit verified originals after all
 // tools, current input, output reserve and recovery limits are known.
-func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout, memory contextmgr.Selection, inputLimit int, originals []contextmgr.Section) (llm.ChatRequest, modelContextLayout, contextmgr.Selection, error) {
+func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout, memory contextmgr.Selection, inputLimit int, originals []contextmgr.Section, runInputLimit int) (llm.ChatRequest, modelContextLayout, contextmgr.Selection, error) {
 	if layout.recentOperatorCount == 0 {
 		return request, layout, memory, nil
 	}
@@ -167,8 +168,9 @@ func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout
 		}
 	}
 	selected := contextmgr.Selection{TokenBudget: memory.TokenBudget, OmittedSources: slices.Clone(memory.OmittedSources)}
-	replayed := make(map[string]string, layout.recentOperatorCount)
+	replayed := make(map[string]contextmgr.Message, layout.recentOperatorCount)
 	var retained []llm.Message
+	hasReference := false
 	position := end
 	for i, section := range memory.Sections {
 		source := memory.IncludedSources[i]
@@ -183,6 +185,11 @@ func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout
 			if actual.Role != expected.Role || actual.Content != expected.Content || actual.Replay != nil ||
 				len(actual.Images)+len(actual.ToolCalls)+len(actual.ToolResults) != 0 {
 				return invalid()
+			}
+			if section.Kind == recentOperatorExcerpt {
+				// Refit a partial delivery from its readback reference on a retry.
+				// Its source may be restored only after fitting the whole user turns.
+				section = operatorReadback(section)
 			}
 			if original.Kind == recentOperatorHistory && section.Kind == recentOperatorReference {
 				original = operatorReadback(original)
@@ -210,7 +217,9 @@ func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout
 			source.Kind, source.Tokens = section.Kind, contentTokens
 			retained = append(retained, message)
 			if section.Kind == recentOperatorHistory {
-				replayed[section.SourceID] = section.SourceContentSHA256
+				replayed[section.SourceID] = section.ReplayedOperatorMessage()
+			} else {
+				hasReference = true
 			}
 		}
 		selected.Sections = append(selected.Sections, section)
@@ -242,6 +251,11 @@ func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout
 	request.Messages = slices.Replace(request.Messages, start, end, retained...)
 	layout.HistoryStart += len(retained) - layout.recentOperatorCount
 	layout.recentOperatorCount = len(retained)
+	if hasReference {
+		if err := fitRecentOperatorExcerpt(&request, layout, &selected, inputLimit, runInputLimit); err != nil {
+			return request, layout, memory, err
+		}
+	}
 	request.Metadata = maps.Clone(request.Metadata)
 	if request.Metadata == nil {
 		request.Metadata = make(map[string]string)
@@ -250,4 +264,62 @@ func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout
 	request.Metadata["memory_omitted"] = strconv.Itoa(len(selected.OmittedSources))
 	request.Metadata["memory_tokens"] = strconv.Itoa(selected.EstimatedTokens)
 	return request, layout, selected, nil
+}
+
+// All complete turns and selected workspace records already have their places.
+// Spend only spare capacity on the newest missing head/tail excerpt.
+func fitRecentOperatorExcerpt(request *llm.ChatRequest, layout modelContextLayout, selected *contextmgr.Selection, inputLimit, runInputLimit int) error {
+	memorySpare := selected.TokenBudget - selected.EstimatedTokens
+	if memorySpare <= 0 {
+		return nil
+	}
+	if layout.HistoryCount > 1 {
+		// An optional excerpt must not itself trigger another compaction.
+		inputLimit = contextmgr.AutoCompactInputThreshold(inputLimit) - 1
+	}
+	inputLimit = min(inputLimit, runInputLimit)
+	start := layout.recentOperatorStart
+	end := start + layout.recentOperatorCount
+	operatorSpare := session.MaxRecentOperatorTokens
+	for _, message := range request.Messages[start:end] {
+		operatorSpare -= estimateModelMessageTokens(message)
+	}
+	wireSpare := min(inputLimit-estimateModelRequestTokens(*request), operatorSpare)
+	if wireSpare <= 0 {
+		return nil
+	}
+	var handoff contextmgr.Section
+	for _, section := range selected.Sections {
+		if section.Kind == "summary" {
+			handoff = section
+			break
+		}
+	}
+	position := end
+	for i, section := range selected.Sections {
+		if !isRecentOperatorSection(section.Kind) {
+			continue
+		}
+		position--
+		if section.Kind != recentOperatorReference {
+			continue
+		}
+		ref := &selected.IncludedSources[i]
+		limit := min(wireSpare+estimateModelMessageTokens(request.Messages[position]),
+			memorySpare+ref.Tokens+contextmgr.EstimateMessageTokens("user", ""))
+		excerpt, fits, err := section.FitStoredOperatorExcerpt(handoff, limit)
+		if err != nil {
+			return err
+		}
+		if fits {
+			section.Kind, section.Content = recentOperatorExcerpt, excerpt.Content
+			selected.Sections[i] = section
+			tokens := contextmgr.EstimateTokens(excerpt.Content)
+			selected.EstimatedTokens += tokens - ref.Tokens
+			ref.Kind, ref.Tokens = section.Kind, tokens
+			request.Messages[position] = recentOperatorWireMessage(section)
+			break
+		}
+	}
+	return nil
 }

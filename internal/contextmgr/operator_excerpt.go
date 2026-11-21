@@ -10,6 +10,35 @@ import (
 // storage. The source digest identifies the complete stored text, including
 // when request-local redaction changes its bytes.
 func FitOperatorExcerpt(original Message, summary Summary, remaining int) (Message, bool, error) {
+	handoff, err := HandoffSection(summary)
+	if err != nil {
+		return Message{}, false, err
+	}
+	return fitOperatorExcerpt(original, handoff, remaining)
+}
+
+// WithOperatorExcerptSource retains just the redacted ends in case the whole
+// turn becomes a readback reference during request fitting.
+func (s Section) WithOperatorExcerptSource(original Message) Section {
+	original.Content = excerptHandoffContent(original.Content, MaxHandoffRecordChars)
+	s.operatorExcerpt = &original
+	return s
+}
+
+// FitStoredOperatorExcerpt uses the original identity and the handoff actually
+// selected for this request. Sections without a verified source stay references.
+func (s Section) FitStoredOperatorExcerpt(handoff Section, remaining int) (Message, bool, error) {
+	if s.operatorExcerpt == nil {
+		return Message{}, false, nil
+	}
+	source := *s.operatorExcerpt
+	if s.SourceID != fmt.Sprintf("message:%d", source.SourceMessageID) || s.SourceContentSHA256 != source.ContentSHA256 {
+		return Message{}, false, errors.New("operator excerpt does not match its selected source")
+	}
+	return fitOperatorExcerpt(source, handoff, remaining)
+}
+
+func fitOperatorExcerpt(original Message, handoff Section, remaining int) (Message, bool, error) {
 	if original.Role != "user" || original.SourceKind != "operator_message" || !original.InstructionAuthorized ||
 		original.SourceMessageID <= 0 || !validHandoffDigest(original.ContentSHA256) {
 		return Message{}, false, errors.New("operator excerpt lacks a verified user source")
@@ -17,10 +46,6 @@ func FitOperatorExcerpt(original Message, summary Summary, remaining int) (Messa
 	header := fmt.Sprintf("Earlier user message excerpt (message:%d, SHA-256 %s).\n", original.SourceMessageID, original.ContentSHA256)
 	if EstimateMessageTokens(original.Role, header) >= remaining {
 		return Message{}, false, nil
-	}
-	handoff, err := HandoffSection(summary)
-	if err != nil {
-		return Message{}, false, err
 	}
 	if handoff.handoff != nil {
 		for _, record := range handoff.handoff.records {

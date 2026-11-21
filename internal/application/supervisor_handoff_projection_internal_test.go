@@ -52,7 +52,8 @@ func TestHandoffKeepsLaterCorrectionWhenOnlyItsReferenceFits(t *testing.T) {
 		{"no replay", 0, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, final, selected, err := fitRecentOperatorRequest(req, layout, memory, without+tc.available, originals)
+			limit := without + tc.available
+			got, final, selected, err := fitRecentOperatorRequest(req, layout, memory, limit, originals, limit)
 			if err != nil {
 				t.Fatal(err)
 			}

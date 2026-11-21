@@ -412,15 +412,29 @@ func handoffContinuationOnly(content string) bool {
 }
 
 const handoffExcerptMarker = "\n[... bounded excerpt: middle omitted ...]\n"
+const shortHandoffExcerptMarker = "\n[... middle omitted ...]\n"
+const structuredHandoffReadback = "Structured excerpt omitted. Read the original record."
 
 func excerptHandoffContent(content string, maxRunes int) string {
 	content = strings.TrimSpace(content)
 	if utf8.RuneCountInString(content) <= maxRunes {
 		return content
 	}
+	// JSON must be protected while its complete structure is still available.
+	// Mark the resulting fragment as prose before removing its middle.
+	if (strings.HasPrefix(content, "{") || strings.HasPrefix(content, "[")) && json.Valid([]byte(content)) {
+		protected, err := redact.ModelHistoryText(content)
+		if err != nil {
+			return trimRunes(structuredHandoffReadback, maxRunes)
+		}
+		if utf8.RuneCountInString(protected) <= maxRunes {
+			return protected
+		}
+		content = "JSON excerpt:\n" + protected
+	}
 	marker := handoffExcerptMarker
 	if maxRunes < 96 {
-		marker = "\n[... middle omitted ...]\n"
+		marker = shortHandoffExcerptMarker
 	}
 	markerRunes := utf8.RuneCountInString(marker)
 	if maxRunes <= markerRunes+2 {
