@@ -25,6 +25,7 @@ type Section struct {
 	Priority            int
 	Required            bool `json:",omitempty"`
 	Excluded            bool `json:",omitempty"`
+	handoff             *modelHandoff
 }
 
 type Source struct {
@@ -60,7 +61,13 @@ func SelectSections(sections []Section, maxTokens int) (Selection, error) {
 	for index, section := range sections {
 		section.Kind = strings.TrimSpace(section.Kind)
 		section.SourceID = strings.TrimSpace(section.SourceID)
-		section.Content = strings.TrimSpace(redact.String(section.Content))
+		if section.handoff == nil {
+			section.Content = strings.TrimSpace(redact.String(section.Content))
+		} else {
+			// The handoff masks each source separately and preserves the bound
+			// model text. Applying a text regex across entries can join sources.
+			section = section.WithReplayedOperators(nil)
+		}
 		if section.Kind == "" || section.SourceID == "" {
 			return Selection{}, errors.New("context section kind and source id are required")
 		}

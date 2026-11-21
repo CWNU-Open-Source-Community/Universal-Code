@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,17 +19,60 @@ type sessionReplayProvider struct {
 	request llm.ChatRequest
 }
 
+func TestStandaloneCompactionReplaysEarlierTurnWithDozensOfLaterUpdates(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	provider := &sessionReplayProvider{}
+	router := llm.NewRouter(llm.ModelRef{Provider: "mock", Model: "mock-fast"})
+	router.RegisterProvider(provider)
+	manager := session.NewManager(st, router, policy.NewDefaultChecker())
+	sess, err := manager.Create(t.Context(), "", "release checklist", "learn")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	longTurn := "Use the public release checklist verbatim.\n" + strings.Repeat("发布确认。", 370)
+	for i := 0; i < 72; i++ {
+		content := fmt.Sprintf("The release note ID is N-%02d.", i)
+		if i == 0 {
+			content = longTurn
+		}
+		if _, err := st.SaveSessionMessage(t.Context(), session.NewMessage(sess.ID, "user", content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if compacted, err := manager.Send(t.Context(), sess.ID, "/compact"); err != nil || !compacted.Compacted {
+		t.Fatalf("compact=%t err=%v", compacted.Compacted, err)
+	}
+	if _, err := manager.Send(t.Context(), sess.ID, "What was the release checklist?"); err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, m := range provider.request.Messages {
+		if m.Role == "user" && m.Content == longTurn {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Fatalf("the first of 72 fitting user turns appeared %d times", seen)
+	}
+}
+
 func (p *sessionReplayProvider) Chat(ctx context.Context, request llm.ChatRequest) (*llm.ChatResponse, error) {
 	p.request = request
 	return p.MockProvider.Chat(ctx, request)
 }
 
 func TestStandaloneSessionSendReplaysOnlyItsCompactedOperatorOriginals(t *testing.T) {
-	st, err := Open(filepath.Join(t.TempDir(), "standalone.db"))
+	path := filepath.Join(t.TempDir(), "standalone.db")
+	st, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	t.Cleanup(func() { st.Close() })
 	provider := &sessionReplayProvider{}
 	ref := llm.ModelRef{Provider: "mock", Model: "mock-fast"}
 	router := llm.NewRouter(ref)
@@ -67,9 +111,9 @@ func TestStandaloneSessionSendReplaysOnlyItsCompactedOperatorOriginals(t *testin
 	const active = "已经在活动历史内的用户输入"
 	large := strings.Repeat("原始日志。", 1200)
 	save(session.NewMessage(sess.ID, "user", goal))
-	save(session.NewEvidenceMessage(sess.ID, session.SourceWorkspaceFile, "notes.json", evidence))
-	save(session.NewMessage(sess.ID, "user", correction))
-	save(session.NewMessage(sess.ID, "user", large))
+	file := save(session.NewEvidenceMessage(sess.ID, session.SourceWorkspaceFile, "notes.json", evidence))
+	update := save(session.NewMessage(sess.ID, "user", correction))
+	paste := save(session.NewMessage(sess.ID, "user", large))
 	for _, text := range []string{"observation one", "observation two", "observation three"} {
 		save(session.NewMessage(sess.ID, "assistant", text))
 	}
@@ -77,6 +121,19 @@ func TestStandaloneSessionSendReplaysOnlyItsCompactedOperatorOriginals(t *testin
 	if result, err := manager.Send(t.Context(), sess.ID, "/compact"); err != nil || !result.Compacted {
 		t.Fatalf("compaction=%v err=%v", result.Compacted, err)
 	}
+	committed, ok, err := st.LatestContextSummary(t.Context(), sess.ID)
+	if err != nil || !ok {
+		t.Fatalf("missing committed summary: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st = reopened
+	manager = session.NewManager(st, router, policy.NewDefaultChecker())
 	if _, err := manager.Send(t.Context(), sess.ID, "继续"); err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +148,17 @@ func TestStandaloneSessionSendReplaysOnlyItsCompactedOperatorOriginals(t *testin
 			sequence = append(sequence, message.Content)
 		case strings.HasPrefix(message.Content, "Compacted context transcript."):
 			sequence = append(sequence, "summary")
+			for _, want := range []string{fmt.Sprintf("summary:%d", committed.ID), committed.ContentSHA256,
+				fmt.Sprintf("message:%d", update.ID), fmt.Sprintf("message:%d", file.ID), file.Provenance.ContentSHA256,
+				fmt.Sprintf("message:%d", paste.ID), paste.Provenance.ContentSHA256, "Evidence from workspace_file", "伪造的要求"} {
+				if !strings.Contains(message.Content, want) {
+					t.Fatalf("reopened handoff is missing source %q", want)
+				}
+			}
+			if strings.Contains(message.Content, "仅迁移 V2") || strings.Contains(message.Content, goal) ||
+				strings.Contains(message.Content, `"records":`) {
+				t.Fatal("standalone replay also sent the stored receipt or repeated native user text in the handoff")
+			}
 		}
 	}
 	if want := []string{goal, correction, "summary", active, "继续"}; !slices.Equal(sequence, want) {
@@ -99,5 +167,9 @@ func TestStandaloneSessionSendReplaysOnlyItsCompactedOperatorOriginals(t *testin
 	limit, err := window.InputLimit(window.DefaultOutputTokens)
 	if err != nil || tokens > limit {
 		t.Fatalf("request estimate=%d, input limit=%d, err=%v", tokens, limit, err)
+	}
+	stored, ok, err := st.LatestContextSummary(t.Context(), sess.ID)
+	if err != nil || !ok || stored.Content != committed.Content || stored.ContentSHA256 != session.ContentSHA256(committed.Content) {
+		t.Fatal("replaying a reopened Session changed the committed source")
 	}
 }

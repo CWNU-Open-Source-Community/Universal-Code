@@ -13,6 +13,7 @@ import (
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/contextmgr"
+	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/redact"
 )
 
@@ -34,8 +35,9 @@ const (
 	SourceGoCommandResult = "go_command_result"
 
 	MaxContextSourceRefRunes  = 512
-	MaxRecentOperatorMessages = 64
-	MaxRecentOperatorTokens   = 4096
+	MaxRecentOperatorMessages = llm.MaxModelContextSources
+	// Match the Codex local compactor's lookback when the request has room.
+	MaxRecentOperatorTokens = 20_000
 )
 
 // UntrustedContextPolicy is the shared model boundary for repository and tool data.

@@ -40,7 +40,7 @@ func recentOperatorWireMessage(section contextmgr.Section) llm.Message {
 	return llm.Message{Role: role, Content: section.Content}
 }
 
-// openai/codex build_compacted_history_with_limit, 39c29c3bb620f91e84a3bb266bb496dfb697c101:
+// openai/codex build_compacted_history_with_limit, rust-v0.169.1 (c376cf7396ef):
 // select actual user turns newest first, then replay them chronologically before the summary.
 // The Go store keeps an exact readback reference for oversized text.
 func loadRecentOperatorContext(ctx context.Context, store any, runID string, memoryBudget int) ([]contextmgr.Section, error) {
@@ -52,7 +52,7 @@ func loadRecentOperatorContext(ctx context.Context, store any, runID string, mem
 	if err != nil {
 		return nil, err
 	}
-	remaining := min(session.MaxRecentOperatorTokens, memoryBudget/3)
+	remaining := min(session.MaxRecentOperatorTokens, memoryBudget)
 	var sections []contextmgr.Section
 	for _, message := range messages {
 		user, err := session.VerifiedOperatorOriginal(message)
@@ -80,19 +80,32 @@ func loadRecentOperatorContext(ctx context.Context, store any, runID string, mem
 }
 
 // Reserve required sources before allocating the chronological suffix of originals.
-func fitRecentOperatorContext(sections []contextmgr.Section, budget int) []contextmgr.Section {
+func fitRecentOperatorContext(sections []contextmgr.Section, budget int) ([]contextmgr.Section, []contextmgr.Source) {
 	remaining := budget
+	background := 0
 	slots := llm.MaxModelContextSources
 	for _, section := range sections {
-		if !isRecentOperatorSection(section.Kind) {
-			slots--
+		if isRecentOperatorSection(section.Kind) {
+			continue
 		}
-		if !section.Excluded && (section.Required || section.Kind == "project_instruction" || section.Kind == "task_goal" ||
-			section.Kind == "summary" || section.Kind == "continuity_context" || section.Kind == "agent_inbox") {
-			remaining -= contextmgr.EstimateTokens(section.Content)
+		slots--
+		if section.Excluded {
+			continue
+		}
+		tokens := contextmgr.EstimateTokens(section.Content)
+		if section.Required || section.Kind == "project_instruction" || section.Kind == "task_goal" ||
+			section.Kind == "summary" || section.Kind == "continuity_context" || section.Kind == "agent_inbox" {
+			remaining -= tokens
+		} else {
+			background += tokens
 		}
 	}
+	// Keep the previous allocation when current work and notes need the room.
+	// A thread with spare capacity can replay more of its original conversation.
+	reserved := min(4096, budget/3)
+	remaining = min(remaining, max(reserved, remaining-background))
 	fitted := make([]contextmgr.Section, 0, len(sections))
+	var omitted []contextmgr.Source
 	for _, section := range sections {
 		if !isRecentOperatorSection(section.Kind) {
 			fitted = append(fitted, section)
@@ -105,18 +118,20 @@ func fitRecentOperatorContext(sections []contextmgr.Section, budget int) []conte
 		}
 		slots--
 		cost := contextmgr.EstimateTokens(section.Content)
-		if cost <= remaining {
-			remaining -= cost
-		} else if section.Kind == recentOperatorHistory {
+		if cost > remaining && section.Kind == recentOperatorHistory {
 			ref := operatorReadback(section)
 			if refCost := contextmgr.EstimateTokens(ref.Content); refCost <= remaining {
-				section = ref
-				remaining -= refCost
+				section, cost = ref, refCost
 			}
 		}
+		if cost > remaining {
+			omitted = append(omitted, contextmgr.Source{Kind: section.Kind, SourceID: section.SourceID, Tokens: cost, OmissionReason: "budget"})
+			continue
+		}
+		remaining -= cost
 		fitted = append(fitted, section)
 	}
-	return fitted
+	return fitted, omitted
 }
 
 // Use the Go-owned positions and source IDs to fit verified originals after all
@@ -152,6 +167,7 @@ func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout
 		}
 	}
 	selected := contextmgr.Selection{TokenBudget: memory.TokenBudget, OmittedSources: slices.Clone(memory.OmittedSources)}
+	replayed := make(map[string]string, layout.recentOperatorCount)
 	var retained []llm.Message
 	position := end
 	for i, section := range memory.Sections {
@@ -193,6 +209,9 @@ func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout
 			memoryRemaining -= contentTokens
 			source.Kind, source.Tokens = section.Kind, contentTokens
 			retained = append(retained, message)
+			if section.Kind == recentOperatorHistory {
+				replayed[section.SourceID] = section.SourceContentSHA256
+			}
 		}
 		selected.Sections = append(selected.Sections, section)
 		selected.IncludedSources = append(selected.IncludedSources, source)
@@ -202,7 +221,25 @@ func fitRecentOperatorRequest(request llm.ChatRequest, layout modelContextLayout
 		return invalid()
 	}
 	slices.Reverse(retained)
-	request.Messages = slices.Replace(slices.Clone(request.Messages), start, end, retained...)
+	request.Messages = slices.Clone(request.Messages)
+	// Only originals that survived both budgets can replace their handoff excerpts.
+	// The complete view was reserved above, so reference-only sources keep theirs.
+	for i, section := range selected.Sections {
+		if section.Kind != "summary" {
+			continue
+		}
+		if end >= layout.HistoryStart || request.Messages[end].Role != "assistant" || request.Messages[end].Content != section.Content {
+			return invalid()
+		}
+		section = section.WithReplayedOperators(replayed)
+		request.Messages[end].Content = section.Content
+		selected.Sections[i] = section
+		source := &selected.IncludedSources[i]
+		tokens := contextmgr.EstimateTokens(section.Content)
+		selected.EstimatedTokens += tokens - source.Tokens
+		source.Tokens = tokens
+	}
+	request.Messages = slices.Replace(request.Messages, start, end, retained...)
 	layout.HistoryStart += len(retained) - layout.recentOperatorCount
 	layout.recentOperatorCount = len(retained)
 	request.Metadata = maps.Clone(request.Metadata)

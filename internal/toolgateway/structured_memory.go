@@ -125,7 +125,7 @@ type StructuredMemoryExecutor interface {
 var structuredMemoryDefinitions = []ToolDefinition{
 	{
 		Name: WorkItemCreateTool, Class: ClassRunMemory, Approval: ApprovalAutomatic,
-		Description: "Create one pending WorkItem in the current Run work board.",
+		Description: "Create one pending WorkItem on the current Run work board. For a status report or handoff, describe previously recorded tasks in the reply. Add an item during that turn only if the current request asks for a board entry.",
 		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["title"],"properties":{"title":{"type":"string","minLength":1,"maxLength":240},"description":{"type":"string","maxLength":8192},"priority":{"type":"string","enum":["low","normal","high","critical"]},"owner":{"type":"string","maxLength":128},"acceptance_criteria":{"type":"array","maxItems":32,"items":{"type":"string","minLength":1,"maxLength":8192}},"dependencies":{"type":"array","maxItems":64,"items":{"type":"string","pattern":"^work-[0-9]{14}(-[0-9a-f]{12})?$"}}}}`),
 	},
 	{

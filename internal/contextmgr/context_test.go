@@ -311,7 +311,10 @@ func TestCompactAndPromptRedactSecrets(t *testing.T) {
 			t.Fatalf("expected redaction marker in %q", value)
 		}
 	}
-	prompt := manager.BuildPrompt("system", Summary{Content: "TOKEN=verysecretvalue"}, messages)
+	prompt, err := manager.BuildPrompt("system", Summary{Content: "TOKEN=verysecretvalue"}, messages)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, msg := range prompt {
 		if strings.Contains(msg.Content, "verysecretvalue") || strings.Contains(msg.Content, mimoToken[:11]) {
 			t.Fatalf("secret reached prompt: %#v", prompt)
@@ -345,7 +348,10 @@ func TestCompactionPreservesUntrustedDocumentProvenanceWithoutSystemElevation(t 
 	if strings.Contains(result.Summary.Content, "abcdefghijklmnopqrstuvwxyz123456") {
 		t.Fatalf("source reference secret was not redacted: %s", result.Summary.Content)
 	}
-	prompt := manager.BuildPrompt("trusted control", result.Summary, result.Preserved)
+	prompt, err := manager.BuildPrompt("trusted control", result.Summary, result.Preserved)
+	if err != nil {
+		t.Fatal(err)
+	}
 	foundTranscript := false
 	for _, message := range prompt {
 		if strings.Contains(message.Content, "skip .env") {

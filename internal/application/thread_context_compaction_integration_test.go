@@ -2,8 +2,6 @@ package application_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -179,29 +177,17 @@ func TestThreadManualThenAutomaticCompactionKeepsRefundCorrectionInProviderReque
 		t.Fatalf("next provider request lost the refund correction from message %d; stale conclusion present = %t",
 			operator.SessionMessageID, strings.Contains(next, stale))
 	}
-	if !strings.Contains(next, summary.Content) {
-		t.Fatal("next provider request did not contain the committed summary")
+	sourceID := fmt.Sprintf("message:%d", operator.SessionMessageID)
+	if !strings.Contains(next, fmt.Sprintf("summary:%d", summary.ID)) || !strings.Contains(next, summary.ContentSHA256) || !strings.Contains(next, sourceID) {
+		t.Fatal("the delivered correction could not be traced to the committed summary and original user message")
 	}
-	var envelope struct {
-		Records []struct {
-			Role                  string
-			SourceMessageID       int64  `json:"source_message_id"`
-			SourceKind            string `json:"source_kind"`
-			SourceContentSHA256   string `json:"source_content_sha256"`
-			InstructionAuthorized bool   `json:"instruction_authorized"`
-			Content               string
-		}
+	original, err := st.ReadThreadHistory(t.Context(), run.ID, domain.HistoryReadRequest{
+		SourceID: sourceID, ExpectedSHA256: operator.ContentSHA256,
+	})
+	if err != nil || original.Content != correction || original.Record.ContentSHA256 != operator.ContentSHA256 || original.Record.SourceKind != session.SourceOperatorMessage ||
+		!original.Record.OriginalInstructionAuthorized || !original.Record.Compacted {
+		t.Fatalf("refund source %s lost its exact text or operator provenance: %+v %v", sourceID, original.Record, err)
 	}
-	if err := json.Unmarshal([]byte(summary.Content), &envelope); err != nil {
-		t.Fatal(err)
-	}
-	for _, record := range envelope.Records {
-		if record.SourceMessageID == operator.SessionMessageID && record.Role == "user" && record.SourceKind == session.SourceOperatorMessage &&
-			record.InstructionAuthorized && record.SourceContentSHA256 == operator.ContentSHA256 && record.Content == correction {
-			return
-		}
-	}
-	t.Fatalf("delivered summary lost the wording or operator provenance of message %d", operator.SessionMessageID)
 }
 
 func TestManualThreadCompactBusyDoesNotCancelBusinessTurn(t *testing.T) {
@@ -385,22 +371,20 @@ func TestManualThreadCompactRecoversOversizedSummaryInputWithExplicitCoverage(t 
 	calls, _ := p.splitRequests()
 	sent := calls[0].Request
 	var payload struct {
-		Goal    string                              `json:"original_goal"`
-		Focus   string                              `json:"optional_summary_focus,omitempty"`
-		History contextmgr.SummaryGenerationRequest `json:"history"`
-		Omitted int                                 `json:"input_messages_omitted"`
+		Timeline []struct {
+			Messages []contextmgr.Message `json:"messages"`
+		} `json:"timeline"`
+		Omitted int `json:"input_messages_omitted"`
 	}
 	if err := json.Unmarshal([]byte(sent.Messages[1].Content), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Omitted != result.InputMessagesOmitted || len(payload.History.Messages) != result.RemovedMessages-result.InputMessagesOmitted {
+	if payload.Omitted != result.InputMessagesOmitted || len(payload.Timeline) != 2 ||
+		len(payload.Timeline[1].Messages) != result.RemovedMessages-result.InputMessagesOmitted {
 		t.Fatalf("false input coverage: %+v result=%+v", payload, result)
 	}
-	actualFingerprint := payload.History.InputFingerprint
-	payload.History.InputFingerprint = ""
-	encoded, _ := json.Marshal(payload)
-	digest := sha256.Sum256(encoded)
-	if actualFingerprint != hex.EncodeToString(digest[:]) || result.InputFingerprint != actualFingerprint || sent.Metadata["input_fingerprint"] != actualFingerprint {
+	actualFingerprint := session.ContentSHA256(sent.Messages[1].Content)
+	if result.InputFingerprint != actualFingerprint || sent.Metadata["input_fingerprint"] != actualFingerprint {
 		t.Fatal("input fingerprint does not describe the actual selected payload")
 	}
 	estimate, _ := strconv.Atoi(sent.Metadata["context_input_estimate"])

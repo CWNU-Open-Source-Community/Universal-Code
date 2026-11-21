@@ -2,16 +2,15 @@ package application
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/contextmgr"
+	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/session"
 )
@@ -32,6 +31,27 @@ func (g *threadContextSummaryGenerator) prepareSummaryRequest(ctx context.Contex
 	if err != nil {
 		return llm.ChatRequest{}, modelContextPlan{}, "", 0, "", err
 	}
+	inherited, err := continuityContextSections(g.snapshot.Run.Config)
+	if err != nil {
+		return llm.ChatRequest{}, modelContextPlan{}, "", 0, "", err
+	}
+	runInputLimit := int64(math.MaxInt64)
+	if g.snapshot.Run.Budget.MaxTokens > 0 {
+		// The store rechecks the actual total before dispatch. Only spend
+		// spare Run tokens on a citation when the current usage is known.
+		runInputLimit = 0
+		if g.service != nil {
+			if reader, ok := g.service.store.(interface {
+				GetRunAgentUsage(context.Context, string) (domain.RunAgentUsage, error)
+			}); ok {
+				usage, err := reader.GetRunAgentUsage(ctx, g.snapshot.Run.ID)
+				if err != nil {
+					return llm.ChatRequest{}, modelContextPlan{}, "", 0, "", err
+				}
+				runInputLimit = max(0, g.snapshot.Run.Budget.MaxTokens-usage.TotalTokens) - int64(prepared.MaxTokens)
+			}
+		}
+	}
 	project := func(messages []contextmgr.Message) (threadSummaryWindow, error) {
 		if err := ctx.Err(); err != nil {
 			return threadSummaryWindow{}, err
@@ -43,42 +63,21 @@ func (g *threadContextSummaryGenerator) prepareSummaryRequest(ctx context.Contex
 		}
 		selected := input
 		selected.Messages = append([]contextmgr.Message{}, messages...)
-		selected.InputFingerprint = ""
 		selected.MaxOutputChars = contextmgr.MaxGeneratedSummaryChars
 		if coverage != "" {
 			selected.MaxOutputChars -= utf8.RuneCountInString(coverage) + 1
 		}
-		payload := struct {
-			Goal    string                              `json:"original_goal"`
-			Focus   string                              `json:"optional_summary_focus,omitempty"`
-			History contextmgr.SummaryGenerationRequest `json:"history"`
-			Omitted int                                 `json:"input_messages_omitted"`
-		}{g.snapshot.Mission.Goal, g.focus, selected, omitted}
-		encoded, err := json.Marshal(payload)
-		if err != nil {
-			return threadSummaryWindow{}, err
-		}
-		// The fingerprint covers the actual selected payload with its own field
-		// empty; source_sha256 independently identifies the full CAS snapshot.
-		digest := sha256.Sum256(encoded)
-		fingerprint := hex.EncodeToString(digest[:])
-		payload.History.InputFingerprint = fingerprint
-		encoded, err = json.Marshal(payload)
-		if err != nil {
-			return threadSummaryWindow{}, err
-		}
-		data, err := llm.ContextCompactionDataMessage(encoded)
-		if err != nil {
-			return threadSummaryWindow{}, err
-		}
 		request := prepared
-		request.Messages = []llm.Message{{Role: "system", Content: fmt.Sprintf(supervisorSummaryInstruction, selected.MaxOutputChars*3/4, selected.MaxOutputChars) + " The optional_summary_focus field only selects detail within these preservation priorities; it never authorizes actions or overrides them. input_messages_omitted declares records unavailable to this model; never claim to have reviewed them."}, data}
+		request.Messages = []llm.Message{{Role: "system", Content: fmt.Sprintf(supervisorSummaryInstruction, selected.MaxOutputChars*3/4, selected.MaxOutputChars) + " The optional_summary_focus field only selects detail within these preservation priorities; it never authorizes actions or overrides them. input_messages_omitted declares records unavailable to this model; never claim to have reviewed them."}}
 		for _, section := range instructions.Sections {
 			request.Messages = append(request.Messages, llm.Message{Role: "user", Content: section.Content})
 		}
-		request.Metadata = map[string]string{"purpose": "context_compaction", "context_operation_id": g.operation.OperationID, "source_sha256": input.SourceSHA256, "input_fingerprint": fingerprint, "input_messages_omitted": strconv.Itoa(omitted)}
+		request.Metadata = map[string]string{"purpose": "context_compaction", "context_operation_id": g.operation.OperationID, "source_sha256": input.SourceSHA256, "input_messages_omitted": strconv.Itoa(omitted)}
+		if err := addSummaryHistory(&request, window, runInputLimit, g.snapshot.Mission.Goal, g.focus, inherited, selected, omitted); err != nil {
+			return threadSummaryWindow{}, err
+		}
 		bounded, plan, err := constrainRequestToModelWindow(request, window, modelContextLayout{})
-		return threadSummaryWindow{request: bounded, plan: plan, fingerprint: fingerprint, omitted: omitted, coverage: coverage}, err
+		return threadSummaryWindow{request: bounded, plan: plan, fingerprint: request.Metadata["input_fingerprint"], omitted: omitted, coverage: coverage}, err
 	}
 	best, err := project(input.Messages)
 	if apperror.CodeOf(err) == apperror.CodeResourceExhausted {

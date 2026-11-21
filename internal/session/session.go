@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -720,7 +721,10 @@ func (m *Manager) sessionChatPrompt(ctx context.Context, sess Session, ref llm.M
 		return nil, result, err
 	}
 	recent := toContextMessages(active)
-	prompt := m.contextMgr.BuildPrompt(systemPrompt(sess), summary, recent)
+	prompt, err := m.contextMgr.BuildPrompt(systemPrompt(sess), summary, recent)
+	if err != nil {
+		return nil, result, err
+	}
 	estimate := func(messages []contextmgr.Message) int {
 		n := 8
 		for _, message := range messages {
@@ -735,24 +739,31 @@ func (m *Manager) sessionChatPrompt(ctx context.Context, sess Session, ref llm.M
 			return nil, result, err
 		}
 		summary, recent = result.Summary, result.Preserved
-		prompt = m.contextMgr.BuildPrompt(systemPrompt(sess), summary, recent)
+		prompt, err = m.contextMgr.BuildPrompt(systemPrompt(sess), summary, recent)
+		if err != nil {
+			return nil, result, err
+		}
 		tokens = estimate(prompt)
 	}
 	if tokens > limit {
 		return nil, result, apperror.New(apperror.CodeResourceExhausted, "session context exceeds the model input window")
 	}
 	if replayOriginals && strings.TrimSpace(summary.Content) != "" && len(recent) > 0 {
-		originals, err := m.compactedOperatorOriginals(ctx, sess.ID, recent[0].SourceMessageID, min(MaxRecentOperatorTokens, limit-tokens))
+		originals, err := m.compactedOperatorOriginals(ctx, sess.ID, recent[0].SourceMessageID, min(MaxRecentOperatorTokens, limit-tokens), summary)
 		if err != nil {
 			return nil, result, err
 		}
-		summaryIndex := len(prompt) - len(recent) - 1
-		prompt = slices.Insert(prompt, summaryIndex, originals...)
+		if len(originals) > 0 {
+			prompt, err = m.contextMgr.BuildPrompt(systemPrompt(sess), summary, recent, originals...)
+			if err != nil {
+				return nil, result, err
+			}
+		}
 	}
 	return prompt, result, nil
 }
 
-func (m *Manager) compactedOperatorOriginals(ctx context.Context, sessionID string, beforeID int64, remaining int) ([]contextmgr.Message, error) {
+func (m *Manager) compactedOperatorOriginals(ctx context.Context, sessionID string, beforeID int64, remaining int, summary contextmgr.Summary) ([]contextmgr.Message, error) {
 	reader, ok := m.store.(interface {
 		ListCompactedSessionOperatorMessages(context.Context, string, int64, int) ([]Message, error)
 	})
@@ -764,6 +775,8 @@ func (m *Manager) compactedOperatorOriginals(ctx context.Context, sessionID stri
 		return nil, err
 	}
 	var originals []contextmgr.Message
+	var newestOmitted Message
+	upperID, initialBudget := beforeID, remaining
 	for _, message := range messages {
 		if message.SessionID != sessionID || !message.Compacted || message.ID >= beforeID {
 			return nil, apperror.New(apperror.CodeFailedPrecondition, "compacted operator history does not match the Session prefix")
@@ -781,9 +794,46 @@ func (m *Manager) compactedOperatorOriginals(ctx context.Context, sessionID stri
 		if cost <= remaining {
 			remaining -= cost
 			originals = append(originals, projected)
+		} else if newestOmitted.ID == 0 {
+			newestOmitted = message
 		}
 	}
 	slices.Reverse(originals)
+	if remaining <= 0 || len(originals) >= MaxRecentOperatorMessages {
+		return originals, nil
+	}
+	if oversized, ok := m.store.(interface {
+		LatestOversizedSessionOperator(context.Context, string, int64, int64, int) (Message, bool, error)
+	}); ok {
+		message, found, err := oversized.LatestOversizedSessionOperator(ctx, sessionID, newestOmitted.ID, upperID, initialBudget)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			if message.SessionID != sessionID || !message.Compacted || message.ID <= newestOmitted.ID || message.ID >= upperID {
+				return nil, apperror.New(apperror.CodeFailedPrecondition, "oversized operator source does not match the Session prefix")
+			}
+			verified, err := VerifiedOperatorOriginal(message)
+			if err != nil {
+				return nil, err
+			}
+			if verified {
+				newestOmitted = message
+			}
+		}
+	}
+	if newestOmitted.ID != 0 {
+		projected := ProjectContextMessage(newestOmitted)
+		if contextmgr.EstimateMessageTokens(projected.Role, projected.Content) > remaining {
+			excerpt, fits, err := contextmgr.FitOperatorExcerpt(projected, summary, remaining)
+			if err != nil || !fits {
+				return originals, err
+			}
+			projected = excerpt
+		}
+		at := sort.Search(len(originals), func(i int) bool { return originals[i].SourceMessageID >= projected.SourceMessageID })
+		originals = slices.Insert(originals, at, projected)
+	}
 	return originals, nil
 }
 

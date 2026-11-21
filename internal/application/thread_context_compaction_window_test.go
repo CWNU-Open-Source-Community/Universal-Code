@@ -46,18 +46,14 @@ func TestManualSummaryWindowKeepsOperatorCorrectionAndFittingDiagnostics(t *test
 			if err != nil {
 				t.Fatal(err)
 			}
-			var payload struct {
-				Goal    string                              `json:"original_goal"`
-				Focus   string                              `json:"optional_summary_focus,omitempty"`
-				History contextmgr.SummaryGenerationRequest `json:"history"`
-				Omitted int                                 `json:"input_messages_omitted"`
+			var payload summaryModelInput
+			if err := json.Unmarshal([]byte(request.Messages[1].Content), &payload); err != nil || len(payload.Timeline) != 2 {
+				t.Fatalf("unexpected timeline: %v", err)
 			}
-			if err := json.Unmarshal([]byte(request.Messages[1].Content), &payload); err != nil {
-				t.Fatal(err)
-			}
-			if !slices.Equal(payload.History.Messages, original[:3]) {
+			sent := payload.Timeline[1].Messages
+			if !slices.Equal(sent, original[:3]) {
 				var ids []int64
-				for _, message := range payload.History.Messages {
+				for _, message := range sent {
 					ids = append(ids, message.SourceMessageID)
 				}
 				t.Fatalf("summary received records %v, want [1 2 3] with their complete original text and provenance", ids)
@@ -67,19 +63,10 @@ func TestManualSummaryWindowKeepsOperatorCorrectionAndFittingDiagnostics(t *test
 				t.Fatalf("inaccurate omission of final record: omitted=%d coverage=%q", omitted, coverage)
 			}
 			if plan.EstimatedInput > plan.InputLimitTokens || !slices.Equal(input.Messages, original) ||
-				payload.History.SourceSHA256 != input.SourceSHA256 || request.Metadata["source_sha256"] != input.SourceSHA256 {
+				payload.SourceSHA256 != input.SourceSHA256 || request.Metadata["source_sha256"] != input.SourceSHA256 {
 				t.Fatal("window or complete source snapshot changed")
 			}
-			if payload.History.InputFingerprint != fingerprint || request.Metadata["input_fingerprint"] != fingerprint {
-				t.Fatal("inconsistent input fingerprint")
-			}
-			payload.History.InputFingerprint = ""
-			encoded, err := json.Marshal(payload)
-			if err != nil {
-				t.Fatal(err)
-			}
-			digest := sha256.Sum256(encoded)
-			if fingerprint != hex.EncodeToString(digest[:]) {
+			if request.Metadata["input_fingerprint"] != fingerprint || session.ContentSHA256(request.Messages[1].Content) != fingerprint {
 				t.Fatal("fingerprint does not describe the selected records")
 			}
 		})
@@ -100,15 +87,14 @@ func TestManualSummaryWindowKeepsCorrectionBeforeOperatorContinue(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	var payload struct {
-		History contextmgr.SummaryGenerationRequest `json:"history"`
+	var payload summaryModelInput
+	if err := json.Unmarshal([]byte(request.Messages[1].Content), &payload); err != nil || len(payload.Timeline) != 2 {
+		t.Fatalf("unexpected timeline: %v", err)
 	}
-	if err := json.Unmarshal([]byte(request.Messages[1].Content), &payload); err != nil {
-		t.Fatal(err)
-	}
-	if omitted != 1 || !slices.Equal(payload.History.Messages, []contextmgr.Message{records[0], records[2], records[3]}) {
+	sent := payload.Timeline[1].Messages
+	if omitted != 1 || !slices.Equal(sent, []contextmgr.Message{records[0], records[2], records[3]}) {
 		var ids []int64
-		for _, message := range payload.History.Messages {
+		for _, message := range sent {
 			ids = append(ids, message.SourceMessageID)
 		}
 		t.Fatalf("summary received records %v, want the correction, follow-up and diagnosis [1 3 4]", ids)

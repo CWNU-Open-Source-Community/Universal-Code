@@ -50,7 +50,7 @@ func TestCompactionReplaysOriginalUserMessagesBeforeSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []llm.Message{{Role: "user", Content: goal}, {Role: "user", Content: first.Content}, {Role: "user", Content: newest.Content}, {Role: "user", Content: summary}, {Role: "assistant", Content: tail}, {Role: "user", Content: current}}
+	want := []llm.Message{{Role: "user", Content: goal}, {Role: "user", Content: first.Content}, {Role: "user", Content: newest.Content}, {Role: "assistant", Content: summary}, {Role: "assistant", Content: tail}, {Role: "user", Content: current}}
 	if len(request.Messages) < len(want) || !reflect.DeepEqual(request.Messages[len(request.Messages)-len(want):], want) {
 		t.Fatal("expected separate verbatim user turns, summary, live history and current input in that order")
 	}
@@ -64,7 +64,7 @@ func TestCompactionReplaysOriginalUserMessagesBeforeSummary(t *testing.T) {
 func TestOversizedOperatorPasteKeepsRecallReferenceAndEarlierCorrection(t *testing.T) {
 	correction := session.NewMessage("session", "user", "更正：报告用中文，旧接口名称保持原样。")
 	correction.ID = 7
-	paste := session.NewMessage("session", "user", strings.Repeat("实验记录。", 500))
+	paste := session.NewMessage("session", "user", strings.Repeat("实验记录。", 900))
 	paste.ID = 8
 	sections, err := loadRecentOperatorContext(t.Context(), recentOperatorFixture{paste, correction}, "run", 8192)
 	if err != nil || len(sections) != 2 {
@@ -85,7 +85,7 @@ func TestCompactedUserProjectionKeepsRedactionsAndOriginalReadbackDigest(t *test
 	// A previously stored row can verify correctly before current redaction.
 	message.Content = "  password=fixturepassword\n" + strings.Repeat("checked sample\n", 60)
 	message.Provenance.ContentSHA256 = session.ContentSHA256(message.Content)
-	for _, budget := range []int{8192, 240} {
+	for _, budget := range []int{8192, 160} {
 		sections, err := loadRecentOperatorContext(t.Context(), recentOperatorFixture{message}, "run", budget)
 		if err != nil || len(sections) != 1 {
 			t.Fatalf("budget %d: sources=%d err=%v", budget, len(sections), err)
@@ -97,7 +97,7 @@ func TestCompactedUserProjectionKeepsRedactionsAndOriginalReadbackDigest(t *test
 		if budget == 8192 && (section.Kind != recentOperatorHistory || section.Content != session.ProjectContextMessage(message).Content) {
 			t.Fatal("complete historical turn differs from ordinary projected history")
 		}
-		if budget == 240 && (section.Kind != recentOperatorReference || !strings.Contains(section.Content, message.Provenance.ContentSHA256)) {
+		if budget == 160 && (section.Kind != recentOperatorReference || !strings.Contains(section.Content, message.Provenance.ContentSHA256)) {
 			t.Fatal("oversized original lost its exact history readback")
 		}
 	}
@@ -153,6 +153,72 @@ func TestRecentOperatorWindowFitsAfterRequiredContext(t *testing.T) {
 		return
 	}
 	t.Fatal("required context evicted the complete raw window even though the latest original fits")
+}
+
+func TestCompactedOriginalsUseSpareWindowWithoutDisplacingCurrentWork(t *testing.T) {
+	const budget = 12000
+	earlier := session.NewMessage("session", "user", "The public callback is OnArtifactReady(id string).")
+	earlier.ID = 1
+	later := session.NewMessage("session", "user", strings.Repeat("发布记录。", 390))
+	later.ID = 3
+	originals, err := loadRecentOperatorContext(t.Context(), recentOperatorFixture{later, earlier}, "run", budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := contextmgr.Section{Kind: "summary", SourceID: "summary-1", Priority: 1000, Content: "A handoff."}
+	work := contextmgr.Section{Kind: "work_board", SourceID: "active", Priority: 900, Content: strings.Repeat("open task description ", 1500)}
+	for _, test := range []struct {
+		name         string
+		others       []contextmgr.Section
+		wantComplete bool
+	}{
+		{"free space", []contextmgr.Section{summary}, true},
+		{"active work", []contextmgr.Section{summary, work}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			selection, err := selectSupervisorContextSections(append(slices.Clone(test.others), originals...), budget)
+			if err != nil {
+				t.Fatal(err)
+			}
+			messages, layout := supervisorMessagesWithLayout(nil, "What is the public callback?", selection, skills.ContextAssembly{}, skills.ExternalContextAssembly{}, domain.RunModeSnapshot{}, true)
+			fitted, _, _, err := fitRecentOperatorRequest(llm.ChatRequest{Messages: messages}, layout, selection, 100000, originals)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, m := range test.others {
+				if !slices.ContainsFunc(fitted.Messages, func(got llm.Message) bool { return got.Content == strings.TrimSpace(m.Content) }) {
+					t.Fatalf("lost %s", m.Kind)
+				}
+			}
+			var found []string
+			for _, m := range fitted.Messages {
+				if m.Role == "user" && (m.Content == earlier.Content || m.Content == later.Content) {
+					found = append(found, m.Content)
+				}
+			}
+			if len(found) == 0 || found[0] != earlier.Content || (len(found) == 2) != test.wantComplete {
+				t.Fatalf("verbatim chronological history: complete=%v got %d turns", test.wantComplete, len(found))
+			}
+		})
+	}
+}
+
+func TestCompactedOriginalTooLargeForReadbackIsAuditedWithoutEvictingWork(t *testing.T) {
+	const budget = 6000
+	sections := []contextmgr.Section{
+		{Kind: "work_board", SourceID: "active", Priority: 900, Content: strings.Repeat("x", 16000)},
+		{Kind: recentOperatorHistory, SourceID: "message:2", Priority: 950, Content: strings.Repeat("y", 7996)},
+		{Kind: recentOperatorHistory, SourceID: "message:1", Priority: 950, Content: strings.Repeat("z", 400)},
+	}
+	memory, err := selectSupervisorContextSections(sections, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsContextSource(memory.IncludedSources, "work_board", "active") ||
+		!containsContextSource(memory.IncludedSources, recentOperatorHistory, "message:2") ||
+		!containsContextSource(memory.OmittedSources, recentOperatorHistory, "message:1") {
+		t.Fatalf("available capacity should leave the older original in storage: %+v", memory.IncludedSources)
+	}
 }
 
 func TestRecentOperatorRequestFitsActualCapacityWithoutChangingPinsOrHistory(t *testing.T) {
