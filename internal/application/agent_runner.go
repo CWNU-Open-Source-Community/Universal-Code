@@ -839,6 +839,9 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			prepared.context.memory, err = supervisorMemoryContextWithinBudget(prepared.context.memoryBudget, prepared.context.threadEndTurn, prepared.context.summary, prepared.context.hasSummary, prepared.context.workItems, prepared.context.notes, prepared.context.inbox.Messages,
 				prepared.context.projectInstructionSections, prepared.context.threadPinSections, prepared.context.longTermMemorySections, prepared.context.continuitySections, supervisorGoalContext(turn), prepared.context.recentOperatorSections)
 		}
+		if err == nil && prepared.context.hasSummary {
+			err = loadSupervisorHandoffArchive(ctx, s.store, turn.Run.SessionID, &prepared.context.memory)
+		}
 		if err == nil {
 			err = requireSupervisorContinuityContext(prepared.context.memory, prepared.context.summary, prepared.context.hasSummary, turn.Mission.ID, turn.Run.Config.ContinuityContextFingerprint)
 		}

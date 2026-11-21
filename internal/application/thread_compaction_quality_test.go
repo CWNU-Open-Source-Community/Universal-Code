@@ -103,7 +103,7 @@ func assertQualityDecisionInSecondSummary(t *testing.T, tc compactionQualityCase
 	}
 }
 
-func assertQualityRequestSources(t *testing.T, tc compactionQualityCase, st *store.SQLiteStore, run qualityRun, req llm.ChatRequest) {
+func assertQualityRequestSources(t *testing.T, tc compactionQualityCase, st *store.SQLiteStore, run qualityRun, req llm.ChatRequest, archiveFits bool) {
 	t.Helper()
 	want := append(slices.Concat(tc.Rounds...), tc.Question)
 	if len(req.Messages) == 0 || len(req.Tools) == 0 || req.Messages[0].Role != "system" ||
@@ -112,13 +112,18 @@ func assertQualityRequestSources(t *testing.T, tc compactionQualityCase, st *sto
 	}
 	var delivered, stored []string
 	var handoff string
+	summary, found, err := st.LatestContextSummary(t.Context(), run.Session)
+	if err != nil || !found {
+		t.Fatalf("missing committed summary: %v", err)
+	}
+	ref := fmt.Sprintf("summary:%d (SHA-256 %s)", summary.ID, summary.ContentSHA256)
 	for _, m := range req.Messages {
 		if m.Role == "user" && slices.Contains(want, m.Content) {
 			delivered = append(delivered, m.Content)
 		}
-		if strings.Contains(m.Content, qualityStaleHandoff(tc)) {
+		if strings.Contains(m.Content, ref) {
 			if m.Role != "assistant" || handoff != "" {
-				t.Fatalf("obsolete model conclusion was delivered twice or as %s", m.Role)
+				t.Fatalf("historical handoff was delivered twice or as %s", m.Role)
 			}
 			handoff = m.Content
 		}
@@ -126,12 +131,33 @@ func assertQualityRequestSources(t *testing.T, tc compactionQualityCase, st *sto
 	if !slices.Equal(delivered, want) || handoff == "" {
 		t.Fatalf("ordered provider user originals = %q, want %q; historical handoff present = %t", delivered, want, handoff != "")
 	}
+	hasArchive := strings.Contains(handoff, "\n\nArchived messages, earliest to latest\n")
+	hasModelClaim := strings.Contains(handoff, "\n\nPrevious model's handoff\n"+qualityStaleHandoff(tc))
+	if hasArchive != archiveFits || hasModelClaim == archiveFits {
+		t.Fatalf("expected complete archive = %t, got archive = %t and previous model claim = %t", archiveFits, hasArchive, hasModelClaim)
+	}
+	if tc.ToolTurn != nil {
+		reserved, err := contextmgr.HandoffSection(summary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		actualTokens, reservedTokens := contextmgr.EstimateTokens(handoff), contextmgr.EstimateTokens(reserved.Content)
+		t.Logf("final handoff used %d bytes / %d estimated tokens of %d bytes / %d reserved", len(handoff), actualTokens, len(reserved.Content), reservedTokens)
+		if len(handoff) > len(reserved.Content) || actualTokens > reservedTokens || !strings.Contains(handoff, "\n\nReplayed user submissions, earliest to latest\n") {
+			t.Fatal("the final handoff exceeded its reservation or lost the verified submission order")
+		}
+	}
 	history, err := st.ListSessionMessages(t.Context(), run.Session, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	sourceIDs := regexp.MustCompile(`\bmessage:[0-9]+\b`).FindAllString(handoff, -1)
+	var archivedAssistantReport bool
 	for _, m := range history {
+		if archiveFits && m.Compacted && m.Role == "assistant" && m.Provenance.SourceKind == session.SourceModelResponse &&
+			!m.Provenance.InstructionAuthorized && m.Content == tc.ToolTurn.AssistantReply {
+			archivedAssistantReport = strings.Contains(handoff, fmt.Sprintf("message:%d (assistant, model_response)\n> %s", m.ID, m.Content))
+		}
 		if m.Role != "user" {
 			continue
 		}
@@ -144,6 +170,9 @@ func assertQualityRequestSources(t *testing.T, tc compactionQualityCase, st *sto
 	}
 	if !slices.Equal(stored, want) {
 		t.Fatalf("ordered SQLite user originals = %q, want %q", stored, want)
+	}
+	if archiveFits && !archivedAssistantReport {
+		t.Fatal("the source transcript did not attribute the actual assistant report to its stored message")
 	}
 	calls := historyRecallCalls(t, st, run.ID)
 	if tc.ToolTurn == nil {

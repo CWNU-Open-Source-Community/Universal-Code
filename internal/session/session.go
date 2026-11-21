@@ -754,7 +754,7 @@ func (m *Manager) sessionChatPrompt(ctx context.Context, sess Session, ref llm.M
 			return nil, result, err
 		}
 		if len(originals) > 0 {
-			prompt, err = m.contextMgr.BuildPrompt(systemPrompt(sess), summary, recent, originals...)
+			prompt, err = m.contextMgr.BuildSessionPrompt(ctx, sess.ID, systemPrompt(sess), summary, recent, originals)
 			if err != nil {
 				return nil, result, err
 			}

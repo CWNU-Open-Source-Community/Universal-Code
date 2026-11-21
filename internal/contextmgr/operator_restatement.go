@@ -90,8 +90,8 @@ func (s Section) ReplayedOperatorMessage() Message {
 	return Message{Content: s.Content, ContentSHA256: s.SourceContentSHA256}
 }
 
-func (s Section) withReplayedRestatement(view string, replayed map[string]Message) string {
-	if len(replayed) < 3 || len(view) >= len(s.Content) {
+func (s Section) withReplayedRestatement(view, replayedFooter string, replayed map[string]Message) string {
+	if len(replayed) < 3 || (s.archive == nil && len(view) >= len(s.Content)) {
 		return view
 	}
 	// Some verified originals survive in the store/replay window after their
@@ -132,6 +132,12 @@ func (s Section) withReplayedRestatement(view string, replayed map[string]Messag
 	}
 	if later := refs[slices.Index(refs, fact.SourceID)+1:]; len(later) > 0 {
 		fmt.Fprintf(&note, "\nLater replayed user messages include %s.", strings.Join(later, ", "))
+	}
+	if s.archive != nil && s.archive.matches(originals) {
+		projected := s.archive.text + replayedFooter + note.String()
+		if len(projected) <= len(s.Content) && EstimateTokens(projected) <= EstimateTokens(s.Content) {
+			return projected
+		}
 	}
 	if len(view)+note.Len() > len(s.Content) {
 		return view

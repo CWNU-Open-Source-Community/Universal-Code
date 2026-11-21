@@ -264,8 +264,8 @@ func runThreadCompactionQuality(t *testing.T, dir string, mode qualityMode) {
 		window = liveRouter.ContextWindow(ref)
 	}
 	for _, tc := range compactionQualityCases(t) {
-		t.Run(tc.ID, func(t *testing.T) {
-			out := filepath.Join(dir, tc.ID)
+		runCase := func(t *testing.T, parentDir string, archiveFits bool) {
+			out := filepath.Join(parentDir, tc.ID)
 			workspace := filepath.Join(out, "workspace")
 			if err := os.MkdirAll(workspace, 0700); err != nil {
 				t.Fatal(err)
@@ -375,7 +375,13 @@ func runThreadCompactionQuality(t *testing.T, dir string, mode qualityMode) {
 						captured = req
 						text := rootActionResponse(domain.RootActionFinish, "已捕获请求。", "已记录。", "")
 						if i < 2 {
-							text = historyRecallJSON(map[string]string{"version": "generated_handoff.v1", "summary": qualityStaleHandoff(tc)})
+							report := qualityStaleHandoff(tc)
+							if i == 1 && archiveFits {
+								// A longer second report reserves enough space for all thirteen source rows.
+								report += "\n\n用户还要求沿用渠道名称的原有拼写。助手已读取上周的 README.md，将草稿中写明的分组方式以及其中勾选的事项一并告知用户。" +
+									"已有的工具回执仅涉及读取旧草稿。用户要求记录本周的待办项，针对本周清单的核对尚未执行。"
+							}
+							text = historyRecallJSON(map[string]string{"version": "generated_handoff.v1", "summary": report})
 						}
 						reply := textResponse(text)
 						reply.Provider, reply.Model = ref.Provider, ref.Model
@@ -453,7 +459,7 @@ func runThreadCompactionQuality(t *testing.T, dir string, mode qualityMode) {
 					if toolGrade != nil {
 						t.Fatal(toolGrade)
 					}
-					assertQualityRequestSources(t, tc, st, run, captured)
+					assertQualityRequestSources(t, tc, st, run, captured, archiveFits)
 					return
 				}
 				history, err := st.ListSessionMessages(t.Context(), run.Session, true)
@@ -485,6 +491,14 @@ func runThreadCompactionQuality(t *testing.T, dir string, mode qualityMode) {
 					t.Fatal(grade)
 				}
 			}
+		}
+		t.Run(tc.ID, func(t *testing.T) {
+			if mode == qualityInspectSources && tc.ToolTurn != nil {
+				t.Run("archive_fits", func(t *testing.T) { runCase(t, t.TempDir(), true) })
+				t.Run("short_handoff", func(t *testing.T) { runCase(t, t.TempDir(), false) })
+				return
+			}
+			runCase(t, dir, false)
 		})
 	}
 }

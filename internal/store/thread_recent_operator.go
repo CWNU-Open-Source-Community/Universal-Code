@@ -5,10 +5,11 @@ import (
 	"errors"
 	"fmt"
 
+	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/session"
 )
 
-const operatorMessageColumns = `SELECT message.id, message.session_id, message.role, message.content,
+const compactedMessageColumns = `SELECT message.id, message.session_id, message.role, message.content,
 	message.provenance_version, message.source_kind, message.source_ref, message.content_sha256,
 	message.instruction_authorized, message.token_estimate, message.compacted, message.created_at `
 
@@ -20,7 +21,7 @@ const storedOperatorSource = `message.role='user' AND message.provenance_version
 // Pending/cancelled steering and evidence pretending to be user text are never
 // recovered as original user instructions.
 func (s *SQLiteStore) ListCompactedThreadOperatorMessages(ctx context.Context, runID string, limit int) ([]session.Message, error) {
-	return s.readCompactedOperatorMessages(ctx, limit, operatorMessageColumns+`FROM thread_runs current_binding
+	return s.readCompactedMessages(ctx, limit, compactedMessageColumns+`FROM thread_runs current_binding
 		JOIN thread_runs binding ON binding.thread_id=current_binding.thread_id AND binding.ordinal<=current_binding.ordinal
 		JOIN session_messages message ON message.session_id=binding.session_id
 		WHERE current_binding.run_id=? AND `+storedOperatorSource+`
@@ -34,7 +35,7 @@ func (s *SQLiteStore) ListCompactedSessionOperatorMessages(ctx context.Context, 
 	if beforeID <= 0 || tokenBudget < 1 || tokenBudget > session.MaxRecentOperatorTokens {
 		return nil, errors.New("invalid compacted Session history boundary or token budget")
 	}
-	return s.readCompactedOperatorMessages(ctx, session.MaxRecentOperatorMessages, operatorMessageColumns+`FROM session_messages message
+	return s.readCompactedMessages(ctx, session.MaxRecentOperatorMessages, compactedMessageColumns+`FROM session_messages message
 		WHERE message.session_id=? AND message.id<? AND message.compacted=1 AND `+storedOperatorSource+`
 		AND message.token_estimate<=? AND length(CAST(message.content AS BLOB))<=?
 		ORDER BY message.id DESC LIMIT ?`,
@@ -48,11 +49,11 @@ func (s *SQLiteStore) LatestOversizedSessionOperator(ctx context.Context, sessio
 	if afterID < 0 || beforeID <= afterID || tokenBudget < 1 || tokenBudget > session.MaxRecentOperatorTokens {
 		return session.Message{}, false, errors.New("invalid compacted Session excerpt boundary or token budget")
 	}
-	rows, err := s.readCompactedOperatorMessages(ctx, 1, `WITH recent AS (
+	rows, err := s.readCompactedMessages(ctx, 1, `WITH recent AS (
 		SELECT message.id FROM session_messages message
 		WHERE message.session_id=? AND message.id>? AND message.id<? AND message.compacted=1 AND `+storedOperatorSource+`
 		ORDER BY message.id DESC LIMIT ?
-	) `+operatorMessageColumns+`FROM session_messages message JOIN recent ON recent.id=message.id
+	) `+compactedMessageColumns+`FROM session_messages message JOIN recent ON recent.id=message.id
 		WHERE message.token_estimate>? OR length(CAST(message.content AS BLOB))>?
 		ORDER BY message.id DESC LIMIT ?`, sessionID, afterID, beforeID, session.ContextProvenanceVersion,
 		session.SourceOperatorMessage, session.MaxRecentOperatorMessages, tokenBudget, 4*tokenBudget)
@@ -62,7 +63,30 @@ func (s *SQLiteStore) LatestOversizedSessionOperator(ctx context.Context, sessio
 	return rows[0], true, nil
 }
 
-func (s *SQLiteStore) readCompactedOperatorMessages(ctx context.Context, limit int, query string, args ...any) ([]session.Message, error) {
+// A short archived transcript can replace its model interpretation only when all
+// rows fit. SQLite can get octet_length(column) from record metadata; the body
+// join runs only after the bounded prefix qualifies in the same read snapshot.
+func (s *SQLiteStore) ListCompleteCompactedSessionPrefix(ctx context.Context, sessionID string, through int64, count, maxBytes int) ([]contextmgr.Message, error) {
+	if sessionID == "" || through <= 0 || count < 1 || count > 2*contextmgr.MaxHandoffMemoryRecords || maxBytes < 1 {
+		return nil, nil
+	}
+	rows, err := s.readCompactedMessages(ctx, count, `WITH prefix AS MATERIALIZED (
+		SELECT id, compacted, provenance_version, octet_length(content) AS body_bytes
+		FROM session_messages WHERE session_id=?1 AND id<=?2 ORDER BY id LIMIT (?3+1)
+	), eligible AS (
+		SELECT count(*) AS n FROM prefix
+		HAVING n=?3 AND max(id)=?2 AND min(compacted)=1 AND sum(body_bytes)<=?4
+			AND min(provenance_version<>?5)=1
+	) `+compactedMessageColumns+`FROM eligible CROSS JOIN prefix CROSS JOIN session_messages message
+		WHERE message.id=prefix.id AND message.session_id=?1 ORDER BY prefix.id LIMIT ?`,
+		sessionID, through, count, maxBytes, session.LegacyContextProvenanceVersion)
+	if err != nil || len(rows) == 0 {
+		return nil, err
+	}
+	return (supervisorCompactionSnapshot{Messages: rows}).contextMessages(), nil
+}
+
+func (s *SQLiteStore) readCompactedMessages(ctx context.Context, limit int, query string, args ...any) ([]session.Message, error) {
 	if limit < 1 || limit > session.MaxRecentOperatorMessages {
 		return nil, fmt.Errorf("recent operator message limit must be between 1 and %d", session.MaxRecentOperatorMessages)
 	}

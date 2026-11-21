@@ -27,6 +27,29 @@ func isRecentOperatorSection(kind string) bool {
 	return kind == recentOperatorHistory || kind == recentOperatorReference || kind == recentOperatorExcerpt
 }
 
+func loadSupervisorHandoffArchive(ctx context.Context, store any, sessionID string, selection *contextmgr.Selection) error {
+	var handoff *contextmgr.Section
+	var originals []contextmgr.Message
+	for i := range selection.Sections {
+		section := &selection.Sections[i]
+		switch section.Kind {
+		case "summary":
+			handoff = section
+		case recentOperatorHistory:
+			originals = append(originals, section.ReplayedOperatorMessage())
+		}
+	}
+	if handoff == nil || len(originals) < 3 {
+		return nil
+	}
+	prepared, err := handoff.LoadCompleteArchive(ctx, store, sessionID, originals)
+	if err != nil {
+		return err
+	}
+	*handoff = prepared
+	return nil
+}
+
 func operatorReadback(section contextmgr.Section) contextmgr.Section {
 	section.Kind = recentOperatorReference
 	section.Content = fmt.Sprintf("A previous user message exceeds the available context. Read its full stored text with history_read using %s (SHA-256 %s).", section.SourceID, section.SourceContentSHA256)

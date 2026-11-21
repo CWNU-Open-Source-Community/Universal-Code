@@ -26,6 +26,7 @@ type Section struct {
 	Required            bool `json:",omitempty"`
 	Excluded            bool `json:",omitempty"`
 	handoff             *modelHandoff
+	archive             *completeHandoffArchive
 	operatorExcerpt     *Message
 }
 

@@ -263,6 +263,24 @@ func (m *Manager) BuildPrompt(system string, summary Summary, recent []Message, 
 	if err != nil {
 		return nil, err
 	}
+	return assemblePrompt(system, handoff, recent, originals)
+}
+
+// BuildSessionPrompt replays stored originals after the Session has reserved its
+// current input, output and existing handoff. The archive uses that same space.
+func (m *Manager) BuildSessionPrompt(ctx context.Context, sessionID, system string, summary Summary, recent, originals []Message) ([]Message, error) {
+	handoff, err := buildHandoffSection(summary, 0)
+	if err != nil {
+		return nil, err
+	}
+	handoff, err = handoff.LoadCompleteArchive(ctx, m.store, sessionID, originals)
+	if err != nil {
+		return nil, err
+	}
+	return assemblePrompt(system, handoff, recent, originals)
+}
+
+func assemblePrompt(system string, handoff Section, recent, originals []Message) ([]Message, error) {
 	out := make([]Message, 0, len(recent)+len(originals)+2)
 	if strings.TrimSpace(system) != "" {
 		out = append(out, Message{
