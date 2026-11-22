@@ -348,8 +348,6 @@ export function GitAdvancedPanel({ client, runID, onOpenApprovals,
     {review && <PreviewEvidence preview={review.preview} />}
     {review?.operation && review.approval && <section className="git-advanced-approval">
       <h3><ShieldCheck aria-hidden="true" size={16} />{t("精确一次审批", "Exact one-time approval")}</h3>
-      <p>{t("先在审批页核准这份不可变 preview，再返回执行；执行前会重新校验仓库、上游、权限和租约。",
-        "Approve this immutable preview in Approvals, then return to execute. Repository, upstream, permission, and lease are revalidated first.")}</p>
       <code>{review.approval.ID}</code>
       <div className="git-advanced-actions">
         <button onClick={onOpenApprovals} type="button">{t("打开审批", "Open approvals")}</button>

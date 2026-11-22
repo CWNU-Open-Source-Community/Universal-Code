@@ -14,7 +14,7 @@
   line-height: 1.5;
 }
 .v2-queue-composer-stack { min-width: 0; }
-.v2-queue-composer-stack:has(> .v2-shared-composer:not([hidden])) > .v2-queued-messages {
+.v2-queued-messages:has(+ .v2-shared-composer:not([hidden]), + .v2-approval-dock:empty + .v2-shared-composer:not([hidden])) {
   border-radius: 20px 20px 0 0;
   margin-bottom: -14px;
   padding-bottom: 18px;
@@ -59,18 +59,18 @@
 .v2-queue-details-dialog header button:hover { background: var(--v2-control-hover); }
 .v2-queue-details-dialog :focus-visible { outline: 2px solid var(--v2-accent); outline-offset: -2px; }
 .v2-queue-details-body { min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 14px 18px 20px; overflow-wrap: anywhere; }
-.v2-queue-details-body pre, .v2-queue-editor pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 0 0 12px; }
+.v2-queue-details-body pre, .v2-queue-editor pre { white-space: pre-wrap; overflow-wrap: anywhere; font: var(--prayu-message-size, 16px)/calc(1em + 8px) var(--prayu-font-ui); margin: 0 0 12px; }
 .v2-queue-details-body p { margin: 0 0 12px; color: var(--v2-muted); }
 .v2-promoted-message-history { min-width: 0; max-width: 78%; color: var(--v2-muted); font-size: 12px; }
 .v2-promoted-message-history > summary { padding: 3px 7px; border-radius: 7px; cursor: pointer; overflow-wrap: anywhere; }
 .v2-promoted-message-history > summary:hover { background: var(--v2-control-hover); }
 .v2-promoted-message-history > summary:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
-.v2-promoted-message-content { margin-top: 6px; padding: 8px 11px; border: 1px solid var(--v2-border); border-radius: 12px; color: var(--v2-ink); background: var(--v2-control); font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-promoted-message-content { margin-top: 6px; padding: 8px 11px; border: 1px solid var(--v2-border); border-radius: 12px; color: var(--v2-ink); background: var(--v2-control); font-size: var(--prayu-prose-size); line-height: var(--prayu-prose-leading); white-space: pre-wrap; overflow-wrap: anywhere; }
 .v2-queue-menu { position: fixed; z-index: 100; width: 196px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; overscroll-behavior: contain; padding: 6px; border: 1px solid var(--v2-border-strong); border-radius: 13px; background: var(--prayu-surface-solid); color: var(--v2-ink); font: 13px/1.5 var(--prayu-font-ui, system-ui); box-shadow: 0 8px 28px var(--prayu-glass-shadow); }
 .v2-queue-menu button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 6px 9px; text-align: left; }
 .v2-queue-menu svg { flex-shrink: 0; }
 .v2-queue-editor, .v2-queued-message-pending { margin-top: 6px; padding: 10px 6px 6px; border-top: 1px solid var(--v2-border); overflow-wrap: anywhere; }
-.v2-queue-editor textarea { display: block; box-sizing: border-box; width: 100%; min-height: 88px; padding: 9px; margin: 6px 0; resize: vertical; font: inherit; color: var(--v2-ink); background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 9px; }
+.v2-queue-editor textarea { display: block; box-sizing: border-box; width: 100%; min-height: 88px; padding: 9px; margin: 6px 0; resize: vertical; font: var(--prayu-message-size, 16px)/calc(1em + 8px) var(--prayu-font-ui); color: var(--v2-ink); background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 9px; }
 .v2-queued-message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .v2-queued-message-actions button, .v2-queued-message-pending button { min-height: 30px; padding: 4px 9px; background: var(--v2-control); }
 .v2-queued-messages p { margin: 6px; overflow-wrap: anywhere; }

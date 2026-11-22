@@ -135,7 +135,7 @@ function CommandServiceSettings({ client, threadID }: { client: APIClient; threa
         </li>)}
       </ul>}
       <div className="v2-command-service-note">
-        <p>{t("仅作用于当前任务及其后续执行。命令继续遵循当前任务权限与沙箱设置。", "Applies to this task and subsequent runs. Commands continue to follow this task's permissions and sandbox settings.")}</p>
+        <p>{t("适用于此任务及其后续执行。", "Applies to this task and its future runs.")}</p>
         {current?.policy !== "exclusive" && <p>{t("选择“始终独占”会停止此任务已有共享服务。", "Selecting Always exclusive stops existing shared services for this task.")}</p>}
         {services.data?.has_more && <p>{t("当前列表未完整，运行数量仅统计已显示的服务。", "This list is incomplete. The running count includes only the services shown.")}</p>}
         {!client.hasExecutionPermissionControl && !client.hasRunExecution && <p>{t("当前连接只可查看设置与服务状态。", "This connection can only view settings and service status.")}</p>}

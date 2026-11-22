@@ -2597,7 +2597,7 @@ export interface paths {
         put?: never;
         /**
          * Approve intent or deny a file edit
-         * @description Records an exact Run-bound review decision. Approve-intent never writes the file; applying an approved edit remains a separate non-HTTP operation.
+         * @description Records an exact Run-bound review decision. When an active Run continuation runs on approve_intent, Go directly applies the approved edit in the workspace (returning edit.status "applied" and file_written true, or "failed" with reason on conflict); manual or queued reviews leave the edit approved without writing bytes.
          */
         post: operations["reviewRunFileEdit"];
         delete?: never;
@@ -6670,7 +6670,7 @@ export interface components {
         };
         AgentCodeToolCapabilityView: {
             /** @enum {string} */
-            approval: "automatic" | "proposal_then_operator_review" | "approved_proposal_only";
+            approval: "automatic" | "proposal_then_operator_review" | "approved_proposal_only" | "operation_policy_then_existing_proposal" | "authorized_proposal_only";
             available: boolean;
             /** @enum {string} */
             class: "workspace_read" | "workspace_write";

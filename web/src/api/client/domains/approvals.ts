@@ -18,6 +18,9 @@ import type {
 import type { ClientFeatures } from "../capabilities";
 import type { APITransport } from "../transport";
 
+const activeCommandGrantPreviewFields = ["action", "intent", "review_scope", "bounded_review", "grant_ttl_seconds",
+  "grant_max_uses", "grant_uses_remaining", "grant_expires_at", "summary"];
+
 export class ApprovalsClient {
   constructor(
     private readonly transport: APITransport,
@@ -43,11 +46,17 @@ export class ApprovalsClient {
       typeof value.source_current !== "boolean" || typeof value.redacted !== "boolean" ||
       typeof value.truncated !== "boolean" || (value.truncated && value.source_current) ||
       (value.effect === "unavailable" && value.source_current) ||
-      !Array.isArray(value.fields) || value.fields.length > 8 ||
+      !Array.isArray(value.fields) || value.fields.length > (value.tool_name === "command_runtime" ? activeCommandGrantPreviewFields.length : 8) ||
       !value.fields.every((field) => hasExactKeys(field, ["name", "value"]) &&
         boundedText(field.name, 64) && typeof field.value === "string" &&
         [...field.value].length <= 8192 && !field.value.includes("\u0000"))) {
       throw new APIRequestError("Approval preview violated its exact binding", "INVALID_RESPONSE", 502);
+    }
+    if (value.fields.length === activeCommandGrantPreviewFields.length) {
+      const fieldNames = new Set(value.fields.map(({ name }) => name));
+      if (!activeCommandGrantPreviewFields.every((name) => fieldNames.has(name))) {
+        throw new APIRequestError("Bounded command approval preview is incomplete", "INVALID_RESPONSE", 502);
+      }
     }
     const effects: Record<string, string> = { shell: "dry_run", script_process: "dry_run",
       "git.advanced": "record_git_approval", replace_file: "file_review_required",

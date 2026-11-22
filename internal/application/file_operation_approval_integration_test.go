@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/policy"
+	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/store"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/tools"
@@ -170,34 +172,51 @@ func TestFileOperationApprovalModesUseActualRootedWrites(t *testing.T) {
 				}
 				proposal := decodeAgentCodeToolResult(t, result.JSON)
 				review := operation == fileedit.OperationDelete && mode != domain.RunExecutionPermissionFull
-				expectedStatus := fileedit.StatusApproved
-				if review {
-					expectedStatus = fileedit.StatusProposed
-				}
-				if proposal.Status != expectedStatus {
-					t.Fatalf("proposal status=%s want=%s: %s", proposal.Status, expectedStatus, result.JSON)
-				}
-				if operation == fileedit.OperationCreate {
-					if _, err := os.Stat(filepath.Join(f.root, "file.txt")); !os.IsNotExist(err) {
-						t.Fatalf("proposal dispatched a write: %v", err)
+				if !review && operation != fileedit.OperationDelete {
+					if proposal.Status != fileedit.StatusApplied {
+						t.Fatalf("1-step proposal status=%s want=%s: %s", proposal.Status, fileedit.StatusApplied, result.JSON)
 					}
-				} else if data, err := os.ReadFile(filepath.Join(f.root, "file.txt")); err != nil || string(data) != "before\n" {
-					t.Fatalf("proposal mutated bytes: %q %v", data, err)
-				}
-				if review {
-					if _, err := application.NewFileEditReviewService(f.state).Review(t.Context(), application.ReviewFileEditRequest{Version: application.FileEditReviewProtocolVersion,
-						RunID: f.scope.RunID, EditID: proposal.EditID, Action: application.FileEditApproveIntent}); err != nil {
-						t.Fatal(err)
+					var bodyMap map[string]any
+					if err := json.Unmarshal([]byte(result.JSON), &bodyMap); err != nil || bodyMap["file_written"] != true || bodyMap["replayed"] != false {
+						t.Fatalf("1-step apply flags invalid: %s err=%v", result.JSON, err)
+					}
+					if replay, err := f.execute(t.Context(), name, payload, "file-propose-exact-0001"); err != nil || !replay.Replayed || !strings.Contains(replay.JSON, `"file_written":false`) {
+						t.Fatalf("1-step replay=%+v err=%v", replay, err)
+					}
+				} else {
+					expectedStatus := fileedit.StatusApproved
+					if review {
+						expectedStatus = fileedit.StatusProposed
+					}
+					if proposal.Status != expectedStatus {
+						t.Fatalf("proposal status=%s want=%s: %s", proposal.Status, expectedStatus, result.JSON)
+					}
+					if data, err := os.ReadFile(filepath.Join(f.root, "file.txt")); err != nil || string(data) != "before\n" {
+						t.Fatalf("delete proposal mutated bytes: %q %v", data, err)
+					}
+					if review {
+						if _, err := application.NewFileEditReviewService(f.state).Review(t.Context(), application.ReviewFileEditRequest{Version: application.FileEditReviewProtocolVersion,
+							RunID: f.scope.RunID, EditID: proposal.EditID, Action: application.FileEditApproveIntent}); err != nil {
+							t.Fatal(err)
+						}
 					}
 				}
-				name, payload = toolgateway.WorkspaceApplyTool, toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion,
-					EditID: proposal.EditID, ExpectedAction: operation, ExpectedOriginalSHA256: proposal.OriginalSHA256, ExpectedProposedSHA256: proposal.ProposedSHA256}
-				if operation == fileedit.OperationDelete {
+				if !review && operation != fileedit.OperationDelete {
+					// Verify backward-compatible workspace_apply replays idempotently without rewriting bytes.
+					compatPayload := toolgateway.WorkspaceApplyPayload{Version: toolgateway.AgentCodeRegistryVersion,
+						EditID: proposal.EditID, ExpectedAction: operation, ExpectedOriginalSHA256: proposal.OriginalSHA256, ExpectedProposedSHA256: proposal.ProposedSHA256}
+					if compat, err := f.execute(t.Context(), toolgateway.WorkspaceApplyTool, compatPayload, "file-apply-compat-0001"); err != nil || !compat.Replayed || !strings.Contains(compat.JSON, `"file_written":false`) {
+						t.Fatalf("compat workspace_apply=%+v err=%v", compat, err)
+					}
+				} else {
 					name = toolgateway.WorkspaceDeleteTool
 					payload = toolgateway.WorkspaceDeletePayload{Version: toolgateway.AgentCodeRegistryVersion, Action: "apply", Path: "file.txt", ConfirmPath: "file.txt", EditID: proposal.EditID, ExpectedSHA256: hash}
-				}
-				if _, err := f.execute(t.Context(), name, payload, "file-apply-exact-0001"); err != nil {
-					t.Fatal(err)
+					if _, err := f.execute(t.Context(), name, payload, "file-apply-exact-0001"); err != nil {
+						t.Fatal(err)
+					}
+					if replay, err := f.execute(t.Context(), name, payload, "file-apply-exact-0001"); err != nil || !replay.Replayed {
+						t.Fatalf("replay=%+v err=%v", replay, err)
+					}
 				}
 				if operation == fileedit.OperationMove || operation == fileedit.OperationDelete {
 					if _, err := os.Stat(filepath.Join(f.root, "file.txt")); !os.IsNotExist(err) {
@@ -210,9 +229,6 @@ func TestFileOperationApprovalModesUseActualRootedWrites(t *testing.T) {
 					if data, err := os.ReadFile(filepath.Join(f.root, "moved.txt")); err != nil || string(data) != "before\n" {
 						t.Fatalf("move destination: %q %v", data, err)
 					}
-				}
-				if replay, err := f.execute(t.Context(), name, payload, "file-apply-exact-0001"); err != nil || !replay.Replayed {
-					t.Fatalf("replay=%+v err=%v", replay, err)
 				}
 			})
 		}
@@ -259,57 +275,81 @@ func TestFileOperationAutomaticSourceCannotSurviveChangedAuthority(t *testing.T)
 				if err := os.WriteFile(path, []byte("before\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
-				proposed, err := f.execute(t.Context(), toolgateway.WorkspaceChangeTool, toolgateway.WorkspaceChangePayload{
-					Version: toolgateway.AgentCodeRegistryVersion, Action: fileedit.OperationReplace, Path: "file.txt",
-					ExpectedSHA256: fileedit.HashText("before\n"), Content: "after\n"}, "file-source-before-change")
-				if err != nil {
-					t.Fatal(err)
-				}
-				edit := decodeAgentCodeToolResult(t, proposed.JSON)
-				if edit.Status != fileedit.StatusApproved {
-					t.Fatalf("proposal was not automatic: %s", proposed.JSON)
-				}
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				sawStaging := false
-				switch boundary {
-				case "policy_denied":
-					f.policy.deny = true
-				case "policy_requires_review":
-					f.policy.review = true
-				case "revoked_then_renewed":
-					f.runtime.RevokeRun(f.scope.RunID)
-					f.refreshScope(t)
-				case "sqlite_reopen_new_runtime":
-					if err := f.state.Close(); err != nil {
-						t.Fatal(err)
-					}
-					f.state, err = store.Open(f.database)
-					if err != nil {
-						t.Fatal(err)
-					}
-					f.runtime = domain.NewExecutionPermissionRuntimeAuthority()
-					f.capabilities.RuntimeAuthority = f.runtime
-					f.executor = application.NewAgentCodeToolExecutor(f.state, f.policy).WithExecutionPermissionCapabilities(f.capabilities)
-					f.refreshScope(t)
-				case "cancelled":
-					cancel()
-				case "staged_before_publication":
+				if boundary == "staged_before_publication" {
 					f.policy.beforeCheck = func(tools.Call) {
 						staging, _ := filepath.Glob(filepath.Join(f.root, ".cyberagent-edit-*"))
 						if len(staging) != 0 {
 							sawStaging, f.policy.deny = true, true
 						}
 					}
-				}
-				_, err = f.execute(ctx, toolgateway.WorkspaceApplyTool, toolgateway.WorkspaceApplyPayload{
-					Version: toolgateway.AgentCodeRegistryVersion, EditID: edit.EditID, ExpectedAction: fileedit.OperationReplace,
-					ExpectedOriginalSHA256: edit.OriginalSHA256, ExpectedProposedSHA256: edit.ProposedSHA256}, "file-apply-after-change")
-				if err == nil {
-					t.Fatal("old automatic source executed after authority changed")
-				}
-				if boundary == "staged_before_publication" && !sawStaging {
-					t.Fatalf("actual publication boundary was not reached: %v", err)
+					_, err := f.execute(ctx, toolgateway.WorkspaceChangeTool, toolgateway.WorkspaceChangePayload{
+						Version: toolgateway.AgentCodeRegistryVersion, Action: fileedit.OperationReplace, Path: "file.txt",
+						ExpectedSHA256: fileedit.HashText("before\n"), Content: "after\n"}, "file-source-staged-change")
+					if err == nil || !sawStaging {
+						t.Fatalf("staged_before_publication did not fail closed at publication boundary: sawStaging=%t err=%v", sawStaging, err)
+					}
+				} else {
+					prepared, err := fileedit.NewManager(f.state).PrepareProposal(t.Context(), fileedit.Proposal{
+						SessionID: f.scope.SessionID,
+						WorkspaceID: f.scope.WorkspaceID, WorkspaceRoot: f.root, Path: "file.txt",
+						Operation: fileedit.OperationReplace, ProposedText: "after\n",
+						ExpectedOriginalHash: fileedit.HashText("before\n"),
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					edit, replayed, err := f.state.CreateAutomaticallyAuthorizedFileEditIfAbsent(t.Context(), prepared, fileedit.AutoAuthorization{
+						RunID: f.scope.RunID, SessionID: f.scope.SessionID, WorkspaceID: f.scope.WorkspaceID,
+						AgentID: f.scope.RootAgentID, OperationKeyDigest: strings.Repeat("1", 64),
+						ProposalFingerprint: runmutation.Fingerprint("agent_code_file_edit_proposal.v1",
+							prepared.ID, prepared.SessionID, prepared.WorkspaceID, prepared.Operation,
+							prepared.Path, prepared.DestinationPath, prepared.OriginalHash, prepared.ProposedHash,
+							prepared.DestinationOriginalHash, prepared.DestinationProposedHash),
+						PermissionSnapshotID: f.scope.PermissionSnapshotID,
+						PermissionRevision:   f.scope.PermissionRevision,
+						ModeRevision:         f.scope.ModeRevision,
+						RuntimeEpoch:         f.scope.PermissionRuntimeEpoch,
+						RuntimeGeneration:    f.scope.PermissionGeneration,
+						RunAuthorizationFence: f.scope.RunAuthorizationFence,
+						CapabilityGeneration:  f.scope.CapabilityGeneration,
+						LeaseID:               f.scope.LeaseID,
+						LeaseGeneration:       f.scope.LeaseGeneration,
+					})
+					if err != nil || replayed || edit.Status != fileedit.StatusApproved {
+						t.Fatalf("automatic fixture failed: edit=%+v replayed=%t err=%v", edit, replayed, err)
+					}
+					switch boundary {
+					case "policy_denied":
+						f.policy.deny = true
+					case "policy_requires_review":
+						f.policy.review = true
+					case "revoked_then_renewed":
+						f.runtime.RevokeRun(f.scope.RunID)
+						f.refreshScope(t)
+					case "sqlite_reopen_new_runtime":
+						if err := f.state.Close(); err != nil {
+							t.Fatal(err)
+						}
+						f.state, err = store.Open(f.database)
+						if err != nil {
+							t.Fatal(err)
+						}
+						f.runtime = domain.NewExecutionPermissionRuntimeAuthority()
+						f.capabilities.RuntimeAuthority = f.runtime
+						f.executor = application.NewAgentCodeToolExecutor(f.state, f.policy).WithExecutionPermissionCapabilities(f.capabilities)
+						f.refreshScope(t)
+					case "cancelled":
+						cancel()
+					}
+					_, err = f.execute(ctx, toolgateway.WorkspaceApplyTool, toolgateway.WorkspaceApplyPayload{
+						Version: toolgateway.AgentCodeRegistryVersion, EditID: edit.ID, ExpectedAction: fileedit.OperationReplace,
+						ExpectedOriginalSHA256: edit.OriginalHash, ExpectedProposedSHA256: edit.ProposedHash}, "file-apply-after-change")
+					if err == nil {
+						t.Fatal("old automatic source executed after authority changed")
+					}
 				}
 				if data, err := os.ReadFile(path); err != nil || string(data) != "before\n" {
 					t.Fatalf("denied operation changed bytes: %q %v", data, err)

@@ -5,6 +5,7 @@ import { APIRequestError, type APIClient } from "../api/client";
 import type { SandboxEnvironmentControlRequestView, SandboxEnvironmentSettingsView } from "../api/types";
 import { sandboxEnvironmentQueryKey, sandboxSettingsMatch, validSandboxSettings } from "../api/sandbox-environment";
 import { desktopErrorMessage, desktopSandboxRestartEnabled, restartDesktopWithSandboxSettings } from "../lib/desktop-bridge";
+import { useLocale } from "../lib/locale";
 import { SandboxBackendSelector, sandboxBackendLabels } from "./sandbox-backend-selector";
 import "./sandbox-environment-panel.css";
 
@@ -20,6 +21,7 @@ interface SaveIntent {
 }
 
 export function SandboxEnvironmentPanel({ client }: { client: APIClient }) {
+  const { t } = useLocale();
   const queries = useQueryClient();
   const edited = useRef(false);
   const [draft, setDraft] = useState<SandboxEnvironmentSettingsView>(localDefaults);
@@ -76,58 +78,58 @@ export function SandboxEnvironmentPanel({ client }: { client: APIClient }) {
   const dirty = Boolean(value && !sandboxSettingsMatch(draft, value.settings));
   const valid = validSandboxSettings(draft);
   const canRestart = desktopSandboxRestartEnabled();
-  return <section aria-label="执行环境设置" className="sandbox-environment-panel">
-    <div className="section-heading"><div><h2>执行环境</h2><p>Local 默认在本机工作区执行。安装 Docker 或官方 sbx 后，在这里启用并配置需要的环境。</p></div>
+  return <section aria-label={t("执行环境设置", "Execution environment settings")} className="sandbox-environment-panel">
+    <div className="section-heading"><h2>{t("执行环境", "Execution environment")}</h2>
       <button className="compact-command" disabled={environment.isFetching || pending || restarting} onClick={() => void environment.refetch()} type="button">
-        <RefreshCw aria-hidden="true" size={14} />检测环境</button></div>
-    {environment.isPending && <p role="status">正在检测本机执行环境…</p>}
-    {environment.isError && <p role="alert">执行环境检测失败。点击“检测环境”重新读取。{environment.error.message}</p>}
+        <RefreshCw aria-hidden="true" size={14} />{t("检测环境", "Check environments")}</button></div>
+    {environment.isPending && <p role="status">{t("正在检测本机执行环境…", "Checking local execution environments…")}</p>}
+    {environment.isError && <p role="alert">{t("执行环境检测失败。", "Couldn’t check environments. ")}{environment.error.message}</p>}
     {value && <>
-      <div aria-label="当前进程环境" className="sandbox-environment-observations">
+      <div aria-label={t("当前进程环境", "Current environments")} className="sandbox-environment-observations">
         {value.backends.map((backend) => <article key={backend.backend}>
           <strong>{sandboxBackendLabels[backend.backend]}</strong>
-          <span>{value.probe_status === "not_checked" ? "检测待完成" : backend.ready ? "当前进程已就绪"
-            : backend.status === "disabled" ? "当前进程待启用" : backend.status === "configuration_required" ? "需要配置固定镜像" : "当前环境待准备"}</span>
-          <p>{value.probe_status === "checked" ? backend.installed ? "已检测到本机安装" : "尚未检测到可用安装" : "设置已保存，重新检测当前环境。"}</p>
+          <span>{value.probe_status === "not_checked" ? t("检测待完成", "Check pending") : backend.ready ? t("当前进程已就绪", "Ready")
+            : backend.status === "disabled" ? t("当前进程待启用", "Disabled") : backend.status === "configuration_required" ? t("需要配置固定镜像", "Pinned image required") : t("当前环境待准备", "Setup required")}</span>
+          {value.probe_status === "checked" && !backend.ready && <p>{backend.installed ? t("已检测到本机安装", "Installed locally") : t("尚未检测到可用安装", "No installation detected")}</p>}
           {backend.blockers.map((blocker) => <p key={blocker.code}>{blocker.message}</p>)}
         </article>)}
       </div>
       <fieldset disabled={locked || !client.hasControl} className="sandbox-environment-form">
-        <legend>保存下次启动设置</legend>
-        <p>默认环境用于尚未配置编码环境的任务。已有任务继续使用当前配置，具体操作沿用任务权限和来源确认。</p>
+        <legend>{t("保存下次启动设置", "Settings for the next launch")}</legend>
+        <p>{t("默认环境仅用于尚未配置编码环境的任务。", "The default applies to tasks without a configured coding environment.")}</p>
         <SandboxBackendSelector value={draft.default_backend} disabled={locked || !client.hasControl}
           onChange={(backend) => change({ ...draft, default_backend: backend })} />
         <div className="sandbox-environment-fields">
-          <label className="sandbox-environment-toggle"><input checked={draft.docker_enabled} onChange={(event) => change({ ...draft, docker_enabled: event.currentTarget.checked })} type="checkbox" />启用 Docker Engine</label>
-          <label>Docker 固定镜像摘要<input autoComplete="off" maxLength={71} onChange={(event) => change({ ...draft, docker_image_digest: event.currentTarget.value })}
+          <label className="sandbox-environment-toggle"><input checked={draft.docker_enabled} onChange={(event) => change({ ...draft, docker_enabled: event.currentTarget.checked })} type="checkbox" />{t("启用 Docker Engine", "Enable Docker Engine")}</label>
+          <label>{t("Docker 固定镜像摘要", "Pinned Docker image digest")}<input autoComplete="off" maxLength={71} onChange={(event) => change({ ...draft, docker_image_digest: event.currentTarget.value })}
             placeholder="sha256:…" spellCheck={false} value={draft.docker_image_digest} /></label>
-          <p>使用已审阅的 Linux 工具链镜像，填写完整 SHA-256 摘要。检测会检查本机 Engine 与镜像状态。</p>
-          <label className="sandbox-environment-toggle"><input checked={draft.sbx_enabled} onChange={(event) => change({ ...draft, sbx_enabled: event.currentTarget.checked })} type="checkbox" />启用 Docker Sandboxes (sbx)</label>
-          <label>sbx 固定模板<input autoComplete="off" maxLength={512} onChange={(event) => change({ ...draft, sbx_template: event.currentTarget.value })}
+          <p>{t("填写已审阅的 Linux 工具链镜像的完整 SHA-256 摘要。", "Enter the full SHA-256 digest of the reviewed Linux toolchain image.")}</p>
+          <label className="sandbox-environment-toggle"><input checked={draft.sbx_enabled} onChange={(event) => change({ ...draft, sbx_enabled: event.currentTarget.checked })} type="checkbox" />{t("启用 Docker Sandboxes (sbx)", "Enable Docker Sandboxes (sbx)")}</label>
+          <label>{t("sbx 固定模板", "Pinned sbx template")}<input autoComplete="off" maxLength={512} onChange={(event) => change({ ...draft, sbx_template: event.currentTarget.value })}
             placeholder="registry/repository@sha256:…" spellCheck={false} value={draft.sbx_template} /></label>
-          <p>安装 sbx 0.47.0，在专用 traverse-runtime 命名空间登录并准备固定 OCI 模板，填写完整 SHA-256 摘要。启用并保存后重启应用，由应用注册内置辅助服务；检测就绪后即可为任务选择 Docker Sandboxes。</p>
+          <p>{t("sbx 0.47.0 需要登录专用 traverse-runtime 命名空间，并使用含完整 SHA-256 摘要的 OCI 模板。", "sbx 0.47.0 requires sign-in to the traverse-runtime namespace and an OCI template with a full SHA-256 digest.")}</p>
         </div>
-        {!valid && <p role="alert">请启用选作默认的后端，并核对固定镜像摘要或 sbx 模板格式。</p>}
+        {!valid && <p role="alert">{t("请启用选作默认的后端，并核对固定镜像摘要或 sbx 模板格式。", "Enable the default backend and check the image digest or sbx template format.")}</p>}
         <button className="command-button primary" disabled={!dirty || !valid || locked || !client.hasControl}
           onClick={() => submit({ version: "sandbox_environment.v1", expected_revision: value.revision, settings: { ...draft } })} type="button">
-          {pending && <LoaderCircle aria-hidden="true" className="spin" size={14} />}保存执行环境设置</button>
+          {pending && <LoaderCircle aria-hidden="true" className="spin" size={14} />}{t("保存执行环境设置", "Save execution environments")}</button>
       </fieldset>
-      {!client.hasControl && <p>当前连接可检测环境。连接桌面控制入口后可保存设置。</p>}
-      {intent.data?.state === "confirmed" && <p role="status">执行环境设置已保存。{value.restart_required ? "重启应用后读取新配置。" : "当前进程配置已与保存设置一致。"}</p>}
-      {pending && <p role="status">正在保存设置。原请求已保留，关闭后可回到这里查看结果。</p>}
-      {unknown && <div role="alert"><p>保存结果待确认，使用原请求核对结果。{intent.data?.error}</p>
-        <button disabled={!client.hasControl || pending} onClick={() => submit(intent.data!.body)} type="button">核对保存结果</button></div>}
-      {conflict && <div role="alert"><p>执行环境设置已被修改。重新读取当前配置，核对后再保存。{intent.data?.error}</p>
-        <button disabled={environment.isFetching} onClick={() => void reread()} type="button">重新读取配置</button></div>}
-      {intent.data?.state === "rejected" && <p role="alert">设置未保存，请核对配置和连接权限后重试。{intent.data.error}</p>}
-      {intent.data?.state === "rejected" && intent.data.status === 412 && <p>当前设置存储需要重新核对。请重新检测环境；仍无法保存时，关闭并重新打开应用。</p>}
-      {value.restart_required && <div className="sandbox-environment-restart" role="status"><p>保存设置与当前进程配置不同。重启应用后再次检测环境，再回到任务配置编码环境。</p>
+      {!client.hasControl && <p>{t("保存需要桌面控制权限。", "Saving requires a desktop control connection.")}</p>}
+      {intent.data?.state === "confirmed" && <p role="status">{t("执行环境设置已保存。", "Execution environment settings saved.")}</p>}
+      {pending && <p role="status">{t("正在保存设置…", "Saving settings…")}</p>}
+      {unknown && <div role="alert"><p>{t("保存结果待确认。", "Save unconfirmed. ")}{intent.data?.error}</p>
+        <button disabled={!client.hasControl || pending} onClick={() => submit(intent.data!.body)} type="button">{t("核对保存结果", "Check save result")}</button></div>}
+      {conflict && <div role="alert"><p>{t("执行环境设置已被修改。重新读取当前配置，核对后再保存。", "Settings changed. Reload the configuration before saving again. ")}{intent.data?.error}</p>
+        <button disabled={environment.isFetching} onClick={() => void reread()} type="button">{t("重新读取配置", "Reload configuration")}</button></div>}
+      {intent.data?.state === "rejected" && <p role="alert">{t("设置未保存，请核对配置和连接权限后重试。", "Settings weren’t saved. Check configuration and access, then retry. ")}{intent.data.error}</p>}
+      {intent.data?.state === "rejected" && intent.data.status === 412 && <p>{t("请重新检测环境。如仍无法保存，请重启应用。", "Check environments again. If saving still fails, restart the app.")}</p>}
+      {value.restart_required && <div className="sandbox-environment-restart" role="status"><p>{t("重启后应用已保存的执行环境。", "Restart to apply the saved execution environments.")}</p>
         {canRestart ? <button disabled={locked || dirty || environment.isFetching} onClick={() => restart.mutate()} type="button">
-          <RotateCw aria-hidden="true" size={14} />{restarting ? "正在重启应用…" : "重启并读取执行环境设置"}</button>
-          : <p>关闭并重新打开桌面应用，使保存设置生效。</p>}
-        {restart.isError && <p role="alert">重启失败。{desktopErrorMessage(restart.error)}</p>}
+          <RotateCw aria-hidden="true" size={14} />{restarting ? t("正在重启应用…", "Restarting…") : t("重启并读取执行环境设置", "Restart to apply execution environments")}</button>
+          : <p>{t("请关闭并重新打开桌面应用。", "Close and reopen the desktop app.")}</p>}
+        {restart.isError && <p role="alert">{t("重启失败。", "Restart failed. ")}{desktopErrorMessage(restart.error)}</p>}
       </div>}
-      <details><summary>查看配置与检测记录</summary><pre>{JSON.stringify(value, null, 2)}</pre></details>
+      <details><summary>{t("查看配置与检测记录", "Configuration and check results")}</summary><pre>{JSON.stringify(value, null, 2)}</pre></details>
     </>}
   </section>;
 }

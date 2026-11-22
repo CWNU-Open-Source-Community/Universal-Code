@@ -8,7 +8,6 @@ import {
   Redo2,
   RotateCcw,
   Search,
-  ShieldCheck,
   Undo2,
 } from "lucide-react";
 import type { APIClient } from "../api/client";
@@ -274,15 +273,6 @@ export function WorkspaceCheckpointPanel({ client, runID, runStatus, variant = "
   const previewConflicts = preview?.result.preview.conflicts ?? [];
 
   return <div className="workspace-checkpoint-panel">
-    <section className="checkpoint-safety-boundary">
-      <ShieldCheck aria-hidden="true" size={18} />
-      <div><strong>{t("先预览，再确认恢复", "Preview, then confirm restore")}</strong>
-        <p>{!allowFork ? t("恢复会核对整个项目和 Git 暂存区。快照之后的外部修改（包括新增文件）可能形成冲突；请先保留并处理这些内容，再重新预览。确认时会再次校验范围和版本。", "Restore checks the whole project and Git index. External changes made after the snapshot, including new files, may create conflicts. Preserve and resolve them before previewing again. Scope and revision are checked again on confirmation.") : t(
-          "每次恢复都会保留原历史并新增操作记录。确认时会重新核对暂停状态、当前权限、项目身份、Git 暂存区和外部变化；有冲突时先处理，再预览。",
-          "Each restore preserves history and adds an operation record. Confirmation rechecks the paused state, current permissions, project identity, Git index, and external changes. Resolve conflicts before previewing again.",
-        )}</p></div>
-    </section>
-
     <section className="checkpoint-toolbar" aria-label={t("检查点操作", "Checkpoint actions")}>
       <form onSubmit={(event) => {
         event.preventDefault();
@@ -299,34 +289,33 @@ export function WorkspaceCheckpointPanel({ client, runID, runStatus, variant = "
       <div className="checkpoint-action-row">
         <button className="compact-command" disabled={restoreBlocked || !undoSource ||
           previewRestore.isPending} onClick={() => previewAction("undo")} type="button">
-          <Undo2 aria-hidden="true" size={13} />{allowFork ? t("预览 Undo", "Preview undo") : "预览撤销最近改动"}
+          <Undo2 aria-hidden="true" size={13} />{allowFork ? t("预览 Undo", "Preview undo") : t("预览撤销最近改动", "Preview undo of the latest change")}
         </button>
         <button className="compact-command" disabled={restoreBlocked || !redoSource?.after_checkpoint_id ||
           previewRestore.isPending} onClick={() => previewAction("redo")} type="button">
-          <Redo2 aria-hidden="true" size={13} />{allowFork ? t("预览 Redo", "Preview redo") : "预览重做"}
+          <Redo2 aria-hidden="true" size={13} />{allowFork ? t("预览 Redo", "Preview redo") : t("预览重做", "Preview redo")}
         </button>
         <button className="compact-command" disabled={restoreBlocked || !selected ||
           selected.id === currentID || selected.recovery_level === "unavailable" ||
           previewRestore.isPending} onClick={() => previewAction("rewind")} type="button">
-          <Search aria-hidden="true" size={13} />{allowFork ? t("预览 Rewind", "Preview rewind") : "预览恢复到所选版本"}
+          <Search aria-hidden="true" size={13} />{allowFork ? t("预览 Rewind", "Preview rewind") : t("预览恢复到所选版本", "Preview restore to selected revision")}
         </button>
       </div>
       {!client.hasWorkspaceCheckpointControl && <p className="inline-warning">{t(
         "当前连接只能浏览时间线；创建、预览与恢复需要控制令牌。",
         "This connection can browse only; create, preview, and restore require a control token.",
       )}</p>}
-      {client.hasWorkspaceCheckpointControl && runStatus !== "paused" && <p className="inline-warning">{!allowFork ? "请先暂停任务，再预览恢复操作。" : t(
+      {client.hasWorkspaceCheckpointControl && runStatus !== "paused" && <p className="inline-warning">{!allowFork ? t("预览恢复需要暂停任务。", "Restore previews require a paused run.") : t(
         "Undo、Redo、Rewind 和 Fork 仅在 Run 已暂停且没有活动执行租约时开放。",
         "Undo, redo, rewind, and Fork require a paused Run with no active execution lease.",
       )}</p>}
-      {!allowFork && <p>{t("保守模式可预览恢复。确认写入需要相应任务权限，请在对话输入区核对后继续。", "Conservative mode supports restore previews. Confirming a write requires the relevant task permissions; review them in the conversation composer before continuing.")}</p>}
     </section>
 
     <div className="checkpoint-layout">
       <section className="checkpoint-timeline" aria-label={t("Workspace 时间线", "Workspace timeline")}>
         <header><History aria-hidden="true" size={17} /><strong>{t("项目检查点", "Project checkpoints")}</strong>
           <small>{timeline.data?.storage_usage.checkpoint_count ?? 0} · {formatBytes(timeline.data?.storage_usage.blob_bytes ?? 0)}</small></header>
-        {checkpoints.length === 0 && <p>{t("还没有检查点。点击「立即检查点」保存当前项目版本。", "No checkpoints yet. Choose Checkpoint now to save the current project revision.")}</p>}
+        {checkpoints.length === 0 && <p>{t("暂无检查点。", "No checkpoints yet.")}</p>}
         {checkpoints.map((checkpoint) => <button aria-pressed={checkpoint.id === selectedID}
           className={checkpoint.id === selectedID ? "selected" : ""} key={checkpoint.id}
           onClick={() => setSelectedID(checkpoint.id)} type="button">
@@ -339,8 +328,7 @@ export function WorkspaceCheckpointPanel({ client, runID, runStatus, variant = "
         </button>)}
       </section>
 
-      <section className="checkpoint-detail">
-        {!selected ? <p>{t("选择检查点查看详情。", "Select a checkpoint for details.")}</p> : <>
+      {selected && <section className="checkpoint-detail">
           <header><div><strong>{checkpointLabel(selected) || t("Workspace 检查点", "Workspace checkpoint")}</strong>
             <code>{selected.id}</code></div><StatusBadge status={selected.recovery_level} /></header>
           <details open={allowFork}><summary>{t("技术详情", "Technical details")}</summary><dl>
@@ -356,14 +344,13 @@ export function WorkspaceCheckpointPanel({ client, runID, runStatus, variant = "
             <AlertTriangle aria-hidden="true" size={15} /><span><strong>{t("不完整范围", "Incomplete scope")}</strong>
               {selected.incomplete_reasons.map((reason) => <small key={reason}>{reason}</small>)}</span>
           </div>}
-        </>}
-      </section>
+      </section>}
     </div>
 
     {(previewRestore.error || createCheckpoint.error || fork.error) &&
       <div className="inline-warning">{humanError(previewRestore.error ||
         createCheckpoint.error || fork.error)}</div>}
-    {restoreOutcome === "completed" && <p role="status">{t("项目恢复已完成。请结合当前差异确认内容，历史编辑记录会保留。", "Workspace restore completed. Check the current diff; historical edit records are retained.")}</p>}
+    {restoreOutcome === "completed" && <p role="status">{t("项目恢复已完成。", "Workspace restore completed.")}</p>}
     {restoreOutcome === "failed" && <p role="alert">{t("本次恢复失败，项目可能已部分改变。请检查当前文件和冲突，处理后重新预览。", "The restore failed and the project may have partially changed. Inspect current files and conflicts, resolve them, then preview again.")}</p>}
     {pendingRestore && <section className="checkpoint-preview" aria-label={t("待确认的恢复操作", "Unresolved restore operation")}>
       <p role="status">{pendingRestore.state === "pending" ? t("正在确认恢复结果…", "Confirming restore outcome…")
@@ -377,6 +364,8 @@ export function WorkspaceCheckpointPanel({ client, runID, runStatus, variant = "
     {!pendingRestore && preview && <section className="checkpoint-preview" aria-label={t("恢复预览", "Restore preview")}>
       <header><RotateCcw aria-hidden="true" size={17} /><div><strong>{restoreActionLabel(t, preview.action)}</strong>
         <small>{preview.result.preview.changes.length} {t("项影响", "changes")} · {preview.result.preview.recovery_level}</small></div></header>
+      <p>{t("恢复范围包括整个项目和 Git 暂存区。检查点以外的命令影响无法撤销。", "Restore covers the entire project and Git index. Command effects outside the checkpoint cannot be undone.")}</p>
+      {!allowFork && <p>{t("保守模式可预览恢复。写入需要相应的任务权限。", "Conservative mode allows previews. Restoring requires write permission for this task.")}</p>}
       {preview.result.preview.index_changed && <p className="inline-warning">{t(
         "Git index 将发生变化；确认时会再次校验完整 index hash。",
         "The Git index will change and its complete hash will be rechecked on confirmation.",

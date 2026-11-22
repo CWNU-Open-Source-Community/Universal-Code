@@ -1,0 +1,15 @@
+.approval-decision-queue .approval-row { padding: 9px 0; }
+.approval-decision-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 8px; min-width: 0; }
+.approval-decision-heading strong { font-size: 13px; font-weight: 600; }
+.approval-decision-heading code { font-size: 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.approval-decision-queue .approval-actions { align-items: center; flex-direction: row; flex-wrap: wrap; justify-content: start; gap: 4px 8px; margin-top: 6px; }
+.approval-decision-queue .approval-actions .command-button { flex: 0 1 auto; max-width: 100%; min-height: 28px; padding: 4px 9px; width: auto; }
+.approval-decision-queue .approval-actions details { min-width: 0; }
+.approval-decision-queue .approval-actions details[open] { flex-basis: 100%; }
+.approval-decision-queue summary { color: var(--prayu-muted); cursor: pointer; font-size: 12px; line-height: 28px; width: fit-content; }
+.approval-decision-queue summary:hover { color: var(--prayu-text); }
+.approval-decision-queue .approval-actions input { height: 30px; min-width: 0; width: min(24em, 100%); }
+.approval-decision-queue .approval-metadata dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px; font-size: 12px; margin: 0; }
+.approval-decision-queue .approval-metadata dt { color: var(--prayu-muted); }
+.approval-decision-queue .approval-metadata dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.approval-decision-queue .approval-boundary-line { padding: 0 0 6px; }

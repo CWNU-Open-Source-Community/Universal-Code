@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	"cyberagent-workbench/internal/runner"
@@ -37,7 +36,7 @@ func TestLocalCommandLaunchRejectsFilesystemAliasDrift(t *testing.T) {
 					t.Fatal(systemErr)
 				}
 				command := exec.Command(filepath.Join(system, "cmd.exe"), "/d", "/c", "mklink", "/J", original, moved)
-				command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+				hideSubprocessWindow(command)
 				if output, junctionErr := command.CombinedOutput(); junctionErr != nil {
 					t.Fatalf("create temporary directory alias: symlink=%v junction=%v output=%s", err, junctionErr, output)
 				}

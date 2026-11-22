@@ -27,8 +27,6 @@ function ProjectHooksForTask({ client, threadID }: ProjectHooksProps) {
   return <section className="v2-task-delivery v2-project-hooks" aria-label={t("项目自动动作", "Project automatic actions")}>
     <div className="v2-delivery-heading"><h2>{t("项目自动动作", "Project automatic actions")}</h2>
       <button type="button" disabled={busy} onClick={() => { review.reset(); void state.refetch(); }}>{t("刷新配置", "Refresh configuration")}</button></div>
-    <p className="v2-delivery-muted">{t("首次信任下面的具体配置后，后续任务自动沿用；配置变化时重新确认。自动动作继续遵守任务权限和预算，需要审批时等待你处理。",
-      "Trust this exact configuration once for later tasks to reuse it. Configuration changes require review again. Automatic actions still follow task permissions and budgets and wait for required approval.")}</p>
     {state.isLoading && <p role="status">{t("正在读取项目自动动作…", "Reading project automatic actions…")}</p>}
     {state.isError && <ErrorState error={state.error} />}
     {view && <>
@@ -42,6 +40,8 @@ function ProjectHooksForTask({ client, threadID }: ProjectHooksProps) {
         <dl><div><dt>{t("配置指纹", "Fingerprint")}</dt><dd><code>{view.fingerprint}</code></dd></div>
           <div><dt>{t("信任版本", "Trust revision")}</dt><dd>{view.revision}</dd></div></dl></details>}
       {!view.matches_task && <p className="v2-delivery-muted">{t("当前任务使用已保存的旧配置。对这份配置的信任将在新任务中生效。", "This task uses its saved older configuration. Trust for this configuration takes effect in new tasks.")}</p>}
+      {view.hooks.length > 0 && !view.trusted && <p className="v2-delivery-muted">{t("后续任务会沿用这份信任，配置变更时需重新授权。自动动作遵守任务权限、审批和预算。",
+        "Future tasks reuse this trust until the configuration changes. Automatic actions follow task permissions, approvals and budgets.")}</p>}
       {view.hooks.length > 0 && <div className="v2-delivery-actions">
         {!view.trusted && <button type="button" className="v2-delivery-primary" disabled={!canReview} onClick={() => review.mutate({ view, action: "trust" })}>
           {view.state === "changed" ? t("信任变更后的配置", "Trust changed configuration") : view.state === "disabled" ? t("重新信任当前配置", "Trust current configuration again") : t("信任当前配置", "Trust current configuration")}</button>}

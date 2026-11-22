@@ -42,15 +42,46 @@ func minimalSupervisorSegmentReceiptPlan(rounds []domain.SupervisorToolRound, co
 	if count <= 0 || count > len(rounds) {
 		return supervisorSegmentReceipt{}, errors.New("invalid minimal segment receipt count")
 	}
-	entries, err := supervisorSegmentReceiptEntries(rounds[:count])
+	for _, round := range rounds {
+		if err := round.Validate(); err != nil {
+			return supervisorSegmentReceipt{}, err
+		}
+		if !round.Complete() {
+			return supervisorSegmentReceipt{}, fmt.Errorf(
+				"current segment contains an incomplete supervisor tool round %d of attempt %s",
+				round.Round, round.AttemptID)
+		}
+	}
+	receipted := append([]domain.SupervisorToolRound(nil), rounds[:count]...)
+	native := append([]domain.SupervisorToolRound(nil), rounds[count:]...)
+	entries, err := supervisorSegmentReceiptEntries(receipted)
 	if err != nil {
 		return supervisorSegmentReceipt{}, err
 	}
-	content, err := renderSupervisorSegmentReceipt(entries, len(rounds)-count)
-	if err != nil {
-		return supervisorSegmentReceipt{}, err
+	rawLines := make([]string, len(entries))
+	for i, entry := range entries {
+		encoded, marshalErr := json.Marshal(entry)
+		if marshalErr != nil {
+			return supervisorSegmentReceipt{}, marshalErr
+		}
+		rawLines[i] = string(encoded)
 	}
-	return supervisorSegmentReceiptPlan(rounds, count, supervisorSegmentReceiptTokens(content, attemptID, sessionID), attemptID, sessionID)
+	suffix := "\nNo native tool call or result pairs of this segment remain in this request."
+	if len(native) > 0 {
+		suffix = fmt.Sprintf("\nThe %d most recent tool round(s) of this segment remain below as native call and result pairs.", len(native))
+	}
+	resolvedSessionID := segmentReceiptBudgetSessionID
+	if sessionID != "" {
+		resolvedSessionID = sessionID
+	}
+	sourceRef := fmt.Sprintf("tool-segment-receipt-%s", attemptID)
+	tree := newReceiptTokenTree(sourceRef, resolvedSessionID, supervisorSegmentReceiptPrefix, suffix, nil, rawLines)
+	return supervisorSegmentReceipt{
+		ReceiptedRounds: receipted,
+		NativeRounds:    native,
+		ReceiptContent:  tree.renderWith(supervisorSegmentReceiptPrefix, suffix, nil),
+		ReceiptTokens:   tree.totalTokens(),
+	}, nil
 }
 
 // The capacity is an input allocation, not an output limit. A recovery ceiling
@@ -61,19 +92,19 @@ func supervisorReceiptInputLimit(request llm.ChatRequest, window llm.ContextWind
 	if err != nil {
 		return 0, err
 	}
-	if budget.MaxTokens > 0 {
-		remaining := budget.MaxTokens - checkpoint.TotalTokens - int64(output)
-		if remaining < 0 {
-			remaining = 0
-		}
-		if remaining < int64(limit) {
-			limit = int(remaining)
-		}
-	}
+	limit = supervisorRunInputLimit(limit, output, budget, checkpoint)
 	if recoveryLimit != nil && *recoveryLimit < limit {
 		limit = *recoveryLimit
 	}
 	return limit, nil
+}
+
+func supervisorRunInputLimit(limit, output int, budget domain.Budget, checkpoint domain.SupervisorCheckpoint) int {
+	if budget.MaxTokens <= 0 {
+		return limit
+	}
+	remaining := max(0, budget.MaxTokens-checkpoint.TotalTokens)
+	return int(min(int64(limit), max(0, remaining-int64(output))))
 }
 
 // Replace exactly the Go-authored message already inserted for this plan.
@@ -94,12 +125,20 @@ func fitSupervisorSegmentReceiptStage(request llm.ChatRequest, plan supervisorSe
 	without := request
 	without.Messages = append(append([]llm.Message(nil), request.Messages[:index]...), request.Messages[index+1:]...)
 	capacity := inputLimit - estimateModelRequestTokens(without)
-	// Keep the mandatory receipt so the established fitter can compact history
-	// or withdraw another prefix. The caller must still enforce inputLimit.
-	if capacity < supervisorSegmentReceiptTokens(plan.ReceiptContent, attemptID, sessionID) {
-		return request, nil
+	minimalTokens := plan.ReceiptTokens
+	if minimalTokens <= 0 {
+		minimalTokens = supervisorSegmentReceiptTokens(plan.ReceiptContent, attemptID, sessionID)
 	}
-	content, tokens, err := supervisorSegmentReceiptContentStage(plan.ReceiptedRounds, plan.NativeRounds, capacity, attemptID, contractsOnly, sessionID)
+	workingRounds := plan.ReceiptedRounds
+	var summaryLines []string
+	if capacity < minimalTokens {
+		foldedRounds, summary, ok := foldSupervisorSegmentReceiptRounds(plan.ReceiptedRounds, plan.NativeRounds, capacity, attemptID, sessionID)
+		if !ok {
+			return request, nil
+		}
+		workingRounds, summaryLines = foldedRounds, summary
+	}
+	content, tokens, err := supervisorSegmentReceiptContentStageWithSummary(workingRounds, plan.NativeRounds, capacity, attemptID, contractsOnly, summaryLines, sessionID)
 	if err != nil {
 		return llm.ChatRequest{}, err
 	}

@@ -36,7 +36,7 @@ func newThreadPlanFixture(t *testing.T, responses ...*llm.ChatResponse) (*store.
 	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{ID: "workspace-thread-plan", Name: "Thread Plan", RootPath: t.TempDir(), CreatedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
 	}
-	_, run, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{Goal: "Original goal: preserve source and restrictions", Profile: "review", Surface: "code", Phase: "plan", Interactive: true, WorkspaceID: "workspace-thread-plan", ModelRoute: "tool-loop/model", Budget: domain.Budget{MaxTurns: 16, MaxToolCalls: 16}})
+	_, run, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{Goal: "Original goal: preserve source and restrictions", Profile: "review", Surface: "code", Phase: "plan", Interactive: true, WorkspaceID: "workspace-thread-plan", ModelRoute: "tool-loop/model", Budget: domain.Budget{MaxTurns: 16, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 16)}})
 	if err != nil {
 		t.Fatal(err)
 	}

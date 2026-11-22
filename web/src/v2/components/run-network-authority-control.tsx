@@ -218,7 +218,6 @@ export function V2RunNetworkAuthorityControl({ client, threadID = "", runID,
       {!readinessQuery.isError && <em>{remediationLabel(readiness, t)}</em>}</div>}
     {readiness && webMode !== "disabled" && <V2SearchDiagnosticsControl client={client} readiness={readiness}
       onOpenModelSettings={onOpenModelSettings} />}
-    {webMode === "rules" && query.isSuccess && <p className="v2-network-note">{t("下方域名允许直接读取网页。范围外的读取按请求批准。", "Pages on the domains below can be read directly. Reads outside this scope require approval.")}</p>}
     {webMode === "rules" && current.length > 0 && <div aria-label={t("当前允许的 HTTPS 主机", "Currently allowed HTTPS hosts")} className="v2-network-targets">
       {current.map((target) => <code key={target}>{target}</code>)}
     </div>}

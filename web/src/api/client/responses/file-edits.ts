@@ -220,13 +220,17 @@ export function parseFileEditReview(value: unknown, runID: string, editID: strin
   if (!isRecord(value) || !hasOnlyKeys(value, [...required, "continuation"]) ||
     required.some((key) => !Object.prototype.hasOwnProperty.call(value, key)) ||
     value.protocol_version !== "file_edit_review.v1" || value.run_id !== runID ||
-    value.action !== request.action || value.file_written !== false || typeof value.replayed !== "boolean") {
-    throw new APIRequestError("File edit review response violated its no-write contract",
+    value.action !== request.action || typeof value.file_written !== "boolean" || typeof value.replayed !== "boolean") {
+    throw new APIRequestError("File edit review response violated its audited contract",
       "INVALID_RESPONSE", 502);
   }
   const edit = parseFileEditPreview(value.edit);
-  const expected = request.action === "approve_intent" ? "approved" : "denied";
-  if (edit.id !== editID || edit.status !== expected || edit.apply_enabled !== false) {
+  const validDecision = request.action === "deny"
+    ? edit.status === "denied" && value.file_written === false
+    : (edit.status === "approved" && value.file_written === false) ||
+      (edit.status === "applied" && value.file_written === !value.replayed) ||
+      (edit.status === "failed" && value.file_written === false);
+  if (edit.id !== editID || !validDecision || edit.apply_enabled !== false) {
     throw new APIRequestError("File edit review result does not match the requested decision",
       "INVALID_RESPONSE", 502);
   }

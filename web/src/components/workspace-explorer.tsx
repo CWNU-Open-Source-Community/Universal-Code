@@ -55,7 +55,8 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
   });
   useEffect(() => {
     if (highlightLine && highlightedLineRef.current) {
-      highlightedLineRef.current.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      highlightedLineRef.current.scrollIntoView?.({ block: "center", behavior: reduceMotion ? "instant" : "smooth" });
     }
   }, [location, query.data]);
   const search = useQuery({
@@ -103,15 +104,14 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
   };
 
   if (!workspaceID) return <section className="workspace-explorer">
-    <EmptyState>{t("绑定项目后可查看文件，请返回对话核对项目选择。", "Bind a project to inspect files. Return to the conversation to review the project selection.")}</EmptyState>
+    <EmptyState>{t("未绑定项目。", "No project is bound.")}</EmptyState>
   </section>;
   if (query.isLoading) return <section className="workspace-explorer">
     <LoadingState label={t("正在加载工作区文件", "Loading Workspace files")} />
   </section>;
   if (query.isError || !query.data) return <section className="workspace-explorer">
     <div className="explorer-error">
-      <h4>{t("无法读取工作区文件", "Unable to read Workspace files")}</h4>
-      <p className="explorer-error-hint" role="alert">{t("目标路径读取失败，请重试或返回上级目录确认文件位置。", "Reading this path failed. Retry or return to the parent directory to locate the file.")}</p>
+      <h4><span role="alert">{t("无法读取工作区文件", "Unable to read Workspace files")}</span></h4>
       <div className="explorer-error-actions">
         <button className="compact-command" disabled={query.isFetching}
           onClick={() => void query.refetch()} type="button">{t("重试文件读取", "Retry file read")}</button>
@@ -125,34 +125,40 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     </div>
   </section>;
   const snapshot = query.data;
+  const pathLabel = formatWorkspacePathLabel(snapshot.path);
+  const LocationIcon = snapshot.kind === "directory" ? FolderOpen : File;
+  const canAttach = !onSelectReference && runID && client.hasEvidenceAttachment;
+  const canPropose = !onSelectReference && runID && client.hasFileEditProposals &&
+    !snapshot.truncated && snapshot.redaction_count === 0;
 
   return <section className="workspace-explorer" aria-label={t("工作区文件", "Workspace files")} ref={explorerRef}>
     <header className="explorer-toolbar">
-      <button aria-label={t("打开上级目录", "Open parent directory")} className="icon-button"
-        disabled={path === "." || query.isFetching} onClick={() => navigate(parent)}
-        title={t("上级目录", "Parent directory")} type="button">
-        <ArrowLeft aria-hidden="true" size={16} />
-      </button>
-      <FolderOpen aria-hidden="true" size={16} />
-      <code>{formatWorkspacePathLabel(snapshot.path)}</code>
-      {snapshot.truncated && <StatusBadge status="truncated" />}
-      {snapshot.kind === "file" && onSelectReference && <button className="compact-command"
-        disabled={query.isFetching} onClick={() => onSelectReference(snapshot)} type="button">
-        <Paperclip aria-hidden="true" size={14} />{t("引用此文件", "Reference this file")}</button>}
-      {snapshot.kind === "file" && !onSelectReference && client.hasEvidenceAttachment && runID &&
-        <button className="compact-command" disabled={attachment.isPending}
+      <div className="explorer-location">
+        <button aria-label={t("打开上级目录", "Open parent directory")} className="icon-button"
+          disabled={path === "." || query.isFetching} onClick={() => navigate(parent)}
+          title={t("上级目录", "Parent directory")} type="button">
+          <ArrowLeft aria-hidden="true" size={16} />
+        </button>
+        <LocationIcon aria-hidden="true" size={16} />
+        <code title={pathLabel}>{pathLabel}</code>
+        {snapshot.truncated && <StatusBadge status="truncated" />}
+      </div>
+      {snapshot.kind === "file" && (onSelectReference || canAttach || canPropose) && <div className="explorer-toolbar-actions">
+        {onSelectReference && <button className="compact-command"
+          disabled={query.isFetching} onClick={() => onSelectReference(snapshot)} type="button">
+          <Paperclip aria-hidden="true" size={14} />{t("引用此文件", "Reference this file")}
+        </button>}
+        {canAttach && <button className="compact-command" disabled={attachment.isPending}
           onClick={() => attach(snapshot.path, snapshot.provenance.content_sha256)} type="button">
           <Paperclip aria-hidden="true" size={14} />{t("附加证据", "Attach evidence")}
         </button>}
-      {snapshot.kind === "file" && !onSelectReference && client.hasFileEditProposals && runID &&
-        !snapshot.truncated && snapshot.redaction_count === 0 &&
-        <button className="compact-command" disabled={proposalSource.isPending}
+        {canPropose && <button className="compact-command" disabled={proposalSource.isPending}
           onClick={() => proposalSource.mutate(snapshot.path)} type="button">
           <Pencil aria-hidden="true" size={14} />{t("编辑提案", "Edit proposal")}
         </button>}
+      </div>}
     </header>
     <form className="explorer-search" onSubmit={submitSearch} role="search">
-      <Search aria-hidden="true" size={15} />
       <input aria-label={t("搜索工作区证据", "Search Workspace evidence")} maxLength={128}
         onChange={(event) => setSearchInput(event.target.value)}
         placeholder={t("搜索文件", "Search files")} type="search" value={searchInput} />
@@ -181,13 +187,16 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
     {snapshot.kind === "directory" && snapshot.entries.length > 0 &&
       <div className="explorer-list" role="list">
         {snapshot.entries.map((entry) => {
-          const Icon = entry.kind === "directory" ? Folder : File;
+          const isFolder = entry.kind === "directory";
+          const Icon = isFolder ? Folder : File;
+          const detail = entry.kind === "file" ? formatBytes(entry.size_bytes)
+            : isFolder ? t("文件夹", "Folder") : t("受限", "Blocked");
           return <div key={entry.path} role="listitem">
             <button disabled={!entry.readable || query.isFetching}
               onClick={() => navigate(entry.path)} type="button">
               <Icon aria-hidden="true" size={16} />
               <span>{formatWorkspacePathLabel(entry.name)}</span>
-              <small>{entry.kind === "file" ? formatBytes(entry.size_bytes) : entry.kind}</small>
+              <small>{detail}</small>
             </button>
           </div>;
         })}
@@ -213,7 +222,7 @@ export function WorkspaceExplorer({ client, workspaceID, runID = "", initialPath
             <button aria-pressed={showPreview} className="compact-command" type="button"
               onClick={() => setLocation((current) => ({ ...current, view: "preview" }))}>{t("预览", "Preview")}</button>
           </div>}
-          <span>{t(`已显示 ${formatBytes(snapshot.returned_bytes)}`, `${formatBytes(snapshot.returned_bytes)} shown`)}</span>
+          {snapshot.returned_bytes !== snapshot.total_bytes && <span>{t(`已显示 ${formatBytes(snapshot.returned_bytes)}`, `${formatBytes(snapshot.returned_bytes)} shown`)}</span>}
           <span>{t(`共 ${formatBytes(snapshot.total_bytes)}`, `${formatBytes(snapshot.total_bytes)} total`)}</span>
         </div>
         {!showPreview && lineOutOfRange && <div className="explorer-line-warning" role="alert">

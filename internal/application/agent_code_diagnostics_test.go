@@ -50,7 +50,9 @@ func TestAgentCodeApplyDiagnosticDelta(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newAgentCodeReplaceFixture(t, true)
 			if tc.git {
-				if output, err := exec.Command("git", "init", "-q", f.root).CombinedOutput(); err != nil {
+				gitCmd := exec.Command("git", "init", "-q", f.root)
+				hideSubprocessWindow(gitCmd)
+				if output, err := gitCmd.CombinedOutput(); err != nil {
 					t.Fatalf("git init: %s, %v", output, err)
 				}
 			}
@@ -59,9 +61,12 @@ func TestAgentCodeApplyDiagnosticDelta(t *testing.T) {
 				t.Fatal(err)
 			}
 			f.executor.WithCodeIntel(manager)
-			proposal := f.propose(t, "broken\n", "delta-proposal-0001")
-			applied, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, proposal.ApplyArguments), "delta-apply-0001")
+			applied, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, f.payload("broken\n")), "delta-proposal-0001")
 			if err != nil {
+				t.Fatal(err)
+			}
+			var proposal replaceProposalResult
+			if err := json.Unmarshal([]byte(applied.JSON), &proposal); err != nil {
 				t.Fatal(err)
 			}
 			feedback := decodeAppliedDiagnosticDelta(t, applied.JSON)
@@ -94,15 +99,7 @@ func TestAgentCodeApplyDiagnosticDelta(t *testing.T) {
 			}
 			payload := f.payload("fixed\n")
 			payload["expected_sha256"] = fileedit.HashText("broken\n")
-			proposed, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, payload), "delta-repair-proposal-0001")
-			if err != nil {
-				t.Fatal(err)
-			}
-			var repair replaceProposalResult
-			if err := json.Unmarshal([]byte(proposed.JSON), &repair); err != nil {
-				t.Fatal(err)
-			}
-			fixed, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, repair.ApplyArguments), "delta-repair-apply-0001")
+			fixed, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, payload), "delta-repair-proposal-0001")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -176,10 +173,9 @@ func TestAgentCodeApplyDiagnosticFeedbackKeepsSuccessfulWrite(t *testing.T) {
 				}
 				f.executor.WithCodeIntel(manager)
 			}
-			proposal := f.propose(t, "broken\n", "feedback-proposal-0001")
-			applied, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, proposal.ApplyArguments), "feedback-apply-0001")
+			applied, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, f.payload("broken\n")), "feedback-proposal-0001")
 			if err != nil {
-				t.Fatalf("diagnostics changed apply success: %v", err)
+				t.Fatalf("diagnostics changed 1-step write success: %v", err)
 			}
 			var result struct {
 				Status      string `json:"status"`
@@ -208,15 +204,7 @@ func TestAgentCodeApplyDiagnosticFeedbackKeepsSuccessfulWrite(t *testing.T) {
 			if tc.mode == "normal" {
 				payload := f.payload("fixed\n")
 				payload["expected_sha256"] = fileedit.HashText("broken\n")
-				proposed, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, payload), "feedback-repair-proposal-0001")
-				if err != nil {
-					t.Fatal(err)
-				}
-				var repair replaceProposalResult
-				if err := json.Unmarshal([]byte(proposed.JSON), &repair); err != nil {
-					t.Fatal(err)
-				}
-				fixed, err := f.execute(t, toolgateway.WorkspaceApplyTool, mustAgentCodePayload(t, repair.ApplyArguments), "feedback-repair-apply-0001")
+				fixed, err := f.execute(t, toolgateway.WorkspaceChangeTool, mustAgentCodePayload(t, payload), "feedback-repair-proposal-0001")
 				if err != nil {
 					t.Fatal(err)
 				}

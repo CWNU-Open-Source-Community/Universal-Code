@@ -30,7 +30,7 @@ export function PriceSnapshotsSection({ client }: { client: APIClient }) {
       {query.data && (
         <div className="provider-credential-list">
           {query.data.items.length === 0 && <div className="projection-placeholder">{client.hasControl
-            ? t("尚无价格快照。粘贴下方价格文档后导入。", "No price snapshots yet. Paste a pricing document below and import it.")
+            ? t("尚无价格快照。", "No price snapshots yet.")
             : t("尚无价格快照。连接具备控制权限的服务后可导入。", "No price snapshots yet. Connect with control access to import one.")}</div>}
           {query.data.items.map((item) => (
             <div className="provider-credential-row" key={item.id}>

@@ -34,5 +34,5 @@ it("offers a read-only retry when service diagnostics fail", async () => {
   await user.click(screen.getByRole("button", { name: "Check web environment again" }));
   await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
   expect(await screen.findByText(/Blocking reason/)).toHaveTextContent("evidence_expired");
-  expect(screen.getByText(/Collect isolation evidence/)).toBeInTheDocument();
+  expect(screen.getByText(/Collect and review new isolation evidence/)).toBeInTheDocument();
 });

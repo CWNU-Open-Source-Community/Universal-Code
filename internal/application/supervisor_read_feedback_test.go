@@ -80,18 +80,68 @@ func TestWorkspaceReadFeedbackUsesObservedLinesNotCallCounts(t *testing.T) {
 func TestWorkspaceReadFeedbackPreservesNativePairsAndBoundary(t *testing.T) {
 	calls := recordedWorkspacePages(t)
 	rounds := []domain.SupervisorToolRound{{Calls: []domain.SupervisorToolCall{calls[1], calls[1]}}}
-	request := llm.ChatRequest{Tools: []llm.ToolSpec{{Name: "workspace_read"}}, Messages: []llm.Message{{Role: "user", Content: "Only read and explain; do not edit."}}}
-	s := &AgentRunner{}
-	got, err := s.workspaceReadFeedbackRequest(t.Context(), domain.SupervisorCheckpoint{}, request, rounds)
-	if err != nil || len(got.Messages) != 2 || !strings.Contains(got.Messages[1].Content, "1 workspace_read") {
-		t.Fatalf("feedback=%+v err=%v", got, err)
+	request := llm.ChatRequest{
+		Tools: []llm.ToolSpec{{Name: "workspace_read"}},
+		Messages: []llm.Message{
+			{Role: "assistant", Replay: new(llm.ProviderReplay), ToolCalls: []llm.ToolCall{{ID: "one", Name: "workspace_read"}}},
+			{Role: "user", ToolResults: []llm.ToolResult{{ToolCallID: "one", Content: "public test result"}}},
+		},
 	}
-	if !reflect.DeepEqual(got.Tools, request.Tools) || !reflect.DeepEqual(got.Messages[:1], request.Messages) || len(request.Messages) != 1 {
-		t.Fatal("advice changed input or tools")
+	s := &AgentRunner{}
+	feedback, err := s.workspaceReadFeedback(t.Context(), domain.SupervisorCheckpoint{}, true, rounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, transport := range []string{llm.HarnessTransportAnthropicMessages, llm.HarnessTransportOpenAIChatCompletions,
+		llm.HarnessTransportOpenAIResponses, llm.HarnessTransportOllamaChat, llm.HarnessTransportProviderContract} {
+		t.Run(transport, func(t *testing.T) {
+			request.Metadata = map[string]string{"harness_transport": transport}
+			got := supervisorRuntimeFacts(request, llm.DefaultContextWindow(), 0, 0, nil, feedback)
+			wantCount, wantRole := 3, "system"
+			if transport == llm.HarnessTransportAnthropicMessages {
+				wantCount, wantRole = 2, "user"
+			}
+			if len(got.Messages) != wantCount || got.Messages[wantCount-1].Role != wantRole ||
+				!strings.Contains(got.Messages[wantCount-1].Content, "1 workspace_read") {
+				t.Fatal("read feedback changed the tool conversation boundary")
+			}
+			if !reflect.DeepEqual(got.Tools, request.Tools) || !reflect.DeepEqual(got.Messages[0], request.Messages[0]) ||
+				got.Messages[0].Replay != request.Messages[0].Replay || !reflect.DeepEqual(got.Messages[1].ToolResults, request.Messages[1].ToolResults) ||
+				request.Messages[1].Content != "" {
+				t.Fatal("advice changed native replay, tool result bytes or tools")
+			}
+		})
 	}
 	request.Tools = nil
-	got, err = s.workspaceReadFeedbackRequest(t.Context(), domain.SupervisorCheckpoint{}, request, rounds)
+	feedback, err = s.workspaceReadFeedback(t.Context(), domain.SupervisorCheckpoint{}, false, rounds)
+	got := supervisorRuntimeFacts(request, llm.DefaultContextWindow(), 0, 0, nil, feedback)
 	if err != nil || !reflect.DeepEqual(request, got) {
 		t.Fatal("tool-free boundary was given conflicting tool advice")
+	}
+}
+
+func TestSupervisorProjectsOnlyChangedStandardCodeStateAfterTools(t *testing.T) {
+	machine := &standardCodeSupervisorTurn{snapshot: domain.StandardCodeSupervisorSnapshot{State: domain.StandardCodeSupervisorInspect, Version: 1}}
+	machine.initialStateRole = supervisorHostStateRole(llm.HarnessTransportAnthropicMessages)
+	machine.initialStateText = machine.runtimeState()
+	messages := supervisorInitialStandardCodeState([]llm.Message{
+		{Role: "system", Content: machine.Guidance()}, {Role: "user", Content: "Read the example."},
+	}, machine)
+	if len(messages) != 3 || !strings.Contains(messages[2].Content, machine.initialStateText) || messages[2].Role != "user" || messages[1].Content != "Read the example." {
+		t.Fatal("the starting state is not bound to the original input")
+	}
+	request := llm.ChatRequest{Metadata: map[string]string{"harness_transport": llm.HarnessTransportAnthropicMessages},
+		Messages: append(messages, llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "one", Name: "workspace_read"}}},
+			llm.Message{Role: "user", ToolResults: []llm.ToolResult{{ToolCallID: "one", Content: "first line"}}})}
+	if got := supervisorRuntimeFacts(request, llm.DefaultContextWindow(), 0, 1, machine, ""); !reflect.DeepEqual(got, request) {
+		t.Fatal("an unchanged Standard Code state added a request-local item")
+	}
+	machine.snapshot.Version = 2
+	machine.snapshot.CommandsUsed++
+	got := supervisorRuntimeFacts(request, llm.DefaultContextWindow(), 0, 1, machine, "")
+	last := len(got.Messages) - 1
+	if machine.Guidance() != messages[0].Content || !reflect.DeepEqual(got.Messages[:last], request.Messages[:last]) ||
+		!strings.Contains(got.Messages[last].Content, machine.runtimeState()) || !reflect.DeepEqual(got.Messages[last].ToolResults, request.Messages[last].ToolResults) {
+		t.Fatal("the changed state replaced instructions, changed a result, or failed to reach the current step")
 	}
 }

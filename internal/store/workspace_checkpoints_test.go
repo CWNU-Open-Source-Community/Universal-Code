@@ -386,6 +386,7 @@ func newWorkspaceCheckpointGitRepository(t *testing.T) string {
 func runWorkspaceCheckpointGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	hideSubprocessWindow(command)
 	command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
 	output, err := command.CombinedOutput()
 	if err != nil {

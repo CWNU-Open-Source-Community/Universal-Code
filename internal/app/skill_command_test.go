@@ -95,7 +95,7 @@ func TestSkillCLIRejectsInvalidProfileNameAndValidationArguments(t *testing.T) {
 		t.Fatalf("external validation path was accepted: code=%d stderr=%q", code, stderr)
 	}
 	help, stderr, code := executeTestCommand(t, "help")
-	if code != 0 || stderr != "" || !strings.Contains(help, "cyberagent skill list|show|validate") {
+	if code != 0 || stderr != "" || !strings.Contains(help, "cyberagent skill list|") {
 		t.Fatalf("skill help is missing: code=%d stderr=%q output=%q", code, stderr, help)
 	}
 }

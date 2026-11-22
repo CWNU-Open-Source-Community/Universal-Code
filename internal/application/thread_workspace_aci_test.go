@@ -18,7 +18,7 @@ import (
 // repeated reads receive advice, native pairs survive, and the next segment can
 // patch using a retained page without a mandatory reread. Approval remains real.
 func TestThreadWorkspaceACIReadFeedbackAndRetainedPagePatch(t *testing.T) {
-	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: 20})
+	st, run, root, input := toolBoundaryFixture(t, domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)})
 	provider := &boundaryJourneyProvider{}
 	var edit fileedit.Edit
 	provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
@@ -53,19 +53,19 @@ func TestThreadWorkspaceACIReadFeedbackAndRetainedPagePatch(t *testing.T) {
 		for _, msg := range request.Messages {
 			feedback = feedback || strings.Contains(msg.Content, "Execution feedback from the completed tool ledger:")
 		}
-		if index >= 3 && index <= 4 && !feedback {
+		if index >= 3 && index <= domain.MaxSupervisorToolRounds && !feedback {
 			t.Fatal("actual model request omitted repeated-read feedback")
 		}
-		if index == 5 && feedback {
+		if index == domain.MaxSupervisorToolRounds+1 && feedback {
 			t.Fatal("boundary received contradictory tool advice")
 		}
 		switch {
-		case index <= 4:
+		case index <= domain.MaxSupervisorToolRounds:
 			return boundaryRead(fmt.Sprintf("aci-read-%d", index), 1), nil
-		case index == 5:
+		case index == domain.MaxSupervisorToolRounds+1:
 			assertBoundaryPrompt(t, request)
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Apply the requested edit next", "", "")), nil
-		case index == 6:
+		case index == domain.MaxSupervisorToolRounds+2:
 			content := boundaryContextText(t, request)
 			var observedText, observedHash string
 			for _, line := range strings.Split(content, "\n") {
@@ -85,15 +85,15 @@ func TestThreadWorkspaceACIReadFeedbackAndRetainedPagePatch(t *testing.T) {
 			}
 			args, _ := json.Marshal(map[string]any{"version": "agent-code-tools.v1", "action": "propose_patch", "path": "README.md", "expected_sha256": observedHash, "replacements": []map[string]any{{"old_text": observedText, "new_text": "reviewed text", "expected_occurrences": 1}}})
 			return toolResponse("aci-patch", "workspace_change", string(args)), nil
-		case index == 7:
+		case index == domain.MaxSupervisorToolRounds+3:
 			if data, _ := os.ReadFile(filepath.Join(root, "README.md")); string(data) != "original text\n" {
 				t.Fatal("proposal wrote before approval/apply")
 			}
 			edit = approveBoundaryEdit(t, st, run)
 			return boundaryApply("aci-apply", edit), nil
-		case index == 8:
+		case index == domain.MaxSupervisorToolRounds+4:
 			return boundaryRead("aci-verify", 1), nil
-		case index == 9:
+		case index == domain.MaxSupervisorToolRounds+5:
 			if !hasToolResult(request, "reviewed text") {
 				t.Fatal("verified file not delivered to model")
 			}
@@ -102,10 +102,10 @@ func TestThreadWorkspaceACIReadFeedbackAndRetainedPagePatch(t *testing.T) {
 			return nil, fmt.Errorf("unexpected call %d", index)
 		}
 	}
-	if _, err := toolBoundaryService(st, st, provider).Execute(t.Context(), input); err != nil {
+	if _, err := toolBoundaryServiceWithPolicy(st, st, provider, &fileOperationPolicy{review: true}).Execute(t.Context(), input); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.Requests()) != 9 {
+	if len(provider.Requests()) != domain.MaxSupervisorToolRounds+5 {
 		t.Fatalf("unexpected calls %d", len(provider.Requests()))
 	}
 	if data, err := os.ReadFile(filepath.Join(root, "README.md")); err != nil || string(data) != "reviewed text\n" {
@@ -119,7 +119,7 @@ func TestThreadReplaceApplyPreBoundaryFailureKeepsExplicitRecovery(t *testing.T)
 	proposal := &scriptedToolProvider{responses: []*llm.ChatResponse{
 		boundaryPropose("replacement-proposal"), textResponse(rootActionResponse(domain.RootActionWait, "Review proposal", "", "review")),
 	}}
-	if _, err := toolBoundaryService(st, st, proposal).Execute(t.Context(), input); err != nil {
+	if _, err := toolBoundaryServiceWithPolicy(st, st, proposal, &fileOperationPolicy{review: true}).Execute(t.Context(), input); err != nil {
 		t.Fatal(err)
 	}
 	edit := approveBoundaryEdit(t, st, run)

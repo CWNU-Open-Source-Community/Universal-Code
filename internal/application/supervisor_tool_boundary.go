@@ -11,6 +11,7 @@ import (
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/session"
+	"cyberagent-workbench/internal/toolbudget"
 )
 
 type supervisorToolBoundaryStore interface {
@@ -19,11 +20,75 @@ type supervisorToolBoundaryStore interface {
 	ToolBoundaryContextCalls(context.Context, domain.SupervisorCheckpoint) ([]domain.SupervisorToolCall, error)
 }
 
-func supervisorToolBoundaryRequest(request llm.ChatRequest) llm.ChatRequest {
+type supervisorToolUsageStore interface {
+	GetToolCallUsage(context.Context, string) (toolbudget.Usage, error)
+}
+
+type supervisorSegmentBoundaryState struct {
+	Reached          bool
+	MaxRoundsReached bool
+	ToolBudgetZero   bool
+	ContextPressure  bool
+}
+
+func (s supervisorSegmentBoundaryState) AllowsContinue() bool {
+	return s.MaxRoundsReached || s.ToolBudgetZero
+}
+
+func evaluateSupervisorSegmentBoundary(nativeRounds int, totalRounds int, toolUsage toolbudget.Usage,
+	privateHistory bool, contextNearLimit bool,
+) supervisorSegmentBoundaryState {
+	state := supervisorSegmentBoundaryState{
+		MaxRoundsReached: nativeRounds >= domain.MaxSupervisorToolRounds,
+		ToolBudgetZero:   totalRounds > 0 && toolUsage.Limit > 0 && toolUsage.Remaining == 0,
+		ContextPressure:  privateHistory && totalRounds > 0 && contextNearLimit,
+	}
+	state.Reached = state.MaxRoundsReached || state.ToolBudgetZero || state.ContextPressure
+	return state
+}
+
+func (s *AgentRunner) evaluateTurnSegmentBoundary(ctx context.Context, turn domain.SupervisorTurn,
+	rounds []domain.SupervisorToolRound, privateHistory bool, contextNearLimit bool,
+) (supervisorSegmentBoundaryState, error) {
+	totalRounds := len(rounds)
+	nativeRounds := supervisorNativeToolRounds(rounds)
+	var toolUsage toolbudget.Usage
+	if totalRounds > 0 && turn.Run.Budget.MaxToolCalls > 0 {
+		if usageStore, ok := any(s.store).(supervisorToolUsageStore); ok && s.store != nil {
+			usage, err := usageStore.GetToolCallUsage(ctx, turn.Run.ID)
+			if err != nil {
+				return supervisorSegmentBoundaryState{}, err
+			}
+			toolUsage = usage
+		}
+	}
+	return evaluateSupervisorSegmentBoundary(nativeRounds, totalRounds, toolUsage, privateHistory, contextNearLimit), nil
+}
+
+func supervisorToolBoundaryRequest(request llm.ChatRequest, boundary ...supervisorSegmentBoundaryState) llm.ChatRequest {
+	if len(boundary) > 0 && boundary[0].ToolBudgetZero {
+		request.Tools = nil
+		request.Messages = append(append([]llm.Message(nil), request.Messages...), llm.Message{
+			Role: "user",
+			Content: "The Harness has reached the internal segment tool-budget scheduling boundary: 0 tool calls remain in the Run's tool-call budget. No tools are offered for this response. Do not call tools or return continue, because continuing with 0 remaining tool budget fails with resource exhaustion. Return finish with verified results (honestly noting any remaining scope limited by the Run's tool budget), or wait only if external input or approval is genuinely required. Do not claim unexecuted actions.\n" +
+				`Response schema: return exactly one JSON object with version="root_lifecycle.v1", action="finish" or "wait", and a required nonempty message string. finish requires a nonempty summary and omits reason; wait requires a nonempty reason and omits summary.`,
+		})
+		return request
+	}
 	availability := supervisorToolBoundaryAvailability(request.Tools)
 	request.Tools = nil
 	request.Messages = append(append([]llm.Message(nil), request.Messages...), llm.Message{Role: "user",
-		Content: "The Harness has completed the four tool rounds available in this internal segment. No tools are offered for this response. This is a scheduling boundary, not a task failure or task completion." + availability + " Return continue if the same accepted user task needs more work; the Harness can continue it in another segment within its existing budget. Return finish only if that task is actually complete, or wait only for real external input or approval. Do not claim a new user request or repeat completed actions.\n" + rootLifecycleBoundaryContinueFormat + "\n" + rootProtocolRepairOutputInstruction})
+		Content: "The Harness has reached the internal segment tool boundary. No tools are offered for this response. This is a scheduling boundary, not a task failure or task completion." + availability + " Return continue if the same accepted user task needs more work; the Harness can continue it in another segment within its existing budget. Return finish only if that task is actually complete, or wait only for real external input or approval. Do not claim a new user request or repeat completed actions.\n" + rootLifecycleBoundaryContinueFormat + "\n" + rootProtocolRepairOutputInstruction})
+	return request
+}
+
+func supervisorContextPressureBoundaryRequest(request llm.ChatRequest) llm.ChatRequest {
+	request.Tools = nil
+	request.Messages = append(append([]llm.Message(nil), request.Messages...), llm.Message{
+		Role: "user",
+		Content: "The Harness has reached the private-history context window limit for this internal segment. No tools are offered for this response. Do not call tools or return continue. Return finish if the verified answer is ready, or wait for required external input or approval.\n" +
+			`Response schema: return exactly one JSON object with version="root_lifecycle.v1", action="finish" or "wait", and a required nonempty message string. finish requires a nonempty summary and omits reason; wait requires a nonempty reason and omits summary.`,
+	})
 	return request
 }
 

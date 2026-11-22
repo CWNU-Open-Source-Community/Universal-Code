@@ -95,6 +95,7 @@ func TestThreadPullRequestHTTPApprovalLostReplyAndReadOnlyRestart(t *testing.T) 
 	git := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		hideSubprocessWindow(cmd)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("git %v: %s %v", args, out, err)

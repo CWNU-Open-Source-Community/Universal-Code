@@ -721,7 +721,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
       if (!mountedRef.current || operationVersion !== harnessOperationVersionRef.current) return;
       setDiagnostic(diagnosticResult);
       if (diagnosticResult.status !== "reachable" || diagnosticResult.failure_reason !== "none") {
-        setHarnessError(t(`连接诊断未通过：${harnessFailureLabel(t, diagnosticResult.failure_reason)}。未继续执行 Harness 合成验证。`, `Connection diagnostic failed: ${harnessFailureLabel(t, diagnosticResult.failure_reason)}. Harness verification was not started.`));
+        setHarnessError(t(`连接诊断失败：${harnessFailureLabel(t, diagnosticResult.failure_reason)}。`, `Connection diagnostic failed: ${harnessFailureLabel(t, diagnosticResult.failure_reason)}.`));
         return;
       }
       const qualificationResult = await client.qualifyModelHarness({
@@ -733,7 +733,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
       await refreshModelRoutes();
     } catch (reason) {
       if (!mountedRef.current || operationVersion !== harnessOperationVersionRef.current) return;
-      setHarnessError(reason instanceof Error ? reason.message : t("Harness 验证失败。请检查供应商配置与网络权限。", "Harness verification failed. Check provider configuration and network permissions."));
+      setHarnessError(reason instanceof Error ? reason.message : t("模型兼容性检查失败，请检查供应商配置和网络权限。", "Model compatibility check failed. Check the provider configuration and network permissions."));
     } finally {
       if (mountedRef.current && operationVersion === harnessOperationVersionRef.current) {
         harnessOperationRef.current = false;
@@ -1011,7 +1011,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
   if (!client.hasProviderDefinitions) {
     return <><h1>{t("自定义配置", "Custom configuration")}</h1>
       <section className="v2-settings-card v2-provider-empty"><Server aria-hidden="true" size={24} />
-        <strong>{t("自定义供应商不可用", "Custom providers unavailable")}</strong><p>{t("连接具备控制权限与模型控制能力的服务后，可添加供应商并使用系统凭据库保存密钥。", "Connect to a service with control and model permissions to add providers and save keys in system credentials.")}</p>
+        <strong>{t("自定义供应商不可用", "Custom providers unavailable")}</strong><p>{t("请连接具备控制与模型管理权限的服务。", "Connect to a service with control and model permissions.")}</p>
       </section></>;
   }
 
@@ -1019,8 +1019,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
     return <><div className="v2-provider-editor-heading">
       {onExit && <button aria-label={t("返回模型目录", "Back to model catalog")} onClick={onExit} type="button">
         <ArrowLeft aria-hidden="true" size={17} /></button>}
-      <div><h1>{t(`连接 ${initialPreset.displayName}`, `Connect ${initialPreset.displayName}`)}</h1>
-      <p>{t("正在读取已有供应商定义与系统凭据状态。", "Loading provider definitions and system credential status.")}</p></div></div>
+      <h1>{t(`连接 ${initialPreset.displayName}`, `Connect ${initialPreset.displayName}`)}</h1></div>
       {definitions.isError
         ? <section className="v2-settings-card v2-provider-empty" role="alert">
           <CircleAlert aria-hidden="true" size={22} /><strong>{t("无法读取供应商", "Could not load providers")}</strong>
@@ -1044,7 +1043,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
         <button onClick={() => void definitions.refetch()} type="button">{t("重试", "Retry")}</button></div>}
       {!definitions.isLoading && !definitions.isError && <section aria-label={t("自定义供应商", "Custom providers")} className="v2-provider-list">
         {providers.length === 0 && <div className="v2-settings-card v2-provider-empty"><Server aria-hidden="true" size={24} />
-          <strong>{t("还没有自定义供应商", "No custom providers yet")}</strong><p>{t("点击“添加供应商”，填写服务地址和模型，保存密钥后进行连接验证。API Key 保存在系统凭据库。", "Select Add provider, enter the endpoint and models, save the key, then verify the connection. API keys are saved in system credentials.")}</p></div>}
+          <strong>{t("还没有自定义供应商", "No custom providers yet")}</strong></div>}
         {providers.map((provider) => {
           const credential = credentialByProvider.get(provider.id);
           return <button className="v2-provider-row" key={provider.id}
@@ -1082,7 +1081,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
   const syncCredentialField = <label className="v2-provider-check v2-provider-sync"><input checked={draft.syncCredentialReference}
     onChange={(event) => update("syncCredentialReference", event.target.checked)} type="checkbox" />
     <span><strong>{t("把凭据引用同步到高级 JSON", "Sync credential reference to advanced JSON")}</strong>
-      <small>{t("输入新 API Key 时，默认写入对应协议的 request_headers。这里只保存 $credential 引用；你仍可自由移动、改模板或关闭同步。", "New API keys add a $credential reference to the protocol's request_headers by default. You can move the reference, edit the template or disable sync.")}</small></span></label>;
+      <small>{t("新密钥以 $credential 引用写入 request_headers。", "New keys are referenced in request_headers using $credential.")}</small></span></label>;
   const parsedDraftDefinition = definitionFromDraft(t, draft).definition;
   const parsedCapabilities = parseAdvancedJSON(t, draft.advancedJSON).value;
   const modelCapabilities = isRecord(parsedCapabilities?.model_capabilities) ? parsedCapabilities.model_capabilities : {};
@@ -1105,25 +1104,22 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
   const harnessBlocker = !draft.existing ? t("先保存供应商配置后才能验证。", "Save provider configuration before verification.")
     : !savedConfiguration ? t("当前更改尚未保存；请先保存，再验证已持久化的精确配置。", "Changes are unsaved. Save first to verify the exact saved configuration.")
       : !configuredCredential && !keylessLocal ? t("请先把 API Key 保存到系统凭据管理器；只有未引用凭据的本机模型可不填密钥。", "Save the API key to system credentials first. Only local models without credential references can omit a key.")
-        : !harnessControlAvailable ? t("当前桌面启动未开放模型诊断与 Harness 验证。", "Model diagnostics and Harness verification are unavailable in this desktop session.")
+        : !harnessControlAvailable ? t("当前连接不支持模型诊断。", "Model diagnostics are unavailable on this connection.")
           : !draft.enabled ? t("供应商已停用；启用并保存后才能验证。", "Provider disabled. Enable and save it before verification.") : "";
   return <><div className="v2-provider-editor-heading">
     <button aria-label={initialPreset && onExit ? t("返回模型目录", "Back to model catalog") : t("返回供应商列表", "Back to providers")}
 	  disabled={busy || harnessBusy} onClick={closeEditor} type="button">
       <ArrowLeft aria-hidden="true" size={17} /></button>
-    <div><h1>{draft.existing ? t("编辑供应商", "Edit provider") : t("添加供应商", "Add provider")}</h1>
-      <p>{quickSetup ? t("填入 API Key，确认模型并保存，然后完成下方模型检查。自建服务可展开高级设置。", "Enter the API key, confirm the model and save, then check the model below. Expand advanced settings for self-hosted services.")
-        : t("填写服务地址和模型；密钥将单独保存到系统凭据管理器。", "Enter the endpoint and models. Keys are saved separately in system credentials.")}</p></div></div>
+    <h1>{draft.existing ? t("编辑供应商", "Edit provider") : t("添加供应商", "Add provider")}</h1></div>
     <form className="v2-provider-form" onSubmit={(event) => { event.preventDefault(); save(); }}>
       <fieldset className="v2-provider-operation-lock" disabled={busy || harnessBusy}>
       {quickSetup && <section className="v2-settings-card v2-provider-fields v2-provider-quick" aria-labelledby="provider-quick-title">
-        <header><div><h2 id="provider-quick-title">{draft.displayName}</h2>
-          <p>{t("提供商已选定；其他连接参数使用当前配置。", "Provider selected. Other connection parameters use the current configuration.")}</p></div>
+        <header><h2 id="provider-quick-title">{draft.displayName}</h2>
           <span className={configuredCredential ? "v2-provider-status is-ready" : "v2-provider-status"}>
             {configuredCredential ? t("密钥已存储", "Key stored") : t("等待配置密钥", "Waiting for an API key")}</span></header>
         {credentialField}
         <p className="v2-provider-help" id="provider-key-help">{client.hasProviderCredentials
-          ? t("密钥保存在系统凭据管理器，保存后输入框会清空。已有密钥可留空保留；远端认证请通过下方连接验证检查。", "Keys are saved in system credentials; the field clears after saving. Leave it blank to keep an existing key. Use connection verification below to check remote authentication.")
+          ? t("密钥保存在系统凭据管理器中，保存后输入框会清空。", "The key is stored in your system credential manager. The field clears after saving.")
           : t("使用支持系统凭据存储的桌面版本后，可在此保存密钥。", "Use a desktop version with system credential storage to save keys here.")}</p>
         <div className="v2-provider-grid">{modelField}</div>
       </section>}
@@ -1132,7 +1128,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
         {advancedOpen ? t("收起高级设置", "Collapse advanced settings") : t("高级设置：自定义连接、模型与搜索", "Advanced: connection, models and search")}
       </button>}
       {showAdvanced && <section className="v2-settings-card v2-provider-fields" id="provider-advanced-connection" aria-labelledby="provider-basics-title">
-        <header><div><h2 id="provider-basics-title">{t("连接", "Connection")}</h2><p>{t("请求发送到你填写的模型地址；外部服务须使用 HTTPS，本机回环地址可使用 HTTP。", "Requests go to the model endpoint you enter. External services require HTTPS; loopback addresses may use HTTP.")}</p></div>
+        <header><div><h2 id="provider-basics-title">{t("连接", "Connection")}</h2><p>{t("远程地址须使用 HTTPS，本机回环地址支持 HTTP。", "Remote endpoints require HTTPS. Loopback addresses also support HTTP.")}</p></div>
           <label className="v2-provider-enabled"><input checked={draft.enabled}
             onChange={(event) => update("enabled", event.target.checked)} type="checkbox" />
             <span aria-hidden="true"><i /></span>{t("启用", "Enable")}</label></header>
@@ -1194,7 +1190,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
       </section>}
 
       {showAdvanced && <section className="v2-settings-card v2-provider-fields" aria-labelledby="provider-models-title">
-        <header><div><h2 id="provider-models-title">{t("可用模型", "Available models")}</h2><p>{t("使用当前 API Key 从服务获取模型，或手动补充。获取后选择要加入的模型，保存时生效。", "Fetch models using the current API key or add them manually. Select models from the results; changes take effect when saved.")}</p></div>
+        <header><h2 id="provider-models-title">{t("可用模型", "Available models")}</h2>
           <button className="secondary" disabled={busy || discoveryBusy || typeof client.discoverProviderModels !== "function"}
             onClick={() => void discoverModels()} type="button">
             {discoveryBusy && <LoaderCircle aria-hidden="true" className="spin" size={14} />}
@@ -1218,12 +1214,11 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
             }}
             placeholder={"model-a\nmodel-b"} rows={3} spellCheck={false} value={draft.models} />
             <small id="provider-models-help">{t("每行或逗号分隔，最多 128 个（当前 ", "One per line or comma-separated, up to 128 (currently ")}{modelOptions.length} {t(" 个）。名称按 model_mapping 映射后发送；移除模型会清除对应图片声明，新名称需重新确认。", "). Names are sent after model_mapping is applied. Removing a model clears its image capability declaration; confirm capabilities for new names.")}</small></label>
-          {typeof client.discoverProviderModels !== "function" && <p className="v2-provider-field-help is-wide">{t("当前服务提供手动添加：填写完整模型名称，保存后进行连接验证。", "This service supports manual model entry. Enter the full name, save and verify the connection.")}</p>}
+          {typeof client.discoverProviderModels !== "function" && <p className="v2-provider-field-help is-wide">{t("此服务仅支持手动输入完整模型名。", "This service accepts full model names entered manually.")}</p>}
           {discoveryError && <p className="v2-inline-error is-wide" role="alert">{discoveryError}</p>}
           {discoveredModels && <div aria-label={t("获取到的模型", "Fetched models")} className="v2-provider-discovery is-wide">
-            <p aria-live="polite">{t("服务返回 ", "The service returned ")}{discoveredModels.length} {t(" 个模型。勾选后加入当前列表，保存后继续完成连接与 Harness 验证。", " models. Select models to add, save, then complete connection and Harness verification.")}</p>
-            {discoveryTruncated && <p>{t("服务模型列表较长，本次结果未完整返回。可从已返回结果中选择，也可手动添加完整模型名。", "The model list was truncated. Choose from returned results or enter full model names manually.")}</p>}
-            {discoveredModels.length === 0 && <p>{t("服务没有返回模型。当前列表已保留，可手动添加模型名。", "No models were returned. The current list is preserved; add names manually if needed.")}</p>}
+            <p aria-live="polite">{discoveredModels.length ? t(`找到 ${discoveredModels.length} 个模型`, `${discoveredModels.length} models found`) : t("服务没有返回模型。可手动添加模型名。", "No models returned. Enter a model name manually.")}</p>
+            {discoveryTruncated && <p>{t("结果不完整，可手动添加未列出的模型。", "The list is incomplete. Unlisted models can be entered manually.")}</p>}
             <div className="v2-provider-discovery-options">{discoveredModels.map((model) => {
               const added = modelOptions.includes(model.id);
               return <label className="v2-provider-check" key={model.id}><input type="checkbox"
@@ -1244,7 +1239,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
 
       {showAdvanced && <section className="v2-settings-card v2-provider-fields" aria-labelledby="provider-output-title">
         <header><div><h2 id="provider-output-title">{t("模型输出限制", "Model output limits")}</h2>
-          <p>{t("每个模型可继承默认策略，或自定义默认输出与单次上限。输出 Token 预算包含推理内容和可见文字，分配方式由模型服务决定。", "Each model can inherit default policy or use custom output defaults and per-request limits. The output token budget includes reasoning and visible text; the provider decides allocation.")}</p></div></header>
+          <p>{t("输出预算包括推理和可见文字。", "Output budgets include reasoning and visible text.")}</p></div></header>
         <div className="v2-provider-grid">
           {!modelOptions.length && <p className="v2-provider-field-help is-wide">{t("先填写模型列表。", "Enter models first.")}</p>}
           {!parsedCapabilities && <p className="v2-provider-field-help is-wide">{t("先修正下方高级 JSON，再设置输出限制。", "Fix advanced JSON below before setting output limits.")}</p>}
@@ -1284,7 +1279,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
       </section>}
 
       {showAdvanced && <section className="v2-settings-card v2-provider-fields" aria-labelledby="provider-images-title">
-        <header><div><h2 id="provider-images-title">{t("图片输入", "Image input")}</h2><p>{t("按供应商说明选择图片能力声明，再在任务中用图片检查实际效果。原始图片会发送到上方的请求地址，请确认该端点适合接收这些内容。", "Declare image support based on provider documentation, then test it with an image in a task. Original images are sent to the endpoint above; confirm it is appropriate for the content.")}</p></div></header>
+        <header><div><h2 id="provider-images-title">{t("图片输入", "Image input")}</h2><p>{t("原始图片会发送到此供应商的请求地址。", "Original images are sent to this provider’s endpoint.")}</p></div></header>
         <div className="v2-provider-grid">{modelOptions.map((model) => {
           const capability = modelCapabilities[model];
           const state = isRecord(capability) && ["supported", "unsupported", "unknown"].includes(String(capability.vision)) ? String(capability.vision) : "unknown";
@@ -1302,8 +1297,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
       </section>}
 
       {showAdvanced && <section className="v2-settings-card v2-provider-fields" aria-labelledby="provider-search-title">
-        <header><div><h2 id="provider-search-title">{t("网页搜索", "Web search")}</h2>
-          <p>{t("先确认供应商提供哪种搜索能力，再选择搜索方式。原生搜索会在首次真实调用前完成有界资格验证。", "Confirm the provider's search capabilities before choosing a mode. Native search undergoes bounded verification before its first real use.")}</p></div></header>
+        <header><h2 id="provider-search-title">{t("网页搜索", "Web search")}</h2></header>
         <div className="v2-provider-grid">
           <label className="is-wide">{t("搜索策略", "Search policy")}<select aria-label={t("搜索策略", "Search policy")} onChange={(event) => {
             const mode = event.target.value as ProviderDraft["searchMode"];
@@ -1319,15 +1313,11 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
             <option value="web">{t("普通网页搜索（DuckDuckGo）", "Web search (DuckDuckGo)")}</option>
             <option value="searxng">SearXNG</option>
             <option disabled={knownNativeSearchUnsupported(draft.endpointURL)} value="provider_native">{t("供应商原生", "Provider native")}</option>
-          </select><small>{draft.searchMode === "web"
-            ? t("搜索查询会发送到 DuckDuckGo，可直接用于当前模型。搜索与网页读取遵循当前任务的网页访问范围。", "Queries go to DuckDuckGo and can be used with this model. Search and page reads follow this task's web access scope.")
-            : draft.searchMode === "auto"
-              ? t("自动优先使用已声明并验证的供应商原生搜索，随后可回退到已配置的 SearXNG。要使用 DuckDuckGo，请选择“普通网页搜索”。", "Automatic mode prefers declared and verified native search, then may fall back to configured SearXNG. Select Web search to use DuckDuckGo.")
-              : draft.searchMode === "searxng"
-                ? t("先在 Desktop 启动配置中填写 SearXNG 地址。查询使用该地址，并遵循当前任务的网页访问范围。", "Configure the SearXNG URL in desktop startup settings first. Queries use that URL and follow task web access permissions.")
-                : draft.searchMode === "disabled"
-                  ? t("此供应商的网页搜索已关闭。任务的网页访问范围可在任务设置中管理。", "Web search is disabled for this provider. Manage the task's web access scope in task settings.")
-                  : t("选择供应商原生时会绑定当前模型、端点、定义 revision 与系统凭据代际。", "Native search is bound to the current model, endpoint, definition revision and system credential generation.")}</small></label>
+          </select>
+            {draft.searchMode === "web" && <small>{t("搜索查询会发送到 DuckDuckGo，网页访问遵循当前任务的网页访问范围。", "Queries go to DuckDuckGo. The task’s web access permissions still apply.")}</small>}
+            {draft.searchMode === "auto" && <small>{t("优先使用已验证的原生搜索，其次使用已配置的 SearXNG。", "Prefers verified native search, then a configured SearXNG service.")}</small>}
+            {draft.searchMode === "searxng" && <small>{t("请在桌面启动配置中设置 SearXNG 地址。", "Set the SearXNG URL in desktop startup settings.")}</small>}
+          </label>
           {knownNativeSearchUnsupported(draft.endpointURL) && <p className="is-wide">
             {draft.existing && draft.searchMode === "provider_native"
               ? t("此官方 DeepSeek 旧配置仍选择了原生搜索，需要更换搜索方式。请选择“普通网页搜索”，或配置 SearXNG 后选择“自动选择”。", "This older official DeepSeek configuration still selects native search. Select Web search, or configure SearXNG and select Automatic.")
@@ -1338,13 +1328,12 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
             disabled={knownNativeSearchUnsupported(draft.endpointURL)}
             onChange={(event) => update("nativeSearchDeclared", event.target.checked)} type="checkbox" />
             <span><strong>{t("声明供应商具备原生 Web Search", "Declare native Web Search support")}</strong>
-              <small>{t("勾选后会登记原生搜索能力声明。首次真实搜索需完成有界验证，可能产生 API 调用费用；搜索使用当前供应商端点的授权范围，网页抓取遵循任务权限。", "Checking this records a native search declaration. The first search requires bounded verification and may incur API fees. Search uses the provider endpoint's authorization; page reads follow task permissions.")}</small></span></label>
+              <small>{t("首次搜索会发送验证请求，可能产生 API 费用。网页读取仍受任务权限限制。", "The first search sends a verification request that may incur API charges. Task permissions apply to page reads.")}</small></span></label>
         </div>
       </section>}
 
       {!quickSetup && <section className="v2-settings-card v2-provider-fields" aria-labelledby="provider-credential-title">
-        <header><div><h2 id="provider-credential-title">{t("系统凭据", "System credentials")}</h2>
-          <p>{t("密钥保存在操作系统凭据管理器。此页读取存储状态，通过连接验证检查远端认证。", "Keys are stored in the operating system's credential manager. This page shows storage status; connection verification checks remote authentication.")}</p></div>
+        <header><h2 id="provider-credential-title">{t("系统凭据", "System credentials")}</h2>
           <span className={configuredCredential ? "v2-provider-status is-ready" : "v2-provider-status"}>
             {configuredCredential ? t("已存储", "Stored") : t("未存储", "Not stored")}</span></header>
         {credentialField}
@@ -1356,23 +1345,19 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
 
       <section className="v2-settings-card v2-provider-fields v2-provider-harness"
         aria-labelledby="provider-harness-title">
-        <header><div><h2 id="provider-harness-title">{prepareForDraft ? t("首次模型检查", "First model check") : t("连接与 Harness 验证", "Connection and Harness verification")}</h2>
-          <p>{prepareForDraft
-            ? t("保存后自动检查工具调用、结果回传与结构化 JSON；通过后返回原草稿并选中这个模型。检查通常会产生两次模型调用。", "After saving, automatically check tool calls, result submission and structured JSON. On success, return to the original draft with this model selected. The check usually makes two model calls.")
-            : t("先做一次最小连接诊断；通过后再验证工具调用、结果回传与结构化 JSON 合同。", "Run a minimal connection diagnostic, then verify tool calls, result submission and structured JSON.")}</p></div>
+        <header><div><h2 id="provider-harness-title">{prepareForDraft ? t("首次模型检查", "First model check") : t("模型兼容性", "Model compatibility")}</h2>
+          {prepareForDraft && <p>{t("保存后会自动检查模型，通常产生两次模型调用。通过后会在原草稿中选中该模型。", "Saving starts a check that usually makes two model calls. On success the model is selected in your draft.")}</p>}</div>
           {!prepareForDraft && <button className="secondary" disabled={Boolean(harnessBlocker) || busy || harnessBusy}
             onClick={() => setHarnessConfirmOpen(true)} ref={harnessButtonRef} type="button">
             {harnessBusy ? <LoaderCircle aria-hidden="true" className="spin" size={14} />
               : <ShieldCheck aria-hidden="true" size={14} />}
-            {harnessBusy ? t("正在验证…", "Verifying…") : t("测试并验证 Harness", "Test and verify Harness")}</button>}
+            {harnessBusy ? t("正在验证…", "Verifying…") : t("测试连接与模型", "Test connection and model")}</button>}
           {prepareForDraft && preparedDefinition && harnessError && <button className="secondary"
             disabled={busy || harnessBusy} onClick={() => void prepareSavedProvider(preparedDefinition)}
             ref={harnessButtonRef} type="button"><ShieldCheck aria-hidden="true" size={14} />{t("重新检查", "Recheck")}</button>}</header>
         {!prepareForDraft && harnessBlocker && <p className="v2-provider-help">{harnessBlocker}</p>}
-        {!harnessBlocker && !diagnostic && !qualification && !harnessBusy &&
-          <p className="v2-provider-help">{t("验证绑定当前供应商、默认模型、端点、定义 revision 与系统凭据代际；任一项变化后需重新验证。", "Verification is bound to the provider, default model, endpoint, definition revision and credential generation. Any change requires verification again.")}</p>}
         {harnessBusy && <p aria-live="polite" className="v2-provider-harness-progress">
-          <Activity aria-hidden="true" size={14} />{t("正在执行有界供应商调用，请勿关闭应用…", "Running bounded provider calls. Keep the app open…")}</p>}
+          <Activity aria-hidden="true" size={14} />{t("验证期间请保持应用打开。", "Keep the app open during verification.")}</p>}
         {diagnostic && <article aria-label={t("连接诊断结果", "Connection diagnostic results")} className="v2-provider-harness-result" role="status">
           <div><strong>{t("连接诊断", "Connection diagnostic")}</strong><span className={diagnostic.status === "reachable" ? "is-ready" : "is-error"}>
             {harnessStatusLabel(t, diagnostic.status)}</span></div>
@@ -1381,8 +1366,8 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
               ? harnessStatusLabel(t, diagnostic.qualification_status) : harnessFailureLabel(t, diagnostic.failure_reason)}</dd></div>
             <div><dt>{t("耗时", "Duration")}</dt><dd>{diagnostic.duration_ms} ms</dd></div></dl>
         </article>}
-        {qualification && <article aria-label={t("Harness 验证结果", "Harness verification results")} className="v2-provider-harness-result" role="status">
-          <div><strong>{t("Harness 验证", "Harness verification")}</strong><span className={qualification.status === "qualified" ? "is-ready" : "is-error"}>
+        {qualification && <article aria-label={t("模型兼容性检查结果", "Model compatibility results")} className="v2-provider-harness-result" role="status">
+          <div><strong>{t("模型兼容性", "Model compatibility")}</strong><span className={qualification.status === "qualified" ? "is-ready" : "is-error"}>
             {harnessStatusLabel(t, qualification.status)}</span></div>
           <dl><div><dt>{t("资格状态", "Qualification")}</dt><dd>{harnessStatusLabel(t, qualification.qualification_status)}</dd></div>
             <div><dt>{t("模型调用", "Model calls")}</dt><dd>{qualification.model_calls} {t(" 次", " calls")}</dd></div>
@@ -1395,7 +1380,7 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
 
       {showAdvanced && <section className="v2-settings-card v2-provider-fields" aria-labelledby="provider-json-title">
         <header><div><h2 id="provider-json-title">{t("高级 JSON", "Advanced JSON")}</h2>
-          <p>{t("在这里编辑 request_headers、request_body 与 model_mapping；其他扩展会原样保留。Harness 核心字段由运行时管理。", "Edit request_headers, request_body and model_mapping here. Other extensions are preserved. The runtime manages core Harness fields.")}</p></div>
+          <p>{t("可编辑 request_headers、request_body 和 model_mapping。", "Editable fields include request_headers, request_body and model_mapping.")}</p></div>
           <button className="secondary" onClick={insertCredentialReference} type="button">
             <KeyRound aria-hidden="true" size={14} />{t("插入凭据引用", "Insert credential reference")}</button></header>
         <label className="v2-provider-json">
@@ -1432,10 +1417,10 @@ export function V2ProviderSettings({ client, initialPreset, onExit, onSaved,
       onConfirm={confirmMigration} open={Boolean(migration)} returnFocusRef={saveButtonRef}
       title={t("迁移明文密钥？", "Migrate plaintext key?")} />
     <V2ConfirmDialog busy={harnessBusy} confirmLabel={t("开始验证", "Start verification")}
-      description={t(`将对 ${draft.displayName || draft.id} 的默认模型 ${draft.defaultModel || t("未选择", "Not selected")} 发起一次最小连接诊断；诊断通过后会继续执行 Harness 合成验证，当前协议通常还需要两次模型调用。供应商可能按这些调用计费，且请求会发送到已保存的端点。`, `Run a minimal connection diagnostic for ${draft.displayName || draft.id}, using its default model ${draft.defaultModel || t("未选择", "Not selected")}. On success, Harness verification usually makes two more model calls. Requests go to the saved endpoint and may incur provider charges.`)}
+      description={t(`将向已保存的端点发送一次连接测试。通过后，${draft.displayName || draft.id} 的模型 ${draft.defaultModel || t("未选择", "Not selected")} 通常还需要两次模型调用，供应商可能按这些调用计费。`, `Sends one connection test to the saved endpoint. If it passes, checking ${draft.displayName || draft.id} model ${draft.defaultModel || t("未选择", "Not selected")} usually takes two more model calls. Your provider may charge for these calls.`)}
       onCancel={() => setHarnessConfirmOpen(false)} onConfirm={() => void verifyHarness()}
       open={harnessConfirmOpen} returnFocusRef={harnessButtonRef}
-      title={t("测试并验证 Harness？", "Test and verify Harness?")} />
+      title={t("测试连接与模型？", "Test connection and model?")} />
   </>;
 }
 import "./settings.css";

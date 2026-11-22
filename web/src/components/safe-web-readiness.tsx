@@ -26,12 +26,12 @@ export function SafeWebReadinessPanel({ client }: { client: APIClient }) {
       <StatusBadge
         status={readiness.ready ? "ready" : (readiness.blocking_reason ?? "blocked")}
       />
-      <p>{readiness.ready ? t("网页隔离检查已通过。浏览器操作遵循任务的网页访问范围与审批。", "Web isolation checks passed. Browser operations follow the task's web scope and approvals.")
+      <p>{readiness.ready ? t("网页隔离检查已通过。", "Web isolation checks passed.")
         : readiness.blocking_reason === "review_missing" || readiness.blocking_reason === "review_not_accepted"
-          ? t("浏览器隔离证据待审查。在服务运行环境中完成审查后，重新检查此处状态。", "Browser isolation evidence needs review. Complete the review in the service environment, then check this status again.")
+          ? t("请在服务端审查浏览器隔离证据。", "Browser isolation evidence needs review on the service.")
           : readiness.blocking_reason === "evidence_not_passed"
-            ? t("浏览器隔离检查需要修复。处理服务诊断中的失败项，重新采集证据并审查后，再检查状态。", "Browser isolation checks need repair. Resolve failed service diagnostics, collect and review new evidence, then check this status again.")
-            : t("为当前浏览器和运行环境重新采集隔离证据，并完成审查后重新检查状态。", "Collect isolation evidence for the current browser and environment, complete its review, then check this status again.")}</p>
+            ? t("请修复服务诊断中的失败项，重新采集并审查隔离证据。", "Resolve the failed service checks, then collect and review new isolation evidence.")
+            : t("请为当前浏览器和运行环境重新采集并审查隔离证据。", "Collect and review new isolation evidence for this browser and environment.")}</p>
       {!readiness.ready && (
         <p className="safe-web-readiness-blocking-reason">
           {t("阻塞原因", "Blocking reason")}: {readiness.blocking_reason}

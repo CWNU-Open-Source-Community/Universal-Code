@@ -154,7 +154,7 @@ export function V2ChatGPTAccountSettings({ client, query, onExit, prepareForDraf
       <h1 id="v2-chatgpt-title">{t("ChatGPT 账户", "ChatGPT account")}</h1>
     </header>
     <div className="v2-settings-card v2-chatgpt-card">
-      <header><div><strong>Using ChatGPT plan</strong><p>{t("使用 ChatGPT 订阅", "Use a ChatGPT subscription")}</p></div>
+      <header><strong>{t("ChatGPT 订阅", "ChatGPT subscription")}</strong>
         <div className="v2-provider-actions v2-chatgpt-actions">
           <button disabled={!enabled || locked || waiting} onClick={() => void login()} type="button">Continue with ChatGPT</button>
           <button disabled={!enabled || locked} onClick={() => void act("usage", () => client.openChatGPTUsage({
@@ -173,7 +173,7 @@ export function V2ChatGPTAccountSettings({ client, query, onExit, prepareForDraf
             : status.login.state === "cancelled" ? t("登录已取消。", "Sign-in cancelled.") : t("ChatGPT 登录失败，请重试。", "ChatGPT sign-in failed. Try again.")}</p>
         {status.login.message && <p>{status.login.message}</p>}
         {waiting && <>
-          <p>{t("请在系统浏览器完成登录。返回模型列表后仍可查看登录状态。", "Complete sign-in in your system browser. Sign-in status remains available from the model list.")}</p>
+          <p>{t("请在系统浏览器完成登录。", "Finish signing in using your system browser.")}</p>
           <div className="v2-provider-actions v2-chatgpt-actions">
             {validChatGPTStartURL(status.login.start_url) && <button disabled={locked} onClick={() => void copyStartURL()} type="button">
               <Copy aria-hidden="true" size={14} />{t("复制登录链接", "Copy sign-in link")}</button>}
@@ -215,9 +215,8 @@ export function V2ChatGPTAccountSettings({ client, query, onExit, prepareForDraf
               <button className="primary" disabled={!enabled || locked || waiting || !client.hasModelControl || selected.state !== "connected" || !model}
                 onClick={() => void checkModel()} type="button">{working === "check" ? t("正在检查模型…", "Checking model…") : prepareForDraft ? t("检查并返回任务", "Check and return to task") : t("检查模型", "Check model")}</button>
             </div>
-            <p className="v2-chatgpt-help">{t("检查通过后，即可在任务中使用此模型。", "After the check passes, this model can be used in tasks.")}</p>
           </>}
-        </> : <p className="v2-chatgpt-help">{t("还没有保存的 ChatGPT 账户。完成登录后，账户会显示在这里。", "No saved ChatGPT accounts. Accounts appear here after sign-in.")}</p>}
+        </> : <p className="v2-chatgpt-help">{t("暂无已保存的 ChatGPT 账户。", "No saved ChatGPT accounts.")}</p>}
       </div>}
     </div>
     {locked && working !== "check" && <p role="status">{t("正在处理账户操作…", "Processing account action…")}</p>}

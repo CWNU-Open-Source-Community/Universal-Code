@@ -4,8 +4,8 @@
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  justify-content: center;
-  gap: 2px 12px;
+  justify-content: flex-start;
+  gap: 2px 6px;
   box-sizing: border-box;
   width: 100%;
   max-width: var(--v2-composer-width);
@@ -25,9 +25,10 @@
   gap: 6px;
   min-width: 0;
   max-width: 100%;
-  padding: 1px 4px;
+  min-height: 26px;
+  padding: 3px 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--prayu-radius-inner, 8px);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -40,6 +41,7 @@
 .v2-composer-stat > svg { flex: 0 0 14px; }
 .v2-composer-stat-detail { display: inline-flex; gap: 6px; }
 .v2-composer-context-track { opacity: .22; }
+.v2-composer-stat:has(> .v2-composer-context-ring) { margin-inline-start: auto; }
 
 .v2-composer-stat-description {
   position: absolute;
@@ -53,7 +55,7 @@
   margin-inline: auto;
   padding: 10px 12px;
   border: 1px solid var(--v2-border);
-  border-radius: 8px;
+  border-radius: var(--prayu-radius-control, 10px);
   background: var(--prayu-surface-solid);
   color: var(--v2-ink);
   line-height: 1.6;

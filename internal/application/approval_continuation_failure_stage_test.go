@@ -112,8 +112,12 @@ func TestApprovalContinuationSealsExactModelFailureStageBeforeClosingInput(t *te
 				t.Fatalf("replay changed history: before=%d after=%d err=%v", len(list), len(after), err)
 			}
 			stored, err := st.GetFileEdit(t.Context(), edit.ID)
-			if err != nil || stored.Status != "approved" {
-				t.Fatalf("saved approval changed: %#v %v", stored, err)
+			if err != nil || stored.Status != "applied" {
+				t.Fatalf("saved direct apply changed: %#v %v", stored, err)
+			}
+			savedApproval, appErr := st.GetApprovalByProposal(t.Context(), edit.ID)
+			if appErr != nil || savedApproval.Status != "approved" {
+				t.Fatalf("saved approval changed: %#v %v", savedApproval, appErr)
 			}
 			assertOneBoundaryTranscriptInput(t, st, input.ThreadID, input.Content)
 

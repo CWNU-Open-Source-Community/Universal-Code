@@ -94,7 +94,6 @@ export function V2NetworkScopeControl({ mode, targets, disabled = false, onChang
       <p>{t(webAccessModeDetails[mode], mode === "disabled" ? "New web searches and fetches are disabled. Saved pages can still be read."
         : mode === "rules" ? "Use the configured search service. Approved domains can be read directly; other web requests require approval."
         : "Use the configured search service and read public HTTPS pages directly without per-site approval.")}</p>
-      <p>{t("缓存搜索、索引搜索：待支持", "Cached and indexed search: coming soon")}</p>
       {mode === "rules" && <><p>{t("每行填写一个允许直接读取的公网 HTTPS 主机或 origin。", "Enter one public HTTPS host or origin per line to allow direct access.")}</p>
       <textarea aria-label={t("允许访问的 HTTPS 目标", "Allowed HTTPS targets")} onChange={(event) => setDraft(event.target.value)}
         placeholder={"docs.example.com\nhttps://search.example.org"} rows={4} spellCheck={false}

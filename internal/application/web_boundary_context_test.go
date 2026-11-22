@@ -71,7 +71,7 @@ func TestThreadWebBoundaryRetainsActualMultilingualPageCursorAndRawHash(t *testi
 	_, run, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{
 		Goal: "Read a specified source section across an internal segment", Profile: "review", Interactive: true,
 		ModelRoute: provider.Name() + "/model", NetworkMode: "allowlist", AllowedTargets: []string{"docs.example.com"},
-		Budget: domain.Budget{MaxTurns: 8, MaxToolCalls: 10},
+		Budget: domain.Budget{MaxTurns: 8, MaxToolCalls: int64(domain.MaxSupervisorToolRounds + 10)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -82,25 +82,25 @@ func TestThreadWebBoundaryRetainsActualMultilingualPageCursorAndRawHash(t *testi
 		return toolResponse(id, "web_fetch", fmt.Sprintf(`{"version":"web_fetch.v1","source_id":%q,"snapshot_id":%q,"offset":%d,"limit":%d}`, page.SourceID, page.SnapshotID, offset, limit))
 	}
 	provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
-		switch index {
-		case 1:
+		switch {
+		case index == 1:
 			return toolResponse("boundary-search", "web_search", `{"version":"web_search.v1","query":"specified-source-section","limit":1}`), nil
-		case 2:
+		case index == 2:
 			return toolResponse("boundary-fetch", "web_fetch", `{"version":"web_fetch.v1","url":"https://docs.example.com/actual-paper"}`), nil
-		case 3:
+		case index >= 3 && index < domain.MaxSupervisorToolRounds:
 			page, _ := latestBoundaryWebPage(t, request)
-			return pageCall("boundary-short-page", page, 1024, 256), nil
-		case 4:
+			return pageCall(fmt.Sprintf("boundary-short-page-%d", index), page, 1024, 256), nil
+		case index == domain.MaxSupervisorToolRounds:
 			page, _ := latestBoundaryWebPage(t, request)
 			return pageCall("boundary-multilingual-page", page, 1738, 2048), nil
-		case 5:
+		case index == domain.MaxSupervisorToolRounds+1:
 			assertBoundaryPrompt(t, request)
 			preceding, precedingCallID = latestBoundaryWebPage(t, request)
 			if preceding.BodyOffset != 1738 || utf8.RuneCountInString(preceding.Body) != 889 || preceding.NextOffset == nil || *preceding.NextOffset != 2627 {
 				return nil, fmt.Errorf("fixture did not expose the exact model cursor: offset=%d runes=%d next=%v", preceding.BodyOffset, utf8.RuneCountInString(preceding.Body), preceding.NextOffset)
 			}
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Continue the specified section.", "", "")), nil
-		case 6:
+		case index == domain.MaxSupervisorToolRounds+2:
 			content := boundaryContextText(t, request)
 			found := false
 			for _, line := range strings.Split(content, "\n") {
@@ -121,7 +121,7 @@ func TestThreadWebBoundaryRetainsActualMultilingualPageCursorAndRawHash(t *testi
 					(entry.Metadata["next_offset"] != "" && entry.Metadata["next_offset"] != strconv.Itoa(*preceding.NextOffset)) {
 					return nil, fmt.Errorf("boundary replaced model cursor %d with raw cursor: %+v", *preceding.NextOffset, page)
 				}
-				rounds, err := st.ListRunSupervisorToolRoundsPage(ctx, run.ID, 0, 20)
+				rounds, err := st.ListRunSupervisorToolRoundsPage(ctx, run.ID, 0, domain.MaxSupervisorToolRounds+10)
 				if err != nil {
 					return nil, err
 				}
@@ -152,7 +152,7 @@ func TestThreadWebBoundaryRetainsActualMultilingualPageCursorAndRawHash(t *testi
 				return nil, fmt.Errorf("boundary omitted the current page cursor")
 			}
 			return pageCall("boundary-continuation", preceding, *preceding.NextOffset, 2048), nil
-		case 7:
+		case index == domain.MaxSupervisorToolRounds+3:
 			page, _ := latestBoundaryWebPage(t, request)
 			end := page.BodyOffset + utf8.RuneCountInString(page.Body)
 			if page.BodyOffset != *preceding.NextOffset || preceding.Body+page.Body != string([]rune(body)[preceding.BodyOffset:end]) {
@@ -171,11 +171,11 @@ func TestThreadWebBoundaryRetainsActualMultilingualPageCursorAndRawHash(t *testi
 	input := application.ExecuteThreadTurnRequest{Version: domain.ThreadMessageProtocolVersion, ThreadID: domain.InitialThreadID(run.ID),
 		Content: "Read the specified multilingual section and preserve its place.", OperationKey: "web-boundary-one-input", RequestedBy: "test_operator"}
 	result, err := turns.Execute(t.Context(), input)
-	if err != nil || result.Submission.Message.Status != domain.OperatorSteeringCommitted || len(provider.Requests()) != 7 || search.calls != 1 || backend.calls != 1 {
+	if err != nil || result.Submission.Message.Status != domain.OperatorSteeringCommitted || len(provider.Requests()) != domain.MaxSupervisorToolRounds+3 || search.calls != 1 || backend.calls != 1 {
 		t.Fatalf("boundary journey: models=%d searches=%d HTTP-fetches=%d err=%v", len(provider.Requests()), search.calls, backend.calls, err)
 	}
 	assertOneBoundaryTranscriptInput(t, st, input.ThreadID, input.Content)
-	if _, err := turns.Execute(t.Context(), input); err != nil || len(provider.Requests()) != 7 || search.calls != 1 || backend.calls != 1 {
+	if _, err := turns.Execute(t.Context(), input); err != nil || len(provider.Requests()) != domain.MaxSupervisorToolRounds+3 || search.calls != 1 || backend.calls != 1 {
 		t.Fatal("same key replay executed again", err)
 	}
 }

@@ -59,6 +59,7 @@ func TestLivePRFollowupRepairsRealGitHubCI(t *testing.T) {
 	command := func(name string, args ...string) string {
 		t.Helper()
 		cmd := exec.CommandContext(ctx, name, args...)
+		hideSubprocessWindow(cmd)
 		cmd.Dir = fixture.Root
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -96,7 +97,9 @@ func TestLivePRFollowupRepairsRealGitHubCI(t *testing.T) {
 	}
 	beforeHead := command("git", "rev-parse", "HEAD")
 	report["before_head"] = beforeHead
-	secret, err := exec.CommandContext(ctx, "gh", "auth", "token", "--hostname", "github.com").Output()
+	secretCmd := exec.CommandContext(ctx, "gh", "auth", "token", "--hostname", "github.com")
+	hideSubprocessWindow(secretCmd)
+	secret, err := secretCmd.Output()
 	if err != nil {
 		t.Fatal("active gh credential unavailable")
 	}
@@ -241,7 +244,9 @@ func TestLivePRFollowupRepairsRealGitHubCI(t *testing.T) {
 	}
 	requestJSON := func(path string, output any) {
 		t.Helper()
-		b, e := exec.CommandContext(ctx, "gh", "api", path).Output()
+		apiCmd := exec.CommandContext(ctx, "gh", "api", path)
+		hideSubprocessWindow(apiCmd)
+		b, e := apiCmd.Output()
 		if e != nil || json.Unmarshal(b, output) != nil {
 			t.Fatal("read acceptance workflow metadata failed")
 		}

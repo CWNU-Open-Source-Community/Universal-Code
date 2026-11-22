@@ -41,7 +41,9 @@ func TestRealGoplsAppliedDiagnosticDelta(t *testing.T) {
 					{"-C", f.root, "add", "go.mod", "sample.go", "target.txt"},
 					{"-C", f.root, "-c", "user.name=diagnostics-test", "-c", "user.email=diagnostics@example.invalid", "commit", "-q", "-m", "initial"},
 				} {
-					if output, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+					gitCmd := exec.Command("git", args...)
+					hideSubprocessWindow(gitCmd)
+					if output, err := gitCmd.CombinedOutput(); err != nil {
 						t.Fatalf("git: %s, %v", output, err)
 					}
 				}

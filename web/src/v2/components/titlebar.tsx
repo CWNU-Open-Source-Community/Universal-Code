@@ -20,7 +20,7 @@ export function V2Titlebar({ sidebarVisible, sidebarToggleRef, onToggleSidebar, 
   const mac = desktopIsMacPlatform();
   return <header className={`v2-titlebar${mac ? " is-mac" : ""}`}>
     <div className="v2-titlebar-navigation" data-v2-no-drag="true">
-      <button aria-label={sidebarVisible ? t("隐藏侧栏", "Hide sidebar") : t("显示侧栏", "Show sidebar")}
+      <button aria-controls="v2-sidebar-panel" aria-label={sidebarVisible ? t("隐藏侧栏", "Hide sidebar") : t("显示侧栏", "Show sidebar")}
         aria-pressed={sidebarVisible} onClick={onToggleSidebar} ref={sidebarToggleRef} type="button">
         <PanelLeft aria-hidden="true" size={16} />
       </button>

@@ -24,6 +24,8 @@ func (a *App) skillCommand(ctx context.Context, args []string) error {
 		return err
 	}
 	switch args[0] {
+	case "discover":
+		return a.skillDiscoverCommand(ctx, args[1:])
 	case "list":
 		flags := newFlagSet("skill list", a.errOut)
 		profileValue := flags.String("profile", "", "filter by compatible Profile")

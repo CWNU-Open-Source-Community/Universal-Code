@@ -6,8 +6,9 @@ import { act, fireEvent, render as renderComponent, screen, waitFor, within } fr
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { APIRequestError, APIClient } from "../../api/client";
-import type { ThreadDetailView, ThreadTranscriptItemView, WorkspaceView } from "../../api/types";
+import type { ApprovalPreviewView, ThreadDetailView, ThreadTranscriptItemView, WorkspaceView } from "../../api/types";
 import { V2Conversation } from "./conversation";
+import { v2QueryKeys } from "../query-keys";
 import { v2FileReferenceKey, type V2FileReference } from "./file-context";
 import { fullPermissionNotReadyMessage } from "../../lib/local-ui-message";
 
@@ -220,6 +221,106 @@ it("accepts a prepared input awaiting tool approval without duplicating its draf
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(screen.queryByText(/暂时无法确认这条消息的结果/)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "重试核对" })).not.toBeInTheDocument();
+});
+
+it("docks a pending request in the editor's place and keeps the same unsent draft", async () => {
+  const runID = "run-thread-a";
+  const queueKey = v2QueryKeys.approvals(runID);
+  const empty = { run_id: runID, items: [], truncated: false };
+  const item = { id: "web-approval", run_id: runID, proposal_id: "web-fetch-authorization-1",
+    tool_name: "web_fetch", status: "pending", allowed_actions: ["approve_once", "deny"],
+    workspace_id: "", exact_target: "example.org", canonical_url: "https://example.org/", version: 1 };
+  const submit = vi.fn();
+  const decideApproval = vi.fn();
+  const { queryClient } = renderRecovery(submit, {
+    hasApprovalControl: true, decideApproval,
+    get: vi.fn().mockResolvedValue({ ...recoveredThread("thread-a"), active_run: { id: runID, status: "waiting_approval" } }),
+    approvalQueue: vi.fn().mockResolvedValue(empty),
+    approvalPreview: vi.fn().mockImplementation(async (_run: string, approvalID: string) => ({ run_id: runID, approval_id: approvalID, proposal_id: item.proposal_id,
+      tool_name: item.tool_name, workspace_id: "", effect: "fetch_public_https", source_current: true,
+      redacted: false, truncated: false, fields: [{ name: "url", value: item.canonical_url }] })),
+  });
+  const user = userEvent.setup();
+  const input = await screen.findByRole("textbox", { name: "继续对话" });
+  await user.type(input, "A draft in progress");
+  await act(async () => { queryClient.setQueryData(queueKey, { ...empty, items: [item] }); });
+  const approvals = await screen.findByRole("region", { name: "待处理审批" });
+  expect(approvals.closest(".v2-composer-dock")).toBe(input.closest(".v2-composer-dock"));
+  expect(approvals.closest(".v2-conversation-scroll")).toBeNull();
+  expect(input).not.toBeVisible();
+  await user.click(screen.getByRole("button", { name: "对话操作" }));
+  await user.click(screen.getByRole("menuitem", { name: "编辑聊天草稿" }));
+  await waitFor(() => expect(input).toHaveFocus());
+  expect(input).toHaveValue("A draft in progress");
+  expect(approvals).toBeVisible();
+  await user.type(input, " with edits");
+  await act(async () => { queryClient.setQueryData(queueKey, { ...empty, items: [{ ...item, id: "next-request" }] }); });
+  await waitFor(() => expect(input).not.toBeVisible());
+  await act(async () => { queryClient.setQueryData(queueKey, empty); });
+  await waitFor(() => expect(input).toBeVisible());
+  expect(screen.getByRole("textbox", { name: "继续对话" })).toBe(input);
+  expect(input).toHaveValue("A draft in progress with edits");
+  expect(decideApproval).not.toHaveBeenCalled();
+  expect(submit).not.toHaveBeenCalled();
+});
+
+it("reveals the editor when a failed message is added back to a covered draft", async () => {
+  const user = userEvent.setup();
+  const runID = "run-thread-a";
+  const approval = { id: "approval-during-recovery", run_id: runID, tool_name: "web_fetch", status: "pending",
+    allowed_actions: ["approve_once", "deny"], exact_target: "example.org", version: 1 };
+  const { queryClient } = renderRecovery(vi.fn().mockRejectedValue(failedTurn()), {
+    hasApprovalControl: true, approvalQueue: vi.fn().mockResolvedValue({ items: [approval] }),
+    approvalPreview: vi.fn().mockResolvedValue({ fields: [], source_current: true }),
+  });
+  const input = await submitOriginal(user);
+  await screen.findByText(/本轮执行未完成/);
+  fireEvent.change(input, { target: { value: "Unsent opening" } });
+  await act(async () => { queryClient.setQueryData(v2QueryKeys.thread("thread-a"), {
+    ...recoveredThread("thread-a"), active_run: { id: runID, status: "waiting_approval" },
+  }); });
+  await waitFor(() => expect(input).not.toBeVisible());
+  await user.click(screen.getByRole("button", { name: "添加到草稿" }));
+  await waitFor(() => expect(input).toHaveFocus());
+  expect(input).toHaveValue("Unsent opening\n\nOriginal request");
+  expect(screen.getByRole("region", { name: "待处理审批" })).toBeVisible();
+});
+
+it("restores the same draft after the last confirmed decision even if refreshing the queue fails", async () => {
+  const runID = "run-thread-a";
+  const empty = { run_id: runID, items: [], truncated: false };
+  const approvalQueue = vi.fn().mockResolvedValue(empty);
+  const decideApproval = vi.fn().mockResolvedValue({ retry_scheduled: true });
+  const items = ["one", "two"].map((id) => ({ id, run_id: runID, tool_name: "web_fetch",
+    proposal_id: `web-fetch-authorization-${id}`, status: "pending", allowed_actions: ["approve_once", "deny"],
+    workspace_id: "", exact_target: `${id}.example.org`, canonical_url: `https://${id}.example.org/`, version: 1 }));
+  const { queryClient } = renderRecovery(vi.fn(), {
+    hasApprovalControl: true, decideApproval, approvalQueue,
+    get: vi.fn().mockResolvedValue({ ...recoveredThread("thread-a"), active_run: { id: runID, status: "waiting_approval" } }),
+    approvalPreview: vi.fn(async (_run: string, id: string): Promise<ApprovalPreviewView> => {
+      const item = items.find((entry) => entry.id === id)!;
+      return { protocol_version: "approval_queue.v1", run_id: runID, approval_id: id, proposal_id: item.proposal_id, tool_name: item.tool_name,
+        workspace_id: "", working_directory: "", effect: "fetch_public_https", source_current: true, redacted: false, truncated: false,
+        fields: [{ name: "url", value: item.canonical_url }] };
+    }),
+  });
+  const input = await screen.findByRole("textbox", { name: "继续对话" });
+  const user = userEvent.setup();
+  await user.type(input, "Kept offline");
+  approvalQueue.mockRejectedValue(new Error("Queue offline"));
+  await act(async () => { queryClient.setQueryData(v2QueryKeys.approvals(runID), { ...empty, items }); });
+  const first = await screen.findByRole("article", { name: /one\.example\.org/ });
+  const second = await screen.findByRole("article", { name: /two\.example\.org/ });
+  await user.click(within(first).getByRole("button", { name: "拒绝" }));
+  expect(await screen.findByText(/Queue offline/)).toBeVisible();
+  expect(first).not.toBeInTheDocument();
+  expect(second).toBeVisible();
+  expect(input).not.toBeVisible();
+  await user.click(within(second).getByRole("button", { name: "拒绝" }));
+  await waitFor(() => expect(input).toBeVisible());
+  expect(second).not.toBeInTheDocument();
+  expect(input).toHaveValue("Kept offline");
+  expect(decideApproval.mock.calls.map((call) => call[1])).toEqual(["one", "two"]);
 });
 
 it("continues a paused task by sending a message without a separate lifecycle action", async () => {

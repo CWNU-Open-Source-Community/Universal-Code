@@ -307,6 +307,7 @@ The complete slice ledger remains in [PROGRESS_BOOK](PROGRESS_BOOK.md), current 
 | v236 | 只读并行分析、发现报告和工作区检查点保留原始路径，迁移时保留既有记录和关联 | preserve exact paths in read-only fan-out, finding reports, and Workspace checkpoints while retaining existing records and bindings |
 | v237 | 文件编辑应用记录保留原始路径及既有审批、结果关联 | preserve exact paths in the file edit apply journal and retain existing approval and result bindings |
 | v238 | 命令记录保留工作目录的原始空格及既有任务、执行身份关联 | preserve exact command working directories and retain existing Job and actor bindings |
+| v239 | 放宽 Supervisor 单批工具位置与分段轮次上限约束，保留既有调用行身份、重放记录、触发器与外部外键关联 | widen Supervisor tool batch position and round limits while preserving historical call row identities, replay records, triggers and foreign-key bindings |
 
 
 </details>

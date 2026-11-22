@@ -172,14 +172,17 @@ func TestAgentCodePayloadPreservesWhitespaceInWorkspaceCoordinates(t *testing.T)
 func TestAgentCodeDefinitionsDescribeAutomaticOrdinaryChanges(t *testing.T) {
 	change, found := AgentCodeToolDefinition(WorkspaceChangeTool)
 	if !found || !strings.Contains(change.Description,
-		"create, replace, non-overwriting move, or reversal that resolves to create/replace") ||
+		"create, replace, non-overwriting move, or a reversal resolving to create/replace") ||
 		!strings.Contains(change.Description,
-			"Direct deletes and reversals that resolve to delete require operator review") {
-		t.Fatalf("workspace_change Full Access description=%q", change.Description)
+			"atomically writes the workspace in one step") ||
+		!strings.Contains(change.Description,
+			"direct deletes, reversals resolving to delete, or host-gated paths") {
+		t.Fatalf("workspace_change description=%q", change.Description)
 	}
 	apply, found := AgentCodeToolDefinition(WorkspaceApplyTool)
-	if !found || !strings.Contains(apply.Description, "create/replace/move") {
-		t.Fatalf("workspace_apply Full Access description=%q", apply.Description)
+	if !found || !strings.Contains(apply.Description, "create/replace/move") ||
+		!strings.Contains(apply.Description, "replays idempotently with file_written false") {
+		t.Fatalf("workspace_apply description=%q", apply.Description)
 	}
 }
 

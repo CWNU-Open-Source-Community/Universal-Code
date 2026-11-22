@@ -284,11 +284,19 @@ func (a *API) serveFileEditReviewControl(writer http.ResponseWriter,
 		a.writeError(writer, requestID, err, 0)
 		return
 	}
+	continuation := a.resumeReviewedProposal(request.Context(), runID, "file_edit", editID)
+	edit := result.Edit
+	if reader, ok := a.store.(fileEditDetailReader); ok {
+		if latest, lookupErr := reader.GetFileEdit(request.Context(), editID); lookupErr == nil {
+			edit = latest
+		}
+	}
+	fileWritten := !result.Replayed && result.Action == application.FileEditApproveIntent && edit.Status == fileedit.StatusApplied
 	a.writeSuccessStatus(writer, requestID, FileEditReviewView{
-		Continuation:    a.resumeReviewedProposal(request.Context(), runID, "file_edit", editID),
+		Continuation:    continuation,
 		ProtocolVersion: application.FileEditReviewProtocolVersion, RunID: runID,
-		Action: string(result.Action), Edit: fileEditView(result.Edit, false),
-		Replayed: result.Replayed, FileWritten: false,
+		Action: string(result.Action), Edit: fileEditView(edit, false),
+		Replayed: result.Replayed, FileWritten: fileWritten,
 	}, nil, http.StatusAccepted)
 }
 

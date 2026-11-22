@@ -1,0 +1,55 @@
+.v2-automations-page { height: 100%; }
+.v2-automations-page .scheduled-tasks-workspace { height: auto; min-height: 0; overflow: visible; padding: 0; }
+.v2-automations-page .scheduled-tasks-workspace > header { align-items: center; border: 0; gap: 12px; min-height: 0; }
+.v2-automations-page h1 { font-size: 24px; font-weight: 600; letter-spacing: -.025em; line-height: 1.3; }
+.v2-automations-page .scheduled-tasks-workspace > header small,
+.v2-automations-page .scheduled-tasks-workspace > p { color: var(--v2-muted); font-size: 13px; line-height: 1.6; }
+.v2-automations-page .scheduled-tasks-workspace > p { margin: 8px 0 0; }
+.v2-automations-page .scheduled-tasks-workspace > .inline-warning { color: var(--prayu-warning); }
+.v2-automations-page .automation-mode-picker { margin: 22px 0; }
+
+.v2-automations-page :is(.automation-target, .scheduled-create-form, .automation-pr-target) { border: 0; border-radius: 0; background: transparent; padding: 0; }
+.v2-automations-page .automation-target { align-items: end; gap: 10px 16px; grid-template-columns: minmax(0, 1fr) auto; margin-bottom: 24px; }
+.v2-automations-page .automation-target label:only-child { grid-column: 1 / -1; }
+.v2-automations-page .scheduled-create-form { border-top: 1px solid var(--v2-border); gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); padding-top: 20px; }
+.v2-automations-page .automation-pr-target { border-top: 1px solid var(--v2-border); padding-top: 20px; }
+.v2-automations-page .automation-pr-fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+.v2-automations-page :is(.automation-target, .scheduled-create-form, .automation-pr-target) label { color: var(--v2-muted); font-size: 13px; line-height: 1.45; }
+.v2-automations-page :is(.automation-target, .scheduled-create-form, .automation-pr-target) :is(input:not([type="checkbox"]), select, textarea) {
+  background: var(--v2-control);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--prayu-radius-control);
+  color: var(--v2-ink);
+  font-size: 13px;
+  min-height: 36px;
+  padding: 7px 11px;
+}
+.v2-automations-page :is(.compact-command, .command-button) { align-items: center; border-radius: var(--prayu-radius-control); display: inline-flex; gap: 6px; justify-content: center; line-height: 1.4; max-width: 100%; min-height: 32px; overflow-wrap: anywhere; padding: 6px 12px; text-align: center; white-space: normal; }
+.v2-automations-page :is(.compact-command, .command-button) svg { flex: none; }
+.v2-automations-page .scheduled-create-form > button { grid-column: 1 / -1; justify-self: start; }
+
+.v2-automations-page .automation-list-heading { align-items: baseline; border-top: 1px solid var(--v2-border); margin: 28px 0 12px; padding-top: 22px; }
+.v2-automations-page .scheduled-task-layout { align-items: start; min-height: 0; }
+.v2-automations-page .scheduled-task-list { border: 0; border-radius: 0; background: transparent; gap: 2px; overflow: visible; }
+.v2-automations-page .scheduled-task-list > button { border: 0; border-radius: var(--prayu-radius-control); min-width: 0; padding: 10px 12px; }
+.v2-automations-page .scheduled-task-list button[aria-pressed="true"] { background: var(--v2-control-hover); }
+.v2-automations-page .scheduled-task-list > .compact-command { align-self: start; }
+.v2-automations-page .scheduled-task-list > button :is(strong, small),
+.v2-automations-page .scheduled-task-detail > header :is(strong, small) { overflow-wrap: anywhere; white-space: normal; }
+.v2-automations-page .scheduled-task-list .utility-empty-state,
+.v2-automations-page p.utility-empty-state { align-items: center; flex-direction: row; gap: 10px; justify-content: flex-start; min-height: 0; padding: 16px 0; }
+.v2-automations-page .scheduled-task-detail { background: var(--v2-control); border-radius: var(--prayu-radius-panel); padding: 16px; }
+.v2-automations-page .scheduled-task-detail dl { background: transparent; border: 0; gap: 12px 16px; }
+.v2-automations-page .scheduled-task-detail dl > div { background: transparent; padding: 0; }
+.v2-automations-page .scheduled-task-detail dt { font-size: 12px; text-transform: none; }
+.v2-automations-page .scheduled-task-detail dd { font-size: 13px; }
+
+@container secondary-page (max-width: 680px) {
+  .v2-automations-page .scheduled-task-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+@container secondary-page (max-width: 520px) {
+  .v2-automations-page .automation-target { grid-template-columns: minmax(0, 1fr); }
+  .v2-automations-page .automation-target > button { justify-self: start; }
+  .v2-automations-page .automation-mode-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+}

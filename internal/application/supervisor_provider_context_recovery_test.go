@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -166,8 +167,26 @@ func TestSupervisorProviderContextRecoveryIsBounded(t *testing.T) {
 			if err == nil {
 				t.Fatal("provider failure reported successful")
 			}
-			if len(provider.Requests()) != test.wantRequests {
-				t.Fatalf("requests=%d want=%d: %v", len(provider.Requests()), test.wantRequests, err)
+			requests := provider.Requests()
+			if len(requests) != test.wantRequests {
+				t.Fatalf("requests=%d want=%d: %v", len(requests), test.wantRequests, err)
+			}
+			if test.name == "second_context_limit" {
+				first, summary, retry := requests[0], requests[1], requests[2]
+				before, firstErr := strconv.Atoi(first.Metadata["context_input_estimate"])
+				after, retryErr := strconv.Atoi(retry.Metadata["context_input_estimate"])
+				if firstErr != nil || retryErr != nil || after <= 0 || after >= before ||
+					retry.Metadata["context_input_limit"] != strconv.Itoa(before-1) || retry.Metadata["context_summary_id"] == "" {
+					t.Fatalf("recovery did not send a smaller request with the saved summary: before=%d after=%d", before, after)
+				}
+				if summary.Metadata["purpose"] != llm.ModelPurposeContextCompaction || len(summary.Tools) != 0 {
+					t.Fatal("expected one tool-free auxiliary summary between root attempts")
+				}
+				if retry.Metadata["purpose"] != first.Metadata["purpose"] || retry.Model != first.Model ||
+					retry.MaxTokens != first.MaxTokens || len(first.Tools) == 0 || !reflect.DeepEqual(retry.Tools, first.Tools) {
+					t.Fatal("the root retry changed its model, output limit or offered tools")
+				}
+				t.Logf("rejected input %d, recovered input %d, unchanged tool schemas %d", before, after, len(first.Tools))
 			}
 			items, err := st.ListWorkItems(t.Context(), domain.WorkItemFilter{RunID: run.ID})
 			if err != nil || len(items) != 0 {

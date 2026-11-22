@@ -462,17 +462,21 @@ func TestSessionRunChatFeedsCompactedSummaryBackToSupervisor(t *testing.T) {
 	if provider.summaryCalls != 1 {
 		t.Fatalf("expected one explicit auxiliary failure before extractive fallback, got %d", provider.summaryCalls)
 	}
-	foundSummary := false
+	saved, found, err := st.LatestContextSummary(ctx, run.SessionID)
+	if err != nil || !found || saved.ID != compacted.SummaryID {
+		t.Fatalf("committed summary ID = %d, want %d, found=%v err=%v", saved.ID, compacted.SummaryID, found, err)
+	}
+	ref := fmt.Sprintf("summary:%d (SHA-256 %s)", saved.ID, saved.ContentSHA256)
+	transcripts := 0
 	for _, message := range provider.requests[11].Messages {
-		if message.Role == "system" && strings.Contains(message.Content, "Compacted session context") {
-			t.Fatalf("compacted transcript was elevated to system context: %s", message.Content)
-		}
-		if message.Role == "user" && strings.Contains(message.Content, "Compacted session context") {
-			foundSummary = true
-			break
+		if strings.Contains(message.Content, ref) {
+			if message.Role != "assistant" || !strings.Contains(message.Content, "Recorded compatibility observation.") {
+				t.Fatalf("summary %d did not carry the historical assistant observation in an assistant message (role=%s)", saved.ID, message.Role)
+			}
+			transcripts++
 		}
 	}
-	if !foundSummary {
-		t.Fatalf("compacted summary was not sent to Supervisor: %#v", provider.requests[11].Messages)
+	if transcripts != 1 {
+		t.Fatalf("last Supervisor request contained %d copies of committed summary %d, want one", transcripts, saved.ID)
 	}
 }

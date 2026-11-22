@@ -41,17 +41,17 @@ func TestSupervisorFileEditGuidanceReflectsAdvertisedScopeOnly(t *testing.T) {
 			if tc.name == "read only offered" {
 				request.Tools = append(request.Tools, llm.ToolSpec{Name: "workspace_read"})
 			}
-			result := supervisorFileEditGuidance(request, toolgateway.AgentCodeCapabilities(scope))
+			result := supervisorFileEditGuidance(request, toolgateway.AgentCodeCapabilities(scope), 0)
 			if !tc.changeOffered {
 				if len(result.Messages) != 1 {
 					t.Fatal("guidance advertised an unavailable mutation")
 				}
 				return
 			}
-			text := result.Messages[len(result.Messages)-1].Content
-			if len(result.Messages) != 2 || result.Messages[0].Content != request.Messages[0].Content ||
+			text := result.Messages[0].Content
+			if len(result.Messages) != 2 || result.Messages[1].Content != request.Messages[0].Content ||
 				!strings.Contains(text, "a newer denial takes precedence") || !strings.Contains(text, "Read-only tasks still require no edits") ||
-				!strings.Contains(text, "proposal itself does not write bytes") || !strings.Contains(text, "establish neither current permission nor revocation") {
+				!strings.Contains(text, "when review is required, workspace_change records a proposal without writing bytes") || !strings.Contains(text, "establish neither current permission nor revocation") {
 				t.Fatal("guidance confused observation with authority", text)
 			}
 			if strings.Contains(text, "Eligible prepared operations can receive recorded automatic authorization") != tc.wantAuto {

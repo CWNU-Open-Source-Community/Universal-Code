@@ -54,8 +54,8 @@ export function ContextDiagnosticsPanel({ value, unavailable, recovery, runID, r
   const matchingRecovery = recovery?.run_id === runID ? recovery : undefined;
   return <section aria-labelledby="context-diagnostics-title">
     <h3 id="context-diagnostics-title">{t("压缩与恢复进展", "Compaction and recovery progress")}</h3>
-    {unavailable ? <p role="status">{t("压缩过程记录暂不可读取；下方已保存摘要仍可查看，请稍后刷新重试。", "Compaction records are temporarily unavailable. Saved summaries below remain available; refresh to retry.")}</p> : value === undefined ? <p>{t("当前服务未提供压缩过程记录，仍可查看下方已保存摘要。", "This service does not provide compaction progress records. Saved summaries are available below.")}</p> : !latest ?
-      <p>{t("此执行尚无自动生成压缩记录。手动压缩与历史摘要可在下方查看。", "No automatic compaction records for this run. Manual compactions and past summaries are shown below.")}</p> : <>
+    {unavailable ? <p role="status">{t("压缩过程记录暂不可读取。", "Compaction records are temporarily unavailable.")}</p> : value === undefined ? <p>{t("当前服务未提供压缩过程记录。", "This service does not provide compaction progress records.")}</p> : !latest ?
+      <p>{t("此执行尚无自动生成压缩记录。", "No automatic compaction records for this run.")}</p> : <>
         <div className="v2-context-notice" role="status"><strong>{t("最近记录：", "Latest record: ")}{t(...phases[latest.phase].title)}</strong><p>{t(...phases[latest.phase].detail)}</p>
           {latest.fallback_code && <p>{t("已采用规则摘要回退：", "Rule-based summary fallback used: ")}{t(...fallbackLabels[latest.fallback_code])}。</p>}
           {latest.phase === "generation_started" && runStatus !== "running" && <p>{t("当前执行未在运行，最近显示的是生成开始记录。请刷新查看后续记录。", "This run is no longer running; the latest record says generation started. Refresh to check later records.")}</p>}
@@ -76,6 +76,5 @@ export function ContextDiagnosticsPanel({ value, unavailable, recovery, runID, r
     {matchingRecovery ? <div className="v2-context-notice"><strong>{matchingRecovery.quiescent ? t("上轮已停止，可继续对话", "The previous turn stopped; you can continue") : t("上轮正在释放资源", "The previous turn is releasing resources")}</strong>
       <p>{matchingRecovery.detail}</p><p>{matchingRecovery.quiescent ? t("返回对话发送“继续”或补充要求。上次提交若尚未确认，系统会先核对。", "Return to the conversation and send “continue” or further instructions. Any unconfirmed previous submission is checked first.") : t("可以先编辑消息；资源释放后再继续。", "You can edit your message now and continue after resources are released.")}</p>
     </div> : <p>{t("当前执行没有待恢复提示。", "There is no pending recovery notice for this run.")}</p>}
-    <p className="v2-context-help">{t("消息计数记录每次压缩的范围，已保存摘要可在下方查看。需要继续执行时，返回对话发送消息。", "Message counts describe each compaction. View saved summaries below; return to the conversation to continue.")}</p>
   </section>;
 }

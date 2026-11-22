@@ -166,8 +166,8 @@ func TestAgentCodeGatewayRejectsNewEmptyCreateWithoutExplicitBody(t *testing.T) 
 	if _, err := gateway.Invoke(t.Context(), call); err != nil {
 		t.Fatalf("direct gateway rejected explicit empty body control: err=%v", err)
 	}
-	if _, err := os.Stat(filepath.Join(f.root, "empty.txt")); !os.IsNotExist(err) {
-		t.Fatalf("direct proposal wrote the file: err=%v", err)
+	if data, err := os.ReadFile(filepath.Join(f.root, "empty.txt")); err != nil || len(data) != 0 {
+		t.Fatalf("explicit empty create did not write 0-byte file: data=%q err=%v", data, err)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -157,7 +158,94 @@ func (g *Gateway) WithLifecycleHooks(engine *hooks.Engine) *Gateway {
 	return g
 }
 
+type orderedBudgetTurnstileKey struct{}
+
+type orderedBudgetTurnstile struct {
+	ctx      context.Context
+	wait     <-chan struct{}
+	next     chan<- struct{}
+	mu       sync.Mutex
+	acquired bool
+	once     sync.Once
+}
+
+func (t *orderedBudgetTurnstile) acquire(ctx context.Context) error {
+	if t == nil {
+		return nil
+	}
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	if t.wait != nil {
+		if ctx == nil {
+			<-t.wait
+		} else {
+			select {
+			case <-t.wait:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+	t.mu.Lock()
+	t.acquired = true
+	t.mu.Unlock()
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *orderedBudgetTurnstile) release() {
+	if t == nil || t.next == nil {
+		return
+	}
+	t.once.Do(func() {
+		t.mu.Lock()
+		wasAcquired := t.acquired
+		t.mu.Unlock()
+		if !wasAcquired && t.wait != nil {
+			if t.ctx == nil {
+				<-t.wait
+			} else {
+				select {
+				case <-t.wait:
+				case <-t.ctx.Done():
+				}
+			}
+		}
+		close(t.next)
+	})
+}
+
+// WithOrderedBudgetTurnstile attaches a single-use turnstile slot to ctx so
+// concurrent Gateway.Invoke calls serialize only ChargeToolCall in wait->next
+// order before overlapping registration.invoke I/O. The returned release func
+// is idempotent and should be deferred by callers that may return before
+// reaching Gateway.Invoke.
+func WithOrderedBudgetTurnstile(ctx context.Context, wait <-chan struct{}, next chan<- struct{}) (context.Context, func()) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if wait == nil && next == nil {
+		return ctx, func() {}
+	}
+	slot := &orderedBudgetTurnstile{ctx: ctx, wait: wait, next: next}
+	return context.WithValue(ctx, orderedBudgetTurnstileKey{}, slot), slot.release
+}
+
 func (g *Gateway) Invoke(ctx context.Context, call ToolCall) (outcome Outcome, returnedErr error) {
+	var turnstile *orderedBudgetTurnstile
+	if ctx != nil {
+		turnstile, _ = ctx.Value(orderedBudgetTurnstileKey{}).(*orderedBudgetTurnstile)
+	}
+	if turnstile != nil {
+		defer turnstile.release()
+	}
 	if g == nil {
 		return Outcome{}, errors.New("tool gateway is required")
 	}
@@ -259,15 +347,26 @@ func (g *Gateway) Invoke(ctx context.Context, call ToolCall) (outcome Outcome, r
 		return Outcome{}, fmt.Errorf("register synchronous tool dependency: %w", err)
 	}
 	defer releaseWait()
+	if turnstile != nil {
+		if err := turnstile.acquire(ctx); err != nil {
+			return Outcome{}, err
+		}
+	}
 	if g.budgetStore != nil {
 		usage, err := g.budgetStore.ChargeToolCall(ctx, toolBudgetRequest(normalized, registration.definition.Class))
 		if err != nil {
+			if turnstile != nil {
+				turnstile.release()
+			}
 			return Outcome{}, err
 		}
 		if usage.Tracked {
 			normalized.RunID = usage.RunID
 			normalized.InvocationID = usage.LastCharge
 		}
+	}
+	if turnstile != nil {
+		turnstile.release()
 	}
 	if normalized.RequestedBy == "specialist_runner" && normalized.Name != SpecialistTool {
 		if err := g.markWorkerDispatchStarted(ctx, normalized); err != nil {

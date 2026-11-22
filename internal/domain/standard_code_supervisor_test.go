@@ -57,8 +57,23 @@ func TestStandardCodeSupervisorSnapshotRequiresInspectionAndCurrentVerification(
 
 func TestStandardCodeSupervisorLimitsCannotBeWidened(t *testing.T) {
 	limits := DefaultStandardCodeSupervisorLimits()
+	if limits.MaximumToolRounds != MaxSupervisorExecutionRounds {
+		t.Fatalf("expected MaximumToolRounds=%d, got %d", MaxSupervisorExecutionRounds, limits.MaximumToolRounds)
+	}
 	if err := limits.Validate(); err != nil {
 		t.Fatal(err)
+	}
+	legacy := limits
+	legacy.MaximumToolRounds = 4
+	if err := legacy.Validate(); err != nil {
+		t.Fatalf("legacy 4-round Standard Code ledger limit was rejected: %v", err)
+	}
+	for _, invalidRounds := range []int{3, 5, MaxSupervisorExecutionRounds + 1} {
+		bad := limits
+		bad.MaximumToolRounds = invalidRounds
+		if err := bad.Validate(); err == nil {
+			t.Fatalf("invalid MaximumToolRounds=%d was accepted", invalidRounds)
+		}
 	}
 	limits.MaximumCommands++
 	if err := limits.Validate(); err == nil {

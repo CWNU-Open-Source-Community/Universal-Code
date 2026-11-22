@@ -1,17 +1,36 @@
-.repository-diff-item { position: relative; }
-.repository-diff-file > summary,
-.repository-diff-file-row {
+.repository-diff-panel .repository-diff-summary {
+  min-height: 36px;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border: 0;
+  font-size: 12px;
+}
+.repository-diff-panel .repository-diff-list { gap: 8px; }
+.repository-diff-list > .repository-diff-item {
+  position: relative;
+  border: 1px solid var(--prayu-border);
+  border-radius: var(--prayu-radius-control, 10px);
+}
+.repository-diff-panel .repository-diff-file > summary,
+.repository-diff-panel .repository-diff-file-row {
   min-height: 42px;
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 10px 0;
-  cursor: pointer;
+  padding: 10px 16px;
   list-style: none;
   font-size: 12px;
 }
-.repository-diff-file-row { padding-left: 22px; cursor: default; }
-.repository-diff-item.has-action :is(.repository-diff-file > summary, .repository-diff-file-row) { padding-right: 34px; }
+.repository-diff-file > summary {
+  border-radius: 9px;
+  cursor: pointer;
+}
+.repository-diff-file[open] > summary { border-radius: 9px 9px 0 0; }
+.repository-diff-file > summary:hover,
+.repository-diff-file > summary:focus-visible { background: var(--prayu-control-hover); }
+.repository-diff-file > summary:focus-visible { outline-offset: -2px; }
+.repository-diff-panel .repository-diff-file-row { padding-inline-start: 38px; }
+.repository-diff-item.has-action :is(.repository-diff-file > summary, .repository-diff-file-row) { padding-inline-end: 48px; }
 
 .repository-diff-file > summary::-webkit-details-marker { display: none; }
 .repository-diff-chevron { flex-shrink: 0; color: var(--muted); margin-top: 3px; }
@@ -20,36 +39,45 @@
 .repository-diff-file-heading {
   min-width: 0;
   flex: 1;
-  display: grid;
-  gap: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
   line-height: 1.5;
 }
 
 .repository-diff-file-heading code {
   min-width: 0;
+  flex: 1 1 14ch;
   overflow: hidden;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.repository-diff-file-counts { color: var(--muted); }
-.repository-diff-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; font-size: 12px; }
-.repository-diff-file-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: 12px; }
+.repository-diff-file-counts { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.repository-diff-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; font-size: 12px; }
+.repository-diff-pagination .compact-command { justify-content: center; min-height: 32px; padding: 5px 12px; border-radius: var(--prayu-radius-control, 10px); }
+.repository-diff-file-meta { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--muted); font-size: 12px; }
+.repository-diff-file-meta:empty { display: none; }
 .repository-diff-file-meta > span { white-space: normal; }
-.repository-diff-quote { position: absolute; top: 7px; right: 0; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.repository-diff-quote { position: absolute; top: 5px; right: 8px; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
 .repository-diff-quote:hover { background: var(--prayu-control); color: var(--prayu-text); }
 .repository-diff-quote:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+.repository-diff-file > .repository-diff-hunks,
+.repository-diff-item .repository-diff-file > pre {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 9px 9px;
+}
 .repository-diff-hunks {
-  margin: 0 0 12px;
   max-height: 460px;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 5px;
   background: var(--prayu-surface-solid);
   color: var(--prayu-text);
-  font: 11px/1.6 var(--prayu-font-mono, ui-monospace, "SFMono-Regular", Consolas, monospace);
+  font: 12px/1.6 var(--prayu-font-mono, ui-monospace, "SFMono-Regular", Consolas, monospace);
 }
 .repository-diff-hunk { min-width: max-content; }
 .repository-diff-hunk + .repository-diff-hunk { border-top: 1px solid var(--border); }
@@ -73,4 +101,4 @@
 .repository-diff-line.is-add .repository-diff-marker { color: color-mix(in srgb, var(--prayu-diff-add) 72%, var(--prayu-text)); }
 .repository-diff-line.is-remove .repository-diff-marker { color: color-mix(in srgb, var(--prayu-diff-delete) 72%, var(--prayu-text)); }
 .repository-diff-line.is-meta { color: var(--muted); }
-.workbench-sidecar .repository-diff-hunks { max-height: 260px; font-size: 9px; }
+.workbench-sidecar .repository-diff-hunks { max-height: 260px; }

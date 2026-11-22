@@ -6114,7 +6114,7 @@ CREATE TABLE run_supervisor_assistant_replay (
 		run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
 		turn INTEGER NOT NULL CHECK(turn > 0), attempt_id TEXT NOT NULL CHECK(length(attempt_id) > 0),
 		model_attempt INTEGER NOT NULL CHECK(model_attempt > 0),
-		tool_round INTEGER NOT NULL CHECK(tool_round BETWEEN 0 AND 21),
+		tool_round INTEGER NOT NULL CHECK(tool_round BETWEEN 0 AND 217),
 		provider TEXT NOT NULL CHECK(length(provider) > 0), model TEXT NOT NULL CHECK(length(model) > 0),
 		replay_blob BLOB NOT NULL CHECK(length(replay_blob) BETWEEN 1 AND 1048576),
 		replay_sha256 TEXT NOT NULL CHECK(length(replay_sha256)=64 AND replay_sha256 NOT GLOB '*[^0-9a-f]*'),
@@ -6149,7 +6149,7 @@ CREATE TABLE run_supervisor_checkpoints (
 CREATE TABLE run_supervisor_context_recoveries (
 		run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
 		turn INTEGER NOT NULL CHECK(turn > 0), attempt_id TEXT NOT NULL,
-		tool_round INTEGER NOT NULL CHECK(tool_round BETWEEN 0 AND 21),
+		tool_round INTEGER NOT NULL CHECK(tool_round BETWEEN 0 AND 217),
 		protocol_repair INTEGER NOT NULL CHECK(protocol_repair BETWEEN 0 AND 1),
 		model_attempt INTEGER NOT NULL CHECK(model_attempt > 0),
 		original_input_tokens INTEGER NOT NULL CHECK(original_input_tokens > 0),
@@ -6160,7 +6160,7 @@ CREATE TABLE run_supervisor_context_recoveries (
 -- traverse-board-clean-install-object-boundary --
 CREATE TABLE run_supervisor_provider_replay (
 		run_id TEXT NOT NULL, turn INTEGER NOT NULL CHECK(turn > 0),
-		attempt_id TEXT NOT NULL, round INTEGER NOT NULL CHECK(round BETWEEN 1 AND 21),
+		attempt_id TEXT NOT NULL, round INTEGER NOT NULL CHECK(round BETWEEN 1 AND 217),
 		model_attempt INTEGER NOT NULL CHECK(model_attempt > 0),
 		provider TEXT NOT NULL CHECK(length(provider) > 0),
 		model TEXT NOT NULL CHECK(length(model) > 0),
@@ -6219,7 +6219,7 @@ CREATE TABLE "run_supervisor_tool_calls" (
 		UNIQUE(run_id, turn, attempt_id, call_id),
 		FOREIGN KEY(run_id, turn, attempt_id, round)
 			REFERENCES run_supervisor_tool_rounds(run_id, turn, attempt_id, round) ON DELETE CASCADE,
-		CHECK(position BETWEEN 1 AND 4),
+		CHECK(position BETWEEN 1 AND 16),
 		CHECK(model_attempt > 0),
 		CHECK(tool_name IN ('skill_read', 'history_search', 'history_read', 'work_item_create', 'note_create',
 			'specialist_delegation_propose', 'child_task_propose', 'context_pin_propose', 'thread_list', 'thread_send_message',
@@ -6286,7 +6286,7 @@ CREATE TABLE run_supervisor_tool_rounds (
 		PRIMARY KEY(run_id, turn, attempt_id, round),
 		FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE,
 		CHECK(turn > 0),
-		CHECK(round BETWEEN 1 AND 21),
+		CHECK(round BETWEEN 1 AND 217),
 		CHECK(model_attempt > 0)
 	);
 -- traverse-board-clean-install-object-boundary --
@@ -26693,7 +26693,7 @@ CREATE TRIGGER trg_supervisor_context_recovery_source BEFORE INSERT ON run_super
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_supervisor_native_round_limit BEFORE INSERT ON run_supervisor_tool_rounds
 		 WHEN NEW.origin='model' AND (SELECT COUNT(*) FROM run_supervisor_tool_rounds
-		 WHERE run_id=NEW.run_id AND turn=NEW.turn AND attempt_id=NEW.attempt_id AND origin='model')>=4
+		 WHERE run_id=NEW.run_id AND turn=NEW.turn AND attempt_id=NEW.attempt_id AND origin='model')>=24
 		 BEGIN SELECT RAISE(ABORT,'native model tool round limit exceeded'); END;
 -- traverse-board-clean-install-object-boundary --
 CREATE TRIGGER trg_supervisor_provider_replay_immutable BEFORE UPDATE ON run_supervisor_provider_replay

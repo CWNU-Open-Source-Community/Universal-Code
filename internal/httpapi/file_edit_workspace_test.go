@@ -27,6 +27,7 @@ func TestFileEditHTTPKeepsConfiguredTargetAndSourceHistoryDistinct(t *testing.T)
 	git := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		hideSubprocessWindow(cmd)
 		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, output)

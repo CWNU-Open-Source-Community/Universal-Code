@@ -2,7 +2,7 @@ import { fullPermissionNotReadyMessage, localUIMessage } from "../../lib/local-u
 import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpen, ChevronDown, CircleEllipsis, Download, FileDiff, Folder, FolderTree, LoaderCircle, MessagesSquare, Microscope, RefreshCw, Globe, ShieldCheck, PanelTop, SquareTerminal, X } from "lucide-react";
+import { Archive, BookOpen, ChevronDown, Ellipsis, Download, FileDiff, FolderTree, LoaderCircle, MessageSquare, MessagesSquare, Microscope, RefreshCw, Globe, PanelTop, SquareTerminal, X } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import type { ThreadDetailView, ThreadView, WorkspaceView } from "../../api/types";
@@ -69,10 +69,17 @@ import {
 } from "../workspace-tabs";
 import { V2FileWorkspaceContent, V2WorkspaceDock } from "./workspace-dock";
 import { V2ThreadExport } from "./thread-export";
+import { useV2ScrollMemory } from "../use-scroll-memory";
+import { V2NavigatorRail } from "./navigator-rail";
 
 export { parseProjectFileLink, type FileLinkTarget } from "./narrative";
 
 const V2ExecutionRecords = lazy(() => import("./execution-records").then((module) => ({ default: module.V2ExecutionRecords })));
+
+function conversationMenuItems(menu: HTMLElement | null) {
+  return Array.from(menu?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
+    .filter((item) => getComputedStyle(item).display !== "none");
+}
 
 export function V2FileDrawer({
   client,
@@ -220,7 +227,7 @@ export function V2TerminalDrawer({
           ) : (
             <div className="v2-terminal-disabled-notice" role="status">
               <SquareTerminal aria-hidden="true" size={24} />
-              <p>{t("当前运行环境未启用桌面终端。仅在 Universal-Code 桌面端运行时支持本机 Debug 终端。", "The desktop terminal is unavailable in this environment. Local debug terminals require the Universal-Code desktop app.")}</p>
+              <p>{t("本机终端仅在 Universal-Code 桌面端可用。", "The local terminal requires the Universal-Code desktop app.")}</p>
             </div>
           )}
         </div>
@@ -315,6 +322,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const composerContainerRef = useRef<HTMLDivElement>(null);
   const mainColumnRef = useRef<HTMLDivElement>(null);
   const [composerFocusRequest, setComposerFocusRequest] = useState<{ threadID: string } | null>(null);
+  const [editingDuringApproval, setEditingDuringApproval] = useState<string>();
   const [confirmedSubmission, setConfirmedSubmission] = useState<V2TurnInput | null>(null);
   const reviewTrigger = useRef<HTMLButtonElement>(null);
   const fileTrigger = useRef<HTMLButtonElement>(null);
@@ -496,26 +504,22 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     },
   };
   const menuRef = useRef<HTMLDivElement>(null);
-  const firstMenuItemRef = useRef<HTMLButtonElement>(null);
+  const focusLastMenuItem = useRef(false);
+  const tabbingFromMenu = useRef(false);
   const olderScrollAnchorRef = useRef<{ threadID: string; height: number; top: number; pages: number;
     row?: HTMLElement; offset?: number } | null>(null);
-  const readingThreadRef = useRef("");
-  const followLatestRef = useRef(true);
   const locatedMessageRef = useRef<{ key: string; row: HTMLElement } | null>(null);
+  const reportReplyReadingRef = useRef<() => void>(() => undefined);
+  const resetScrollMemoryRef = useRef<() => void>(() => undefined);
   const returnToLatestMessage = useCallback(() => {
-    followLatestRef.current = true;
-    readingThreadRef.current = "";
-    queryClient.setQueryData(["v2", "reading", threadID], { top: 0, following: true });
+    resetScrollMemoryRef.current();
     onExitMessage?.();
-  }, [queryClient, threadID, onExitMessage]);
+  }, [onExitMessage]);
   const currentMessageLocation = useRef<{ threadID: string; messageID: string; exit: () => void } | null>(null);
   useLayoutEffect(() => {
     currentMessageLocation.current = { threadID, messageID, exit: returnToLatestMessage };
     return () => { currentMessageLocation.current = null; };
   }, [threadID, messageID, returnToLatestMessage]);
-  const scrollSizeRef = useRef<{ content: number; viewport: number } | null>(null);
-  const [hasNewContent, setHasNewContent] = useState(false);
-  const [awayFromLatest, setAwayFromLatest] = useState(false);
   const optimistic = useMemo(() => submissions.filter(({ pending }) => pending).map(({ input }) => ({
     id: input.operationKey, text: input.content, images: input.images, attachments: input.attachments, createdAt: input.createdAt,
   })), [submissions]);
@@ -538,13 +542,35 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const onDraftChange = managedDraft?.changeText ?? legacyDraftChange;
   const composeTarget = useRef({ draft, onDraftChange });
   composeTarget.current = { draft, onDraftChange };
+  const activeRun = detailQuery.data?.active_run;
+  const streamRunID = activeRun?.id ?? "";
+  // The approval cards own polling. Follow the same queue so a stale run status
+  // or a failed queue lookup never displaces the editor by itself.
+  const { data: pendingApproval } = useQuery({
+    queryKey: v2QueryKeys.approvals(streamRunID),
+    queryFn: ({ signal }) => client.approvalQueue(streamRunID, signal),
+    enabled: false,
+    select: (queue) => queue.items.find((item) => item.status === "pending")?.id,
+  });
+  const approvalReplacesComposer = Boolean(activeRun && pendingApproval && pendingApproval !== editingDuringApproval &&
+    (client.hasApprovalControl || !client.hasThreadControl));
+  const coveredComposerThread = useRef<string | null>(null);
+  useEffect(() => {
+    const wasCovered = coveredComposerThread.current === threadID;
+    coveredComposerThread.current = approvalReplacesComposer ? threadID : null;
+    if (wasCovered && !approvalReplacesComposer && document.activeElement === document.body) {
+      setComposerFocusRequest({ threadID });
+    }
+  }, [approvalReplacesComposer, threadID]);
+  const revealComposer = useCallback(() => {
+    setEditingDuringApproval(pendingApproval);
+    setComposerFocusRequest({ threadID });
+  }, [pendingApproval, threadID]);
   const composeMessage = useCallback((text: string) => {
     const current = composeTarget.current;
     current.onDraftChange?.(current.draft ? `${current.draft}\n\n${text}` : text, current.draft);
-    requestAnimationFrame(() => document.querySelector<HTMLElement>('.v2-conversation .v2-composer :is(textarea, [contenteditable="true"][role="textbox"])')?.focus());
-  }, []);
-  const activeRun = detailQuery.data?.active_run;
-  const streamRunID = activeRun?.id ?? "";
+    revealComposer();
+  }, [revealComposer]);
   const streamEnabled = Boolean(activeRun && ["preparing", "running", "waiting_approval"]
     .includes(activeRun.status));
   const queuedRun = activeRun;
@@ -620,21 +646,28 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     return mergePendingNarrative(liveNarrative, pending);
   }, [messageID, durableNarrative, liveNarrative, existingUserText, optimistic]);
   const transcriptSources = useMemo(() => new Map(transcriptItems.map((item) => [item.id, item])), [transcriptItems]);
-  const visibleNarrative = useMemo(() => {
+  const { visibleNarrative, preparedInTranscript } = useMemo(() => {
     // The complete queue is identity checked by readQueuedMessages. A failed
     // refresh or a different Run must keep every unconfirmed historical row.
     const queuedIDs = new Set(queueQuery.isSuccess ? queueQuery.data.items.map((item) => item.id) : []);
-    return narrative.filter((entry) => {
+    const preparedInTranscript = new Set<string>();
+    const visibleNarrative = narrative.filter((entry) => {
       if (recoveryRepresentsNotice(entry, detailQuery.data?.recovery)) return false;
       const source = entry.kind === "user" ? transcriptSources.get(entry.id) : undefined;
       // The main input stays pending until the whole task commits, including
       // internal tool continuations. Its exact task binding proves it has
       // already started; only inputs still waiting belong solely to the queue.
-      if (source?.task && source.task.input_message_id === source.canonical_id) return true;
+      if (source?.task && source.task.input_message_id === source.canonical_id) {
+        if (source.run_id === queueBinding?.runID && source.durable && !source.provisional && source.source_ref) {
+          preparedInTranscript.add(source.source_ref);
+        }
+        return true;
+      }
       return !(source?.source === "operator" && source.kind === "operator_input" && source.status === "pending" &&
         source.durable && !source.provisional && source.run_id === queueBinding?.runID &&
         source.source_ref && queuedIDs.has(source.source_ref));
     });
+    return { visibleNarrative, preparedInTranscript };
   }, [narrative, detailQuery.data?.recovery, queueBinding?.runID, queueQuery.data, queueQuery.isSuccess, transcriptSources]);
   // Contents the user already submitted: in-flight, just confirmed, or the
   // latest durable user entry. A draft identical to any of these is leftover
@@ -654,39 +687,38 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const failedSubmissions = submissions.filter(({ pending, error }) => !pending && error);
   const submissionNotices = failedSubmissions.filter(({ error }) => !(error instanceof APIRequestError &&
     error.turnFailed && narrativeRepresentsFailedSubmission(durableNarrative, threadID, error.turnFailure)));
+  const isPaginatingOlder = useCallback(() => olderScrollAnchorRef.current?.threadID === threadID, [threadID]);
+  const handleAfterScrollStateChange = useCallback(() => { reportReplyReadingRef.current(); }, []);
+  const scrollMemory = useV2ScrollMemory({
+    threadID,
+    scrollRef,
+    entries: visibleNarrative,
+    ready: !transcriptQuery.isLoading,
+    detailReady: detailQuery.isSuccess,
+    revision: `${detailQuery.data?.active_run?.status ?? ""}:${liveSnapshot?.revision ?? ""}`,
+    readingHistoryWindow: Boolean(messageID),
+    isPaginatingOlder,
+    onAfterScrollStateChange: handleAfterScrollStateChange,
+  });
+  resetScrollMemoryRef.current = scrollMemory.resetToLatest;
+
   useLayoutEffect(() => {
     const element = scrollRef.current;
-    if (!element || transcriptQuery.isLoading) return;
-    if (readingThreadRef.current !== threadID) {
-      readingThreadRef.current = threadID;
-      const saved = queryClient.getQueryData<{ top: number; following: boolean }>(["v2", "reading", threadID]);
-      followLatestRef.current = saved?.following ?? true;
-      element.scrollTop = saved && !saved.following ? saved.top : element.scrollHeight;
-      scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
-      setHasNewContent(false);
-      setAwayFromLatest(element.scrollHeight - element.clientHeight - element.scrollTop > 48);
-      return;
-    }
     const anchor = olderScrollAnchorRef.current;
-    if (anchor?.threadID === threadID) {
-      // Streaming can repaint while an older page is still in flight. Keep the
-      // anchor until that page actually arrives instead of consuming it early.
-      if ((transcriptQuery.data?.pages.length ?? 0) <= anchor.pages) {
-        if (transcriptQuery.isFetchNextPageError && !transcriptQuery.isFetchingNextPage) olderScrollAnchorRef.current = null;
-        return;
-      }
-      element.scrollTop = anchor.row?.isConnected && anchor.offset !== undefined
-        ? element.scrollTop + anchor.row.getBoundingClientRect().top - anchor.offset
-        : anchor.top + (element.scrollHeight - anchor.height);
-      olderScrollAnchorRef.current = null;
-      queryClient.setQueryData(["v2", "reading", threadID], { top: element.scrollTop, following: followLatestRef.current });
+    if (!element || transcriptQuery.isLoading || anchor?.threadID !== threadID) return;
+    // Streaming can repaint while an older page is still in flight. Keep the
+    // anchor until that page actually arrives instead of consuming it early.
+    if ((transcriptQuery.data?.pages.length ?? 0) <= anchor.pages) {
+      if (transcriptQuery.isFetchNextPageError && !transcriptQuery.isFetchingNextPage) olderScrollAnchorRef.current = null;
       return;
     }
-    if (followLatestRef.current) element.scrollTop = element.scrollHeight;
-    else setHasNewContent(true);
-  }, [visibleNarrative, detailQuery.data?.active_run?.status, liveSnapshot?.revision,
-    transcriptQuery.data?.pages.length, transcriptQuery.isLoading, transcriptQuery.isFetchNextPageError,
-    transcriptQuery.isFetchingNextPage, threadID, queryClient]);
+    element.scrollTop = anchor.row?.isConnected && anchor.offset !== undefined
+      ? element.scrollTop + anchor.row.getBoundingClientRect().top - anchor.offset
+      : anchor.top + (element.scrollHeight - anchor.height);
+    olderScrollAnchorRef.current = null;
+    scrollMemory.recordProgrammaticScroll(element.scrollTop, scrollMemory.followLatestRef.current);
+  }, [visibleNarrative, transcriptQuery.data?.pages.length, transcriptQuery.isLoading,
+    transcriptQuery.isFetchNextPageError, transcriptQuery.isFetchingNextPage, threadID, scrollMemory]);
 
   useLayoutEffect(() => {
     const location = messageID ? `${threadID}:${messageID}` : "";
@@ -696,30 +728,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     const row = [...(scrollRef.current?.querySelectorAll<HTMLElement>("[data-message-ids]") ?? [])]
       .find((element) => element.dataset.messageIds?.split(" ").includes(messageID));
     if (!row) return;
-    followLatestRef.current = false;
+    scrollMemory.followLatestRef.current = false;
     row.scrollIntoView?.({ block: "start" });
     row.focus({ preventScroll: true });
     row.classList.add("is-search-target");
     locatedMessageRef.current = { key: location, row };
-  }, [threadID, messageID, visibleNarrative, detailQuery.isLoading]);
-
-  useLayoutEffect(() => {
-    const element = scrollRef.current;
-    const content = element?.firstElementChild;
-    if (!element || !content || typeof ResizeObserver === "undefined") return;
-    // Composer growth and asynchronously loaded cards change the viewport or
-    // content without changing the transcript. Keep the latest content visible
-    // only while following it; leave historical reading/pagination anchored.
-    const observer = new ResizeObserver(() => {
-      if (readingThreadRef.current === threadID && followLatestRef.current &&
-        olderScrollAnchorRef.current?.threadID !== threadID) element.scrollTop = element.scrollHeight;
-      scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
-      setAwayFromLatest(element.scrollHeight - element.clientHeight - element.scrollTop > 48);
-    });
-    observer.observe(element);
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, [detailQuery.isSuccess, threadID]);
+  }, [threadID, messageID, visibleNarrative, detailQuery.isLoading, scrollMemory.followLatestRef]);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -730,14 +744,16 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     setReviewFileTarget(undefined);
     setReviewToolTarget(undefined);
     setComposerFocusRequest(null);
+    setEditingDuringApproval(undefined);
     olderScrollAnchorRef.current = null;
   }, [threadID]);
   const reportReplyReading = useV2ReplyReading({ threadID, request: readRequest, reading: replyReading,
     readable: readingEnabled && !messageID && !contextOpen && !modalVisible && !stageFullView,
     ready: detailQuery.isSuccess && !latestTranscriptQuery.isLoading && !latestTranscriptQuery.isError,
     content: visibleNarrative, scroll: scrollRef,
-    following: () => readingThreadRef.current === threadID && followLatestRef.current && olderScrollAnchorRef.current === null,
+    following: () => scrollMemory.readingThreadRef.current === threadID && scrollMemory.followLatestRef.current && olderScrollAnchorRef.current === null,
     refresh: refreshTranscript });
+  reportReplyReadingRef.current = reportReplyReading;
   useEffect(() => {
     if (!reviewEntry || reviewEntry.threadID !== threadID) return;
     setReviewFileTarget(undefined);
@@ -781,7 +797,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   }, [stageFullView]);
   useEffect(() => {
     if (!menuOpen) return;
-    firstMenuItemRef.current?.focus();
+    tabbingFromMenu.current = false;
+    const actions = conversationMenuItems(menuRef.current);
+    (focusLastMenuItem.current ? actions.at(-1) : actions[0])?.focus();
     const closeForOutsideClick = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Node) || menuRef.current?.contains(target) ||
@@ -931,7 +949,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   };
 
   const agentActivity = projectAgentActivity({ threadID, runID: detail.active_run?.id,
-    runStatus: currentRun.status, archived: detail.thread.status !== "active",
+    runStatus: currentRun.status, approvalVisible: Boolean(pendingApproval), archived: detail.thread.status !== "active",
     execution: executionQuery.data, executionReadable: client.hasThreadExecutionRead === true,
     executionError: executionQuery.isError, submitting: turnSubmitting, reconciling,
     snapshot: liveSnapshot, streamStatus: publicStream.status,
@@ -946,7 +964,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     } else if (workspaceState.fullView) {
       setWorkspaceFullView(threadID, false);
     }
-    setComposerFocusRequest({ threadID });
+    revealComposer();
   };
   const addReviewComment = (content: string): ReviewCommentResult => {
     if (managedDraft) return appendReviewComment(managedDraft, content);
@@ -1027,36 +1045,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     <div className={`v2-conversation-stage${stageFullView ? " is-full-view" : ""}`}>
     <div className="v2-conversation-main-column" ref={mainColumnRef} aria-hidden={stageFullView || undefined} inert={stageFullView}>
     <header className="v2-conversation-header">
-      <div><Folder aria-hidden="true" size={17} /><strong>{detail.thread.title}</strong></div>
-      <div className="v2-header-actions">
-        <V2ThreadExecutionControl client={client} execution={executionQuery.data}
-          threadID={threadID} stopButtonRef={stopButtonRef} />
-        <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label={t("对话操作", "Conversation actions")}
-          onClick={() => setMenuOpen((value) => !value)} ref={menuTriggerRef} type="button">
-          <CircleEllipsis aria-hidden="true" size={18} />
-        </button>
-        {menuOpen && <div className="v2-thread-menu" ref={menuRef} role="menu">
-          <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} onClick={() => {
-            setMenuOpen(false);
-            menuTriggerRef.current?.focus();
-            onArchive(detail.thread);
-          }} ref={firstMenuItemRef} role="menuitem" type="button">
-            <Archive aria-hidden="true" size={15} />{t("归档对话", "Archive conversation")}</button>
-          <button onClick={() => { setMenuOpen(false); setExportThreadID(threadID); }} role="menuitem" type="button">
-            <Download aria-hidden="true" size={15} />{t("导出对话", "Export conversation")}</button>
-          <button className="v2-task-compact-action" onClick={() => {
-            setMenuOpen(false); setReviewFileTarget(undefined); setReviewToolTarget(undefined);
-            reviewReturnFocus.current = menuTriggerRef.current; openSingletonSurface("review");
-          }} role="menuitem" type="button"><FileDiff aria-hidden="true" size={15} />{t("审阅改动", "Review changes")}</button>
-          <button className="v2-task-compact-action" onClick={() => {
-            setMenuOpen(false); contextReturnFocus.current = menuTriggerRef.current; setContextOpen(true);
-          }} role="menuitem" type="button"><BookOpen aria-hidden="true" size={15} />{t("查看上下文", "View context")}</button>
-          <button onClick={() => {
-            setMenuOpen(false); recordsReturnFocus.current = menuTriggerRef.current; openSingletonSurface("records");
-          }} role="menuitem" type="button">
-            <Microscope aria-hidden="true" size={15} />{t("执行记录", "Execution records")}</button>
-        </div>}
-      </div>
+      <div className="v2-chat-heading"><MessageSquare aria-hidden="true" size={16} /><h1 title={detail.thread.title}>{detail.thread.title}</h1></div>
     <nav className="v2-task-navigation" aria-label={t("任务工作区", "Task workspace")}>
       <div className="v2-task-workbench" role="group" aria-label={t("对话与工作台", "Conversation and workbench")}>
         <button aria-pressed={!workspaceVisible && !contextOpen}
@@ -1124,23 +1113,61 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <Microscope aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("执行记录", "Execution records")}</span></button>
       </div>
     </nav>
+      <div className="v2-header-actions">
+        <V2ThreadExecutionControl client={client} execution={executionQuery.data}
+          threadID={threadID} stopButtonRef={stopButtonRef} />
+        <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label={t("对话操作", "Conversation actions")}
+          onClick={() => { focusLastMenuItem.current = false; setMenuOpen((value) => !value); }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            event.preventDefault();
+            focusLastMenuItem.current = event.key === "ArrowUp";
+            setMenuOpen(true);
+          }} ref={menuTriggerRef} title={t("对话操作", "Conversation actions")} type="button">
+          <Ellipsis aria-hidden="true" size={18} />
+        </button>
+        {menuOpen && <div aria-label={t("对话操作", "Conversation actions")} className="v2-thread-menu" ref={menuRef} role="menu"
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget) &&
+              (event.relatedTarget !== menuTriggerRef.current || tabbingFromMenu.current)) setMenuOpen(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Tab") { tabbingFromMenu.current = true; return; }
+            if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const items = conversationMenuItems(event.currentTarget);
+            const current = items.indexOf(document.activeElement as HTMLButtonElement);
+            const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+              : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+            items[next]?.focus();
+          }}>
+          {approvalReplacesComposer && client.hasThreadControl && detail.thread.status === "active" &&
+            <button onClick={() => { setMenuOpen(false); revealComposer(); }} role="menuitem" tabIndex={-1} type="button">
+              <MessageSquare aria-hidden="true" size={15} />{t("编辑聊天草稿", "Edit chat draft")}</button>}
+          <button disabled={detail.thread.status !== "active" || !client.hasThreadControl} onClick={() => {
+            setMenuOpen(false);
+            menuTriggerRef.current?.focus();
+            onArchive(detail.thread);
+          }} role="menuitem" tabIndex={-1} type="button">
+            <Archive aria-hidden="true" size={15} />{t("归档对话", "Archive conversation")}</button>
+          <button onClick={() => { setMenuOpen(false); setExportThreadID(threadID); }} role="menuitem" tabIndex={-1} type="button">
+            <Download aria-hidden="true" size={15} />{t("导出对话", "Export conversation")}</button>
+          <button className="v2-task-compact-action" onClick={() => {
+            setMenuOpen(false); setReviewFileTarget(undefined); setReviewToolTarget(undefined);
+            reviewReturnFocus.current = menuTriggerRef.current; openSingletonSurface("review");
+          }} role="menuitem" tabIndex={-1} type="button"><FileDiff aria-hidden="true" size={15} />{t("审阅改动", "Review changes")}</button>
+          <button className="v2-task-compact-action" onClick={() => {
+            setMenuOpen(false); contextReturnFocus.current = menuTriggerRef.current; setContextOpen(true);
+          }} role="menuitem" tabIndex={-1} type="button"><BookOpen aria-hidden="true" size={15} />{t("查看上下文", "View context")}</button>
+          <button onClick={() => {
+            setMenuOpen(false); recordsReturnFocus.current = menuTriggerRef.current; openSingletonSurface("records");
+          }} role="menuitem" tabIndex={-1} type="button">
+            <Microscope aria-hidden="true" size={15} />{t("执行记录", "Execution records")}</button>
+        </div>}
+      </div>
     </header>
-    <div className="v2-conversation-scroll" ref={scrollRef} onScroll={(event) => {
-      const element = event.currentTarget;
-      const size = scrollSizeRef.current;
-      // Replacing the editor can briefly expand the transcript, clamp its
-      // scrollTop, then shrink it again before ResizeObserver runs. That scroll
-      // event is a layout change, not a request to stop following the latest.
-      if (followLatestRef.current && size && size.viewport > 0 && size.content === element.scrollHeight &&
-        size.viewport !== element.clientHeight && olderScrollAnchorRef.current?.threadID !== threadID) element.scrollTop = element.scrollHeight;
-      scrollSizeRef.current = { content: element.scrollHeight, viewport: element.clientHeight };
-      const following = element.scrollHeight - element.clientHeight - element.scrollTop <= 48;
-      followLatestRef.current = following;
-      setAwayFromLatest(!following);
-      if (following) setHasNewContent(false);
-      queryClient.setQueryData(["v2", "reading", threadID], { top: element.scrollTop, following });
-      reportReplyReading();
-    }}>
+    <div className="v2-conversation-viewport">
+    <div className="v2-conversation-scroll" ref={scrollRef} onScroll={scrollMemory.onScroll}>
       <div className="v2-conversation-content">
         {messageID && <p className="v2-notice v2-message-location" role="status">
           {t("正在查看搜索命中的消息及更早记录。", "Viewing the matching message and earlier history.")}
@@ -1174,8 +1201,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <button onClick={() => void executionQuery.refetch()} type="button">{t("刷新执行状态", "Refresh execution status")}</button>
         </div>}
         {!transcriptQuery.isLoading && !transcriptQuery.isError && narrative.length === 0 && <div className="v2-transcript-empty">
-          <span><ShieldCheck aria-hidden="true" size={18} /></span><p>{detail.thread.status === "archived"
-            ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("任务已经创建。Agent 的公开进展会出现在这里。", "Task created. Agent progress will appear here.")}</p></div>}
+          <MessageSquare aria-hidden="true" size={19} /><p>{detail.thread.status === "archived"
+            ? t("此归档对话没有公开进展记录。", "This archived conversation has no public progress history.") : t("还没有消息。", "No messages yet.")}</p></div>}
         <V2Narrative client={client} entries={visibleNarrative} locatedMessageID={messageID} threadID={threadID} workspaceID={detail.thread.workspace_id ?? ""} onOpenFile={openFile}
           onBranch={client.hasThreadControl && onBranchCreated ? branchReply : undefined} onOpenThread={onOpenThread}
           onCompose={client.hasThreadControl && onDraftChange && detail.thread.status !== "archived" ? composeMessage : undefined} />
@@ -1197,33 +1224,42 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
                 }).catch(() => undefined);
               }} type="button">{t("继续提交原消息", "Continue original submission")}</button>}
             {onDraftChange && <button disabled={draft?.trim() === input.content.trim()}
-              onClick={() => onDraftChange(draft?.trim() ? `${draft}\n\n${input.content}` : input.content)}
+              onClick={() => appendDraftAndReveal(input.content)}
               type="button">{draft?.trim() ? t("添加到草稿", "Add to draft") : t("放回输入框", "Restore to editor")}</button>}
           </div>)}
         {(eventStream.error || publicStream.error) && working && <div className="v2-notice tone-warning"
           role="status">{t("实时进度暂不可用；持久工作记录仍会继续同步。", "Live progress is temporarily unavailable. Saved work history will continue to sync.")}</div>}
         {detail.active_run && <MCPInputCards client={client} runID={currentRun.id} />}
-        {detail.active_run && <V2ApprovalCards client={client}
-          runID={currentRun.id} threadID={threadID} onReviewFile={(target, trigger) => {
-            reviewReturnFocus.current = trigger; setReviewToolTarget(undefined); setReviewFileTarget(target); openSingletonSurface("review");
-          }} />}
         {detail.active_run && <div className="v2-command-approvals">
           <ControlledCommandProposalPanel client={client} runID={currentRun.id} threadID={threadID} />
           <HostCommandProposalPanel client={client} runID={currentRun.id} threadID={threadID} />
         </div>}
       </div>
     </div>
-    {!messageID && awayFromLatest && <button className="v2-jump-latest" onClick={() => {
-      followLatestRef.current = true;
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        queryClient.setQueryData(["v2", "reading", threadID], { top: scrollRef.current.scrollTop, following: true });
-      }
-      setAwayFromLatest(false);
-      setHasNewContent(false);
-      reportReplyReading();
-    }} type="button">{hasNewContent ? t("有新内容 · 回到最新", "New content · Jump to latest") : t("回到最新", "Jump to latest")}</button>}
-    <div className="v2-composer-dock">
+    {!messageID && !transcriptQuery.isLoading && <V2NavigatorRail
+      entries={visibleNarrative}
+      scrollRef={scrollRef}
+      scopeRef={mainColumnRef}
+      enabled={!contextOpen && !modalVisible && !stageFullView}
+      onJumpToEntry={(entryKey, _stop, nextScrollTop) => {
+        const scroller = scrollRef.current;
+        if (!scroller) return;
+        const top = nextScrollTop ?? scroller.scrollTop;
+        const atBottom = scroller.scrollHeight - scroller.clientHeight - top <= 48;
+        scrollMemory.recordProgrammaticScroll(top, atBottom, atBottom ? null : entryKey, 12);
+        reportReplyReading();
+      }}
+    />}
+    {scrollMemory.showScrollToBottom && <button
+      className={`v2-jump-latest${scrollMemory.isUnreadAnchored ? " has-unread" : ""}`}
+      onClick={scrollMemory.jumpToBottom}
+      type="button"
+    >
+      <span>{scrollMemory.isUnreadAnchored ? t("↓ 跳至最新", "↓ Jump to bottom") : t("↓ 回到底部", "↓ Scroll to bottom")}</span>
+      {scrollMemory.unreadCount > 0 && <span className="v2-jump-latest-badge" data-testid="scroll-unread-badge">{scrollMemory.unreadCount}</span>}
+    </button>}
+    </div>
+    <div className={`v2-composer-dock${pendingApproval ? " has-pending-approval" : ""}`}>
       {(agentActivity || currentRun.status === "paused") && <div className="v2-composer-status">
       <V2AgentActivity activity={agentActivity} />
       {currentRun.status === "paused" && <V2PausedThreadControl client={client} threadID={threadID} runID={currentRun.id} />}
@@ -1246,15 +1282,22 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       {executionQuery.data?.state === "idle" && executionQuery.data.last_turn_interrupted &&
         <p className="v2-composer-caption" role="status">{t("上次执行已中断。可以发送新消息继续，已完成的修改会保留。", "The previous execution was interrupted. Send a new message to continue; completed changes are kept.")}</p>}
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
-        paused={working || contextOpen || modalVisible || stageFullView || menuOpen} onReply={replyToPinProposal}
+        paused={working || approvalReplacesComposer || contextOpen || modalVisible || stageFullView || menuOpen} onReply={replyToPinProposal}
         onClose={() => setComposerFocusRequest({ threadID })} />}
       <div className="v2-queue-composer-stack">
       {queueBinding && <V2QueuedMessages client={client} {...queueBinding} running={working || runActive}
+        preparedInTranscript={pendingApproval ? preparedInTranscript : undefined}
         canPromote={client.hasThreadExecutionRead === true
           ? executionQuery.isSuccess && executionQuery.data.state === "running" &&
             executionQuery.data.execution_id === queueQuery.data?.execution_id
           : !executionQuery.isError && canSteer} />}
-      <div className="v2-shared-composer" ref={composerContainerRef} data-thread-id={threadID}>
+      {activeRun && <div className="v2-approval-dock">
+        <V2ApprovalCards client={client} key={activeRun.id} runID={activeRun.id} threadID={threadID}
+          onReviewFile={(target, trigger) => {
+            reviewReturnFocus.current = trigger; setReviewToolTarget(undefined); setReviewFileTarget(target); openSingletonSurface("review");
+          }} />
+      </div>}
+      <div className="v2-shared-composer" ref={composerContainerRef} data-thread-id={threadID} hidden={approvalReplacesComposer}>
       <V2Composer client={client} disabled={!client.hasThreadControl ||
         detail.thread.status !== "active"}
         submitDisabled={reconciling || executionQuery.data?.state === "stopping" ||

@@ -442,19 +442,15 @@ export function BatchDeliveriesPanel({ client, runID }: ProjectionProps) {
         <h2><GitBranch aria-hidden="true" size={15} />{t("批量交付", "Batch delivery")}</h2>
         <span>{t(`${formatNumber(query.data.items.length)} 个计划`, `${formatNumber(query.data.items.length)} plans`)}</span>
       </div>
-      <p className="projection-placeholder">{client.hasBatchDeliveryHostValidation
-        ? t("Go/npm 验证已启用，将使用当前 Run 所选的 Local、Docker 或 SBX 环境；环境未就绪时拒绝执行。开始前需核对当前执行状态、Full 进程激活和权限。",
-          "Go/npm validation uses the current Run's selected Local, Docker, or SBX environment and refuses execution when it is not ready. Check the current execution state, Full process activation, and permissions before starting.")
-        : t("当前可检查 Git 差异。运行 Go/npm 验证需要完成下方执行配置。",
-          "Git diff checks are available. Complete the execution settings below to run Go/npm validation.")}</p>
+      {!client.hasBatchDeliveryHostValidation && <p className="projection-placeholder">{t("Go/npm 验证未启用", "Go/npm validation is disabled")}</p>}
       <details><summary>{t("核对批量交付配置", "Review batch delivery settings")}</summary>
-        <p>{t("在下方启用并保存批量验证，重启应用后生效。开始验证时，所选执行须正在运行、执行环境就绪，并具有当前 Full 进程激活和所需操作审批。",
-          "Enable and save batch validation below, then restart the app. Starting validation requires a running execution, a ready environment, current Full process activation, and the required operation approval.")}</p>
+        <p>{t("批量验证设置在重启应用后生效。开始验证需运行中的任务、就绪环境、已激活的 Full 权限和操作审批。",
+          "Batch validation settings take effect on restart. Validation requires a running task, a ready environment, active Full permissions and operation approval.")}</p>
         <VerificationSettingsPanel client={client} />
       </details>
       {!client.hasBatchDeliveryControl && <p className="projection-placeholder">{t(
-        "当前连接可查看批量交付。请连接桌面控制入口后验收、要求修改、合并或检查恢复状态；Go/npm 验证可在上方配置。",
-        "This connection can view batch deliveries. Connect the Desktop control entry to accept, request changes, merge, or reconcile; configure Go/npm validation above.",
+        "当前连接为只读。管理批量交付需要桌面控制权限。",
+        "This connection is read-only. Managing batch deliveries requires desktop control access.",
       )}</p>}
       {client.hasBatchDeliveryControl && typeof client.getRunChildTaskProposals === "function" && <>
         <BatchPreparation key={`${client.baseURL}/${runID}`} client={client} runID={runID}
@@ -462,7 +458,7 @@ export function BatchDeliveriesPanel({ client, runID }: ProjectionProps) {
         {showProposals && <ChildTasksPanel client={client} runID={runID} />}
       </>}
       {query.data.items.length === 0 ?
-        <EmptyState>{t("还没有批量交付计划。可在对话中提出需要独立完成并合并的子任务。", "No batch delivery plans yet. Describe independently deliverable subtasks in the conversation to prepare one.")}</EmptyState> :
+        <EmptyState>{t("暂无批量交付计划", "No batch delivery plans yet")}</EmptyState> :
         <div className="projection-stack">
           {query.data.items.map((plan) =>
             <BatchDeliveryDetail client={client} key={plan.id} planID={plan.id} runID={runID} />)}

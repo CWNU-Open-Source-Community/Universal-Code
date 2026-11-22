@@ -6,7 +6,6 @@ import {
   Download,
   LoaderCircle,
   RefreshCw,
-  ShieldAlert,
 } from "lucide-react";
 import { APIRequestError, type APIClient } from "../api/client";
 import type {
@@ -152,27 +151,16 @@ export function UIEvidencePanel({ client, runID, threadID }: {
         <RefreshCw aria-hidden="true" className={attempts.isFetching ? "spin" : ""} size={15} />
       </button>
     </header>
-    <div className="ui-evidence-boundary" role="note">
-      <ShieldAlert aria-hidden="true" size={16} />
-      <span><strong>{t("查看浏览器检查结果", "Inspect browser check results")}</strong>
-        {t("截图和下载内容供你核对页面表现。以验证状态判断结果：「通过」表示检查完成通过，「未运行」表示等待验证。进程与凭据操作须单独授权。",
-          "Use screenshots and downloads to inspect the page. Follow the verification status: Passed means the checks passed; Not run awaits verification. Process and credential actions require separate authorization.")}</span>
-    </div>
     {!client.hasUIEvidence && <div className="inline-warning" role="note">
       <p>{client.uiEvidenceUnavailableReason === "missing_control_credential"
-        ? t("先刷新列表以查看历史证据。连接控制凭证后可启动或取消浏览器验证。",
-          "Refresh the list to inspect historical evidence. Connect a control credential to start or cancel browser verification.")
+        ? t("启动或取消浏览器验证需要控制凭证。", "Starting or cancelling browser verification requires a control credential.")
         : client.uiEvidenceUnavailableReason === "ui_evidence_disabled"
-          ? t("在下方验证设置中启用浏览器验证，保存后重启应用。",
-            "Enable browser verification in the settings below, save, and restart the application.")
+          ? t("浏览器验证未启用。", "Browser verification is disabled.")
           : client.uiEvidenceUnavailableReason === "run_execution_disabled"
-            ? t("使用桌面默认启动方式并连接控制凭证，恢复浏览器验证所需的任务执行能力。",
-              "Use the desktop's default startup and connect a control credential to restore task execution for browser verification.")
+            ? t("浏览器验证需要任务执行权限。", "Browser verification requires task execution permission.")
             : client.uiEvidenceUnavailableReason === "browser_cdp_control_disabled"
-              ? t("使用桌面默认启动方式并重新连接当前控制服务，准备浏览器控制能力。",
-                "Use the desktop's default startup and reconnect the current control service to prepare browser control.")
-              : t("先刷新列表以查看历史记录。在下方验证设置中保存启用偏好并重启应用。",
-                "Refresh the list to inspect historical records. Save your verification preferences below and restart the application.")}</p>
+              ? t("当前连接未启用浏览器控制。", "Browser control is disabled on this connection.")
+              : t("当前连接无法启动浏览器验证。", "Browser verification cannot start on this connection.")}</p>
       <VerificationSettingsPanel client={client} />
       <details><summary>{t("高级：启动参数与独立 CLI", "Advanced: startup options and standalone CLI")}</summary>
       <p>{t("仅在手工启动 Windows Desktop 时，连接控制凭证并明确启用以下能力：",
@@ -190,9 +178,7 @@ export function UIEvidencePanel({ client, runID, threadID }: {
         "Historical evidence needs confirmation. Check the selected execution, or read it through a Windows Desktop connection that supports UI evidence.",
       )}</p>
       : <ErrorState error={attempts.error} />)}
-    {attempts.isSuccess && attempts.data.length === 0 && <EmptyState>{client.hasUIEvidence
-      ? t("还没有浏览器验证。展开下方启动表单，填写应用启动方式并核对步骤后开始。", "No browser verification yet. Expand the launch form below, enter the application launch settings and review its steps to begin.")
-      : t("还没有浏览器验证。请在上方验证设置中保存启用偏好，重启后连接当前服务。", "No browser verification yet. Save your verification preferences above, then restart and connect to the current service.")}</EmptyState>}
+    {attempts.isSuccess && attempts.data.length === 0 && <EmptyState>{t("还没有浏览器验证。", "No browser verification yet.")}</EmptyState>}
 
     {attempts.data && attempts.data.length > 0 && <div className="ui-evidence-layout">
       <section className="ui-evidence-attempts" aria-label={t("UI 证据 Attempts", "UI evidence attempts")}>

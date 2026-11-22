@@ -122,8 +122,6 @@ export function BatchPreparation({ client, runID, usedProposalIDs, onReviewPropo
   return <section className="batch-workbench-preparation" aria-label={t("准备独立任务", "Prepare isolated tasks")}>
     <div className="section-heading"><h3>{t("准备独立任务", "Prepare isolated tasks")}</h3>
       <button type="button" className="compact-command" onClick={onReviewProposals}>{t("审阅子任务提案", "Review child proposals")}</button></div>
-    <p>{t("选择已准入的子任务，填写负责的项目路径。准备完成后，逐项启动、检查交付并合并。",
-      "Choose admitted child tasks and assign their project paths. After preparation, start each task, inspect its delivery, and merge.")}</p>
     <p>{t("每次启动处理最多 4 个小型文本文件。为任务选择完整内容可放入一次指令的负责路径。",
       "Each start handles up to 4 small text files. Choose owned paths whose complete contents fit one instruction.")}</p>
     {query.isLoading && <LoadingState label={t("读取子任务", "Reading child tasks")} />}

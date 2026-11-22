@@ -136,7 +136,7 @@ export function V2SearchDiagnosticsControl({ client, readiness, onOpenModelSetti
       <small>{t("当前 Run 模型：", "Current run model: ")}{readiness.provider && readiness.model
         ? `${readiness.provider} / ${readiness.model}` : readiness.model_route || t("未解析", "Unresolved")}</small>
       <small>{t("搜索配置：", "Search configuration: ")}{configuredBackend(readiness, t)}</small>
-      <small>{t("检查会使用当前模型对应的通用搜索后端执行一次有界搜索，可能产生供应商搜索费用；不检测专业来源连接器。", "This check runs a bounded search using the current model's general search backend. Provider search fees may apply. Specialized source connectors are not checked.")}</small>
+      <small>{t("将通过当前模型的搜索服务发起一次查询，可能产生费用。", "Runs one query through this model’s search service. Charges may apply.")}</small>
     </span>
     <button className="compact-command" disabled={!canCheck || busy} onClick={() => void check()} type="button">
       {busy ? <LoaderCircle aria-hidden="true" className="spin" size={13} />

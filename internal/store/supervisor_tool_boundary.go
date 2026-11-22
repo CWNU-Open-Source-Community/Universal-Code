@@ -50,7 +50,9 @@ func prepareSupervisorToolBoundaryTx(ctx context.Context, tx *sql.Tx, run domain
 	if err != nil {
 		return domain.OperatorSteeringMessage{}, "", err
 	}
-	if rounds != domain.MaxSupervisorToolRounds {
+	// Early segment boundaries (e.g. context pressure) can roll over once at
+	// least one native tool round has completed; zero-round turns cannot.
+	if rounds <= 0 {
 		return domain.OperatorSteeringMessage{}, "", apperror.New(apperror.CodeFailedPrecondition,
 			"Internal tool continuation requires a completed tool-round boundary")
 	}
@@ -214,8 +216,8 @@ func (s *SQLiteStore) ToolBoundaryContextCalls(ctx context.Context, checkpoint d
 		JOIN run_execution_handoff_items item ON item.message_id=current.message_id AND item.operation_id=json_extract(event.payload_json,'$.handoff_operation_id')
 		JOIN run_supervisor_tool_calls call ON call.run_id=event.run_id AND call.attempt_id=event.subject_id AND call.turn=prior.turn
 		WHERE current.run_id=? AND current.attempt_id=? AND current.turn=? AND current.status='prepared'
-		AND call.status!='pending' ORDER BY call.turn DESC,call.round DESC,call.position LIMIT 32`,
-		events.AgentTurnCompletedEvent, checkpoint.RunID, checkpoint.AttemptID, checkpoint.NextTurn)
+		AND call.status!='pending' ORDER BY call.turn DESC,call.round DESC,call.position LIMIT ?`,
+		events.AgentTurnCompletedEvent, checkpoint.RunID, checkpoint.AttemptID, checkpoint.NextTurn, domain.MaxSupervisorBoundaryContextCalls)
 	if err != nil {
 		return nil, err
 	}

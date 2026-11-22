@@ -421,6 +421,7 @@ func sbxLiveProductGit(t *testing.T, root, source string, arguments ...string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, git, append([]string{"-C", source, "-c", "core.hooksPath=" + filepath.Join(root, "empty-hooks"), "-c", "core.fsmonitor=false"}, arguments...)...)
+	hideSubprocessWindow(command)
 	command.Env = []string{"HOME=" + filepath.Join(root, "empty-home"), "USERPROFILE=" + filepath.Join(root, "empty-home"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + filepath.Join(root, "empty-git-config"), "GIT_TERMINAL_PROMPT=0"}
 	for _, name := range []string{"PATH", "PATHEXT", "SystemRoot", "WINDIR", "SystemDrive", "TEMP", "TMP"} {
 		if value, exists := os.LookupEnv(name); exists {

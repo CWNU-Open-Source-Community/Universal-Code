@@ -13,13 +13,15 @@ function compactTokens(value: number): string {
 }
 
 function cachePercentage(read: number, input: number): string {
-  const value = Math.min(100, read / input * 100);
-  // A rounded partial hit must not claim the entire prompt was cached.
+  if (read === 0) return "0%";
+  if (read >= input) return "100%";
+  const value = read / input * 100;
+  // Distinguish a partial hit from both a complete miss and a complete hit.
   for (let digits = 0; digits <= 3; digits++) {
     const rounded = Number(value.toFixed(digits));
-    if (rounded < 100 || value === 100) return `${rounded}%`;
+    if (rounded > 0 && rounded < 100) return `${rounded}%`;
   }
-  return "<100%";
+  return value < 1 ? "<0.001%" : "<100%";
 }
 
 export function V2ComposerStats({ statistics }: { statistics?: Statistics }) {
@@ -44,7 +46,7 @@ export function V2ComposerStats({ statistics }: { statistics?: Statistics }) {
     ? stats.timed_output_tokens * 1_000 / stats.decode_millis : undefined;
   const speedLabel = speed === undefined ? undefined : Number(speed.toFixed(speed < 10 ? 1 : 0));
   const cacheKnown = stats.usage_calls > 0 && stats.cache_reported_calls === stats.usage_calls;
-  const cacheLabel = cacheKnown ? cachePercentage(stats.cache_read_tokens, stats.input_tokens) : "—";
+  const cacheLabel = cacheKnown && stats.input_tokens > 0 ? cachePercentage(stats.cache_read_tokens, stats.input_tokens) : "—";
   const percent = context ? Math.min(100, Math.round(context.input_tokens / context.window_tokens * 100)) : undefined;
   const format = (value: number) => value.toLocaleString(locale);
   const activityTitle = t(

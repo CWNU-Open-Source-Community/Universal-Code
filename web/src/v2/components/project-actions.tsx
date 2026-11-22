@@ -149,8 +149,7 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
         refresh();
         void actions.refetch();
       }}>{t("刷新动作", "Refresh actions")}</button></div>
-    <p className="v2-delivery-muted">{t("使用本次任务保存的项目配置运行，结果保存在命令记录中。", "Run the project actions saved for this task. Results are retained in command history.")}
-      {backendLabel && <> {t("执行环境：", "Environment: ")}{backendLabel}</>}</p>
+    {backendLabel && <p className="v2-delivery-muted">{t("执行环境：", "Environment: ")}{backendLabel}</p>}
     {actions.isFetching && <p role="status">{t("正在读取项目动作…", "Reading project actions…")}</p>}
     {inspectedTarget === undefined && <p role="alert">{t("请输入项目内的相对测试目录。", "Enter a relative test directory within the project.")}</p>}
     {actions.isError && <ErrorState error={actions.error} />}
@@ -172,7 +171,7 @@ function ProjectActionsForRun({ client, runID, threadID, working = false, onFeed
         }}>
           <h3>{slot === "test" ? t("测试", "Tests") : t("格式化", "Formatting")}</h3>
           {action?.command_id ? <><code>{action.command_id}</code>{!action.configured && <small>{t("根据项目文件检测", "Detected from project files")}</small>}</>
-            : action && <p>{t("此目录未检测到项目动作，可选择其他目录或在 .prayu/config.yaml 中配置。", "No project action was detected in this directory. Choose another directory or configure it in .prayu/config.yaml.")}</p>}
+            : action && <p>{t("此目录未检测到项目动作。", "No project action detected in this directory.")}</p>}
           {(directory || action?.command_id) && <label>
             {directory ? t("测试目录（留空使用项目根目录）", "Test directory (empty for project root)") : t("要格式化的文件", "File to format")}
             <input value={directory ? testDirectory : targets.format} required={needsFile} disabled={active || working}

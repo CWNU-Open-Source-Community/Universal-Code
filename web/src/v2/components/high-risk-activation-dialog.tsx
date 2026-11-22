@@ -33,7 +33,7 @@ interface ProfileCopy {
 const profileCopy = (t: LocaleText): Record<V2HighRiskProfile, ProfileCopy> => ({
   full_access: {
     title: t("要开启完全访问权限吗？", "Enable full access?"),
-    introduction: t("当前任务将能够在当前系统用户权限范围内，无需逐次批准地运行命令、使用互联网、控制浏览器，并在此设备的任意位置创建和编辑文件。包括但不限于：", "This task will be able to run commands, use the internet, control browsers, and create or edit files anywhere on this device with your system user's permissions, without approval for each action. This includes:"),
+    introduction: t("当前任务将能在当前系统用户权限范围内操作此设备，无需逐次批准。", "This task can act on this device with your system user's permissions, without approval for each action."),
     capabilities: [
       {
         title: t("文件和文件夹", "Files and folders"),
@@ -58,7 +58,7 @@ const profileCopy = (t: LocaleText): Record<V2HighRiskProfile, ProfileCopy> => (
   },
   debug: {
     title: t("要开启调试模式吗？", "Enable debug mode?"),
-    introduction: t("调试运行时为持久终端和后台进程提供支持。使用这些能力还需在当前任务选择本地执行、Debug 交互，并确认完全访问权限。仅应在你信任当前工作区及其内容时使用。包括：", "The debug runtime supports persistent terminals and background processes. To use them, select local execution and Debug interaction for this task and confirm full access. Use this only when you trust the workspace and its contents. This includes:"),
+    introduction: t("仅在信任当前工作区及其内容时启用。使用调试能力还需为当前任务选择本地执行、Debug 交互并确认完全访问权限。", "Enable this only in a trusted workspace. Debug controls also require local execution, Debug interaction and confirmed full access for this task."),
     capabilities: [
       {
         title: t("独立的任务权限", "Permissions for each task"),

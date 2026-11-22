@@ -2,10 +2,11 @@ import type { ReactElement } from "react";
 import type { RenderOptions } from "@testing-library/react";
 import { LocaleProvider } from "../../lib/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render as renderComponent, screen, waitFor } from "@testing-library/react";
+import { act, render as renderComponent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { APIClient } from "../../api/client";
-import type { ApprovalPreviewView, ApprovalQueueItemView } from "../../api/types";
+import type { ApprovalPreviewView, ApprovalQueueItemView, ApprovalQueueView } from "../../api/types";
+import { v2QueryKeys } from "../query-keys";
 import { V2ApprovalCards } from "./approval-cards";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -33,9 +34,11 @@ function pending(overrides: Partial<ApprovalQueueItemView> = {}): ApprovalQueueI
   };
 }
 
-function renderCards(item: ApprovalQueueItemView, previewOverrides = {}, onReviewFile = vi.fn()) {
+function renderCards(item: ApprovalQueueItemView, previewOverrides: Partial<ApprovalPreviewView> = {}, onReviewFile = vi.fn(),
+  additional: { item: ApprovalQueueItemView; preview: Partial<ApprovalPreviewView> }[] = []) {
+  const requests = [{ item, preview: previewOverrides }, ...additional];
   const approvalQueue = vi.fn().mockResolvedValue({
-    protocol_version: "approval_queue.v1", run_id: "run-1", items: [item],
+    protocol_version: "approval_queue.v1", run_id: "run-1", items: requests.map((request) => request.item),
     truncated: false, process_execution_enabled: false,
     session_grant_created: false, capability_grant: false,
   });
@@ -48,15 +51,19 @@ function renderCards(item: ApprovalQueueItemView, previewOverrides = {}, onRevie
     session_grant_created: false, capability_grant: false,
     execution_resumed: true, retry_completed: true,
   });
-  const approvalPreview = vi.fn().mockResolvedValue({
-    protocol_version: "approval_queue.v1", run_id: "run-1", approval_id: item.id,
-    proposal_id: item.proposal_id, tool_name: item.tool_name, workspace_id: item.workspace_id,
-    effect: item.tool_name === "web_fetch" ? "fetch_public_https" : "dry_run",
-    working_directory: item.tool_name === "web_fetch" ? "" : ".",
-    fields: item.tool_name === "web_fetch"
-      ? [{ name: "url", value: item.canonical_url }]
-      : [{ name: "command", value: "echo inspection-only" }],
-    source_current: true, redacted: false, truncated: false, ...previewOverrides,
+  const approvalPreview = vi.fn(async (_runID: string, id: string) => {
+    const request = requests.find((entry) => entry.item.id === id)!;
+    const item = request.item;
+    return {
+      protocol_version: "approval_queue.v1", run_id: "run-1", approval_id: item.id,
+      proposal_id: item.proposal_id, tool_name: item.tool_name, workspace_id: item.workspace_id,
+      effect: item.tool_name === "web_fetch" ? "fetch_public_https" : "dry_run",
+      working_directory: item.tool_name === "web_fetch" ? "" : ".",
+      fields: item.tool_name === "web_fetch"
+        ? [{ name: "url", value: item.canonical_url }]
+        : [{ name: "command", value: "echo inspection-only" }],
+      source_current: true, redacted: false, truncated: false, ...request.preview,
+    };
   });
   const client = { hasApprovalControl: true, approvalQueue, decideApproval, approvalPreview,
   } as unknown as APIClient;
@@ -66,7 +73,19 @@ function renderCards(item: ApprovalQueueItemView, previewOverrides = {}, onRevie
   render(<QueryClientProvider client={queryClient}>
     <V2ApprovalCards client={client} runID="run-1" threadID="thread-1" onReviewFile={onReviewFile} />
   </QueryClientProvider>);
-  return { decideApproval, approvalPreview, onReviewFile };
+  return { decideApproval, approvalPreview, approvalQueue, queryClient, onReviewFile };
+}
+
+async function showDetails(user: ReturnType<typeof userEvent.setup>, card = within(document.body)) {
+  await user.click(card.getByRole("button", { name: "审批选项" }));
+  await user.click(card.getByRole("menuitem", { name: "请求详情" }));
+}
+
+async function openGrantLimits() {
+  await userEvent.click(await screen.findByRole("button", { name: "审批选项" }));
+  const option = screen.getByRole("menuitem", { name: "本次执行的限时、限次审批" });
+  await waitFor(() => expect(option).toBeEnabled());
+  await userEvent.click(option);
 }
 
 function renderReadOnlyCards(item: ApprovalQueueItemView | null = pending(),
@@ -139,7 +158,7 @@ describe("V2ApprovalCards", () => {
   it("retains the queue and retries a failed exact preview read without submitting a decision", async () => {
     const { decideApproval, restoreReads } = renderReadOnlyCards(pending(), {}, "preview");
     expect(await screen.findByText("操作预览读取失败，请重新读取后确认批准范围。")).toBeVisible();
-    expect(screen.getByText("arxiv.org")).toBeVisible();
+    expect(screen.getByRole("heading", { name: /arxiv\.org/ })).toBeVisible();
     restoreReads();
     await userEvent.click(screen.getByRole("button", { name: "重试操作预览" }));
     expect(await screen.findByText("Read-only exact proposal [REDACTED]")).toBeVisible();
@@ -157,6 +176,7 @@ describe("V2ApprovalCards", () => {
   it("reviews each command with explicit bounded Run limits and preserves retry intent", async () => {
     const item = pending({tool_name:"command_runtime",action_class:"command_process",allowed_actions:["approve_once","approve_for_run","deny"],canonical_url:undefined,exact_target:undefined});
     const {decideApproval}=renderCards(item,{effect:"command_process",fields:[{name:"review_scope",value:"local verification"}]});
+    await openGrantLimits();
     const button=await screen.findByRole("button",{name:"确认本条命令并计入有界审批"});
     await userEvent.clear(screen.getByLabelText("有界审批命令次数"));
     await userEvent.type(screen.getByLabelText("有界审批命令次数"),"9");
@@ -171,6 +191,7 @@ describe("V2ApprovalCards", () => {
   it("keeps the original limits for a matching active Run scope", async () => {
     const item=pending({tool_name:"command_runtime",action_class:"command_process",allowed_actions:["approve_once","approve_for_run","deny"],canonical_url:undefined,exact_target:undefined});
     const {decideApproval}=renderCards(item,{effect:"command_process",fields:[{name:"grant_ttl_seconds",value:"300"},{name:"grant_max_uses",value:"4"},{name:"grant_uses_remaining",value:"2"},{name:"grant_expires_at",value:"2026-10-03T16:00:00Z"}]});
+    await openGrantLimits();
     const button=await screen.findByRole("button",{name:"确认本条命令并计入有界审批"});
     await waitFor(()=>expect(screen.getByLabelText("有界审批有效秒数")).toHaveValue(300));
     expect(screen.getByLabelText("有界审批有效秒数")).toBeDisabled();
@@ -184,12 +205,190 @@ describe("V2ApprovalCards", () => {
       workspace_id: "original-workspace", allowed_actions: ["deny"], canonical_url: undefined, exact_target: undefined });
     const { onReviewFile, decideApproval } = renderCards(item, { effect: "file_review_required", source_current: false,
       fields: [{ name: "path", value: "same.txt" }] });
-    const button = await screen.findByRole("button", { name: "审阅文件提案" });
-    button.focus();
+    const button = await screen.findByRole("button", { name: "审阅差异" });
+    screen.getByRole("article", { name: /same\.txt/ }).focus();
     await userEvent.keyboard("{Enter}");
     expect(onReviewFile).toHaveBeenCalledWith({ runID: "run-1", editID: "exact-edit", workspaceID: "original-workspace" }, button);
     expect(screen.queryByRole("button", { name: "批准一次" })).not.toBeInTheDocument();
     expect(decideApproval).not.toHaveBeenCalled();
+  });
+
+  it("keeps a move target, keyboard review and an optional denial reason with the correct queued file", async () => {
+    const user = userEvent.setup();
+    const path = "packages/desktop/integration/reviews/with-a-long-component-name/config.json";
+    const item = pending({ id: "approval-move", tool_name: "move_file", proposal_id: "move-edit", workspace_id: "ws",
+      allowed_actions: ["deny"], canonical_url: undefined, exact_target: undefined });
+    const second = { ...item, id: "approval-replace", tool_name: "replace_file", proposal_id: "replace-edit" };
+    const { onReviewFile, decideApproval } = renderCards(item, { effect: "file_review_required", fields: [
+      { name: "operation", value: "move" }, { name: "path", value: path }, { name: "destination_path", value: "new/config.json" },
+    ] }, vi.fn(), [{ item: second, preview: { effect: "file_review_required", fields: [
+      { name: "operation", value: "replace" }, { name: "path", value: "README.md" },
+    ] } }]);
+    const move = within(await screen.findByRole("article", { name: /移动前.*config\.json/ }));
+    const replace = within(await screen.findByRole("article", { name: /应用前.*README\.md/ }));
+    expect(move.getByText(path)).toBeVisible();
+    expect(move.getByText("new/config.json")).toBeVisible();
+    expect(replace.queryByText("replace")).not.toBeInTheDocument();
+    expect(replace.queryByText("工作目录")).not.toBeInTheDocument();
+    expect(replace.queryByLabelText("replace_file 的拒绝原因")).not.toBeInTheDocument();
+    const review = move.getByRole("button", { name: "审阅差异" });
+    review.focus();
+    await user.keyboard("{Enter}");
+    expect(onReviewFile).toHaveBeenCalledWith({ runID: "run-1", editID: "move-edit", workspaceID: "ws" }, review);
+    await showDetails(user, replace);
+    expect(replace.getByText("ws")).toBeVisible();
+    await user.click(replace.getByText("拒绝理由"));
+    await user.tab();
+    expect(replace.getByRole("textbox")).toHaveFocus();
+    await user.keyboard("Keep the original");
+    expect(move.queryByLabelText("move_file 的拒绝原因")).not.toBeInTheDocument();
+    await user.click(replace.getByRole("button", { name: "拒绝" }));
+    expect(decideApproval).toHaveBeenCalledWith("run-1", second.id, { version: "approval_control.v1", action: "deny", reason: "Keep the original" }, expect.any(String));
+  });
+
+  it("shows the full multiline command, its target and declared permissions before opening the exact request", async () => {
+    const script = "Write-Output 'first'\nWrite-Output 'second'";
+    const directory = "C:\\Projects\\long workspace path";
+    const payload = JSON.stringify({ version: "command-runtime.v2", action: "run", commands: [
+      { profile: "powershell", script, working_directory: directory, network: "host", credentials: "none",
+        environment: [{ name: "MODE", value: "review" }], stdin_policy: "closed" },
+    ], failure_policy: "fail_fast" });
+    renderCards(pending({ tool_name: "command_runtime", allowed_actions: ["approve_once", "deny"] }),
+      { effect: "command_process", working_directory: "", fields: [{ name: "intent", value: payload }] });
+    expect((await screen.findByText(/Write-Output 'first' Write-Output 'second'/)).textContent).toBe(script);
+    expect(screen.getByText("终端 · PowerShell")).toBeVisible();
+    expect(screen.getByText(directory)).toBeVisible();
+    expect(screen.getByText("host")).toBeVisible();
+    expect(screen.getByText('[{"name":"MODE","value":"review"}]')).toBeVisible();
+    expect(screen.queryByText(payload)).not.toBeInTheDocument();
+    await showDetails(userEvent.setup());
+    expect(screen.getByText(payload)).toBeVisible();
+  });
+
+  it("identifies the interpreter for each script in a mixed batch", async () => {
+    const script = "echo $env:PATH";
+    const commands = ["bash", "powershell"].map((profile) => ({
+      version: "command-runtime.v2", profile, script, working_directory: ".", environment: [], stdin_policy: "closed",
+      close_initial_stdin: true, timeout_milliseconds: 1000, output: { inline_bytes: 4096, artifact_bytes: 4096 },
+      network: "disabled", credentials: "none", purpose: "Print an environment setting",
+    }));
+    const intent = JSON.stringify({ version: "command-runtime.v2", action: "run", commands, failure_policy: "fail_fast", max_bytes: 4096 });
+    renderCards(pending({ tool_name: "command_runtime", allowed_actions: ["approve_once", "deny"] }),
+      { effect: "command_process", fields: [{ name: "intent", value: intent }] });
+    const lines = await screen.findAllByText(script);
+    expect(lines).toHaveLength(2);
+    expect(screen.getByText("终端")).toBeVisible();
+    const entries = lines.map((line) => within(line.closest<HTMLElement>(".v2-approval-command-entry")!));
+    expect(entries[0].getByText("Bash")).toBeVisible();
+    expect(entries[1].getByText("PowerShell")).toBeVisible();
+  });
+
+  it("shows the bound question above the literal command and makes the same risk scope available at grant confirmation", async () => {
+    const user = userEvent.setup();
+    const question = "允许我读取 example.com 的网页响应头吗？";
+    const scope = JSON.stringify({ risk_kinds: ["network"], network_targets: ["example.com"], network_purpose: "Read response headers" });
+    const intent = JSON.stringify({ version: "command-runtime.v2", action: "run", commands: [{ profile: "process",
+      executable: "curl.exe", arguments: ["--head", "--max-time", "10", "https://example.com"], purpose: question }] });
+    const { decideApproval } = renderCards(pending({ tool_name: "command_runtime", allowed_actions: ["approve_once", "approve_for_run", "deny"] }),
+      { effect: "command_process", working_directory: "", fields: [{ name: "action", value: "run" },
+        { name: "intent", value: intent }, { name: "review_scope", value: scope }] });
+    const card = within(await screen.findByRole("article", { name: question }));
+    expect(card.getByText("终端")).toBeVisible();
+    expect(card.getByRole("heading", { name: question })).toBeVisible();
+    expect(card.getByText("curl.exe --head --max-time 10 https://example.com").closest("pre")).toBeVisible();
+    expect(card.getAllByRole("button").map((button) => button.textContent)).toEqual(["拒绝Esc", "允许一次⏎", ""]);
+    expect(card.queryByText(scope)).not.toBeInTheDocument();
+    await showDetails(user, card);
+    expect(card.getByText(scope)).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(card.queryByRole("region", { name: "请求详情" })).not.toBeInTheDocument();
+    await openGrantLimits();
+    expect(within(card.getByRole("group", { name: "授权限额" })).getByText(scope)).toBeVisible();
+    expect(decideApproval).not.toHaveBeenCalled();
+  });
+
+  it("keeps argv boundaries and displays a declarative purpose in its original language", async () => {
+    const purpose = "Inspect the supplied literal arguments.";
+    const args = ["", "two words", 'a"b', "$TERM", "first\nsecond", "name\u202etxt"];
+    const intent = JSON.stringify({ version: "command-runtime.v2", action: "run", commands: [
+      { profile: "process", executable: "/bin/tool", arguments: args, purpose },
+    ] });
+    renderCards(pending({ tool_name: "command_runtime", allowed_actions: ["approve_once", "deny"] }),
+      { effect: "command_process", fields: [{ name: "intent", value: intent }] });
+    const line = await screen.findByText(/^\/bin\/tool /);
+    expect(line.textContent).toBe('/bin/tool "" "two words" "a\\"b" "$TERM" "first\\nsecond" "name\\u202etxt"');
+    expect(screen.getByRole("heading", { name: "允许运行这条命令？" })).toBeVisible();
+    expect(screen.queryByText(purpose)).not.toBeInTheDocument();
+    await showDetails(userEvent.setup());
+    expect(screen.getByText(purpose)).toBeVisible();
+  });
+
+  it("keeps ambiguous script/argv data visible as an exact request without promoting its text into the question", async () => {
+    const intent = JSON.stringify({ version: "command-runtime.v2", action: "run", commands: [
+      { profile: "powershell", script: "Write-Output okay", executable: "another-tool", arguments: [3], purpose: "Use the other proposal?" },
+    ] });
+    renderCards(pending({ tool_name: "command_runtime", allowed_actions: ["approve_once", "deny"] }),
+      { effect: "command_process", fields: [{ name: "intent", value: intent }] });
+    expect(await screen.findByText(intent)).toBeVisible();
+    expect(screen.getByRole("heading", { name: "允许运行这条命令？" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Use the other proposal?" })).not.toBeInTheDocument();
+  });
+
+  it("routes Enter and Escape only to the focused proposal and lets the menu handle its own keys", async () => {
+    const user = userEvent.setup();
+    const other = pending({ id: "other-approval", proposal_id: "other-proposal", exact_target: "example.com", canonical_url: "https://example.com/" });
+    const { decideApproval } = renderCards(pending(), {}, vi.fn(), [{ item: other, preview: {} }]);
+    await screen.findByText("https://example.com/");
+    const first = screen.getByRole("article", { name: /arxiv\.org/ });
+    const second = screen.getByRole("article", { name: /example\.com/ });
+    await user.keyboard("{Enter}{Escape}");
+    const trigger = within(first).getByRole("button", { name: "审批选项" });
+    trigger.focus();
+    await user.keyboard("{ArrowUp}");
+    expect(within(first).getByRole("menuitem", { name: "请求详情" })).toHaveFocus();
+    await user.keyboard("{ArrowUp}");
+    expect(within(first).getByRole("menuitem", { name: /本对话允许.*arxiv\.org/ })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    second.focus();
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(decideApproval).not.toHaveBeenCalled();
+    await user.keyboard("{Enter}");
+    expect(decideApproval).toHaveBeenCalledWith("run-1", other.id, { version: "approval_control.v1", action: "approve_once" }, expect.any(String));
+    first.focus();
+    await user.keyboard("{Escape}");
+    expect(decideApproval).toHaveBeenCalledWith("run-1", pending().id, { version: "approval_control.v1", action: "deny" }, expect.any(String));
+    expect(decideApproval).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps decision feedback with its request and clears it when the same run moves on", async () => {
+    const first = pending();
+    const next = pending({ id: "next-approval", proposal_id: "next-proposal", exact_target: "example.org", canonical_url: "https://example.org/" });
+    const { approvalQueue, queryClient } = renderCards(first, {}, vi.fn(), [{ item: next, preview: {} }]);
+    await screen.findByText(next.canonical_url!);
+    const firstCard = within(screen.getByRole("article", { name: /arxiv\.org/ }));
+    const nextCard = within(screen.getByRole("article", { name: /example\.org/ }));
+    const queueKey = v2QueryKeys.approvals("run-1");
+    const queue = queryClient.getQueryData<ApprovalQueueView>(queueKey)!;
+    async function refreshQueue(items: ApprovalQueueItemView[]) {
+      approvalQueue.mockResolvedValue({ ...queue, items });
+      await act(() => queryClient.invalidateQueries({ queryKey: queueKey }));
+    }
+
+    await userEvent.click(firstCard.getByRole("button", { name: "允许一次" }));
+    const message = (await firstCard.findByRole("status")).textContent!;
+    expect(message).toMatch(/已批准/);
+    expect(nextCard.queryByText(message)).not.toBeInTheDocument();
+    await refreshQueue([]);
+    await waitFor(() => expect(screen.queryByRole("article")).not.toBeInTheDocument());
+    expect(screen.getByText(message)).toBeVisible();
+    await refreshQueue([next]);
+    await screen.findByText(next.canonical_url!);
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
+    await refreshQueue([]);
+    await waitFor(() => expect(screen.queryByRole("article")).not.toBeInTheDocument());
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
   });
 
   it.each([{ run_id: "different-run" }, { approval_id: "different-approval" }, { proposal_id: "different-edit" },
@@ -198,7 +397,7 @@ describe("V2ApprovalCards", () => {
       workspace_id: "original-workspace", allowed_actions: [], canonical_url: undefined, exact_target: undefined });
     const { onReviewFile, decideApproval } = renderCards(item, { effect: "file_review_required", ...mismatch });
     await screen.findByText("操作预览读取失败，请重新读取后确认批准范围。");
-    expect(screen.queryByRole("button", { name: "审阅文件提案" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "审阅差异" })).not.toBeInTheDocument();
     expect(onReviewFile).not.toHaveBeenCalled(); expect(decideApproval).not.toHaveBeenCalled();
   });
 
@@ -239,10 +438,10 @@ describe("V2ApprovalCards", () => {
     expect(await screen.findByText("POST")).toBeVisible();
     expect(screen.getByText("http://127.0.0.1:51234/write")).toBeVisible();
     expect(screen.getByText("19")).toBeVisible();
-    expect(screen.getByText(hash)).not.toBeVisible();
-    expect(screen.getByText("2026-11-06T14:32:00Z")).not.toBeVisible();
+    expect(screen.queryByText(hash)).not.toBeInTheDocument();
+    expect(screen.queryByText("2026-11-06T14:32:00Z")).not.toBeInTheDocument();
     const user = userEvent.setup();
-    await user.click(screen.getByText("请求详情"));
+    await showDetails(user);
     expect(screen.getByText(hash)).toBeVisible();
     expect(screen.getByText("2026-11-06T14:32:00Z")).toBeVisible();
     await user.click(screen.getByRole("button", { name: button }));
@@ -307,7 +506,9 @@ describe("V2ApprovalCards", () => {
       <V2ApprovalCards client={client} runID="run-1" threadID="thread-1" />
     </QueryClientProvider>);
     expect(await screen.findByText("package.json")).toBeInTheDocument();
-    expect(screen.getByText(/批准、差异审阅和写入请使用任务的「审阅改动」入口/)).toBeInTheDocument();
+    expect(screen.getByText("创建文件")).toBeVisible();
+    expect(screen.getByText(/在任务的「审阅改动」中查看差异并批准/)).toBeVisible();
+    expect(screen.queryByText("create")).not.toBeInTheDocument();
     expect(screen.queryByText("操作预览读取失败，请重新读取后确认批准范围。")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批准一次" })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.every(([url]) => String(url).includes("/runs/run-1/approvals"))).toBe(true);
@@ -317,13 +518,13 @@ describe("V2ApprovalCards", () => {
     const user = userEvent.setup();
     const { decideApproval } = renderCards(pending());
 
-    expect(await screen.findByText("允许读取这个网站？")).toBeInTheDocument();
-    expect(screen.getByText("arxiv.org")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "允许读取 arxiv.org 吗？" })).toBeVisible();
     expect(await screen.findByText("https://arxiv.org/abs/2608.13637")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "允许一次" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "拒绝" })).toBeEnabled();
 
-    await user.click(screen.getByRole("button", { name: "本对话允许" }));
+    await user.click(screen.getByRole("button", { name: "审批选项" }));
+    await user.click(screen.getByRole("menuitem", { name: /本对话允许.*arxiv\.org/ }));
     await waitFor(() => expect(decideApproval).toHaveBeenCalledWith(
       "run-1", "approval-web-fetch-1", {
         version: "approval_control.v1", action: "approve_for_thread",
@@ -340,14 +541,18 @@ describe("V2ApprovalCards", () => {
     expect(await screen.findByText("批准这次模拟执行？")).toBeInTheDocument();
     expect(screen.getByText("echo inspection-only")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "批准模拟一次" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "本对话允许" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "审批选项" }));
+    expect(screen.getAllByRole("menuitem")).toHaveLength(1);
+    expect(screen.getByRole("menuitem", { name: "请求详情" })).toBeEnabled();
   });
 
   it("blocks stale previews while keeping denial available", async () => {
     const { decideApproval } = renderCards(pending(), { source_current: false });
     expect(await screen.findByText("操作已变化或审批已处理，请刷新最新状态。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "允许一次" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "本对话允许" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "审批选项" }));
+    expect(screen.getByRole("menuitem", { name: /本对话允许.*arxiv\.org/ })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "请求详情" })).toBeEnabled();
     await userEvent.setup().click(screen.getByRole("button", { name: "拒绝" }));
     await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("run-1", pending().id,
       { version: "approval_control.v1", action: "deny" }, expect.any(String)));

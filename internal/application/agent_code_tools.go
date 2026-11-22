@@ -191,6 +191,31 @@ func (e *AgentCodeToolExecutor) ExecuteAgentCode(ctx context.Context,
 		if err != nil {
 			return toolgateway.AgentCodeExecutionResult{}, err
 		}
+		autoAuthorized := e.hasFileEditAutoAuthorizationForRun(ctx, result.ID, scope.RunID)
+		if result.Status == fileedit.StatusApplied && replayed {
+			appliedResult := ApplyFileEditResult{Edit: result, Replayed: true, FileWritten: false}
+			value = e.agentCodeAppliedChangeResult(ctx, scope, appliedResult, pathPolicy,
+				appliedDiagnosticsFeedback{Status: "unavailable", Reason: "not_captured"}, autoAuthorized)
+			metadata["edit_id"] = result.ID
+			metadata["status"] = result.Status
+			metadata["operation"] = result.Operation
+			encoded, err := json.Marshal(value)
+			return toolgateway.AgentCodeExecutionResult{JSON: string(encoded),
+				Metadata: metadata, Replayed: true}, err
+		}
+		if scope.SpecialistToolCallID == "" && scope.Role != domain.AgentRoleSpecialist && result.Status == fileedit.StatusApproved && result.Operation != fileedit.OperationDelete && (!replayed || autoAuthorized) {
+			applied, baseline, err := e.autoApplyChange(ctx, scope, result, pathPolicy)
+			if err != nil {
+				return toolgateway.AgentCodeExecutionResult{}, err
+			}
+			value = e.agentCodeAppliedChangeResult(ctx, scope, applied, pathPolicy, baseline, true)
+			metadata["edit_id"] = applied.Edit.ID
+			metadata["status"] = applied.Edit.Status
+			metadata["operation"] = applied.Edit.Operation
+			encoded, err := json.Marshal(value)
+			return toolgateway.AgentCodeExecutionResult{JSON: string(encoded),
+				Metadata: metadata, Replayed: applied.Replayed}, err
+		}
 		value = e.agentCodeEditResult(ctx, scope, result,
 			result.Operation == fileedit.OperationDelete)
 		metadata["edit_id"] = result.ID
@@ -404,6 +429,55 @@ func (e *AgentCodeToolExecutor) propose(ctx context.Context,
 	proposedText := ""
 	destination := ""
 	destinationHash := ""
+	editID := agentCodeEditID(scope.OperationKey)
+	if existing, lookupErr := e.store.GetFileEdit(ctx, editID); lookupErr == nil {
+		if _, _, err := workspace.AgentCodeResolveWritePath(scope.WorkspaceRoot, input.Path, true); err != nil {
+			return fileedit.Edit{}, false, err
+		}
+		switch input.Action {
+		case "propose_patch":
+			if existing.Operation != fileedit.OperationReplace || existing.Path != input.Path || existing.OriginalHash != input.ExpectedSHA256 {
+				return fileedit.Edit{}, false, apperror.New(apperror.CodeConflict,
+					"agent code operation key was already used for a different change")
+			}
+			proposedText = existing.OriginalText
+			for _, replacement := range input.Replacements {
+				if count := strings.Count(proposedText, replacement.OldText); count != replacement.ExpectedOccurrences {
+					return fileedit.Edit{}, false, apperror.New(apperror.CodeConflict,
+						"agent code operation key was already used for a different change")
+				}
+				proposedText = strings.ReplaceAll(proposedText, replacement.OldText, replacement.NewText)
+			}
+		case "replace":
+			proposedText = input.Content
+		case "create":
+			operation = fileedit.OperationCreate
+			proposedText = input.Content
+		case "move":
+			operation = fileedit.OperationMove
+			if _, _, err := workspace.AgentCodeResolveWritePath(scope.WorkspaceRoot, input.DestinationPath, true); err != nil {
+				return fileedit.Edit{}, false, err
+			}
+			destination = input.DestinationPath
+			destinationHash = input.DestinationExpectedSHA256
+		default:
+			return fileedit.Edit{}, false, apperror.New(apperror.CodeInvalidArgument,
+				"workspace change action is invalid")
+		}
+		proposal := fileedit.Proposal{ID: editID,
+			SessionID: scope.SessionID, WorkspaceID: scope.WorkspaceID,
+			WorkspaceRoot: scope.WorkspaceRoot, Path: input.Path, Operation: operation,
+			DestinationPath: destination, ProposedText: proposedText,
+			ExpectedOriginalHash:    input.ExpectedSHA256,
+			ExpectedDestinationHash: destinationHash}
+		if !sameAgentCodeProposal(existing, proposal) {
+			return fileedit.Edit{}, false, apperror.New(apperror.CodeConflict,
+				"agent code operation key was already used for a different change")
+		}
+		return existing, true, nil
+	} else if apperror.CodeOf(apperror.Normalize(lookupErr)) != apperror.CodeNotFound {
+		return fileedit.Edit{}, false, apperror.Normalize(lookupErr)
+	}
 	switch input.Action {
 	case "propose_patch":
 		text, observedHash, err := workspace.AgentCodeReadMutationSource(
@@ -460,7 +534,7 @@ func (e *AgentCodeToolExecutor) propose(ctx context.Context,
 		return fileedit.Edit{}, false, apperror.New(apperror.CodePolicyDenied,
 			"workspace mutation content contains secret-like material")
 	}
-	proposal := fileedit.Proposal{ID: agentCodeEditID(scope.OperationKey),
+	proposal := fileedit.Proposal{ID: editID,
 		SessionID: scope.SessionID, WorkspaceID: scope.WorkspaceID,
 		WorkspaceRoot: scope.WorkspaceRoot, Path: input.Path, Operation: operation,
 		DestinationPath: destination, ProposedText: proposedText,
@@ -472,14 +546,28 @@ func (e *AgentCodeToolExecutor) propose(ctx context.Context,
 func (e *AgentCodeToolExecutor) proposeDelete(ctx context.Context,
 	scope toolgateway.AgentCodeExecutionScope, input toolgateway.WorkspaceDeletePayload,
 ) (fileedit.Edit, bool, error) {
+	editID := agentCodeEditID(scope.OperationKey)
+	proposal := fileedit.Proposal{ID: editID,
+		SessionID: scope.SessionID, WorkspaceID: scope.WorkspaceID,
+		WorkspaceRoot: scope.WorkspaceRoot, Path: input.Path,
+		Operation: fileedit.OperationDelete, ExpectedOriginalHash: input.ExpectedSHA256}
+	if existing, lookupErr := e.store.GetFileEdit(ctx, editID); lookupErr == nil {
+		if _, _, err := workspace.AgentCodeResolveWritePath(scope.WorkspaceRoot, input.Path, true); err != nil {
+			return fileedit.Edit{}, false, err
+		}
+		if !sameAgentCodeProposal(existing, proposal) {
+			return fileedit.Edit{}, false, apperror.New(apperror.CodeConflict,
+				"agent code operation key was already used for a different change")
+		}
+		return existing, true, nil
+	} else if apperror.CodeOf(apperror.Normalize(lookupErr)) != apperror.CodeNotFound {
+		return fileedit.Edit{}, false, apperror.Normalize(lookupErr)
+	}
 	if _, _, err := workspace.AgentCodeResolveWritePath(scope.WorkspaceRoot,
 		input.Path, false); err != nil {
 		return fileedit.Edit{}, false, err
 	}
-	return e.saveProposal(ctx, scope, fileedit.Proposal{ID: agentCodeEditID(scope.OperationKey),
-		SessionID: scope.SessionID, WorkspaceID: scope.WorkspaceID,
-		WorkspaceRoot: scope.WorkspaceRoot, Path: input.Path,
-		Operation: fileedit.OperationDelete, ExpectedOriginalHash: input.ExpectedSHA256})
+	return e.saveProposal(ctx, scope, proposal)
 }
 
 func (e *AgentCodeToolExecutor) saveProposal(ctx context.Context,
@@ -618,6 +706,9 @@ func (e *AgentCodeToolExecutor) applyChange(ctx context.Context,
 	if err != nil {
 		return ApplyFileEditResult{}, baseline, err
 	}
+	if edit.Status == fileedit.StatusApplied {
+		return ApplyFileEditResult{Edit: edit, Replayed: true, FileWritten: false}, baseline, nil
+	}
 	applied, err := e.apply.Apply(ctx, ApplyFileEditRequest{Version: fileedit.FileEditApplyProtocolVersion,
 		RunID: scope.RunID, EditID: edit.ID, OperationKey: operationKey,
 		AppliedBy: scope.ActorID(), InvocationID: scope.CheckpointInvocationID(),
@@ -628,6 +719,78 @@ func (e *AgentCodeToolExecutor) applyChange(ctx context.Context,
 		PermissionGeneration:   scope.PermissionGeneration,
 		PermissionRuntimeEpoch: scope.PermissionRuntimeEpoch, RunAuthorizationFence: scope.RunAuthorizationFence})
 	return applied, baseline, err
+}
+
+func (e *AgentCodeToolExecutor) autoApplyChange(ctx context.Context,
+	scope toolgateway.AgentCodeExecutionScope, edit fileedit.Edit,
+	pathPolicy workspaceidentity.PathPolicy,
+) (ApplyFileEditResult, appliedDiagnosticsFeedback, error) {
+	baseline := appliedDiagnosticsFeedback{Status: "unavailable", Reason: "not_captured"}
+	operationKey := agentCodeAutoApplyOperationKey(scope.OperationKey)
+	if reader, ok := e.store.(interface {
+		GetFailedFileApplyOperationKey(context.Context, string, string, string) (string, bool, error)
+	}); ok {
+		key, found, lookupErr := reader.GetFailedFileApplyOperationKey(ctx, scope.RunID, edit.ID, scope.ActorID())
+		if lookupErr != nil {
+			return ApplyFileEditResult{}, baseline, apperror.Normalize(lookupErr)
+		}
+		if found {
+			operationKey = key
+		}
+	}
+	if edit.Operation == fileedit.OperationReplace {
+		baseline = e.documentDiagnostics(ctx, scope, edit.Path, edit.OriginalHash, pathPolicy)
+	}
+	workerSource, err := e.workerFileApplySource(ctx, scope, toolgateway.WorkspaceChangeTool)
+	if err != nil {
+		return ApplyFileEditResult{}, baseline, err
+	}
+	applied, err := e.apply.Apply(ctx, ApplyFileEditRequest{Version: fileedit.FileEditApplyProtocolVersion,
+		RunID: scope.RunID, EditID: edit.ID, OperationKey: operationKey,
+		AppliedBy: scope.ActorID(), InvocationID: scope.CheckpointInvocationID(),
+		WorkerSource:         workerSource,
+		CapabilityGeneration: scope.CapabilityGeneration, LeaseID: scope.LeaseID,
+		LeaseGeneration:        scope.LeaseGeneration,
+		PermissionSnapshotID:   scope.PermissionSnapshotID,
+		PermissionGeneration:   scope.PermissionGeneration,
+		PermissionRuntimeEpoch: scope.PermissionRuntimeEpoch, RunAuthorizationFence: scope.RunAuthorizationFence})
+	return applied, baseline, err
+}
+
+func (e *AgentCodeToolExecutor) hasFileEditAutoAuthorizationForRun(ctx context.Context,
+	editID, runID string,
+) bool {
+	reader, ok := e.store.(interface {
+		GetFileEditAutoAuthorization(context.Context, string) (fileedit.AutoAuthorization, bool, error)
+	})
+	if !ok {
+		return false
+	}
+	source, found, err := reader.GetFileEditAutoAuthorization(ctx, editID)
+	return err == nil && found && source.RunID == runID
+}
+
+func (e *AgentCodeToolExecutor) agentCodeAppliedChangeResult(ctx context.Context,
+	scope toolgateway.AgentCodeExecutionScope, applied ApplyFileEditResult,
+	pathPolicy workspaceidentity.PathPolicy, baseline appliedDiagnosticsFeedback,
+	autoAuthorized bool,
+) map[string]any {
+	out := e.agentCodeEditResult(ctx, scope, applied.Edit,
+		applied.Edit.Operation == fileedit.OperationDelete)
+	out["status"] = applied.Edit.Status
+	out["file_written"] = applied.FileWritten
+	out["replayed"] = applied.Replayed
+	out["review_required"] = false
+	if autoAuthorized {
+		out["apply_authorized"] = true
+		out["authorization_source"] = "operation_policy_automatic"
+	}
+	out["diagnostics"] = e.appliedDocumentDiagnostics(ctx, scope, applied, pathPolicy, baseline)
+	return out
+}
+
+func agentCodeAutoApplyOperationKey(operationKey string) string {
+	return runmutation.Fingerprint("agent_code_auto_apply_v1", operationKey)
 }
 
 func (e *AgentCodeToolExecutor) applyDelete(ctx context.Context,

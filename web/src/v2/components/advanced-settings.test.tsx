@@ -83,7 +83,7 @@ describe("shared advanced settings", () => {
     const user = userEvent.setup();
     const installSkillPackage = vi.fn();
     mount({ hasSkillInstallation: false, installSkillPackage }, "skills", "", true);
-    expect(screen.getByText(/当前连接可预览包结构/)).toBeInTheDocument();
+    expect(screen.getByText(/安装和管理技能包需要 Skill 管理权限/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "预览 Skill 包" }));
     expect(screen.getByRole("dialog", { name: "Skill 包预览" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "安装" })).not.toBeInTheDocument();
@@ -129,7 +129,7 @@ describe("shared advanced settings", () => {
   it("keeps the Skill registry closed on a read-only web connection", async () => {
     const listSkillPackages = vi.fn();
     mount({ hasSkillInstallation: false, listSkillPackages }, "skills");
-    expect(await screen.findByText(/连接具备 Skill 管理权限的服务后/)).toBeInTheDocument();
+    expect(await screen.findByText(/安装和管理技能包需要 Skill 管理权限/)).toBeInTheDocument();
     expect(listSkillPackages).not.toHaveBeenCalled();
   });
 
@@ -218,7 +218,7 @@ describe("shared advanced settings", () => {
       api_version: "api.v1", schema_version: 157 }), interruptThread, controlRunLifecycle }, "about");
     queryClient.setQueryData(["test-connection-cache"], { id: "saved" });
     await screen.findByText("test");
-    expect(screen.getByText(/任务和已受理操作会继续在服务中运行/)).toBeInTheDocument();
+    expect(screen.getByText(/运行中的任务和已受理的操作会继续执行/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "断开连接" }));
     expect(queryClient.getQueryData(["test-connection-cache"])).toBeUndefined();
     expect(useConnectionStore.getState().token).toBe("");

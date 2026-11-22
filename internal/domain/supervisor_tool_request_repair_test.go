@@ -1,12 +1,15 @@
 package domain
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestSupervisorToolRequestRepairReasonRequiresExactGoPrefix(t *testing.T) {
 	for reason, want := range map[string]bool{
-		SupervisorToolRequestRepairReasonPrefix + "round=0; unknown argument field":  true,
-		SupervisorToolRequestRepairReasonPrefix + "round=3; unknown argument field":  true,
-		SupervisorToolRequestRepairReasonPrefix + "round=21; unknown argument field": false,
+		SupervisorToolRequestRepairReasonPrefix + "round=0; unknown argument field":                                         true,
+		SupervisorToolRequestRepairReasonPrefix + "round=3; unknown argument field":                                         true,
+		SupervisorToolRequestRepairReasonPrefix + fmt.Sprintf("round=%d; unknown argument field", MaxSupervisorExecutionRounds): false,
 		SupervisorToolRequestRepairReasonPrefix + "round=00; unknown argument field": false,
 		SupervisorToolRequestRepairReasonPrefix:                                      false,
 		SupervisorToolRequestRepairReasonPrefix + " \n":                              false,

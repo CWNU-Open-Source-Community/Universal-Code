@@ -30,16 +30,16 @@ describe("Run projection panels", () => {
       getRunBatchDeliveries: vi.fn().mockResolvedValue({ items: [] }),
     } as unknown as APIClient;
     const { container } = render(provider(<BatchDeliveriesPanel client={client} runID="run-1" />));
-    await screen.findByText("No batch delivery plans yet. Describe independently deliverable subtasks in the conversation to prepare one.");
-    expect(container.textContent).toContain("a running execution");
-    expect(container.textContent).toContain("current Full process activation");
+    await screen.findByText("No batch delivery plans yet");
+    expect(container.textContent).toContain("a running task");
+    expect(container.textContent).toContain("active Full permissions");
     if (enabled) {
-      expect(container.textContent).toContain("selected Local, Docker, or SBX environment");
-      expect(container.textContent).toContain("refuses execution when it is not ready");
+      expect(container.textContent).not.toContain("Go/npm validation is disabled");
+      expect(container.textContent).toContain("a ready environment");
     } else {
-      expect(container.textContent).toContain("Enable and save batch validation below, then restart the app");
-      expect(container.textContent).toContain("required operation approval");
-      expect(screen.getByRole("region", { name: "验证功能设置" })).toBeInTheDocument();
+      expect(container.textContent).toContain("Go/npm validation is disabled");
+      expect(container.textContent).toContain("operation approval");
+      expect(screen.getByRole("region", { name: "Verification settings" })).toBeInTheDocument();
     }
     expect(screen.queryByRole("button", { name: "Merge in dependency order" })).not.toBeInTheDocument();
   });
@@ -69,7 +69,7 @@ describe("Run projection panels", () => {
     const client = { hasBatchDeliveryControl: false, hasBatchDeliveryHostValidation: false,
       getRunBatchDeliveries } as unknown as APIClient;
     render(provider(<BatchDeliveriesPanel client={client} runID="run-1" />));
-    expect(await screen.findByText(/Connect the Desktop control entry/)).toBeInTheDocument();
+    expect(await screen.findByText(/Managing batch deliveries requires desktop control access/)).toBeInTheDocument();
     expect(getRunBatchDeliveries).toHaveBeenCalledWith("run-1", expect.any(AbortSignal));
     expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
   });

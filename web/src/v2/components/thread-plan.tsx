@@ -155,7 +155,6 @@ function ThreadPlanContent({ client, threadID, runID, active, working, hasUnsent
       <section className="v2-thread-plan" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="v2-plan-title">
         <header><h2 id="v2-plan-title">{phase === "plan" && !confirmed ? t("确认计划", "Confirm plan") : t("任务计划", "Task plan")}</h2>
           <button type="button" ref={closeButton} aria-label={t("关闭计划", "Close plan")} onClick={() => setOpen(false)}><X size={18} /></button></header>
-        <p className="v2-plan-help">{t("先规划时先分析和形成方案。确认后在同一对话执行；后续修改要求仍可直接发消息。", "Planning analyzes the task and proposes an approach. Confirm to execute in this conversation; send further messages to change requirements.")}</p>
         {detail.isPending && <p role="status">{t("正在读取计划…", "Loading plan…")}</p>}
         {detail.isError && <p role="alert">{t("计划读取失败，请重新读取后确认方案。", "Could not load the plan. Reload it before confirming an approach.")}<button type="button" onClick={() => void detail.refetch()}>{t("重新读取", "Reload")}</button></p>}
         {damaged && <p role="alert">{t("本机计划请求记录无法读取，已保留原记录。请先处理本机存储问题；普通对话仍可继续。", "The local plan request cannot be read. Its record is kept. Resolve the storage issue; ordinary conversation remains available.")}</p>}
@@ -187,11 +186,10 @@ function ThreadPlanContent({ client, threadID, runID, active, working, hasUnsent
             </details>
           </section>)}
         </div>}
-        {!detail.isPending && !detail.isError && !proposal && <p>{phase === "plan" ? t("尚无可确认的计划。请在对话中提出需求或补充要求，等待计划形成。", "No plan is ready to confirm. Send your requirements in the conversation and wait for a plan.") : t("当前采用默认处理方式。需要先讨论方案时，可开启输入框旁的“计划模式”。", "The default work mode is active. Enable Plan mode beside the composer to discuss an approach first.")}</p>}
-        {working && <p className="v2-plan-help">{t("Agent 仍在处理消息。可以直接在对话中补充要求，待本轮处理结束后确认最新计划。", "The agent is still processing messages. Add requirements in the conversation and confirm the latest plan after this turn ends.")}</p>}
+        {!detail.isPending && !detail.isError && !proposal && <p>{t("尚无可确认的计划。", "No plan is ready to confirm.")}</p>}
+        {working && <p className="v2-plan-help">{t("本轮处理结束后可确认计划。", "You can confirm the plan when this turn finishes.")}</p>}
         {phase === "plan" && proposal && !confirmed && <>
           {hasUnsentDraft && <p role="status">{t("输入框中还有未发送内容。请先发送修改要求并等待计划更新，再确认执行。", "The composer contains an unsent draft. Send your changes and wait for the plan to update before confirming.")}</p>}
-          {!latest && <p className="v2-plan-help">{t("请选择当前方案；计划更新后需要重新核对。", "Select an approach. Review it again if the plan changes.")}</p>}
           {latest && <details><summary>{t("确认时发送的消息", "Message sent on confirmation")}</summary><p>{confirmContent}</p></details>}
           <div className="v2-plan-actions"><button type="button" onClick={() => { setOpen(false); onRequestChange(""); }}>{t("返回对话修改要求", "Return to conversation to change requirements")}</button>
             <button type="button" className="v2-plan-confirm" disabled={!ready || !latest || hasUnsentDraft} onClick={() => {

@@ -35,11 +35,14 @@ export function useV2QueuedMessagesQuery(client: APIClient, binding: QueueBindin
     refetchInterval: (current) => running && !current.state.error ? 2000 : false });
 }
 
-export function V2QueuedMessages(props: QueueBinding & { client: APIClient; running: boolean; canPromote?: boolean }) {
+type QueuePanelProps = QueueBinding & {
+  client: APIClient; running: boolean; canPromote?: boolean; preparedInTranscript?: ReadonlySet<string>;
+};
+export function V2QueuedMessages(props: QueuePanelProps) {
   // A late response belongs to the captured task and cannot replace another editor.
   return <QueuePanel key={JSON.stringify([props.client.baseURL, props.threadID, props.runID, props.sessionID, props.workspaceID])} {...props} />;
 }
-function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBinding & { client: APIClient; running: boolean; canPromote?: boolean }) {
+function QueuePanel({ client, running, canPromote = false, preparedInTranscript, ...binding }: QueuePanelProps) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const store = useV2RecoveryStore();
@@ -179,6 +182,9 @@ function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBi
     } catch (error) { setNotice(explanation(error, t)); }
   };
   const items = query.data?.items ?? [];
+  const visibleItems = preparedInTranscript?.size
+    ? items.filter((item) => !item.prepared || !preparedInTranscript.has(item.id)) : items;
+  const visiblePrepared = visibleItems.filter((item) => item.prepared).length;
   const recoveredIDs = new Set(edits.map((edit) => edit.message.id));
   const promotionUnavailable = (message: QueuedMessage): string => {
     if (message.images.length || message.attachments.length) return t("当前只支持文字引导；图片与附件保留在下一轮消息中。", "Only text can be sent as guidance. Images and attachments stay queued for the next turn.");
@@ -200,12 +206,12 @@ function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBi
       messageID: message.id, expectedRevision: message.revision, oldSHA256: message.content_sha256, content: "",
       expectedAttemptID: query.data!.current_attempt_id, expectedExecutionID: query.data!.execution_id });
   };
-  if (!query.isError && !items.length && !edits.length && !operations.length && !notice && !recoveryError && !details) return null;
+  if (!query.isError && !visibleItems.length && !edits.length && !operations.length && !notice && !recoveryError && !details) return null;
   return <section className="v2-queued-messages" aria-label={t("待处理消息", "Pending messages")}>
     <header>
       <button className="v2-queue-toggle" type="button" ref={toggleRef} aria-expanded={!collapsed} aria-controls={listID}
         title={collapsed ? t("展开待处理消息", "Expand pending messages") : t("收起待处理消息", "Collapse pending messages")} onClick={() => setCollapsed((value) => !value)}>
-        <span>{t(`待处理 ${query.data?.pending ?? "—"} 条`, `Pending ${query.data?.pending ?? "—"} messages`)}{Boolean(query.data?.prepared) && t(` · 正在处理 ${query.data?.prepared} 条`, ` · Processing ${query.data?.prepared}`)}</span>
+        <span>{t(`待处理 ${query.data?.pending ?? "—"} 条`, `Pending ${query.data?.pending ?? "—"} messages`)}{visiblePrepared > 0 && t(` · 正在处理 ${visiblePrepared} 条`, ` · Processing ${visiblePrepared}`)}</span>
         {collapsed ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronUp size={14} aria-hidden="true" />}
       </button>
       <button className="v2-queue-icon" type="button" aria-label={t("刷新列表", "Refresh list")} title={t("刷新列表", "Refresh list")}
@@ -215,7 +221,7 @@ function QueuePanel({ client, running, canPromote = false, ...binding }: QueueBi
     {query.isError && <p role="alert">{t("暂时无法读取完整队列。已有消息仍可在对话记录中查看。", "The full queue is unavailable. Existing messages remain in conversation history.")}{explanation(query.error, t)}</p>}
     {recoveryError && <p role="alert">{recoveryError}</p>}
     {notice && <p role="status">{notice}</p>}
-    <ol id={listID} hidden={collapsed}>{!collapsed && items.map((message) => <V2QueuedMessageRow key={message.id}
+    <ol id={listID} hidden={collapsed}>{!collapsed && visibleItems.map((message) => <V2QueuedMessageRow key={message.id}
       client={client} message={message} detailsID={detailsID} detailsOpen={details?.message.id === message.id}
       onDetails={(trigger) => setDetails({ message, trigger })}
       promotionUnavailable={promotionUnavailable(message)} onPromote={() => startPromotion(message)}

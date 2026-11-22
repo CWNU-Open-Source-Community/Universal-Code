@@ -12,7 +12,7 @@ test("a damaged image upload record can be left out without deleting another dra
   await page.goto(address); await reconnect();
   await page.getByRole("button", { name: "新对话", exact: true }).click();
   await page.getByRole("button", { name: "接入项目", exact: true }).click();
-  await page.getByRole("button", { name: "添加", exact: true }).click();
+  await page.getByRole("button", { name: "添加文件夹", exact: true }).click();
   await page.getByRole("textbox", { name: "项目文件夹路径", exact: true }).fill(metadata.workspace);
   await page.getByRole("button", { name: "添加", exact: true }).click();
   await page.getByRole("button", { name: "创建项目", exact: true }).click();

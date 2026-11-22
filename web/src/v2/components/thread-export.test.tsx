@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { APIClient } from "../../api/client";
 import type { ThreadTranscriptItemView } from "../../api/types";
@@ -24,7 +24,9 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); localStorage.clear(); });
 
 it("downloads Markdown and text, copies the complete content and restores focus on Escape", async () => {
   const user = userEvent.setup();
-  const copy = vi.spyOn(navigator.clipboard, "writeText");
+  let completeCopy!: () => void;
+  const copy = vi.spyOn(navigator.clipboard, "writeText").mockImplementationOnce(() =>
+    new Promise<void>((resolve) => { completeCopy = resolve; }));
   render(<LocaleProvider><Fixture client={fixture()} /></LocaleProvider>);
   await user.click(screen.getByRole("button", { name: "Export" }));
   await screen.findByText("已准备 1 条消息。");
@@ -34,8 +36,15 @@ it("downloads Markdown and text, copies the complete content and restores focus 
   await user.selectOptions(screen.getByRole("combobox", { name: "文件格式" }), "text");
   await user.click(screen.getByRole("button", { name: "下载文件" }));
   expect(downloadTextFile).toHaveBeenLastCalledWith("conversation-导出验证.txt", "text/plain;charset=utf-8", expect.stringContaining("导出验证\n\n用户"));
-  await user.click(screen.getByRole("button", { name: "复制文本" }));
+  const copyButton = screen.getByRole("button", { name: "复制文本" });
+  await user.click(copyButton);
   expect(copy).toHaveBeenCalledWith(expect.stringContaining("完整正文"));
+  expect(copyButton).toHaveAttribute("aria-disabled", "true");
+  expect(screen.getByRole("button", { name: "下载文件" })).toBeDisabled();
+  expect(copyButton).toHaveFocus();
+  await user.keyboard("{Enter}");
+  expect(copy).toHaveBeenCalledOnce();
+  await act(async () => { completeCopy(); });
   expect(screen.getByText("已复制对话。")).toBeVisible();
   await user.keyboard("{Escape}");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

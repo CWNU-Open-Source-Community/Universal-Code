@@ -203,6 +203,33 @@ func TestGeneratedSummarySurvivesNextCompressionAndRollingSuccessor(t *testing.T
 	}
 }
 
+func TestFailedGenerationRetainsPreviousTextAndNewOperatorSource(t *testing.T) {
+	const previousText = "The initial CLI accepts nonnegative amounts."
+	next := rollingMessage(7, "user", "Accept signed amounts for refunds.", "operator_message", true)
+	calls := 0
+	manager := NewManager(&memoryStore{}, Config{PreserveRecentMessages: 1}).WithSummaryGenerator(summaryGeneratorFunc(
+		func(_ context.Context, request SummaryGenerationRequest) (SummaryGenerationResponse, error) {
+			calls++
+			if request.HasPrevious {
+				return SummaryGenerationResponse{}, errors.New("provider unavailable")
+			}
+			return SummaryGenerationResponse{Text: previousText, Receipt: generationReceipt(request)}, nil
+		}), handoffContentSHA256("fallback-history"))
+	first, err := manager.Compact(t.Context(), "s", "ws-rolling", generatedMessages())
+	if err != nil || !first.Generated {
+		t.Fatalf("first compaction: generated=%v err=%v", first.Generated, err)
+	}
+	messages := append(first.Preserved, next, rollingMessage(8, "assistant", "Verification pending.", "assistant_output", false))
+	second, err := manager.Compact(t.Context(), "s", "ws-rolling", messages)
+	if err != nil || second.Generated || second.GenerationFallbackReason != "provider unavailable" || calls != 2 {
+		t.Fatalf("replacement failure: generated=%v calls=%d fallback=%q err=%v", second.Generated, calls, second.GenerationFallbackReason, err)
+	}
+	if retained := generatedFromSummaryContent(second.Summary.Content); retained == nil || retained.Text != previousText {
+		t.Fatal("fallback lost the previous generated handoff")
+	}
+	requireActualCorrection(t, second.Summary, next)
+}
+
 func TestParseGeneratedSummaryRejectsModelAuthorityAndOversize(t *testing.T) {
 	valid := `{"version":"generated_handoff.v1","summary":"目标与限制明确，纠正已采纳；完成读取，仍待验证；证据是原工具记录。"}`
 	if text, err := ParseSummaryGenerationText(valid); err != nil || text == "" {

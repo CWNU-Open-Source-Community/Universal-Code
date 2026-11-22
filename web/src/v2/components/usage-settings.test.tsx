@@ -141,8 +141,8 @@ it("shows a useful empty state while preserving an explicitly recorded zero cost
   await screen.findByRole("region", { name: "Usage overview" });
   expect(screen.getByRole("status")).toHaveTextContent("No model calls in this period.");
   expect(screen.getByText("$0.00")).toBeInTheDocument();
-  expect(screen.getByText("No model usage yet")).toBeInTheDocument();
-  expect(screen.getByText("No conversation usage yet")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Models" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Recent conversations" })).not.toBeInTheDocument();
 });
 
 it("exports the loaded usage as CSV with totals, day, model, and session rows", async () => {

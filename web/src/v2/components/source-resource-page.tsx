@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronDown } from "lucide-react";
 import type { APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
 import { threadActivityLabel } from "../../lib/thread-activity-label";
@@ -18,20 +18,18 @@ export function SourceResourcePage({ client, title, resourceID, threadID, onBack
 }) {
   const { t } = useLocale();
   const backLabel = threadID ? t("返回对话", "Back to conversation") : t("返回历史记录", "Back to history");
-  return <section className="v2-resource-page">
+  return <section aria-label={title} className="v2-resource-page">
     <header><button onClick={onBack} type="button"><ArrowLeft aria-hidden="true" size={16} />{backLabel}</button>
-      <strong>{title}</strong></header>
-    <div className="v2-resource-scope">
       {threadID && <SourceThreadActivity client={client} threadID={threadID} />}
-      <details className="v2-resource-details"><summary>{t("来源与设置", "Source and settings")}</summary>
-        {resourceID && <p>{t("当前记录：", "Current record: ")}<code>{resourceID}</code></p>}
-        {threadID ? <>
-          <p>{t("来源对话：", "Source conversation: ")}<code>{threadID}</code></p>
-          <p>{t("上方显示来源对话的当前活动；下方是所选记录，可能来自较早的执行。", "The source conversation's current activity appears above. The selected record below may come from an earlier run.")}</p>
-        </> : <p>{t("此记录尚未绑定来源对话。", "This record is not linked to a source conversation.")}</p>}
-        <button onClick={() => onOpenSettings("general")} type="button">{t("设置", "Settings")}</button>
+      <details className="v2-resource-details">
+        <summary>{t("来源与设置", "Source and settings")}<ChevronDown aria-hidden="true" size={14} /></summary>
+        <div className="v2-resource-details-content">
+          {resourceID && <p>{t("当前记录：", "Current record: ")}<code>{resourceID}</code></p>}
+          {threadID && <p>{t("来源对话：", "Source conversation: ")}<code>{threadID}</code></p>}
+          <button onClick={() => onOpenSettings("general")} type="button">{t("设置", "Settings")}</button>
+        </div>
       </details>
-    </div>
+    </header>
     <div className="v2-resource-body">
       {resourceID ? children : <p role="alert">{threadID
         ? t("地址缺少记录标识，请返回对话重新选择。", "The address has no record ID. Return to the conversation and select a record.")

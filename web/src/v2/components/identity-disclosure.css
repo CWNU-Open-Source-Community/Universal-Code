@@ -15,5 +15,4 @@
 .v2-identity-copy-status { line-height: 1.5; margin: 8px 0 0; }
 .v2-identity-copy-status:empty { margin: 0; }
 .v2-file-drawer-context { align-items: start; border-bottom: 1px solid var(--v2-border); display: grid; flex-shrink: 0; gap: 4px; grid-template-columns: minmax(0, 1fr); padding: 10px 18px; }
-.v2-file-drawer-context > p { color: var(--v2-muted); font-size: 12px; line-height: 1.6; margin: 4px 0; }
 .v2-file-drawer-context > .v2-identity-disclosure { width: 100%; }

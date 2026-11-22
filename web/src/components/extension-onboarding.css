@@ -21,10 +21,8 @@
 .extension-probe-results { max-height: 240px; overflow-y: auto; overflow-wrap: anywhere; }
 .extension-fingerprint code { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
 .extension-steps { display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 0 0 4px; padding: 0; list-style: none; }
-.extension-steps li { display: flex; align-items: flex-start; gap: 8px; min-width: 0; color: var(--prayu-muted); font-size: 13px; }
+.extension-steps li { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--prayu-muted); font-size: 13px; }
 .extension-step-marker { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; border: 1px solid var(--prayu-border); border-radius: 50%; font-size: 12px; }
-.extension-steps li > span:last-child { display: grid; gap: 2px; }
-.extension-steps small { font-size: 11px; font-weight: 400; }
 .extension-steps .is-current { color: var(--prayu-text); font-weight: 650; }
 .extension-steps .is-current .extension-step-marker { border-color: currentColor; }
 .extension-steps .is-complete .extension-step-marker { background: var(--prayu-control); }

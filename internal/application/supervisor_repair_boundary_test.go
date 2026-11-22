@@ -18,7 +18,7 @@ func TestConsumedToolCorrectionAtBoundaryAllowsSchedulingContinue(t *testing.T) 
 			Messages: []llm.Message{{Role: "system", Content: "original policy"}, {Role: "user", Content: "accepted task"}},
 		})
 		repair := supervisorProtocolRepairRequest(request, reason,
-			supervisorRepairContext{ThreadEndTurn: true, ToolRounds: domain.MaxSupervisorToolRounds})
+			supervisorRepairContext{ThreadEndTurn: true, ToolRounds: domain.MaxSupervisorToolRounds, BoundaryReached: true, AllowContinue: true})
 		if len(repair.Tools) != 0 || repair.Metadata["protocol_repair"] != "1" {
 			t.Fatal("boundary changed tools or the consumed repair allowance")
 		}

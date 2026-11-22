@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -36,9 +37,11 @@ func verifySupervisorResponsesReplay(t *testing.T, finalMode string) {
 	const opaque = "opaque-local-fixture-state"
 	const wireCall = "original_provider_call_123"
 	var requests atomic.Int32
+	firstInput := make(chan []map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Input []map[string]any `json:"input"`
+			Input           []map[string]any `json:"input"`
+			MaxOutputTokens int              `json:"max_output_tokens"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
@@ -46,7 +49,24 @@ func verifySupervisorResponsesReplay(t *testing.T, finalMode string) {
 			return
 		}
 		n := requests.Add(1)
+		if n == 1 {
+			firstInput <- body.Input
+			if body.MaxOutputTokens != 500 {
+				t.Errorf("initial output allowance = %d, want 500", body.MaxOutputTokens)
+			}
+		}
 		if n == 2 {
+			previous := <-firstInput
+			throughUser := 0
+			for i, item := range previous {
+				if item["role"] == "user" {
+					throughUser = i + 1
+				}
+			}
+			if body.MaxOutputTokens != 486 || throughUser == 0 || len(body.Input) < throughUser ||
+				!reflect.DeepEqual(previous[:throughUser], body.Input[:throughUser]) {
+				t.Error("settling the first call rewrote the Responses prefix through the original user input")
+			}
 			var reason, call, result bool
 			for _, item := range body.Input {
 				switch item["type"] {
@@ -150,7 +170,7 @@ func verifySupervisorResponsesReplay(t *testing.T, finalMode string) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	run := newStartedRunForProvider(t, st, p.Name(), domain.Budget{MaxTurns: 3, MaxToolCalls: 3})
+	run := newStartedRunForProvider(t, st, p.Name(), domain.Budget{MaxTurns: 3, MaxToolCalls: 3, MaxTokens: 500})
 	result, err := application.NewAgentRunner(st, router, policy.NewDefaultChecker()).WithModelRetryPolicy(application.ModelRetryPolicy{MaxAttempts: 1}).Step(t.Context(), run.ID)
 	if (err != nil) != finalFails {
 		t.Fatal(err)

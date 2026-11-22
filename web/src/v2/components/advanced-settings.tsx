@@ -59,14 +59,8 @@ export function V2SkillSettings({ client, desktop }: { client: APIClient; deskto
     }, operationKey),
   };
   return <><h1>{t("Skill 包", "Skill packages")}</h1><section className="v2-settings-section v2-shared-settings"><div className="v2-settings-card v2-skill-settings-card">
-    {desktop ? <>
-      <p>{t("先预览 ZIP 包的结构、来源与文件，再确认安装到 Code 或 Cyber 工作面。", "Preview the ZIP package's structure, source, and files before confirming installation to Code or Cyber.")}</p>
-      <button className="settings-action" onClick={() => setPreviewOpen(true)} type="button">{t("预览 Skill 包", "Preview skill package")}</button>
-      {!client.hasSkillInstallation && <p>{t("当前连接可预览包结构。具备安装权限的连接可继续确认安装。", "This connection can preview package structure. Installation requires a connection with installation permission.")}</p>}
-    </> : client.hasSkillInstallation ? <>
-      <p>{t("网页端可上传 ZIP 包或原生 SKILL.md 目录并登记到 Code。结构校验和内容解析由服务端执行。", "Upload a ZIP package or a SKILL.md directory to register it with Code. The server validates the structure and parses the content.")}</p>
-      <WebSkillInstall client={client} />
-    </> : <p role="status">{t("连接具备 Skill 安装权限的服务后，可选择 ZIP 包加入技能库。", "Connect with skill installation permission to add a ZIP package to the library.")}</p>}
+    {desktop ? <button className="settings-action" onClick={() => setPreviewOpen(true)} type="button">{t("预览 Skill 包", "Preview skill package")}</button>
+      : client.hasSkillInstallation && <WebSkillInstall client={client} />}
     <SkillPackageRegistry enabled={client.hasSkillInstallation} source={registry} />
     <SkillCatalogTrust client={client} />
   </div></section>
@@ -116,12 +110,11 @@ export function V2AboutSettings({ client, desktop }: { client: APIClient; deskto
     </> : <AboutSettings desktop={desktop} health={health.data} />}
     <details className="v2-settings-diagnostics" onToggle={(event) => setDiagnosticsOpen(event.currentTarget.open)}>
       <summary>{t("连接与网页诊断", "Connection & web diagnostics")}</summary>
-      <p>{t("这些结果来自当前连接的服务与运行环境。", "These results come from the connected service and its runtime environment.")}</p>
       {health.data && <p>{t("服务状态：", "Service status: ")}{health.data.status}</p>}
       {diagnosticsOpen && <SafeWebReadinessPanel client={client} />}
     </details>
     {!desktop && <section className="v2-settings-section"><h2>{t("当前界面连接", "Current app connection")}</h2>
-      <p>{t("断开后可重新填写连接信息。任务和已受理操作会继续在服务中运行；要停止任务，请使用任务中的停止操作。", "After disconnecting, you can enter new connection details. Tasks and accepted operations continue on the service. Use the task's stop action to stop a task.")}</p>
+      <p>{t("断开后，运行中的任务和已受理的操作会继续执行。", "Running tasks and accepted operations continue after you disconnect.")}</p>
       <button className="settings-action" onClick={() => { queryClient.clear(); disconnect(); }} type="button">{t("断开连接", "Disconnect")}</button>
     </section>}
   </div>;

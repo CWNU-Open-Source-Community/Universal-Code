@@ -1632,7 +1632,8 @@
         "skill_selection_operation.v1",
         "skill_selection_request.v1",
         "specialist_instruction.v1",
-        "specialist_instruction.v2"
+        "specialist_instruction.v2",
+        "workspace_skill_discovery.v1"
       ],
       "retired_identifiers": []
     },
@@ -4518,6 +4519,14 @@
         "internal/application/thread_context_compaction_live_test.go"
       ],
       "reason": "Redacted evidence for opt-in real-model repeated Thread compaction and continuation acceptance."
+    },
+    {
+      "identifier": "thread_compaction_quality.v1",
+      "kind": "test-fixture",
+      "sources": [
+        "internal/application/testdata/compaction-quality-cases.json"
+      ],
+      "reason": "Synthetic conversation corpus for comparing public replies after two Thread compactions."
     },
     {
       "identifier": "thread_summary_window.v99",

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -52,11 +53,16 @@ func TestBuiltinSkillSameBatchBudgetAndDuplicateRead(t *testing.T) {
 	run := startedSkillRun(t, st)
 	p := &scriptedToolProvider{responses: []*llm.ChatResponse{
 		{ToolCalls: []llm.ToolCall{builtinReadCall(t, "frontend-design", "front"), builtinReadCall(t, "run-verify", "verify"), builtinReadCall(t, "focused-checks", "overflow")}},
+		{ToolCalls: []llm.ToolCall{{ID: "record-work", Name: "work_item_create", Arguments: json.RawMessage(`{"title":"Record selected checks","priority":"high"}`)}}},
 		{ToolCalls: []llm.ToolCall{builtinReadCall(t, "frontend-design", "same-front")}},
 		textResponse(rootActionResponse(domain.RootActionContinue, "Bounded reads checked", "", "")),
 	}}
 	if _, err := newToolLoopSupervisor(st, p).Step(t.Context(), run.ID); err != nil {
 		t.Fatal(err)
+	}
+	work, err := st.ListWorkItems(t.Context(), domain.WorkItemFilter{RunID: run.ID})
+	if err != nil || len(work) != 1 || work[0].Title != "Record selected checks" {
+		t.Fatal("the intervening work-item call did not complete", err)
 	}
 	reads, err := st.ListBuiltinSkillReadCalls(t.Context(), run.ID)
 	if err != nil || len(reads) != 2 {
@@ -70,16 +76,23 @@ func TestBuiltinSkillSameBatchBudgetAndDuplicateRead(t *testing.T) {
 		}
 	}
 	requests := p.Requests()
-	if len(requests) != 3 {
+	if len(requests) != 4 {
 		t.Fatal("unexpected retries", len(requests))
 	}
 	if !hasToolResult(requests[1], string(apperror.CodeResourceExhausted)) {
 		t.Fatal("budget rejection not reported to model")
 	}
-	for _, request := range requests[1:] {
+	firstGuidance := -1
+	for step, request := range requests[1:] {
 		count := 0
-		for _, m := range request.Messages {
+		for index, m := range request.Messages {
 			if m.Role == "system" && strings.Contains(m.Content, "Model-requested embedded Skill frontend-design") {
+				if step == 1 && index != firstGuidance {
+					t.Fatalf("an unchanged embedded Skill moved from message %d to %d after its completed read", firstGuidance, index)
+				}
+				if step == 0 {
+					firstGuidance = index
+				}
 				count++
 			}
 		}
@@ -319,7 +332,22 @@ func TestBuiltinSkillPersistsAcrossSegmentsCompactionAndRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "skill-recovery.db")
 	st := openHistoryRecallStore(t, path)
 	t.Cleanup(func() { _ = st.Close() })
-	_, run := createHistoryRecallRun(t, st, "skill-recovery", "fixture\n")
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "README.md"), []byte("fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveWorkspace(t.Context(), store.WorkspaceRecord{ID: "ws-skill-recovery", Name: "skill-recovery", RootPath: workspace, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	wantNotes := domain.MaxSupervisorBoundaryContextCalls + 32
+	_, run, err := application.NewRunService(st).Create(t.Context(), application.CreateRunRequest{
+		Goal: "Review the project using the complete conversation requirements", Profile: "code", Surface: "code", Phase: "deliver",
+		WorkspaceID: "ws-skill-recovery", ModelRoute: "tool-loop/model", Interactive: true, NetworkMode: "disabled",
+		Budget: domain.Budget{MaxTurns: 100, MaxToolCalls: int64(wantNotes + 32)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	body := frontendBody(t)
 	p := newHistoryProtocolProvider(t, "tool-loop", "model")
 	loaded := false
@@ -350,16 +378,28 @@ func TestBuiltinSkillPersistsAcrossSegmentsCompactionAndRestart(t *testing.T) {
 			segments++
 			return textResponse(rootActionResponse(domain.RootActionContinue, "Continue the same bounded work", "", "")), nil
 		}
-		if notes < 34 {
-			notes++
-			args, _ := json.Marshal(map[string]string{"title": fmt.Sprintf("observation-%d", notes), "content": fmt.Sprintf("Observed isolated fixture stage %d", notes)})
-			return toolResponse(fmt.Sprintf("note-%d", notes), "note_create", string(args)), nil
+		if notes < wantNotes {
+			batch := 6
+			if rem := wantNotes - notes; rem < batch {
+				batch = rem
+			}
+			calls := make([]llm.ToolCall, 0, batch)
+			for i := 0; i < batch; i++ {
+				notes++
+				if notes == 1 {
+					args, _ := json.Marshal(map[string]string{"title": "observation-1", "content": "Observed isolated fixture stage 1"})
+					calls = append(calls, llm.ToolCall{ID: "note-1", Name: "note_create", Arguments: args})
+				} else {
+					calls = append(calls, llm.ToolCall{ID: fmt.Sprintf("note-%d", notes), Name: "history_search", Arguments: json.RawMessage(historyRecallJSON(domain.HistorySearchRequest{Query: fmt.Sprintf("stage-%d", notes), Limit: 1}))})
+				}
+			}
+			return toolBatchResponse(calls...), nil
 		}
 		return historyRecallFinish(), nil
 	}
 	turns := historyRecallTurns(st, p)
 	submitHistoryRecall(t, turns, run.ID, "skill-load-and-boundaries", "Inspect this frontend fixture and keep the relevant guidance.")
-	if notes != 34 || segments < 8 {
+	if notes != wantNotes || segments < 2 {
 		t.Fatalf("did not cross receipt retention: notes=%d segments=%d", notes, segments)
 	}
 	for i := 0; i < 24; i++ {

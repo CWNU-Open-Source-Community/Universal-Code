@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,6 +65,8 @@ type liveCompactionTransport struct {
 	previousSHA string
 	calls       []liveCompactionHTTPCall
 	blocked     int
+	// Set only for the fixed synthetic quality cases. HTTP headers are never recorded.
+	requestDirectory string
 }
 
 func (p *liveCompactionTransport) mark(phase string, round int, previousSHA string) {
@@ -90,6 +93,13 @@ func (p *liveCompactionTransport) RoundTrip(request *http.Request) (*http.Respon
 		return nil, errors.New("live compaction acceptance reached its 16-request limit")
 	}
 	index := len(p.calls)
+	if p.requestDirectory != "" && p.phase != "qualification" {
+		name := fmt.Sprintf("%02d-%s-request.json", index+1, p.phase)
+		if err := os.WriteFile(filepath.Join(p.requestDirectory, name), body, 0600); err != nil {
+			p.mu.Unlock()
+			return nil, err
+		}
+	}
 	p.calls = append(p.calls, liveCompactionHTTPCall{
 		Phase: p.phase, Round: p.round, Host: request.URL.Hostname(),
 		RequestSHA256: session.ContentSHA256(string(body)), RequestBytes: len(body),
@@ -105,6 +115,88 @@ func (p *liveCompactionTransport) RoundTrip(request *http.Request) (*http.Respon
 	}
 	p.mu.Unlock()
 	return response, err
+}
+
+func configuredLiveCompactionRegistry(t *testing.T, ctx context.Context) *modelregistry.Registry {
+	t.Helper()
+	settingsPath := os.Getenv("TRAVERSE_LIVE_MODEL_SETTINGS")
+	if settingsPath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		settingsPath = filepath.Join(home, ".cyberagent-workbench", "cyberagent.db")
+	}
+	source, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(settingsPath)+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	registry, err := modelregistry.NewFromEnvironmentWithCredentials(credential.NewSystemStore())
+	if err != nil {
+		t.Fatal("existing model credentials unavailable")
+	}
+	if err := registry.LoadRouteSettings(ctx, liveCompactionSettings{source}); err != nil {
+		t.Fatal(err)
+	}
+	return registry
+}
+
+func qualityLiveRouter(t *testing.T, ctx context.Context, dir string, ref llm.ModelRef, requestedWindow *int) (*llm.Router, *liveCompactionTransport) {
+	t.Helper()
+	if ref.Provider != "deepseek" {
+		t.Fatal("the live quality cases require a configured DeepSeek route")
+	}
+	trace := &liveCompactionTransport{base: http.DefaultTransport, requestDirectory: dir}
+	http.DefaultTransport = trace
+	t.Cleanup(func() {
+		http.DefaultTransport = trace.base
+		writeQualityArtifact(t, filepath.Join(dir, "http-calls.json"), trace.calls)
+	})
+	registry := configuredLiveCompactionRegistry(t, ctx)
+	router := registry.Router()
+	if requestedWindow != nil {
+		window := router.ContextWindow(ref)
+		window.WindowTokens = *requestedWindow
+		if err := router.SetContextWindow(ref, window); err != nil {
+			t.Fatal(err)
+		}
+	}
+	profile, err := router.HarnessProfile(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !profile.ToolCallsQualified || !profile.ToolResultsQualified || !profile.StrictJSONQualified || !profile.StreamingQualified {
+		trace.mark("qualification", 0, "")
+		st := openHistoryRecallStore(t, filepath.Join(t.TempDir(), "qualification.sqlite"))
+		defer st.Close()
+		result, err := registry.QualifyHarness(ctx, st, ref.Provider, ref.Model)
+		if err != nil || !result.Harness.RootEligible {
+			t.Fatalf("model qualification failed: status=%s error=%v", result.Status, err)
+		}
+	}
+	return router, trace
+}
+
+var runLiveCompactionQuality = flag.Bool("live-compaction-quality", false, "run the three synthetic compaction cases against the configured DeepSeek account")
+
+func TestLiveThreadCompactionQuality(t *testing.T) {
+	if !*runLiveCompactionQuality {
+		t.Skip("pass -live-compaction-quality to run the three cases against your configured DeepSeek account")
+	}
+	dir := t.TempDir()
+	if parent := os.Getenv("TRAVERSE_COMPACTION_QUALITY_DIR"); parent != "" {
+		if err := os.MkdirAll(parent, 0700); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		dir, err = os.MkdirTemp(parent, "live-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wire requests, committed summaries and public answers: %s", dir)
+	}
+	runThreadCompactionQuality(t, dir, qualityLive)
 }
 
 type liveCompactionRound struct {
@@ -126,10 +218,10 @@ func liveCompactionSummaryMarker(t *testing.T, summary contextmgr.Summary) strin
 			SHA256 string `json:"text_sha256"`
 		} `json:"generated"`
 	}
-	if err := json.Unmarshal([]byte(summary.Content), &envelope); err != nil || envelope.Generated.Text == "" || envelope.Generated.SHA256 != session.ContentSHA256(envelope.Generated.Text) {
+	if err := json.Unmarshal([]byte(summary.Content), &envelope); err != nil || envelope.Generated.Text == "" || envelope.Generated.SHA256 != session.ContentSHA256(envelope.Generated.Text) || summary.ContentSHA256 != session.ContentSHA256(summary.Content) {
 		t.Fatal("generated summary marker does not match its stored text")
 	}
-	return envelope.Generated.SHA256
+	return summary.ContentSHA256
 }
 
 // Explicitly opt in: this spends real model calls using the existing DeepSeek
@@ -177,26 +269,7 @@ func TestLiveThreadThreeCompactionsPreservePinsAndUnfinishedWork(t *testing.T) {
 		}
 	}()
 
-	settingsPath := os.Getenv("TRAVERSE_LIVE_MODEL_SETTINGS")
-	if settingsPath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			t.Fatal(err)
-		}
-		settingsPath = filepath.Join(home, ".cyberagent-workbench", "cyberagent.db")
-	}
-	source, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(settingsPath)+"?mode=ro")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer source.Close()
-	registry, err := modelregistry.NewFromEnvironmentWithCredentials(credential.NewSystemStore())
-	if err != nil {
-		t.Fatal("existing model credentials unavailable")
-	}
-	if err := registry.LoadRouteSettings(ctx, liveCompactionSettings{source}); err != nil {
-		t.Fatal(err)
-	}
+	registry := configuredLiveCompactionRegistry(t, ctx)
 	modelRoute := os.Getenv("TRAVERSE_LIVE_MODEL_ROUTE")
 	if modelRoute == "" {
 		modelRoute = "deepseek/deepseek-v4-flash"

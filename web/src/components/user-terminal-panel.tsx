@@ -571,9 +571,8 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
         <Quote aria-hidden="true" size={14} />
         <span>{t("引用选中日志", "Quote selection")}</span>
       </button>}
-      <span className={`user-terminal-state ${session?.state ?? "idle"}`}
-        title={t("这是终端进程的状态，不代表 Agent 或某条命令正在执行。", "This describes the shell process, not Agent activity or whether a command is executing.")}>
-        {!enabled ? t("未启用", "Unavailable") : !session
+      <span className={`user-terminal-state ${session?.state ?? "idle"}`}>
+        {!enabled ? t("桌面终端未启用", "Desktop terminal disabled") : !session
           ? recoverable ? t("上次会话已结束 · 不自动重跑旧命令", "Previous session ended · commands are not rerun") : t("未启动", "Not started")
           : session.state === "running" ? t("终端已连接", "Terminal connected")
             : session.state === "starting" ? t("正在启动", "Starting")
@@ -592,7 +591,6 @@ function UserTerminalSession({ runID, sessionID, onSession, onQuote, onReturnToD
           : t("草稿暂时无法追加，请返回聊天处理草稿冲突或保存错误后重试。", "Could not append to the draft. Return to chat to resolve its conflict or saving error, then retry.")}
       {onReturnToDraft && <button className="compact-command" onClick={onReturnToDraft} type="button">{t("返回聊天草稿", "Return to chat draft")}</button>}
     </p>}
-    {!enabled && <p>{t("请在 Desktop 中启用用户终端并核对执行权限，再启动。", "Enable the user terminal in Desktop and review execution permissions, then start it.")}</p>}
     <div aria-label={t("用户终端", "User terminal")} className="user-terminal-host" ref={hostRef} />
   </div>;
 }

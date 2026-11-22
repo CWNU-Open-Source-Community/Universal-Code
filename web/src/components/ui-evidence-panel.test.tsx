@@ -264,7 +264,6 @@ describe("UIEvidencePanel", () => {
       expect(badge).not.toHaveClass("status-passed");
     }
     expect(screen.getByText("通过")).toHaveClass("status-passed");
-    expect(screen.getByText(/截图和下载内容供你核对页面表现/)).toBeInTheDocument();
     expect(client.uiEvidence).toHaveBeenCalledWith("run-1", expect.any(AbortSignal));
     expect(client.uiEvidenceBundle).toHaveBeenCalledWith("attempt-not-run", expect.any(AbortSignal));
     expect(screen.queryByText(/历史证据状态待确认/)).not.toBeInTheDocument();
@@ -280,7 +279,7 @@ describe("UIEvidencePanel", () => {
     expect(await screen.findByText(/历史证据状态待确认/)).toHaveTextContent("历史证据状态待确认");
     expect(screen.getByText(/历史证据状态待确认/)).toHaveTextContent("Windows Desktop");
     expect(screen.queryByText("HTTP API endpoint was not found")).not.toBeInTheDocument();
-    expect(screen.queryByText("还没有浏览器验证。展开下方启动表单，填写应用启动方式并核对步骤后开始。")).not.toBeInTheDocument();
+    expect(screen.queryByText("还没有浏览器验证。")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "刷新 UI 证据" }));
     await waitFor(() => expect(uiEvidence).toHaveBeenCalledTimes(2));
     expect(uiEvidence).toHaveBeenCalledWith("run-1", expect.any(AbortSignal));
@@ -296,7 +295,7 @@ describe("UIEvidencePanel", () => {
       uiEvidence: vi.fn().mockRejectedValue(error) } as unknown as APIClient);
     expect(await screen.findByRole("alert")).toHaveTextContent(error.message);
     expect(screen.queryByText(/历史证据状态待确认/)).not.toBeInTheDocument();
-    expect(screen.queryByText("还没有浏览器验证。展开下方启动表单，填写应用启动方式并核对步骤后开始。")).not.toBeInTheDocument();
+    expect(screen.queryByText("还没有浏览器验证。")).not.toBeInTheDocument();
   });
 
   it("does not keep declaring empty history when a later refresh cannot read the endpoint", async () => {
@@ -306,7 +305,7 @@ describe("UIEvidencePanel", () => {
       uiEvidence } as unknown as APIClient;
     const user = userEvent.setup();
     renderPanel(client);
-    await screen.findByText("还没有浏览器验证。请在上方验证设置中保存启用偏好，重启后连接当前服务。");
+    await screen.findByText("还没有浏览器验证。");
     await user.click(screen.getByRole("button", { name: "刷新 UI 证据" }));
     await screen.findByText(/历史证据状态待确认/);
     expect(screen.queryByText(/还没有浏览器验证/)).not.toBeInTheDocument();
@@ -322,7 +321,7 @@ describe("UIEvidencePanel", () => {
     const user = userEvent.setup();
     renderPanel(client);
 
-    await screen.findByText("还没有浏览器验证。展开下方启动表单，填写应用启动方式并核对步骤后开始。");
+    await screen.findByText("还没有浏览器验证。");
     await user.click(screen.getByText("准备并启动浏览器验证"));
     await user.type(screen.getByLabelText("应用名称"), "项目预览");
     await user.type(screen.getByLabelText("启动命令（PowerShell）"), "npm run preview -- --port 5178");
@@ -346,11 +345,11 @@ describe("UIEvidencePanel", () => {
   });
 
   it.each([
-    ["missing_control_credential", "先刷新列表以查看历史证据"],
-    ["ui_evidence_disabled", "在下方验证设置中启用浏览器验证"],
-    ["run_execution_disabled", "恢复浏览器验证所需的任务执行能力"],
-    ["browser_cdp_control_disabled", "重新连接当前控制服务"],
-    [undefined, "先刷新列表以查看历史记录"],
+    ["missing_control_credential", "启动或取消浏览器验证需要控制凭证"],
+    ["ui_evidence_disabled", "浏览器验证未启用。"],
+    ["run_execution_disabled", "浏览器验证需要任务执行权限"],
+    ["browser_cdp_control_disabled", "当前连接未启用浏览器控制"],
+    [undefined, "当前连接无法启动浏览器验证"],
   ])("explains unavailable UI evidence accurately for %s and keeps launch disabled", async (reason, message) => {
     const startUIEvidence = vi.fn();
     const client = { hasUIEvidence: false, uiEvidenceUnavailableReason: reason,
@@ -364,8 +363,7 @@ describe("UIEvidencePanel", () => {
     expect(container.textContent).toContain("--enable-run-execution");
     expect(container.textContent).toContain("--enable-browser-cdp-control");
     expect(container.textContent).not.toContain("当前连接为只读");
-    await screen.findByText("还没有浏览器验证。请在上方验证设置中保存启用偏好，重启后连接当前服务。");
-    expect(screen.queryByText("还没有浏览器验证。展开下方启动表单，填写应用启动方式并核对步骤后开始。")).not.toBeInTheDocument();
+    await screen.findByText("还没有浏览器验证。");
     await user.click(screen.getByText("高级：启动参数与独立 CLI"));
     expect(screen.getByText(/仅在手工启动 Windows Desktop 时/)).toBeVisible();
     await user.click(screen.getByText("准备并启动浏览器验证"));

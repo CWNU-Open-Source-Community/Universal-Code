@@ -6,6 +6,7 @@ import { desktopBridgeAvailable, desktopErrorMessage, loadDesktopBootstrap } fro
 import { useConnectionStore } from "../state/connection";
 import { useLocale } from "../lib/locale";
 import { PrayuBrand } from "./prayu-brand";
+import "./connection-gate.css";
 
 export function ConnectionGate() {
   const { t } = useLocale();
@@ -130,22 +131,20 @@ export function ConnectionGate() {
 
   return (
     <main className="connection-page">
-      <form className="connection-panel" onSubmit={submit}>
-        <PrayuBrand className="connection-brand" variant="hero" />
-        <div className="connection-heading">
-          <h1>{t("连接 Universal-Code", "Connect to Universal-Code")}</h1>
-          <p>{t("填写服务提供的访问令牌，打开项目和任务。", "Enter the access token supplied by your service to open projects and tasks.")}</p>
-        </div>
+      <form aria-labelledby="connect-heading" className="connection-panel" onSubmit={submit}>
+        <header className="connection-heading">
+          <PrayuBrand variant="icon" />
+          <h1 id="connect-heading">{t("连接 Universal-Code", "Connect to Universal-Code")}</h1>
+        </header>
         {connecting && desktopBridgeAvailable() &&
-          <div className="desktop-connecting"><LoaderCircle aria-hidden="true" className="spin" size={16} />{t("启动桌面工作台", "Starting desktop workbench")}</div>}
-        <label className="field-label" htmlFor="read-token">{t("查看令牌", "Read access token")}</label>
-        <div className="token-row">
+          <div className="desktop-connecting" role="status"><LoaderCircle aria-hidden="true" className="spin" size={16} />{t("启动桌面工作台", "Starting desktop workbench")}</div>}
+        <div className="connection-field">
+          <label htmlFor="read-token">{t("查看令牌", "Read access token")}</label>
           <input
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect="off"
             id="read-token"
-            aria-describedby="read-token-help"
             name="read-token"
             onChange={(event) => setToken(event.target.value)}
             placeholder="CYBERAGENT_API_TOKEN"
@@ -153,30 +152,27 @@ export function ConnectionGate() {
             type="password"
             value={token}
           />
-          <button aria-label={t("连接", "Connect")} disabled={!token.trim() || connecting} title={t("连接", "Connect")} type="submit">
-            {connecting ? <LoaderCircle aria-hidden="true" className="spin" size={18} /> : <ArrowRight aria-hidden="true" size={18} />}
-          </button>
         </div>
-        <p className="connection-token-help" id="read-token-help">{t("用于查看项目、对话和执行记录。", "View projects, conversations and execution history.")}</p>
-        <label className="field-label optional-token-label" htmlFor="control-token">
-          {t("操作令牌", "Control access token")} <span>{t("可选", "optional")}</span>
-        </label>
-        <input
-          autoCapitalize="none"
-          autoComplete="off"
-          autoCorrect="off"
-          className="control-token-input"
-          id="control-token"
-          aria-describedby="control-token-help"
-          name="control-token"
-          onChange={(event) => setControlToken(event.target.value)}
-          placeholder="CYBERAGENT_API_CONTROL_TOKEN"
-          spellCheck={false}
-          type="password"
-          value={controlToken}
-        />
-        <p className="connection-token-help" id="control-token-help">{t("创建任务和执行操作时填写，具体操作范围取决于服务设置。", "Add this token to create tasks and use the actions enabled by your service.")}</p>
+        <div className="connection-field">
+          <label htmlFor="control-token">{t("操作令牌", "Control access token")} <span>{t("可选", "optional")}</span></label>
+          <input
+            autoCapitalize="none"
+            autoComplete="off"
+            autoCorrect="off"
+            id="control-token"
+            name="control-token"
+            onChange={(event) => setControlToken(event.target.value)}
+            placeholder="CYBERAGENT_API_CONTROL_TOKEN"
+            spellCheck={false}
+            type="password"
+            value={controlToken}
+          />
+        </div>
         {error && <div className="connection-error" role="alert">{error}</div>}
+        <button className="connection-submit" disabled={!token.trim() || connecting} type="submit">
+          {t("连接", "Connect")}
+          {connecting ? <LoaderCircle aria-hidden="true" className="spin" size={16} /> : <ArrowRight aria-hidden="true" size={16} />}
+        </button>
       </form>
     </main>
   );

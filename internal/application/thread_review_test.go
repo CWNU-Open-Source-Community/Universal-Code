@@ -170,6 +170,7 @@ func TestThreadReviewLinkedWorktreeAndUnbornGitAreReadOnly(t *testing.T) {
 	git := func(args ...string) string {
 		t.Helper()
 		command := exec.Command("git", append([]string{"-c", "user.name=Review fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false"}, args...)...)
+		hideSubprocessWindow(command)
 		output, err := command.CombinedOutput()
 		if err != nil {
 			t.Fatalf("fixture git %v: %v %s", args, err, output)

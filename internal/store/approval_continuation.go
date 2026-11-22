@@ -12,6 +12,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/events"
+	"cyberagent-workbench/internal/fileedit"
 	"cyberagent-workbench/internal/idgen"
 	"cyberagent-workbench/internal/runmutation"
 	"cyberagent-workbench/internal/runner"
@@ -21,13 +22,14 @@ import (
 const approvalContinuationActor = "approval_continuation"
 
 type approvalContinuationContext struct {
-	ThreadID         string `json:"thread_id"`
-	OriginTurn       int    `json:"origin_turn"`
-	OriginAttemptID  string `json:"origin_attempt_id"`
-	UserMessageID    int64  `json:"user_message_id"`
-	Evidence         string `json:"evidence"`
-	ScopeFingerprint string `json:"scope_fingerprint"`
-	BatchStartTurn   int    `json:"batch_start_turn"`
+	ThreadID            string   `json:"thread_id"`
+	OriginTurn          int      `json:"origin_turn"`
+	OriginAttemptID     string   `json:"origin_attempt_id"`
+	UserMessageID       int64    `json:"user_message_id"`
+	Evidence            string   `json:"evidence"`
+	ScopeFingerprint    string   `json:"scope_fingerprint"`
+	BatchStartTurn      int      `json:"batch_start_turn"`
+	ApprovedFileEditIDs []string `json:"approved_file_edit_ids,omitempty"`
 }
 
 // PrepareApprovalContinuation admits only a completed model wait whose exact
@@ -46,14 +48,16 @@ func (s *SQLiteStore) PrepareApprovalContinuation(ctx context.Context, runID, ki
 	if err := lockRunControlTx(ctx, tx, runID); err != nil {
 		return empty, false, err
 	}
-	tool, field := "workspace_change", "$.metadata.edit_id"
-	if kind == "host_command" {
-		tool, field = "host_command_propose", "$.metadata.proposal_id"
-	}
 	var origin approvalContinuationContext
-	err = tx.QueryRowContext(ctx, `SELECT turn,attempt_id FROM run_supervisor_tool_calls
-		WHERE run_id=? AND tool_name=? AND status='completed' AND json_extract(result_json,?)=?
-		ORDER BY turn,round,position LIMIT 1`, runID, tool, field, proposalID).Scan(&origin.OriginTurn, &origin.OriginAttemptID)
+	if kind == "host_command" {
+		err = tx.QueryRowContext(ctx, `SELECT turn,attempt_id FROM run_supervisor_tool_calls
+			WHERE run_id=? AND tool_name='host_command_propose' AND status='completed' AND json_extract(result_json,'$.metadata.proposal_id')=?
+			ORDER BY turn,round,position LIMIT 1`, runID, proposalID).Scan(&origin.OriginTurn, &origin.OriginAttemptID)
+	} else {
+		err = tx.QueryRowContext(ctx, `SELECT turn,attempt_id FROM run_supervisor_tool_calls
+			WHERE run_id=? AND tool_name IN ('workspace_change','workspace_delete') AND status='completed' AND json_extract(result_json,'$.metadata.edit_id')=?
+			ORDER BY turn,round,position LIMIT 1`, runID, proposalID).Scan(&origin.OriginTurn, &origin.OriginAttemptID)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return empty, false, nil
 	}
@@ -130,11 +134,16 @@ func (s *SQLiteStore) PrepareApprovalContinuation(ctx context.Context, runID, ki
 	if err != nil {
 		return empty, false, err
 	}
-	facts, ready, err := approvalContinuationFactsTx(ctx, tx, run, origin)
+	facts, approvedEditIDs, ready, err := approvalContinuationFactsTx(ctx, tx, run, origin)
 	if err != nil || !ready {
 		return empty, false, err
 	}
-	origin.Evidence = "System-recorded operator review results for the preceding model wait. This is not a new user message or broader authorization. Continue the original task using these exact decisions. File approval authorizes only the existing proposal; obtain its current status and use normal workspace_apply checks if needed. A denied proposal must not be applied. Host results below are already executed: do not rerun those commands. Do not claim verification beyond their recorded result.\n" + facts
+	origin.ApprovedFileEditIDs = approvedEditIDs
+	if len(approvedEditIDs) > 0 {
+		origin.Evidence = "System-recorded operator review results for the preceding model wait. This is not a new user message or broader authorization. Continue the original task using these exact decisions. Approved file proposals are applied directly by the host during this continuation; check the direct file apply result recorded below (applied changes are already written to the workspace and must not be re-applied; failed edits must be inspected before retrying). A denied proposal must not be applied. Host results below are already executed: do not rerun those commands. Do not claim verification beyond their recorded result.\n" + facts
+	} else {
+		origin.Evidence = "System-recorded operator review results for the preceding model wait. This is not a new user message or broader authorization. Continue the original task using these exact decisions. Approved file edits reported as applied are already written to the workspace and must not be re-applied; failed edits must be inspected before retrying. A denied proposal must not be applied. Host results below are already executed: do not rerun those commands. Do not claim verification beyond their recorded result.\n" + facts
+	}
 	message, err := getOperatorSteeringMessageTx(ctx, tx, messageID)
 	if err != nil {
 		return empty, false, err
@@ -160,19 +169,19 @@ func (s *SQLiteStore) PrepareApprovalContinuation(ctx context.Context, runID, ki
 	return value, true, tx.Commit()
 }
 
-func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run, origin approvalContinuationContext) (string, bool, error) {
+func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run, origin approvalContinuationContext) (string, []string, bool, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT tool_name,result_json FROM run_supervisor_tool_calls call
 		WHERE run_id=? AND turn BETWEEN ? AND ? AND status='completed'
-		AND tool_name IN ('workspace_change','host_command_propose')
+		AND tool_name IN ('workspace_change','workspace_delete','host_command_propose')
 		AND (attempt_id=? OR EXISTS (SELECT 1 FROM operator_steering_deliveries delivery JOIN operator_steering_messages message ON message.id=delivery.message_id
 		 WHERE delivery.run_id=call.run_id AND delivery.attempt_id=call.attempt_id AND delivery.turn=call.turn AND delivery.status IN ('committed','superseded') AND message.session_message_id=?)
 		 OR EXISTS (SELECT 1 FROM run_events started JOIN run_events final ON final.run_id=started.run_id AND final.subject_id=? AND final.type='agent.turn_started' AND final.source='run_supervisor'
 		 WHERE started.run_id=call.run_id AND started.subject_id=call.attempt_id AND started.type='agent.turn_started' AND started.source='run_supervisor'
 		 AND COALESCE(json_extract(started.payload_json,'$.approval_continuation_handoff_id'),'')!=''
 		 AND json_extract(started.payload_json,'$.approval_continuation_handoff_id')=json_extract(final.payload_json,'$.approval_continuation_handoff_id')))
-		 ORDER BY turn,round,position LIMIT 33`, run.ID, origin.BatchStartTurn, origin.OriginTurn, origin.OriginAttemptID, origin.UserMessageID, origin.OriginAttemptID)
+		 ORDER BY turn,round,position LIMIT ?`, run.ID, origin.BatchStartTurn, origin.OriginTurn, origin.OriginAttemptID, origin.UserMessageID, origin.OriginAttemptID, domain.MaxSupervisorBoundaryContextCalls+1)
 	if err != nil {
-		return "", false, err
+		return "", nil, false, err
 	}
 	type item struct{ tool, body string }
 	var items []item
@@ -180,62 +189,77 @@ func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run
 		var v item
 		if err := rows.Scan(&v.tool, &v.body); err != nil {
 			_ = rows.Close()
-			return "", false, err
+			return "", nil, false, err
 		}
 		items = append(items, v)
 	}
 	err = rows.Err()
 	_ = rows.Close()
 	if err != nil {
-		return "", false, err
+		return "", nil, false, err
 	}
-	if len(items) == 0 || len(items) > 32 {
-		return "", false, nil
+	if len(items) == 0 || len(items) > domain.MaxSupervisorBoundaryContextCalls {
+		return "", nil, false, nil
 	}
 	var facts strings.Builder
+	var approvedEditIDs []string
+	seenApproved := make(map[string]struct{})
 	for _, item := range items {
 		var result struct {
 			Metadata map[string]string `json:"metadata"`
 		}
 		if err := json.Unmarshal([]byte(item.body), &result); err != nil {
-			return "", false, err
+			return "", nil, false, err
 		}
-		if item.tool == "workspace_change" {
+		if item.tool == "workspace_change" || item.tool == "workspace_delete" {
 			id := result.Metadata["edit_id"]
 			if !domain.ValidAgentID(id) {
-				return "", false, nil
+				return "", nil, false, nil
 			}
-			var status, approvalStatus, path, original, proposed, workspaceID string
-			err := tx.QueryRowContext(ctx, `SELECT edit.status,approval.status,edit.path,edit.original_hash,edit.proposed_hash,edit.workspace_id
+			var status, approvalStatus, path, original, proposed, workspaceID, operationKind string
+			err := tx.QueryRowContext(ctx, `SELECT edit.status,approval.status,edit.path,edit.original_hash,edit.proposed_hash,edit.workspace_id,edit.operation_kind
 				FROM file_edits edit JOIN tool_approvals approval ON approval.proposal_id=edit.id
 				WHERE edit.id=? AND edit.session_id=? AND approval.run_id=? AND approval.session_id=edit.session_id
 				AND approval.workspace_id=edit.workspace_id AND approval.action_class='workspace_write'`, id, run.SessionID, run.ID).
-				Scan(&status, &approvalStatus, &path, &original, &proposed, &workspaceID)
+				Scan(&status, &approvalStatus, &path, &original, &proposed, &workspaceID, &operationKind)
 			if err != nil {
-				return "", false, err
+				return "", nil, false, err
 			}
-			if ((status != "approved" && status != "applied" && status != "failed") || approvalStatus != "approved") && (status != "denied" || approvalStatus != "denied") {
-				return "", false, nil
+			if ((status != fileedit.StatusApproved && status != fileedit.StatusApplied && status != fileedit.StatusFailed) || approvalStatus != "approved") && (status != fileedit.StatusDenied || approvalStatus != "denied") {
+				return "", nil, false, nil
 			}
 			if err := requireFileEditWorkspaceTx(ctx, tx, run.SessionID, workspaceID, false); err != nil {
-				return "", false, err
+				return "", nil, false, err
 			}
-			fmt.Fprintf(&facts, "File proposal %s: %s; path %q; original SHA256 %s; proposed SHA256 %s. No file write is implied by approval; applied/failed records must not be blindly repeated.\n", id, status, path, original, proposed)
+			switch status {
+			case fileedit.StatusApplied:
+				fmt.Fprintf(&facts, "File proposal %s (%s): applied; path %q; original SHA256 %s; proposed SHA256 %s. The approved change has already been written to the workspace; do not re-apply or repeat this edit.\n", id, operationKind, path, original, proposed)
+			case fileedit.StatusFailed:
+				fmt.Fprintf(&facts, "File proposal %s (%s): failed; path %q; original SHA256 %s; proposed SHA256 %s. Applying the approved change failed (such as a workspace conflict or policy check); inspect the current workspace state before proposing any replacement.\n", id, operationKind, path, original, proposed)
+			case fileedit.StatusDenied:
+				fmt.Fprintf(&facts, "File proposal %s (%s): denied; path %q; original SHA256 %s; proposed SHA256 %s. A denied proposal must not be applied.\n", id, operationKind, path, original, proposed)
+			default:
+				if _, exists := seenApproved[id]; !exists {
+					seenApproved[id] = struct{}{}
+					approvedEditIDs = append(approvedEditIDs, id)
+				}
+				fmt.Fprintf(&facts, "File proposal %s (%s): %s; path %q; original SHA256 %s; proposed SHA256 %s. Approved by operator; the host applies approved file changes directly during this continuation (check the direct file apply result recorded below and do not repeat this edit).\n", id, operationKind, status, path, original, proposed)
+			}
 		} else {
 			id := result.Metadata["proposal_id"]
 			if !domain.ValidAgentID(id) {
-				return "", false, nil
+				return "", nil, false, nil
 			}
 			proposal, err := getHostCommandProposal(ctx, tx, id)
 			if err != nil {
-				return "", false, err
+				return "", nil, false, err
 			}
 			if proposal.RunID != run.ID || proposal.SessionID != run.SessionID {
-				return "", false, apperror.New(apperror.CodeConflict, "Host continuation crossed its Run")
+				return "", nil, false, apperror.New(apperror.CodeConflict, "Host continuation crossed its Run")
 			}
 			review, found, err := getHostCommandReviewByProposal(ctx, tx, id)
 			if err != nil || !found {
-				return "", false, err
+				return "", nil, false, err
 			}
 			if review.Decision == runner.HostCommandReviewDeny {
 				fmt.Fprintf(&facts, "Host proposal %s: denied, not executed.\n", id)
@@ -243,15 +267,15 @@ func approvalContinuationFactsTx(ctx context.Context, tx *sql.Tx, run domain.Run
 			}
 			value, receipt, found, err := getHostCommandProposalResult(ctx, tx, id)
 			if err != nil || !found {
-				return "", false, err
+				return "", nil, false, err
 			}
 			if value.RunID != run.ID || value.SessionID != run.SessionID || value.ProposalID != id || value.ReviewID != review.ID {
-				return "", false, apperror.New(apperror.CodeConflict, "Host continuation result binding is invalid")
+				return "", nil, false, apperror.New(apperror.CodeConflict, "Host continuation result binding is invalid")
 			}
 			fmt.Fprintf(&facts, "Host proposal %s: result %s; receipt %s; exit %d; timed_out %t; cancelled %t; stdout_truncated %t; stderr_truncated %t. Its saved output is already in this Session.\n", id, value.ID, receipt.RequestID, receipt.ExitCode, receipt.TimedOut, receipt.Cancelled, receipt.StdoutTruncated, receipt.StderrTruncated)
 		}
 	}
-	return facts.String(), true, nil
+	return facts.String(), approvedEditIDs, true, nil
 }
 
 func loadApprovalContinuationTx(ctx context.Context, q hostCommandProposalQueryer, handoff domain.RunExecutionHandoff) (domain.ApprovalContinuation, error) {
@@ -285,6 +309,7 @@ func loadApprovalContinuationTx(ctx context.Context, q hostCommandProposalQuerye
 		return value, apperror.New(apperror.CodeConflict, "Approval continuation original input is invalid")
 	}
 	value.ThreadID, value.OriginTurn, value.OriginAttemptID, value.UserMessageID, value.Input = origin.ThreadID, origin.OriginTurn, origin.OriginAttemptID, origin.UserMessageID, original.Content
+	value.ApprovedFileEditIDs = append([]string(nil), origin.ApprovedFileEditIDs...)
 	if err := q.QueryRowContext(ctx, `SELECT image_count,attachment_count FROM operator_steering_messages WHERE id=? AND run_id=?`, handoff.Items[0].MessageID, handoff.Operation.RunID).Scan(&value.ImageCount, &value.AttachmentCount); err != nil {
 		return value, err
 	}

@@ -14,6 +14,7 @@ import (
 	"cyberagent-workbench/internal/events"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/scriptprocess"
+	"cyberagent-workbench/internal/toolbudget"
 	"cyberagent-workbench/internal/toolgateway"
 	"cyberagent-workbench/internal/toolrun"
 )
@@ -265,3 +266,64 @@ func createRunArtifactTestRun(t *testing.T, ctx context.Context, st *SQLiteStore
 	}
 	return mission, run
 }
+
+func TestSQLiteRunArtifactCapturesRootCodeIntelToolsByInvocationID(t *testing.T) {
+	st := openRunArtifactTestStore(t)
+	ctx := context.Background()
+	_, run := createRunArtifactTestRun(t, ctx, st, "root code_* artifact capture")
+	if _, err := application.NewRunService(st).Start(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	lease := acquireTestRunExecutionLease(t, ctx, st, run.ID)
+
+	codeTools := []string{
+		"code_workspace_symbols",
+		"code_document_symbols",
+		"code_definition",
+		"code_references",
+		"code_implementation",
+		"code_hover",
+		"code_signature_help",
+		"code_diagnostics",
+		"code_call_hierarchy",
+		"code_type_hierarchy",
+	}
+	for _, toolName := range codeTools {
+		t.Run(toolName, func(t *testing.T) {
+			usage, err := st.ChargeToolCall(ctx, toolbudget.ChargeRequest{
+				RunID:           run.ID,
+				SessionID:       run.SessionID,
+				WorkspaceID:     "ws-artifact",
+				ToolName:        toolName,
+				ActionClass:     string(toolgateway.ClassWorkspaceRead),
+				LeaseID:         lease.LeaseID,
+				LeaseGeneration: lease.Generation,
+				RequestedBy:     toolbudget.RequesterRunSupervisor,
+			})
+			if err != nil {
+				t.Fatalf("charge %s: %v", toolName, err)
+			}
+			captured, err := st.CaptureToolOutput(ctx, artifact.CaptureRequest{
+				RunID:       run.ID,
+				SessionID:   run.SessionID,
+				WorkspaceID: "ws-artifact",
+				SourceID:    usage.LastCharge,
+				ToolName:    toolName,
+				Outputs: []artifact.Output{{
+					Stream:   artifact.StreamStdout,
+					MIME:     "application/json",
+					Content:  `{"tool":"` + toolName + `","ok":true}`,
+					Redacted: true,
+				}},
+			})
+			if err != nil || len(captured) != 1 {
+				t.Fatalf("capture %s artifact failed: captured=%+v err=%v", toolName, captured, err)
+			}
+			blob, err := st.GetRunArtifact(ctx, captured[0].ID)
+			if err != nil || blob.ToolName != toolName || blob.SourceID != usage.LastCharge {
+				t.Fatalf("loaded %s artifact mismatch: blob=%+v err=%v", toolName, blob, err)
+			}
+		})
+	}
+}
+

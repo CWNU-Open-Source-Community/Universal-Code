@@ -204,8 +204,7 @@ export function WorkbenchDock({ children, client, desktop, resourceKind, runID, 
                 }) => <button aria-checked={sidecarTab === id} disabled={availability === "reserved"}
                   key={id} onClick={() => selectSidecar(id)} role="menuitemradio" type="button">
                   <Icon aria-hidden="true" size={16} /><span>{t(...label)}</span>
-                  {availability === "reserved" ?
-                    <small>{t("预留", "Reserved")}</small> : shortcut && <kbd>{shortcut}</kbd>}
+                  {shortcut && <kbd>{shortcut}</kbd>}
                 </button>)}
               </div>)}
             </div>}
@@ -309,11 +308,6 @@ function WorkbenchSummary({ client, context }: {
           <div><dt>更新</dt><dd>{context.updatedAt ? formatCompactDate(context.updatedAt) : "-"}</dd></div></dl>
       </> : <EmptyState>{t("尚未选择 Thread 或 Run", "No Thread or Run selected")}</EmptyState>}
     </section>
-    <section>
-      <h2>后台活动</h2>
-      <div className="summary-inert-row"><SquareTerminal aria-hidden="true" size={15} />
-        <span>没有由工作台启动的后台进程</span></div>
-    </section>
   </aside>;
 }
 
@@ -322,10 +316,10 @@ function SummaryRepository({ query, workspaceID }: {
   workspaceID: string;
 }) {
   const { t } = useLocale();
-  if (!workspaceID) return <section><EmptyState>{t("选择并绑定项目后可查看仓库摘要。", "Select and bind a project to view its repository summary.")}</EmptyState></section>;
+  if (!workspaceID) return <section><EmptyState>{t("未绑定项目。", "No project is bound.")}</EmptyState></section>;
   if (query.isLoading) return <section><LoadingState label="加载仓库摘要" /></section>;
   if (query.isError || !query.data) return <section><ErrorState error={query.error} /></section>;
-  if (!query.data.available) return <section><p>{t("当前项目可查看文件。需要 Git 操作时，请绑定含 Git 仓库的项目。", "Files in this project are available. Bind a project with a Git repository to use Git operations.")}</p></section>;
+  if (!query.data.available) return <section><p>{t("此项目没有 Git 仓库。", "No Git repository in this project.")}</p></section>;
   const state = query.data;
   return <section>
     <div className="summary-item-heading"><strong>{state.detached ? "detached" : state.branch || "unborn"}</strong>
@@ -355,7 +349,6 @@ function BottomPanel({ desktop, runID, sessionID, onSession, onClose }: {
       onSession={onSession} /> : <div className="workbench-terminal-empty">
       <SquareTerminal aria-hidden="true" size={22} />
       <strong>{t("在桌面应用中使用终端", "Use the terminal in the desktop app")}</strong>
-      <span>{t("打开 Desktop 并核对当前执行权限后，可启动本机 Shell。", "Open Desktop and review the current execution permissions to start a local shell.")}</span>
     </div>}
   </section>;
 }
@@ -369,7 +362,7 @@ function SidecarContent({ client, context, runID, tab }: {
   const { t } = useLocale();
   if (tab === "review") {
     return context.workspaceID ? <RepositoryDiffPanel client={client} workspaceID={context.workspaceID} /> :
-      <EmptyState>{t("选择并绑定项目后可审阅差异。", "Select and bind a project to review its diff.")}</EmptyState>;
+      <EmptyState>{t("未绑定项目。", "No project is bound.")}</EmptyState>;
   }
   if (tab === "files") {
     return <WorkspaceExplorer client={client} runID={runID} workspaceID={context.workspaceID} />;
@@ -379,10 +372,10 @@ function SidecarContent({ client, context, runID, tab }: {
   }
   if (tab === "browser") {
     return <div className="workbench-tool-empty"><Globe2 aria-hidden="true" size={29} />
-      <strong>{t("浏览器工具准备中", "Browser tools in preparation")}</strong><span>{t("当前可在验证页查看已保存的浏览器证据。", "Inspect saved browser evidence in Verify.")}</span></div>;
+      <strong>{t("浏览器工具暂不可用", "Browser tools are unavailable")}</strong></div>;
   }
   return <div className="workbench-tool-empty"><SquareTerminal aria-hidden="true" size={29} />
-    <strong>{t("在底部面板使用终端", "Use the terminal in the bottom panel")}</strong><span>{t("打开 Desktop 的底部面板，核对权限后启动。", "Open the bottom panel in Desktop, review permissions, then start.")}</span></div>;
+    <strong>{t("终端位于底部面板", "The terminal is in the bottom panel")}</strong></div>;
 }
 
 function SideTaskPanel({ client, runID }: { client: APIClient; runID: string }) {

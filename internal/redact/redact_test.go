@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func TestModelHistoryTextKeepsOnlyCompleteEscapedPlaceholders(t *testing.T) {
+	const escaped = `password=[REDACTED:secret]\"`
+	const text = `Earlier diagnostic: ` + escaped + ` token=example-original password=[REDACTED:secret]example-suffix\"`
+	got, err := ModelHistoryText(text)
+	if err != nil || !strings.Contains(got, escaped) || strings.Contains(got, "example-") {
+		t.Fatalf("protected quotation or neighboring assignment changed incorrectly: %q, %v", got, err)
+	}
+}
+
 func TestStringRedactsCommonSecrets(t *testing.T) {
 	mimoToken := "t" + "p-" + strings.Repeat("a", 40)
 	openAIToken := "s" + "k-" + "abcdefghijklmnopqrstuvwxyz123456"

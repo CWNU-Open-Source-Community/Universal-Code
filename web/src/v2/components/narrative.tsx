@@ -25,9 +25,7 @@ function extractTextFromNode(node: React.ReactNode): string {
   if (typeof node === "number") return String(node);
   if (!node) return "";
   if (Array.isArray(node)) return node.map(extractTextFromNode).join("");
-  if (typeof node === "object" && "props" in node && (node as any).props) {
-    return extractTextFromNode((node as any).props.children);
-  }
+  if (isValidElement<{ children?: React.ReactNode }>(node)) return extractTextFromNode(node.props.children);
   return "";
 }
 
@@ -65,7 +63,7 @@ function MarkdownCodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreE
 
   return <div className="v2-markdown-code-block">
     <div className="v2-markdown-code-header">
-      <span className="v2-markdown-code-lang">{!language || language === "text" || language === "plaintext" ? t("文本", "Text") : language}</span>
+      {language && <span className="v2-markdown-code-lang">{language === "text" || language === "plaintext" ? t("文本", "Text") : language}</span>}
       <button
         aria-label={copied === "success" ? t("已复制代码", "Code copied") : copied === "error" ? t("复制失败", "Copy failed") : t("复制代码", "Copy code")}
         className={`v2-copy-code-button${copied === "success" ? " is-copied" : copied === "error" ? " is-error" : ""}`}
@@ -165,7 +163,8 @@ function AssistantMessageActions({ text, createdAt, branchSourceID, onBranch, us
     : copied === "error" ? t("复制失败", "Copy failed") : user ? t("复制消息", "Copy message") : t("复制回复", "Copy response");
   const branchLabel = branching ? t("正在创建新聊天…", "Creating new chat…") : t("分支到新聊天", "Branch into new chat");
 
-  return <><div className={`v2-assistant-actions${user ? " v2-user-actions" : ""}`}>
+  return <><div aria-label={user ? t("消息操作", "Message actions") : t("回复操作", "Response actions")}
+    className={`v2-assistant-actions${user ? " v2-user-actions" : ""}`} role="group">
     <button
       aria-label={copyLabel}
       className={`v2-assistant-action-btn${copied === "success" ? " is-copied" : copied === "error" ? " is-error" : ""}`}
@@ -219,6 +218,9 @@ interface NarrativeRowProps {
 const StreamRevealSpan: Components["span"] = ({ node, children, ...props }) =>
   <span key={String(node?.properties.dataStreamStart ?? "")} {...props}>{children}</span>;
 
+const MessageParagraph: Components["p"] = ({ node: _node, children, ...props }) =>
+  <p {...props} dir="auto" data-han-text={/\p{Script=Han}/u.test(extractTextFromNode(children)) || undefined}>{children}</p>;
+
 function MessageMarkdown({ entry, onOpenFile }: {
   entry: Extract<NarrativeEntry, { kind: "user" | "assistant" }>;
   onOpenFile: NarrativeRowProps["onOpenFile"];
@@ -234,6 +236,7 @@ function MessageMarkdown({ entry, onOpenFile }: {
   }
   const runID = "runId" in entry ? entry.runId : undefined;
   const components = useMemo<Components>(() => ({
+    p: MessageParagraph,
     a: ({ href, children }) => <ResourceLink href={href} runID={runID} onOpenFile={onOpenFile}>{children}</ResourceLink>,
     img: ({ src, alt }) => <ResourceImage src={typeof src === "string" ? src : undefined} alt={alt} runID={runID} onOpenFile={onOpenFile} />,
     pre: ({ node: _node, children, ...props }) => <MarkdownCodeBlock {...props}>{children}</MarkdownCodeBlock>,
@@ -249,16 +252,16 @@ function MessageMarkdown({ entry, onOpenFile }: {
 
 const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpenFile, onBranch, onOpenThread, onCompose, presentation, hidden }: NarrativeRowProps) {
   const { t } = useLocale();
-  if (entry.kind === "peer") return <li className="v2-peer-turn"><V2PeerMessageCard message={entry.message}
+  if (entry.kind === "peer") return <li className="v2-peer-turn" data-conv-entry-key={entry.id} tabIndex={-1}><V2PeerMessageCard message={entry.message}
     threadID={threadID} onOpenThread={onOpenThread} /></li>;
-  if (entry.kind === "user" && entry.status === "cancelled" && entry.promotedToMessageID) return <li className="v2-user-turn" data-message-ids={entry.id} tabIndex={-1}>
+  if (entry.kind === "user" && entry.status === "cancelled" && entry.promotedToMessageID) return <li className="v2-user-turn" data-conv-entry-key={entry.id} data-message-ids={entry.id} tabIndex={-1}>
     <details className="v2-promoted-message-history">
       <summary title={entry.text}>{t("排队消息已转为引导", "Queued message sent as guidance")}</summary>
       <div className="v2-promoted-message-content">{entry.text}<V2ImagePreview client={client} images={entry.images ?? []} />
         <V2FileAttachments client={client} attachments={entry.attachments ?? []} /></div>
     </details></li>;
-  if (entry.kind === "user") return <li className="v2-user-turn" data-message-ids={entry.id} tabIndex={-1}>
-    <div><div className="v2-user-markdown"><MessageMarkdown entry={entry} onOpenFile={onOpenFile} /></div><V2ImagePreview client={client} images={entry.images ?? []} />
+  if (entry.kind === "user") return <li className="v2-user-turn" data-conv-entry-key={entry.id} data-message-ids={entry.id} tabIndex={-1}>
+    <div className="v2-user-bubble"><div className="v2-user-markdown"><MessageMarkdown entry={entry} onOpenFile={onOpenFile} /></div><V2ImagePreview client={client} images={entry.images ?? []} />
       <V2FileAttachments client={client} attachments={entry.attachments ?? []} />{entry.status === "cancelled" &&
       <small className="v2-message-status">{t("已取消，不会继续处理", "Cancelled; will not be processed")}</small>}
       {entry.status === "pending" && <small className="v2-message-status">{t("已接收", "Received")}</small>}
@@ -272,13 +275,13 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
         return saved.content;
       }} />}</li>;
   if (entry.kind === "assistant") return <li aria-live={entry.provisional ? "polite" : undefined}
-    data-message-ids={(entry.messageIDs ?? [entry.id]).join(" ")} tabIndex={-1}
-    hidden={hidden} className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}${presentation === "process" || !entry.task ? " is-task-progress" : ""}`}>
+    data-conv-entry-key={entry.id} data-message-ids={(entry.messageIDs ?? [entry.id]).join(" ")} tabIndex={-1}
+    hidden={hidden} className={`v2-assistant-turn${entry.provisional ? " is-provisional" : ""}${presentation === "process" ? " is-task-progress" : ""}`}>
     <MessageMarkdown entry={entry} onOpenFile={onOpenFile} />
   </li>;
-  if (entry.kind === "activity") return <li hidden={hidden} className="v2-activity-turn">
+  if (entry.kind === "activity") return <li hidden={hidden} className="v2-activity-turn" data-conv-entry-key={entry.id} tabIndex={-1}>
     <V2ActivityGroup client={client} entry={entry} threadID={threadID} /></li>;
-  return <li className={`v2-notice tone-${entry.tone}`}>{entry.text}</li>;
+  return <li className={`v2-notice tone-${entry.tone}`} data-conv-entry-key={entry.id} tabIndex={-1}>{entry.text}</li>;
 }, (previous, next) => previous.client === next.client && previous.threadID === next.threadID &&
   previous.onOpenFile === next.onOpenFile &&
   previous.onBranch === next.onBranch &&
@@ -324,7 +327,7 @@ const NarrativeTaskRow = memo(function NarrativeTaskRow({ client, group, threadI
   const lastSavedReply = replies.findLast((entry) => !entry.provisional);
   const footerText = footerReply ? footerReply.text : replies.map((entry) => entry.text).join("\n\n");
   const showActions = terminal && Boolean(footerReply || !group.task.finalMessageID);
-  return <li className="v2-task-turn" data-task-id={group.task.id} data-task-state={group.task.state}>
+  return <li className="v2-task-turn" data-conv-entry-key={`task:${group.id}`} data-task-id={group.task.id} data-task-state={group.task.state} tabIndex={-1}>
     {inputs.length > 0 && <ol className="v2-task-inputs">{inputs.map((entry) =>
       <NarrativeRow client={client} entry={entry} key={entry.id} threadID={threadID} {...actions} />)}</ol>}
     {terminal && hasProcess && <div className="v2-task-process-heading">
@@ -371,7 +374,7 @@ export const V2Narrative = memo(function V2Narrative({ client, entries, threadID
 }) {
   const resources = useMemo(() => ({ workspaceID }), [workspaceID]);
   const groups = useMemo(() => groupNarrativeTasks(entries), [entries]);
-  return <ChatResourceContext.Provider value={resources}><ChatLinkErrors /><ol className="v2-narrative">{groups.map((entry) =>
+  return <ChatResourceContext.Provider value={resources}><ChatLinkErrors /><ol className="v2-narrative v2-conv-entries">{groups.map((entry) =>
     entry.kind === "task" ? <NarrativeTaskRow client={client} group={entry} key={`task:${entry.id}`} threadID={threadID}
       locatedMessageID={locatedMessageID} onOpenFile={onOpenFile} onBranch={onBranch} onOpenThread={onOpenThread} onCompose={onCompose} />
       : <NarrativeRow client={client} entry={entry} key={entry.id} threadID={threadID} onOpenFile={onOpenFile} onBranch={onBranch}

@@ -203,6 +203,9 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	}
 	memory, err := supervisorMemoryContextWithinBudget(memoryBudget, threadEndTurn, summary, hasSummary, workItems, notes, inbox.Messages,
 		projectInstructionSections, threadPinSections, longTermMemorySections, continuitySections, supervisorGoalContext(*turn), recentOperatorSections)
+	if err == nil && hasSummary {
+		err = loadSupervisorHandoffArchive(ctx, s.store, turn.Run.SessionID, &memory)
+	}
 	if err != nil {
 		failure := s.recordFailure(ctx, &result, err, 0)
 		return nil, result, failure
@@ -275,6 +278,12 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	}
 	standardCodeGuidance := ""
 	if standardCode != nil {
+		harness, err := s.router.HarnessProfile(ref)
+		if err != nil {
+			return nil, result, s.recordFailure(ctx, &result, err, 0)
+		}
+		standardCode.initialStateRole = supervisorHostStateRole(harness.TransportProtocol)
+		standardCode.initialStateText = standardCode.runtimeState()
 		standardCodeGuidance = standardCode.Guidance()
 	}
 	boundaryReceipt, err := s.boundaryReceiptPlan(ctx, turn.Checkpoint, turn.Run.SessionID)
@@ -319,6 +328,7 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	if err != nil {
 		return nil, result, s.recordFailure(ctx, &result, err, 0)
 	}
+	messages = supervisorInitialStandardCodeState(messages, standardCode)
 	messages = append(messages, mcpMessages...)
 	boundaryContext := boundaryReceipt.Content
 	if boundaryContext != "" {

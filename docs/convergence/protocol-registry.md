@@ -25,7 +25,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 | [desktop-web-presentation-state](#desktop-web-presentation-state) | `projection` | Desktop and React workbench maintainers | 28 | true |
 | [docker-attach-process-session](#docker-attach-process-session) | `ephemeral` | Docker runtime transport maintainers | 1 | false |
 | [exported-evidence-and-handoff](#exported-evidence-and-handoff) | `external-durable` | Evidence, verification, report, and handoff maintainers | 35 | true |
-| [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 48 | true |
+| [extension-package-contracts](#extension-package-contracts) | `external-durable` | Skill, Plugin, Hook, and extension maintainers | 49 | true |
 | [github-pr-followup-observation](#github-pr-followup-observation) | `projection` | GitHub review and task follow-up maintainers | 1 | false |
 | [http-openapi-contract](#http-openapi-contract) | `external-durable` | HTTP/OpenAPI and generated-client maintainers | 148 | true |
 | [in-memory-token-session](#in-memory-token-session) | `ephemeral` | Credential and bootstrap maintainers | 1 | false |
@@ -941,7 +941,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
   - `extension-package-contracts-reader` (`v1, v2`, active) at `internal/skills`
   - `plugin-installation-reader` (`v1, v2`, active) at `internal/plugins`
 
-<details><summary>48 active identifiers</summary>
+<details><summary>49 active identifiers</summary>
 
 - `agent-package-snapshot.v1`
 - `extension-control.v1`
@@ -991,6 +991,7 @@ This document is generated from [`protocols/registry.json`](../../protocols/regi
 - `skill_selection_request.v1`
 - `specialist_instruction.v1`
 - `specialist_instruction.v2`
+- `workspace_skill_discovery.v1`
 
 </details>
 
@@ -2212,6 +2213,7 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `standard_code_test_root.v1` | `test-fixture` | `internal/application/standard_code_supervisor_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `test-output.v1` | `test-fixture` | `internal/store/batch_delivery_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `thread-compaction-live.v1` | `test-fixture` | `internal/application/thread_context_compaction_live_test.go` | Redacted evidence for opt-in real-model repeated Thread compaction and continuation acceptance. |
+| `thread_compaction_quality.v1` | `test-fixture` | `internal/application/testdata/compaction-quality-cases.json` | Synthetic conversation corpus for comparing public replies after two Thread compactions. |
 | `thread_summary_window.v99` | `test-fixture` | `internal/contextmgr/continuity_summary_window_test.go` | Negative fixture verifies unknown rolling window versions fail closed. |
 | `ui-evidence-ci-launch.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `ui-evidence-ci-smoke.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |

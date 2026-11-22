@@ -3513,6 +3513,16 @@ describe("APIClient", () => {
         version: "file_edit_review.v1", action: "approve_intent",
       })).resolves.toMatchObject({ file_written: false, edit: { status: "approved" }, continuation: next });
     }
+    for (const validAppliedOrFailed of [
+      { ...decided, file_written: true, edit: { ...decided.edit, status: "applied" }, continuation },
+      { ...decided, replayed: true, file_written: false, edit: { ...decided.edit, status: "applied" }, continuation },
+      { ...decided, file_written: false, edit: { ...decided.edit, status: "failed", reason: "workspace file changed after review; refusing to apply" }, continuation },
+    ]) {
+      fetchMock.mockResolvedValueOnce(reviewResponse(validAppliedOrFailed));
+      await expect(client.reviewFileEdit("run-1", "edit-1", {
+        version: "file_edit_review.v1", action: "approve_intent",
+      })).resolves.toMatchObject({ file_written: validAppliedOrFailed.file_written, edit: { status: validAppliedOrFailed.edit.status } });
+    }
     for (const invalid of [
       { ...decided, continuation: { ...continuation, state: "queued" } },
       { ...decided, continuation: { ...continuation, state: ["completed"] } },
@@ -3521,6 +3531,8 @@ describe("APIClient", () => {
       { ...decided, continuation: { ...continuation, handoff_id: undefined } },
       { ...decided, continuation, file_written: true },
       { ...decided, continuation, edit: { ...decided.edit, status: "applied" } },
+      { ...decided, replayed: true, continuation, file_written: true, edit: { ...decided.edit, status: "applied" } },
+      { ...decided, continuation, file_written: true, edit: { ...decided.edit, status: "failed" } },
     ]) {
       fetchMock.mockResolvedValueOnce(reviewResponse(invalid));
       await expect(client.reviewFileEdit("run-1", "edit-1", {

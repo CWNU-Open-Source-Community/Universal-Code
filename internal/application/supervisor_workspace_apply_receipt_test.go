@@ -470,3 +470,236 @@ func (f workspaceApplyReceiptFixture) assertApplied(t *testing.T) {
 		t.Fatalf("mutation retried or lost its checkpoint: transactions=%+v err=%v", transactions, err)
 	}
 }
+
+func TestSupervisorCommittedWorkspaceChangeAutoApplySurvivesToolDeadline(t *testing.T) {
+	f := workspaceApplyReceiptFixture{root: t.TempDir(), workspaceID: "workspace-change-receipt", checker: policy.NewDefaultChecker()}
+	state, err := store.Open(filepath.Join(t.TempDir(), "change-receipt.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.state = state
+	t.Cleanup(func() { _ = state.Close() })
+	if err := state.SaveWorkspace(t.Context(), store.WorkspaceRecord{ID: f.workspaceID, Name: "receipt", RootPath: f.root}); err != nil {
+		t.Fatal(err)
+	}
+	_, created, err := NewRunService(state).Create(t.Context(), CreateRunRequest{Goal: "apply 1-step change", Profile: "code", Surface: "code", Phase: "deliver",
+		WorkspaceID: f.workspaceID, Budget: domain.Budget{MaxTurns: 4, MaxToolCalls: 10}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.root, "target.txt"), []byte("before\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run, err := NewRunService(state).Start(t.Context(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := state.AcquireRunExecutionLease(t.Context(), domain.AcquireRunExecutionLeaseRequest{RunID: run.ID, OwnerID: "change-receipt-test", TTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.turn, err = state.BeginSupervisorTurn(t.Context(), lease.Lease, "replace target.txt in 1 step")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.runner = NewAgentRunner(state, nil, f.checker)
+	permission, err := state.GetRunExecutionPermission(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, raw, err := f.runner.supervisorAgentCodeCapabilities(t.Context(), f.turn, permission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &f.authority); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := toolgateway.NormalizeAgentCodePayload(toolgateway.WorkspaceChangeTool, mustAgentCodeDrydockJSON(t, toolgateway.WorkspaceChangePayload{
+		Version:        toolgateway.AgentCodeRegistryVersion,
+		Action:         "propose_patch",
+		Path:           "target.txt",
+		ExpectedSHA256: fileedit.HashText("before\n"),
+		Replacements:   []toolgateway.WorkspaceReplacement{{OldText: "before\n", NewText: "after\n", ExpectedOccurrences: 1}},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := supervisorToolOperationKey(run.ID, f.turn.Checkpoint.NextTurn, toolgateway.WorkspaceChangeTool, payload)
+	id, err := runmutation.SupervisorToolCallID(key, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt := llm.ModelAttempt{Number: 1, TransportAttempt: 1, MaxAttempts: 1, Provider: "test", Model: "model"}
+	if _, err := state.RecordSupervisorModelStarted(t.Context(), f.turn.Checkpoint, attempt); err != nil {
+		t.Fatal(err)
+	}
+	attempt.Outcome = llm.OutcomeSuccess
+	f.turn.Checkpoint, err = state.RecordSupervisorModelCompleted(t.Context(), f.turn.Checkpoint, attempt,
+		llm.ChatResponse{Provider: "test", Model: "model", Usage: llm.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+			ToolCalls: []llm.ToolCall{{ID: id, Name: string(toolgateway.WorkspaceChangeTool), Arguments: payload, Authority: raw}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rounds, err := state.ListSupervisorToolRounds(t.Context(), f.turn.Checkpoint)
+	if err != nil || len(rounds) != 1 || len(rounds[0].Calls) != 1 {
+		t.Fatalf("rounds=%+v err=%v", rounds, err)
+	}
+	f.durable = rounds[0].Calls[0]
+	if _, err := state.RecordSupervisorToolExecutionStarted(t.Context(), f.turn.Checkpoint, f.durable.CallID); err != nil {
+		t.Fatal(err)
+	}
+	f.runner.tools.WithAgentCodeExecutor(delayedApplyFeedback{delegate: NewAgentCodeToolExecutor(f.state, f.checker),
+		after: func(ctx context.Context) { <-ctx.Done() }})
+	result, err := f.runner.invokeSupervisorToolWithTimeout(t.Context(), f.turn, f.durable, 2*time.Second)
+	if err != nil || result.Status != domain.SupervisorToolCompleted {
+		t.Fatalf("committed 1-step change lost to feedback deadline: result=%+v err=%v", result, err)
+	}
+	var envelope supervisorToolResultEnvelope
+	if err := json.Unmarshal([]byte(result.ResultJSON), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Metadata["status"] != fileedit.StatusApplied || envelope.Metadata["edit_id"] == "" || envelope.Metadata["artifact_count"] != "1" {
+		t.Fatalf("1-step reconciled receipt metadata missing: %+v", envelope)
+	}
+	stored, _, err := f.state.RecordSupervisorToolResult(t.Context(), f.turn.Checkpoint, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	machine := &standardCodeSupervisorTurn{store: f.state, turn: f.turn, permission: permission,
+		fileWorkspaceID: f.turn.Mission.WorkspaceID,
+		snapshot: domain.StandardCodeSupervisorSnapshot{RunID: f.turn.Run.ID, MissionID: f.turn.Mission.ID,
+			WorkspaceID: f.turn.Mission.WorkspaceID, RootAgentID: f.turn.Agent.ID,
+			AttemptID: f.turn.Checkpoint.AttemptID, CapabilityGeneration: f.authority.CapabilityGeneration,
+			ModeRevision: f.turn.Mode.Revision, PermissionRevision: permission.Revision, State: domain.StandardCodeSupervisorEdit}}
+	if reason, err := machine.observeWorkspaceMutation(t.Context(), stored, standardCodeCallDescriptor{Kind: domain.StandardCodeToolWorkspaceProposal, EditID: envelope.Metadata["edit_id"]}, envelope); err != nil || reason != "workspace_mutation_checkpoint_verified" || machine.snapshot.MutationEpoch != 1 {
+		t.Fatalf("completion guard rejected 1-step committed receipt: reason=%s snapshot=%+v err=%v", reason, machine.snapshot, err)
+	}
+	f.assertApplied(t)
+}
+
+func TestSupervisorCommittedWorkspaceChangeAutoApplyRevertSurvivesToolDeadline(t *testing.T) {
+	f := workspaceApplyReceiptFixture{root: t.TempDir(), workspaceID: "workspace-revert-receipt", checker: policy.NewDefaultChecker()}
+	state, err := store.Open(filepath.Join(t.TempDir(), "revert-receipt.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.state = state
+	t.Cleanup(func() { _ = state.Close() })
+	if err := state.SaveWorkspace(t.Context(), store.WorkspaceRecord{ID: f.workspaceID, Name: "receipt", RootPath: f.root}); err != nil {
+		t.Fatal(err)
+	}
+	_, created, err := NewRunService(state).Create(t.Context(), CreateRunRequest{Goal: "revert in 1 step", Profile: "code", Surface: "code", Phase: "deliver",
+		WorkspaceID: f.workspaceID, Budget: domain.Budget{MaxTurns: 4, MaxToolCalls: 10}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.root, "target.txt"), []byte("before\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run, err := NewRunService(state).Start(t.Context(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceEdit, err := fileedit.NewManager(state).Propose(t.Context(), fileedit.Proposal{
+		SessionID: run.SessionID, WorkspaceID: f.workspaceID, WorkspaceRoot: f.root,
+		Path: "target.txt", ProposedText: "after\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewFileEditReviewService(state).Review(t.Context(), ReviewFileEditRequest{
+		Version: FileEditReviewProtocolVersion, RunID: run.ID, EditID: sourceEdit.ID, Action: FileEditApproveIntent,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := state.AcquireRunExecutionLease(t.Context(), domain.AcquireRunExecutionLeaseRequest{RunID: run.ID, OwnerID: "revert-receipt-test", TTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.turn, err = state.BeginSupervisorTurn(t.Context(), lease.Lease, "revert target.txt in 1 step")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.runner = NewAgentRunner(state, nil, f.checker)
+	permission, err := state.GetRunExecutionPermission(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, raw, err := f.runner.supervisorAgentCodeCapabilities(t.Context(), f.turn, permission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &f.authority); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewFileEditApplyService(state, f.checker).Apply(t.Context(), ApplyFileEditRequest{
+		Version: fileedit.FileEditApplyProtocolVersion, RunID: run.ID, EditID: sourceEdit.ID,
+		OperationKey: runmutation.Fingerprint("source_apply_v1", run.ID, sourceEdit.ID),
+		AppliedBy:    f.turn.Agent.ID, InvocationID: "source-apply-call",
+		CapabilityGeneration: f.authority.CapabilityGeneration,
+		LeaseID:              f.turn.Checkpoint.LeaseID, LeaseGeneration: f.turn.Checkpoint.LeaseGeneration,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sourceEdit, err = state.GetFileEdit(t.Context(), sourceEdit.ID)
+	if err != nil || sourceEdit.Status != fileedit.StatusApplied {
+		t.Fatalf("source edit not applied: %+v err=%v", sourceEdit, err)
+	}
+
+	// Execute a 1-step propose_revert whose feedback crosses the tool deadline.
+	payload, err := toolgateway.NormalizeAgentCodePayload(toolgateway.WorkspaceChangeTool, mustAgentCodeDrydockJSON(t, toolgateway.WorkspaceChangePayload{
+		Version:        toolgateway.AgentCodeRegistryVersion,
+		Action:         "propose_revert",
+		SourceRunID:    f.turn.Run.ID,
+		SourceEditID:   sourceEdit.ID,
+		Path:           "target.txt",
+		ExpectedSHA256: sourceEdit.ProposedHash,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := supervisorToolOperationKey(f.turn.Run.ID, f.turn.Checkpoint.NextTurn, toolgateway.WorkspaceChangeTool, payload)
+	callID, err := runmutation.SupervisorToolCallID(key, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt := llm.ModelAttempt{Number: 1, TransportAttempt: 1, MaxAttempts: 1, Provider: "test", Model: "model"}
+	if _, err := f.state.RecordSupervisorModelStarted(t.Context(), f.turn.Checkpoint, attempt); err != nil {
+		t.Fatal(err)
+	}
+	attempt.Outcome = llm.OutcomeSuccess
+	f.turn.Checkpoint, err = f.state.RecordSupervisorModelCompleted(t.Context(), f.turn.Checkpoint, attempt,
+		llm.ChatResponse{Provider: "test", Model: "model", Usage: llm.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+			ToolCalls: []llm.ToolCall{{ID: callID, Name: string(toolgateway.WorkspaceChangeTool), Arguments: payload, Authority: raw}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rounds, err := f.state.ListSupervisorToolRounds(t.Context(), f.turn.Checkpoint)
+	if err != nil || len(rounds) != 1 {
+		t.Fatalf("rounds=%+v err=%v", rounds, err)
+	}
+	revertCall := rounds[0].Calls[0]
+	if _, err := f.state.RecordSupervisorToolExecutionStarted(t.Context(), f.turn.Checkpoint, revertCall.CallID); err != nil {
+		t.Fatal(err)
+	}
+	f.runner.tools.WithAgentCodeExecutor(delayedApplyFeedback{delegate: NewAgentCodeToolExecutor(f.state, f.checker),
+		after: func(ctx context.Context) { <-ctx.Done() }})
+	result, err := f.runner.invokeSupervisorToolWithTimeout(t.Context(), f.turn, revertCall, 2*time.Second)
+	if err != nil || result.Status != domain.SupervisorToolCompleted {
+		t.Fatalf("committed 1-step propose_revert lost to feedback deadline: result=%+v err=%v", result, err)
+	}
+	var envelope supervisorToolResultEnvelope
+	if err := json.Unmarshal([]byte(result.ResultJSON), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	expectedEditID := "edit-revert-" + runmutation.Fingerprint("file_edit_revert_proposal.v1", f.turn.Run.ID, sourceEdit.ID, key)[:48]
+	if envelope.Metadata["status"] != fileedit.StatusApplied || envelope.Metadata["edit_id"] != expectedEditID || envelope.Metadata["artifact_count"] != "1" {
+		t.Fatalf("propose_revert reconciled receipt metadata mismatch: got=%+v want edit_id=%s", envelope.Metadata, expectedEditID)
+	}
+	data, err := os.ReadFile(filepath.Join(f.root, "target.txt"))
+	if err != nil || string(data) != "before\n" {
+		t.Fatalf("expected target.txt reverted to before\\n, got %q err=%v", data, err)
+	}
+}
+
+

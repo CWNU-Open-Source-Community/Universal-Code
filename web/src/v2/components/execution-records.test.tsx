@@ -47,7 +47,7 @@ describe("V2ExecutionRecords", () => {
     expect(view.container.querySelector('[data-transcript-id="old-model-start"]')).toHaveTextContent("记录时执行中");
     expect(view.container.querySelector('[data-transcript-id="later-model-result"]')).toHaveTextContent("已完成");
     await userEvent.setup().click(screen.getByRole("button", { name: /模型调用开始/ }));
-    expect(screen.getByText(/这是记录保存时的执行状态/)).toHaveTextContent("Agent 的当前活动请查看对话上方的工作状态");
+    expect(view.container.querySelector(".v2-execution-records-detail-content")).toHaveTextContent("记录时执行中");
     expect(screen.getByText("model.started:old-attempt")).toBeInTheDocument();
     expect(screen.queryByText("运行中")).not.toBeInTheDocument();
   });
