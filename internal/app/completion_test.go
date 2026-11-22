@@ -178,6 +178,9 @@ func TestCommandSubcommandsDocumented(t *testing.T) {
 		if !strings.Contains(name, " ") {
 			continue
 		}
+		if groupSubcommandsVerifiedByDispatch[name] {
+			continue
+		}
 		for _, sub := range subcommands {
 			if !strings.Contains(help, sub) {
 				t.Errorf("group subcommand %q of %q is missing from printHelp output; document it or verify it against the nested dispatch switch", sub, name)
@@ -267,6 +270,44 @@ func TestCommandSubcommandsMatchDispatch(t *testing.T) {
 				t.Errorf("subcommand %q of %q does not appear in its dispatch source; the vocabulary drifted", sub, name)
 			}
 		}
+	}
+}
+
+// groupSubcommandsVerifiedByDispatch lists two-level groups whose full
+// vocabulary is not printed by printHelp but is pinned to the dispatch
+// source by a dedicated coverage test instead.
+var groupSubcommandsVerifiedByDispatch = map[string]bool{
+	"run sandbox": true,
+}
+
+// TestRunSandboxCompletionCoversDispatchVocabulary walks the direction
+// TestCommandSubcommandsMatchDispatch cannot: every subcommand named in the
+// dispatch's own usage line must be completable, so dispatch entries cannot
+// appear that completion misses.
+func TestRunSandboxCompletionCoversDispatchVocabulary(t *testing.T) {
+	body := commandFunctionBody(t, "run sandbox")
+	marker := "usage: cyberagent run sandbox "
+	start := strings.Index(body, marker)
+	if start < 0 {
+		t.Fatal("run sandbox dispatch lost its usage vocabulary line")
+	}
+	rest := body[start+len(marker):]
+	end := strings.Index(rest, "\"")
+	if end < 0 {
+		t.Fatal("run sandbox usage vocabulary line is unterminated")
+	}
+	known := map[string]bool{}
+	for _, name := range completionCandidates([]string{"run", "sandbox"}, "") {
+		known[name] = true
+	}
+	missing := []string{}
+	for _, word := range strings.Split(rest[:end], "|") {
+		if !known[word] {
+			missing = append(missing, word)
+		}
+	}
+	if len(missing) > 0 {
+		t.Fatalf("run sandbox completion misses dispatch subcommands: %v", missing)
 	}
 }
 
