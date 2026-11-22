@@ -18,6 +18,28 @@ func cancelRunLater(runID string, delay time.Duration, done chan<- string) {
 	done <- fmt.Sprintf("%s|code=%d", errOut.String(), code)
 }
 
+// cancelRunningLater waits until an independent process handle observes the
+// run in the running status, then drives it to a terminal state. Waiting on
+// the observable status replaces a fixed delay, which on slow machines could
+// land the cancel before `run start` commits and turn it into a start error.
+func cancelRunningLater(runID string, timeout time.Duration, done chan<- string) {
+	deadline := time.Now().Add(timeout)
+	for {
+		var showOut, showErr strings.Builder
+		if code := Execute([]string{"run", "show", runID}, &showOut, &showErr); code == 0 &&
+			strings.Contains(showOut.String(), "status: running") {
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	var out, errOut strings.Builder
+	code := Execute([]string{"run", "cancel", runID}, &out, &errOut)
+	done <- fmt.Sprintf("%s|code=%d", errOut.String(), code)
+}
+
 func TestRunEventsFollowStreamsUntilTerminal(t *testing.T) {
 	t.Setenv("CYBERAGENT_HOME", t.TempDir())
 	created, stderr, code := executeTestCommand(t, "run", "create", "run events follow")
@@ -65,7 +87,7 @@ func TestRunStartStreamRoutesReceiptToStderrAndStreams(t *testing.T) {
 	}
 
 	done := make(chan string, 1)
-	go cancelRunLater(runID, 1500*time.Millisecond, done)
+	go cancelRunningLater(runID, 10*time.Second, done)
 	stdout, stderr, code := executeTestCommand(t, "run", "start", runID, "--stream")
 	if cancelReceipt := <-done; !strings.Contains(cancelReceipt, "code=0") {
 		t.Fatalf("concurrent cancel failed: %s", cancelReceipt)
@@ -119,13 +141,13 @@ func TestRunStreamFlagValidation(t *testing.T) {
 		t.Fatalf("events usage must mention --follow: stderr=%q code=%d", stderr, code)
 	}
 	_, stderr, code = executeTestCommand(t, "run", "cancel", runID, "--stream")
-	if code == 0 || !strings.Contains(stderr, "--stream is only valid for run start") {
-		t.Fatalf("--stream on cancel must be rejected: stderr=%q code=%d", stderr, code)
+	if code != 2 || !strings.Contains(stderr, "--stream is only valid for run start") {
+		t.Fatalf("--stream on cancel must be a usage error with exit code 2: stderr=%q code=%d", stderr, code)
 	}
 	// The stream flag must be accepted after the positional too; the
 	// concurrent cancel gives the stream a terminal state to end on.
 	done := make(chan string, 1)
-	go cancelRunLater(runID, 1500*time.Millisecond, done)
+	go cancelRunningLater(runID, 10*time.Second, done)
 	_, _, code = executeTestCommand(t, "run", "start", runID, "--stream")
 	if cancelReceipt := <-done; !strings.Contains(cancelReceipt, "code=0") {
 		t.Fatalf("concurrent cancel failed: %s", cancelReceipt)

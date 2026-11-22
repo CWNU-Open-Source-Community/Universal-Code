@@ -2946,7 +2946,7 @@ func (a *App) runTransition(ctx context.Context, service *application.RunService
 		return fmt.Errorf("usage: cyberagent run %s <run-id>", action)
 	}
 	if *stream && action != "start" {
-		return errors.New("--stream is only valid for run start")
+		return fmt.Errorf("usage: cyberagent run start <run-id> [--stream]; --stream is only valid for run start")
 	}
 	if *timeout < 0 || *timeout > maxRunFollowTimeout {
 		return apperror.New(apperror.CodeInvalidArgument, "timeout must be between zero and 24h")
