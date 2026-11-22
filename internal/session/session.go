@@ -606,8 +606,8 @@ func (m *Manager) handleWorkspaceWrite(ctx context.Context, sess Session, path s
 		}
 		return edit, response
 	}
-	response := fmt.Sprintf("File edit %s proposed for %s. Inspect with `cyberagent edit show %s`. Run-bound edits require `edit review-approve <run-id> %s` followed by `edit apply <run-id> %s --operation-key <key>`; deny with `cyberagent edit deny %s`.\n\n%s",
-		edit.ID, edit.Path, edit.ID, edit.ID, edit.ID, edit.ID, edit.Diff)
+	response := fmt.Sprintf("File edit %s proposed for %s. Inspect with `cyberagent edit show %s`. Session-proposed edits apply directly with `edit approve %s`; Run-bound edits require `edit review-approve <run-id> %s` followed by `edit apply <run-id> %s --operation-key <key>` (operation key: normalized UTF-8, 16-256 bytes, no whitespace). Deny with `cyberagent edit deny %s`.\n\n%s",
+		edit.ID, edit.Path, edit.ID, edit.ID, edit.ID, edit.ID, edit.ID, edit.Diff)
 	if edit.SecretsRedacted {
 		response += "\nSensitive values were redacted before the proposal was stored."
 	}
