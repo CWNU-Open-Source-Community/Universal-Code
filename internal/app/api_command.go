@@ -634,6 +634,13 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 		}
 		prFollowupController = prFollowupWorker
 	}
+	// A nil *webui.Bundle stored in the http.Handler interface is a typed
+	// nil: the httpapi presence check treats it as absent, but keep the wire
+	// value nil too so no caller can mistake it for a real handler.
+	var uiHandler http.Handler
+	if uiBundle != nil {
+		uiHandler = uiBundle
+	}
 	api, err := httpapi.New(a.store, httpapi.Config{
 		AccessToken: accessToken, ControlToken: controlToken,
 		WorkspaceImportEnabled: *workspaceImport, WorkspaceImporter: workspaceImporter,
@@ -733,7 +740,7 @@ func (a *App) apiServeCommand(ctx context.Context, args []string) (resultErr err
 			*dockerExecution, os.Getenv(standardCodeDockerImageEnvironment), commandOptions.StandardCodeDockerRuntime != nil)),
 		ModelRegistry: a.models,
 		AppVersion:    Version,
-		UIHandler:     uiBundle,
+		UIHandler:     uiHandler,
 	})
 	if err != nil {
 		return err

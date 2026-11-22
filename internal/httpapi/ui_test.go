@@ -276,3 +276,33 @@ func assertUISecurityHeaders(t *testing.T, response *httptest.ResponseRecorder, 
 		t.Fatalf("missing or unsafe UI security headers: %#v", header)
 	}
 }
+
+// A typed nil handler (a *webui.Bundle wired without a built UI) must count
+// as absent: treating it as present sent every non-API path into the UI
+// branch, where the nil receiver failed as a plain 500 instead of the
+// API's 401/404 contract.
+func TestTypedNilUIHandlerFallsThroughToAPIDispatch(t *testing.T) {
+	fixture := newAPIFixture(t)
+	var typedNil *nullUIHandler
+	api, err := New(fixture.store, Config{AccessToken: testAccessToken, UIHandler: typedNil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unauthenticated := performRequest(t, api, http.MethodGet, "/not-an-api-path", "",
+		"127.0.0.1:8765", "127.0.0.1:45000", nil)
+	if unauthenticated.Code != http.StatusUnauthorized ||
+		!strings.Contains(unauthenticated.Body.String(), "POLICY_DENIED") {
+		t.Fatalf("non-API path without a UI must fall through to API auth: status=%d body=%q",
+			unauthenticated.Code, unauthenticated.Body.String())
+	}
+	notFound := performRequest(t, api, http.MethodGet, "/not-an-api-path", testAccessToken,
+		"127.0.0.1:8765", "127.0.0.1:45000", nil)
+	if notFound.Code != http.StatusNotFound || !strings.Contains(notFound.Body.String(), "NOT_FOUND") {
+		t.Fatalf("non-API path with auth must be an API 404: status=%d body=%q",
+			notFound.Code, notFound.Body.String())
+	}
+}
+
+type nullUIHandler struct{}
+
+func (*nullUIHandler) ServeHTTP(http.ResponseWriter, *http.Request) {}
