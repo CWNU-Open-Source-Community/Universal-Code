@@ -167,12 +167,9 @@ describe("priority bucket classification & ordering", () => {
     expect(grouped.attentionCount).toBe(3);
   });
 
-  it("classifies composer waiting_approval, successor_required, paused, and file_edit_review into needs_input", () => {
+  it("classifies composer waiting_approval, paused, and file_edit_review into needs_input", () => {
     expect(
       classifyThreadPriorityBucket(makeThread({ id: "c1", title: "Approval", composer_state: "waiting_approval" })),
-    ).toBe("needs_input");
-    expect(
-      classifyThreadPriorityBucket(makeThread({ id: "c2", title: "Successor", composer_state: "successor_required" })),
     ).toBe("needs_input");
     expect(
       classifyThreadPriorityBucket(makeThread({ id: "c3", title: "Paused", execution_state: "paused" })),
@@ -183,6 +180,32 @@ describe("priority bucket classification & ordering", () => {
         { pendingActionKind: "file_edit_review" },
       ),
     ).toBe("needs_input");
+  });
+
+  it("does not treat the between-turns successor_required state as needing user input", () => {
+    // 已完成且回复未读的对话：用户可直接发送下一条消息，应归入未读分组而非“需用户输入”。
+    expect(
+      classifyThreadPriorityBucket(
+        makeThread({
+          id: "c2",
+          title: "Successor unread",
+          active_run_id: undefined,
+          composer_state: "successor_required",
+          execution_state: "completed",
+        }),
+        { isUnread: true },
+      ),
+    ).toBe("unread");
+    expect(
+      classifyThreadPriorityBucket(
+        makeThread({
+          id: "c2b",
+          title: "Successor idle",
+          active_run_id: undefined,
+          composer_state: "successor_required",
+        }),
+      ),
+    ).toBe("idle");
   });
 });
 

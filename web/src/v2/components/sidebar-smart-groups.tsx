@@ -244,6 +244,9 @@ export function deriveThreadActivityStatus(
   const liveExecState = signals?.execution?.state;
   const effectiveExecState = liveExecState ?? canonical.state;
 
+  // `composer_state === "successor_required"` is the backend's normal between-turns
+  // state for every active thread without a live run (completed, failed, cancelled…);
+  // the user can simply send the next message, so it must not count as needs-input.
   const needsOperatorInput =
     pendingApprovals > 0 ||
     signals?.hasBlockedTool === true ||
@@ -255,7 +258,6 @@ export function deriveThreadActivityStatus(
     canonical.state === "paused" ||
     canonical.state === "stop_failed" ||
     thread.composer_state === "waiting_approval" ||
-    thread.composer_state === "successor_required" ||
     effectiveRunStatus === "waiting_approval" ||
     effectiveRunStatus === "paused";
 
@@ -272,8 +274,6 @@ export function deriveThreadActivityStatus(
       detail = t("停止未完成", "Stop failed");
     } else if (canonical.state === "paused" || effectiveRunStatus === "paused") {
       detail = t("已暂停", "Paused");
-    } else if (thread.composer_state === "successor_required") {
-      detail = t("待确认继续", "Confirm continuation");
     } else {
       detail = t("待确认授权", "Awaiting approval");
     }
@@ -282,7 +282,6 @@ export function deriveThreadActivityStatus(
     const hasEnrichedWaitingSignal =
       pendingApprovals > 0 ||
       signals?.pendingActionKind === "file_edit_review" ||
-      thread.composer_state === "successor_required" ||
       !["waiting_approval", "paused", "stop_failed"].includes(canonical.state);
 
     return {
