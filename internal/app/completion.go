@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -91,10 +92,19 @@ func findCommandSpec(name string) (commandSpec, bool) {
 	return commandSpec{}, false
 }
 
+// completeProtocolEnvironment is the handshake shell scripts use to declare
+// they understand the trailing ":<directive>" line. Consumers generated
+// before the directive protocol — including scripts already installed by
+// earlier releases — receive plain candidate lines only, so upgrading the
+// binary alone never leaks protocol markers like ":4" into the offered
+// candidates.
+const completeProtocolEnvironment = "CYBERAGENT_COMPLETE_PROTOCOL"
+
 // completeCommand implements the hidden "__complete" protocol consumed by
 // the generated shell scripts: every argument is a word from the command
 // line and the last one is the word being completed. Candidates print one
-// per line; an empty result means no completion.
+// per line; an empty result means no completion. The trailing directive
+// line is only emitted when the caller opted into the protocol.
 func (a *App) completeCommand(args []string) error {
 	var context []string
 	var prefix string
@@ -106,7 +116,9 @@ func (a *App) completeCommand(args []string) error {
 	for _, candidate := range candidates {
 		fmt.Fprintln(a.out, candidate)
 	}
-	fmt.Fprintf(a.out, ":%d\n", directive)
+	if os.Getenv(completeProtocolEnvironment) == "4" {
+		fmt.Fprintf(a.out, ":%d\n", directive)
+	}
 	return nil
 }
 
@@ -258,12 +270,15 @@ func (a *App) completionCommand(args []string) error {
 }
 
 // bashCompletionScript emits a bash completer that delegates candidate
-// generation to 'cyberagent __complete'. The ${context_words[@]+...} guard
-// keeps the unset-array expansion safe under 'set -u' on older bash.
+// generation to 'cyberagent __complete' under the CYBERAGENT_COMPLETE_
+// PROTOCOL=4 handshake so the binary emits the trailing directive line.
+// The ${context_words[@]+...} guard keeps the unset-array expansion safe
+// under 'set -u' on older bash.
 const bashCompletionScript = `# bash completion for cyberagent
 #
 # Delegates candidate generation to 'cyberagent __complete'; the binary
-# filters by the current word and compgen filters again locally.
+# filters by the current word, so results are appended verbatim instead of
+# being re-split through compgen -W, which would cut names at spaces.
 
 _cyberagent_completions() {
   local cur
@@ -275,7 +290,7 @@ _cyberagent_completions() {
     context_words+=("${COMP_WORDS[i]}")
   done
   local raw candidates directive line
-  raw="$(command cyberagent __complete ${context_words[@]+"${context_words[@]}"} "$cur" 2>/dev/null)" || return 0
+  raw="$(CYBERAGENT_COMPLETE_PROTOCOL=4 command cyberagent __complete ${context_words[@]+"${context_words[@]}"} "$cur" 2>/dev/null)" || return 0
   candidates=""
   directive="4"
   while IFS= read -r line; do
@@ -287,9 +302,13 @@ _cyberagent_completions() {
   done <<<"$raw"
   candidates="${candidates%$'\n'}"
   if [ -n "$candidates" ]; then
-    COMPREPLY=($(compgen -W "$candidates" -- "$cur"))
+    while IFS= read -r line; do
+      COMPREPLY+=("$line")
+    done <<<"$candidates"
   elif [ "$directive" = 0 ]; then
-    COMPREPLY=($(compgen -f -- "$cur" 2>/dev/null))
+    while IFS= read -r line; do
+      COMPREPLY+=("$line")
+    done < <(compgen -f -- "$cur" 2>/dev/null)
   fi
 }
 
@@ -297,9 +316,10 @@ complete -F _cyberagent_completions cyberagent
 `
 
 // fishCompletionScript emits a fish completer that delegates candidate
-// generation to 'cyberagent __complete' and parses the trailing directive:
-// candidates are offered as-is, and an empty result with the default
-// directive falls back to fish's path completion.
+// generation to 'cyberagent __complete' under the CYBERAGENT_COMPLETE_
+// PROTOCOL=4 handshake and parses the trailing directive: candidates are
+// offered as-is, and an empty result with the default directive falls back
+// to fish's path completion.
 const fishCompletionScript = `# fish completion for cyberagent
 # Delegates candidate generation to 'cyberagent __complete'. Install under
 # ~/.config/fish/completions/cyberagent.fish.
@@ -308,7 +328,7 @@ function __cyberagent_complete
     set -l tokens (commandline -opc) (commandline -ct)
     set -l candidates
     set -l directive 4
-    for line in (command cyberagent __complete $tokens[2..-1] 2>/dev/null)
+    for line in (env CYBERAGENT_COMPLETE_PROTOCOL=4 cyberagent __complete $tokens[2..-1] 2>/dev/null)
         if string match -q ':*' $line
             set directive (string replace -r '^:' '' $line)
         else
@@ -326,14 +346,15 @@ complete -c cyberagent -f -a '(__cyberagent_complete)'
 `
 
 // zshCompletionScript emits a zsh completer that delegates candidate
-// generation to 'cyberagent __complete'.
+// generation to 'cyberagent __complete' under the CYBERAGENT_COMPLETE_
+// PROTOCOL=4 handshake.
 const zshCompletionScript = `#compdef cyberagent
 # Delegates candidate generation to 'cyberagent __complete'.
 
 _cyberagent() {
   local -a candidates lines
   local directive=4 line
-  lines=(${(f)"$(command cyberagent __complete "${(@)words[2,CURRENT]}" 2>/dev/null)"})
+  lines=(${(f)"$(env CYBERAGENT_COMPLETE_PROTOCOL=4 cyberagent __complete "${(@)words[2,CURRENT]}" 2>/dev/null)"})
   for line in $lines; do
     if [[ $line == :* ]]; then
       directive=${line#:}

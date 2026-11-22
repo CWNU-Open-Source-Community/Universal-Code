@@ -14,6 +14,10 @@ import (
 
 func dispatchForOutput(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	// Dispatch-level completion tests speak protocol v4; the legacy shape
+	// (no directive line) is covered explicitly by
+	// TestCompleteOmitsDirectiveWithoutHandshake.
+	t.Setenv(completeProtocolEnvironment, "4")
 	var out bytes.Buffer
 	a := &App{out: &out}
 	err := a.dispatch(context.Background(), args)
@@ -296,9 +300,13 @@ func TestRunSandboxCompletionCoversDispatchVocabulary(t *testing.T) {
 	if end < 0 {
 		t.Fatal("run sandbox usage vocabulary line is unterminated")
 	}
+	sandboxCandidates, directive := completionCandidates([]string{"run", "sandbox"}, "")
 	known := map[string]bool{}
-	for _, name := range completionCandidates([]string{"run", "sandbox"}, "") {
+	for _, name := range sandboxCandidates {
 		known[name] = true
+	}
+	if directive != completionDirectiveNoFileComp {
+		t.Fatalf("run sandbox candidates must carry the no-file directive, got %d", directive)
 	}
 	missing := []string{}
 	for _, word := range strings.Split(rest[:end], "|") {
@@ -416,6 +424,27 @@ func TestCompleteDeeperPositionsOfferNothing(t *testing.T) {
 	}
 }
 
+// TestCompleteOmitsDirectiveWithoutHandshake pins the legacy wire shape:
+// without the protocol handshake the binary emits candidate lines only, so
+// completion scripts installed by earlier releases never see protocol
+// markers like ":4" among the offered candidates.
+func TestCompleteOmitsDirectiveWithoutHandshake(t *testing.T) {
+	var out bytes.Buffer
+	a := &App{out: &out}
+	if err := a.dispatch(context.Background(), []string{"__complete", "git-"}); err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	if len(lines) != 3 || lines[0] != "git-advanced" || lines[1] != "git-op" || lines[2] != "git-remote" {
+		t.Fatalf("legacy output must be candidate lines only, got %q", out.String())
+	}
+	for _, line := range lines {
+		if strings.HasPrefix(line, ":") {
+			t.Fatalf("directive line %q leaked without the handshake", line)
+		}
+	}
+}
+
 func TestPrintCommandHelpKnownCommand(t *testing.T) {
 	out, err := dispatchForOutput(t, "help", "workspace")
 	if err != nil {
@@ -458,6 +487,12 @@ func TestCompletionCommandEmitsBashScript(t *testing.T) {
 	}
 	if !strings.Contains(out, "__complete") {
 		t.Fatalf("bash script must delegate to __complete: %q", out)
+	}
+	if !strings.Contains(out, "CYBERAGENT_COMPLETE_PROTOCOL=4") {
+		t.Fatalf("bash script must opt into the directive protocol handshake: %q", out)
+	}
+	if strings.Contains(out, "COMPREPLY=($(compgen") {
+		t.Fatalf("bash script must not re-split candidates through compgen, which cuts names at spaces: %q", out)
 	}
 }
 
