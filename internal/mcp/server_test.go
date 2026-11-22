@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	iofs "io/fs"
 	"strings"
 	"sync"
 	"testing"
@@ -236,3 +238,71 @@ func TestMCPConcurrencyLimit(t *testing.T) {
 }
 
 var _ = json.Marshal
+
+type contentTools struct{ stdout string }
+
+func (contentTools) Invoke(_ context.Context, call toolgateway.ToolCall) (toolgateway.Outcome, error) {
+	return toolgateway.Outcome{Result: &toolgateway.Result{Status: toolgateway.StatusCompleted,
+		ExitCode: 0, Stdout: "hello workspace\n", MIME: "text/plain; charset=utf-8",
+		Metadata: map[string]string{"artifact_count": "1"}}}, nil
+}
+
+type missingTools struct{}
+
+func (missingTools) Invoke(_ context.Context, call toolgateway.ToolCall) (toolgateway.Outcome, error) {
+	return toolgateway.Outcome{}, fmt.Errorf(`stat C:\host\abs\missing.txt: %w`, iofs.ErrNotExist)
+}
+
+// The published read tools must return their (already redacted, bounded)
+// output: discarding the content makes read_file/list_workspace useless to
+// external MCP clients that have no artifact-store access.
+func TestMCPToolCallReturnsRedactedContent(t *testing.T) {
+	server, _ := newTestServer(t)
+	server.tools = contentTools{}
+	output := serve(t, server,
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"notes.txt"}}}`,
+	)
+	joined := strings.Join(output, "\n")
+	// The response JSON embeds the tool payload as escaped JSON-in-JSON, so
+	// match on the unescaped fragments.
+	if !strings.Contains(joined, "stdout") || !strings.Contains(joined, "hello workspace") {
+		t.Fatalf("tool result must carry the redacted content: %v", output)
+	}
+	if !strings.Contains(joined, "artifact_count") {
+		t.Fatalf("tool result must keep the metadata: %v", output)
+	}
+}
+
+// Tool execution failures are isError tool results, not protocol errors, so
+// the calling model can observe and react to the failure; the message names
+// the workspace-relative path without host details.
+func TestMCPToolCallMissingFileIsErrorResult(t *testing.T) {
+	server, store := newTestServer(t)
+	server.tools = missingTools{}
+	output := serve(t, server,
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"missing.txt"}}}`,
+	)
+	joined := strings.Join(output, "\n")
+	if !strings.Contains(joined, `"isError":true`) {
+		t.Fatalf("missing file must be an isError tool result: %v", output)
+	}
+	if !strings.Contains(joined, "file does not exist in this workspace: missing.txt") {
+		t.Fatalf("failure text must name the workspace-relative path: %v", output)
+	}
+	if strings.Contains(joined, `C:\host\abs`) || strings.Contains(joined, `"error":`) {
+		t.Fatalf("failure must not leak host paths or use a protocol error: %v", output)
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	denied := false
+	for _, event := range store.audits {
+		if event == "mcp.tool_denied" {
+			denied = true
+		}
+	}
+	if !denied {
+		t.Fatalf("failed call must stay audited: %v", store.audits)
+	}
+}

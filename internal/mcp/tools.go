@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/domain"
@@ -72,39 +73,60 @@ func (s *Server) serveToolsCall(ctx context.Context, request Request, output io.
 	if err != nil {
 		reason := "invocation_failed"
 		message := "tool invocation failed"
-		if errors.Is(err, context.DeadlineExceeded) {
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
 			reason = "timed_out"
 			message = "tool call timed out"
-		} else if errors.Is(err, context.Canceled) {
+		case errors.Is(err, context.Canceled):
 			reason = "cancelled"
 			message = "tool call cancelled"
+		case errors.Is(err, iofs.ErrNotExist):
+			// Mirror the tools-layer wording without leaking the host's
+			// absolute paths into external client sessions.
+			kind := "file"
+			if name == toolgateway.ListWorkspaceTool {
+				kind = "directory"
+			}
+			message = fmt.Sprintf("%s does not exist in this workspace: %s", kind, arguments["path"])
+		default:
+			message = "tool invocation failed: " + err.Error()
 		}
+		// Tool execution failures are tool results with isError, not
+		// protocol-level errors: the calling model must be able to observe
+		// the failure and react (MCP tools specification).
 		_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
-			Error: &RPCError{Code: CodeInternalError, Message: message}})
+			Result: serverResult(request, CallToolResult{Content: []TextContent{{Type: "text", Text: message}},
+				IsError: true})})
 		_ = s.store.RecordMCPAudit(context.WithoutCancel(ctx), s.runID, "mcp.tool_denied", map[string]any{
 			"tool": params.Name, "reason": reason})
 		return
 	}
 	if outcome.Result == nil {
 		_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
-			Error: &RPCError{Code: CodeInternalError, Message: outcome.Decision.Reason}})
+			Result: serverResult(request, CallToolResult{Content: []TextContent{{Type: "text",
+				Text: "tool call denied by policy: " + outcome.Decision.Reason}}, IsError: true})})
 		_ = s.store.RecordMCPAudit(ctx, s.runID, "mcp.tool_denied", map[string]any{
 			"tool": params.Name, "reason": outcome.Decision.Reason})
 		return
 	}
-	// Only the bounded redacted status and metadata travel back; raw tool
-	// output bodies stay inside the gateway redaction boundary.
-	text := fmt.Sprintf(`{"status":%q,"exit_code":%d,"summary":%q}`,
-		outcome.Result.Status, outcome.Result.ExitCode, outcome.Result.Metadata["summary"])
+	// The bounded, redacted tool output travels back with the status: the
+	// published read_file/list_workspace tools cannot fulfill their contract
+	// for external MCP clients when the content is discarded. Redaction and
+	// byte bounds applied inside the Gateway remain authoritative.
+	payload := map[string]any{"status": outcome.Result.Status, "exit_code": outcome.Result.ExitCode}
+	if outcome.Result.Stdout != "" {
+		payload["stdout"] = outcome.Result.Stdout
+	}
 	if len(outcome.Result.Metadata) > 0 {
-		encoded, err := json.Marshal(outcome.Result.Metadata)
-		if err == nil && len(encoded) <= 8192 {
-			text = fmt.Sprintf(`{"status":%q,"exit_code":%d,"metadata":%s}`,
-				outcome.Result.Status, outcome.Result.ExitCode, encoded)
-		}
+		payload["metadata"] = outcome.Result.Metadata
+	}
+	encoded, encodeErr := json.Marshal(payload)
+	if encodeErr != nil {
+		encoded = []byte(fmt.Sprintf(`{"status":%q,"exit_code":%d}`,
+			outcome.Result.Status, outcome.Result.ExitCode))
 	}
 	_ = s.write(output, Envelope{JSONRPC: "2.0", ID: request.ID,
-		Result: serverResult(request, CallToolResult{Content: []TextContent{{Type: "text", Text: text}},
+		Result: serverResult(request, CallToolResult{Content: []TextContent{{Type: "text", Text: string(encoded)}},
 			IsError: outcome.Result.Status != toolgateway.StatusCompleted})})
 	_ = s.store.RecordMCPAudit(context.WithoutCancel(ctx), s.runID, "mcp.tool_completed", map[string]any{
 		"tool": params.Name, "status": outcome.Result.Status})
