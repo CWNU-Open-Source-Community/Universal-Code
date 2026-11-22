@@ -2929,7 +2929,7 @@ func (a *App) runTransition(ctx context.Context, service *application.RunService
 		return fmt.Errorf("usage: cyberagent run %s <run-id>", action)
 	}
 	if *stream && action != "start" {
-		return errors.New("--stream is only valid for run start")
+		return fmt.Errorf("usage: cyberagent run start <run-id> [--stream]; --stream is only valid for run start")
 	}
 	var run domain.Run
 	var err error
