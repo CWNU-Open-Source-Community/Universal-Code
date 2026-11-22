@@ -39,3 +39,18 @@ func TestSanitizeSensitiveJSONRedactsFieldsBeforeAnyTruncation(t *testing.T) {
 		t.Fatalf("sensitive JSON projection=%s err=%v", safe, err)
 	}
 }
+
+// The PASS family (db_pass, app_pass) is as credential-shaped as password:
+// the #660 regex-layer extension has a matching field-name counterpart.
+func TestSensitiveJSONFieldNameCoversPassFamily(t *testing.T) {
+	for _, value := range []string{"db_pass", "app_pass", "pass", "login_pass"} {
+		if !SensitiveJSONFieldName(value) {
+			t.Fatalf("credential field %q was not recognized", value)
+		}
+	}
+	for _, value := range []string{"passthrough", "pass_reference", "bypass"} {
+		if SensitiveJSONFieldName(value) {
+			t.Fatalf("non-credential field %q was classified as a credential", value)
+		}
+	}
+}

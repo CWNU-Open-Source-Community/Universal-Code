@@ -41,7 +41,7 @@ func SensitiveJSONFieldName(value string) bool {
 	for _, word := range words {
 		switch word {
 		case "auth", "authentication", "authorization", "bearer", "credential",
-			"credentials", "cookie", "password", "passwd", "secret", "token":
+			"credentials", "cookie", "password", "passwd", "pass", "secret", "token":
 			return true
 		}
 	}
