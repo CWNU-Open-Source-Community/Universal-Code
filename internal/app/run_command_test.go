@@ -1608,7 +1608,7 @@ func TestCLIStableExitCodesPreserveErrorText(t *testing.T) {
 		t.Fatalf("unexpected invalid argument result code=%d stderr=%q", code, stderr)
 	}
 	_, stderr, code = executeTestCommand(t, "run", "show", "run-missing")
-	if code != 3 || stderr != "error: sql: no rows in result set\n" {
+	if code != 3 || stderr != "error: the requested record was not found\n" {
 		t.Fatalf("unexpected not found result code=%d stderr=%q", code, stderr)
 	}
 }

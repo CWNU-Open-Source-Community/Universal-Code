@@ -87,7 +87,13 @@ func Normalize(err error) error {
 		return Wrap(CodeCancelled, err.Error(), err)
 	case errors.Is(err, context.DeadlineExceeded):
 		return Wrap(CodeDeadlineExceeded, err.Error(), err)
-	case errors.Is(err, sql.ErrNoRows), errors.Is(err, fs.ErrNotExist):
+	case errors.Is(err, sql.ErrNoRows):
+		// A missing row reaches a dozen inspection commands ("run show",
+		// "thread history", "debug query", ...) whose callers only forward
+		// the error verbatim; name the condition instead of leaking the
+		// database driver's message. The cause keeps errors.Is working.
+		return Wrap(CodeNotFound, "the requested record was not found", err)
+	case errors.Is(err, fs.ErrNotExist):
 		return Wrap(CodeNotFound, err.Error(), err)
 	}
 
