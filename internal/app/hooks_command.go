@@ -20,7 +20,7 @@ func (a *App) hooksCommand(ctx context.Context, args []string) error {
 	case "list":
 		return a.hooksList(ctx, args[1:])
 	case "validate":
-		return a.hooksValidate(ctx)
+		return a.hooksValidate(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown hooks subcommand %q", args[0])
 	}
@@ -30,7 +30,14 @@ func (a *App) hooksCommand(ctx context.Context, args []string) error {
 // reports the result: every declaration is checked (JSON shape, script
 // presence, hash pin) exactly as a run would load them, so operators get
 // feedback while editing instead of at the first hook execution.
-func (a *App) hooksValidate(ctx context.Context) error {
+func (a *App) hooksValidate(ctx context.Context, args []string) error {
+	fs := newFlagSet("hooks validate", a.errOut)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: cyberagent hooks validate")
+	}
 	registrations, err := hooks.LoadOperatorScriptHooks(ctx, a.scriptHooksDir())
 	if err != nil {
 		return fmt.Errorf("hooks configuration is invalid: %w", err)

@@ -946,3 +946,42 @@ func TestCompleteFlagValues(t *testing.T) {
 		t.Fatalf("'note create --visibility' must complete the three visibilities, got %v", got)
 	}
 }
+
+// TestCompleteFlagsAfterPositionalAndPathShapedValues pins the two shapes
+// the manual documents for tool invoke: flags still complete after the
+// positional tool name, and --payload-file publishes no value vocabulary so
+// its value position hands back to the shell's path completion.
+func TestCompleteFlagsAfterPositionalAndPathShapedValues(t *testing.T) {
+	out, err := dispatchForOutput(t, "__complete", "tool", "invoke", "web.browser", "--pay")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 2 || got[0] != "--payload" || got[1] != "--payload-file" {
+		t.Fatalf("flags after the tool name must still complete, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "tool", "invoke", "web.browser", "--payload-file", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":0"); len(got) != 0 {
+		t.Fatalf("--payload-file values must hand back to path completion, got %v", got)
+	}
+	// A published value vocabulary still completes across the positional
+	// title argument.
+	out, err = dispatchForOutput(t, "__complete", "todo", "create", "write tests", "--priority", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 4 || got[0] != "critical" || got[3] != "normal" {
+		t.Fatalf("'todo create <title> --priority' must complete the four priorities, got %v", got)
+	}
+	// Flag values that are not published must not suppress path completion
+	// for arbitrary flags either.
+	out, err = dispatchForOutput(t, "__complete", "tool", "invoke", "web.browser", "--run", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":0"); len(got) != 0 {
+		t.Fatalf("unpublished flag values must hand back to path completion, got %v", got)
+	}
+}

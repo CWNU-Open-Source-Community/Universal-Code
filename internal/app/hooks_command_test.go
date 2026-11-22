@@ -99,6 +99,14 @@ func TestHooksListRejectsUnknownSubcommand(t *testing.T) {
 	}
 }
 
+func TestHooksValidateRejectsExtraArguments(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	_, stderr, code := executeTestCommand(t, "hooks", "validate", "hooks.d")
+	if code != 2 || !strings.Contains(stderr, "usage: cyberagent hooks validate") {
+		t.Fatalf("extra arguments must be a usage error with exit code 2: stderr=%q code=%d", stderr, code)
+	}
+}
+
 func TestHooksValidateReportsValidConfiguration(t *testing.T) {
 	t.Setenv("CYBERAGENT_HOME", t.TempDir())
 	seedScriptHook(t, "validate-hook")

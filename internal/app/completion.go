@@ -347,6 +347,39 @@ var flagValueVocabulary = map[string][]string{
 	"todo create --priority":        {"critical", "high", "low", "normal"},
 }
 
+// flagCompletionKey reduces the typed context to the command group that
+// owns the flag-table entry: the longest leading prefix of the context that
+// names a commandFlags key. Positional arguments (tool invoke's tool name)
+// and flag values sitting between the group and the flag being completed
+// are not part of the key, so flag completion survives them. ok is false
+// for unmatched non-empty contexts; the "" alias entry belongs to the empty
+// context only.
+func flagCompletionKey(context []string) (string, bool) {
+	for width := len(context); width > 0; width-- {
+		candidate := strings.Join(context[:width], " ")
+		if _, ok := commandFlags[candidate]; ok {
+			return candidate, true
+		}
+	}
+	return "", len(context) == 0
+}
+
+// flagValueKey resolves the "<group> <flag>" key for value vocabularies the
+// same longest-prefix way, without requiring the group to carry a
+// commandFlags entry of its own.
+func flagValueKey(prior []string, flag string) (string, bool) {
+	for width := len(prior); width >= 0; width-- {
+		key := strings.Join(prior[:width], " ")
+		if key != "" {
+			key += " "
+		}
+		if _, ok := flagValueVocabulary[key+flag]; ok {
+			return key + flag, true
+		}
+	}
+	return "", false
+}
+
 // completionCandidates resolves the candidates and the shell directive for
 // the current position: positions with candidates suppress the shell's
 // file completion, and empty positions hand control back to the shell so
@@ -354,17 +387,21 @@ var flagValueVocabulary = map[string][]string{
 // still complete, cobra-style.
 func completionCandidates(context []string, prefix string) ([]string, int) {
 	if strings.HasPrefix(prefix, "-") {
-		key := ""
-		if len(context) >= 1 && len(context) <= 4 {
-			key = strings.Join(context, " ")
+		key, ok := flagCompletionKey(context)
+		if !ok {
+			return nil, completionDirectiveNoFileComp
 		}
 		return matchedNames(commandFlags[key], prefix), completionDirectiveNoFileComp
 	}
 	if len(context) >= 2 {
 		last := context[len(context)-1]
 		if strings.HasPrefix(last, "-") {
-			key := strings.Join(context[:len(context)-1], " ") + " " + last
-			return matchedNames(flagValueVocabulary[key], prefix), completionDirectiveNoFileComp
+			if key, ok := flagValueKey(context[:len(context)-1], last); ok {
+				return matchedNames(flagValueVocabulary[key], prefix), completionDirectiveNoFileComp
+			}
+			// The flag publishes no value vocabulary: hand the position back
+			// to the shell so path-shaped values still complete.
+			return nil, completionDirectiveDefault
 		}
 	}
 	var pool []string
