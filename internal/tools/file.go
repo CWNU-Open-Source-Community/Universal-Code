@@ -67,7 +67,7 @@ func (t ReadFileTool) Run(ctx context.Context, call Call) (Result, error) {
 	fs := t.FS.withFallback(call.WorkingDir)
 	path, err := fs.resolveExistingFile(call.Args["path"])
 	if err != nil {
-		return Result{Stderr: err.Error(), ExitCode: 1, MIME: "text/plain; charset=utf-8"}, err
+		return Result{Stderr: missingEntryText("file", call.Args["path"], err), ExitCode: 1, MIME: "text/plain; charset=utf-8"}, err
 	}
 	limit := fs.MaxReadBytes
 	if value := strings.TrimSpace(call.Args["max_bytes"]); value != "" {
@@ -119,7 +119,7 @@ func (t ListWorkspaceTool) Run(ctx context.Context, call Call) (Result, error) {
 	}
 	out, truncated, err := fs.list(ctx, path, depth)
 	if err != nil {
-		return Result{Stderr: err.Error(), ExitCode: 1, MIME: "text/plain; charset=utf-8"}, err
+		return Result{Stderr: missingEntryText("directory", path, err), ExitCode: 1, MIME: "text/plain; charset=utf-8"}, err
 	}
 	return Result{Stdout: out, ExitCode: 0, MIME: "text/plain; charset=utf-8", Truncated: truncated}, nil
 }
@@ -500,6 +500,18 @@ func withinRoot(root string, candidate string) bool {
 		return false
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
+}
+
+// missingEntryText names a failed workspace lookup plainly. The raw stat
+// error carries the host's absolute path and Windows syscall text, which
+// would otherwise reach the model context through tool results and the
+// durable session history that later turns feed back to the model. The
+// returned error keeps its cause for unwrapping.
+func missingEntryText(kind string, requested string, err error) string {
+	if errors.Is(err, iofs.ErrNotExist) {
+		return fmt.Sprintf("%s does not exist in this workspace: %s", kind, requested)
+	}
+	return err.Error()
 }
 
 func pathDepth(rel string) int {
