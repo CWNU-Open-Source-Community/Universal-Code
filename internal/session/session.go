@@ -378,6 +378,13 @@ func (m *Manager) History(ctx context.Context, sessionID string, includeCompacte
 	return m.store.ListSessionMessages(ctx, sessionID, includeCompacted)
 }
 
+// RequireSession returns one session or a not-found error. ListSessionMessages
+// cannot distinguish an absent session from an empty one, so read-only
+// inspection surfaces call this first to keep "no messages" meaningful.
+func (m *Manager) RequireSession(ctx context.Context, sessionID string) (Session, error) {
+	return m.store.GetSession(ctx, sessionID)
+}
+
 func (m *Manager) List(ctx context.Context) ([]Session, error) {
 	return m.store.ListSessions(ctx)
 }
