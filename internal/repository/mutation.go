@@ -446,7 +446,7 @@ func normalizeRepositoryRoot(root string) (string, error) {
 		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
-		return "", errors.New("repository root does not contain Git metadata")
+		return "", apperror.New(apperror.CodeFailedPrecondition, "repository root does not contain Git metadata")
 	}
 	return root, nil
 }

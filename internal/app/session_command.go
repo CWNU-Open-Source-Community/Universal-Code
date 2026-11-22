@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/session"
@@ -199,7 +200,7 @@ func (a *App) sessionSend(ctx context.Context, manager *session.Manager, args []
 		return err
 	}
 	if flagWasSet(fs, "operation-key") && strings.TrimSpace(*operationKey) == "" {
-		return errors.New("session operation key cannot be blank")
+		return apperror.New(apperror.CodeInvalidArgument, "session operation key cannot be blank")
 	}
 	if fs.NArg() < 2 {
 		return errors.New(`usage: cyberagent session send <session-id> "message" [--operation-key <key>]`)
