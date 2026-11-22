@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"cyberagent-workbench/internal/apperror"
 )
 
 func writeConfig(t *testing.T, dir, content string) string {
@@ -218,5 +220,17 @@ func TestBrowserLimitsValidateAndNarrowPassthrough(t *testing.T) {
 	}
 	if effective.MaxTurns != 100 || effective.MaxToolCalls != 100 {
 		t.Fatalf("unrelated ceilings changed: %+v", effective)
+	}
+}
+
+// A missing config file is a not-found error naming the file: the old
+// symlink-indirection message accused the operator of path games when the
+// actual problem was simply an absent file.
+func TestLoadMissingConfigIsNotFoundNotSymlink(t *testing.T) {
+	_, err := Load(context.Background(), filepath.Join(t.TempDir(), ConfigDirName, ConfigFileName))
+	if apperror.CodeOf(err) != apperror.CodeNotFound ||
+		!strings.Contains(err.Error(), "does not exist") ||
+		strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("missing config must be NOT_FOUND naming the file: %v", err)
 	}
 }
