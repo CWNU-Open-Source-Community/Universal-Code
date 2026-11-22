@@ -22,6 +22,7 @@ import (
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
+	"cyberagent-workbench/internal/fileattachment"
 	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/store"
@@ -1437,5 +1438,39 @@ func TestExecArgumentErrorsAreUsageClassified(t *testing.T) {
 	_, stderr, code = executeTestCommand(t, "exec", "prompt without workspace")
 	if code != 2 || !strings.Contains(stderr, "usage: cyberagent exec --workspace") {
 		t.Fatalf("missing --workspace must be a usage error with exit 2: stderr=%q code=%d", stderr, code)
+	}
+}
+
+// Attachment and image input validation is operator input, not an internal
+// failure: every rejected path surfaces as a usage error (exit 2), while a
+// genuinely missing file keeps its not-found classification (exit 3).
+func TestExecAttachInputValidationExitCodes(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	if _, stderr, code := executeTestCommand(t, "workspace", "init", "attach-ws"); code != 0 {
+		t.Fatalf("workspace init failed: %s", stderr)
+	}
+	_, stderr, code := executeTestCommand(t, "exec", "--workspace", "attach-ws",
+		"--attach", ".", "hi")
+	if code != 2 || !strings.Contains(stderr, "not a regular file") {
+		t.Fatalf("directory attachment must be a usage error with exit 2: stderr=%q code=%d", stderr, code)
+	}
+	_, stderr, code = executeTestCommand(t, "exec", "--workspace", "attach-ws",
+		"--attach", "Z:/definitely-missing.bin", "hi")
+	if code != 3 || !strings.Contains(stderr, "--attach") {
+		t.Fatalf("missing attachment must stay not-found with exit 3: stderr=%q code=%d", stderr, code)
+	}
+	five := strings.Repeat("x", 1)
+	_, stderr, code = executeTestCommand(t, "exec", "--workspace", "attach-ws",
+		"--attach", five, "--attach", five, "--attach", five, "--attach", five, "--attach", five, "hi")
+	if code != 2 || !strings.Contains(stderr, "at most 4 attachments") {
+		t.Fatalf("attachment cap must be a usage error with exit 2: stderr=%q code=%d", stderr, code)
+	}
+	big := filepath.Join(t.TempDir(), "big.bin")
+	if err := os.WriteFile(big, make([]byte, fileattachment.MaxBytes+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code = executeTestCommand(t, "exec", "--workspace", "attach-ws", "--attach", big, "hi")
+	if code != 2 || !strings.Contains(stderr, "file exceeds") {
+		t.Fatalf("oversized attachment must be a usage error with exit 2: stderr=%q code=%d", stderr, code)
 	}
 }
