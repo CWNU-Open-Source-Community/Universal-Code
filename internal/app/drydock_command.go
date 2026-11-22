@@ -15,6 +15,34 @@ import (
 
 const drydockCLIUsage = "usage: cyberagent drydock status|create|use|checkpoint|rewind|undo|fork|deliver|cleanup|reconcile|gc [--run <run-id>] [--generation <n>] [--operation-key <key>] [explicit confirmation flags]"
 
+func drydockOperationUsage(action string) string {
+	switch action {
+	case "status":
+		return "usage: cyberagent drydock status --run <run-id> [--limit <n>] [--json]"
+	case "create":
+		return "usage: cyberagent drydock create --run <run-id> --operation-key <key> [--confirm-workspace-trust --expected-trust-digest <digest>] [--json]"
+	case "use":
+		return "usage: cyberagent drydock use --run <run-id> --generation <n> --operation-key <key> [--json]"
+	case "checkpoint":
+		return "usage: cyberagent drydock checkpoint --run <run-id> --generation <n> --operation-key <key> [--title <text>] [--confirm-observed-changes] [--json]"
+	case "rewind":
+		return "usage: cyberagent drydock rewind --run <run-id> --generation <n> --operation-key <key> --target-checkpoint <id> [--confirm] [--confirm-observed-changes] [--json]"
+	case "undo":
+		return "usage: cyberagent drydock undo --run <run-id> --generation <n> --operation-key <key> [--confirm] [--confirm-observed-changes] [--json]"
+	case "fork":
+		return "usage: cyberagent drydock fork --run <run-id> --generation <n> --operation-key <key> --confirm --enable-permission-control --target-checkpoint <id> --expected-current-checkpoint <id> --workspace-name <name> --workspace-root <root> --branch <branch> [--goal <text>] [--json]"
+	case "deliver":
+		return "usage: cyberagent drydock deliver --run <run-id> --generation <n> --operation-key <key> --confirm [--json]"
+	case "cleanup":
+		return "usage: cyberagent drydock cleanup --run <run-id> --generation <n> --operation-key <key> --confirm [--json]"
+	case "reconcile":
+		return "usage: cyberagent drydock reconcile [--json]"
+	case "gc":
+		return "usage: cyberagent drydock gc --confirm [--limit <n>] [--json]"
+	}
+	return drydockCLIUsage
+}
+
 func (a *App) drydockCommand(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New(drydockCLIUsage)
@@ -23,7 +51,7 @@ func (a *App) drydockCommand(ctx context.Context, args []string) error {
 	switch action {
 	case "status", "create", "use", "checkpoint", "rewind", "undo", "fork", "deliver", "cleanup", "reconcile", "gc":
 	default:
-		return errors.New(drydockCLIUsage)
+		return errors.New(drydockOperationUsage(action))
 	}
 	fs := newFlagSet("drydock "+action, a.errOut)
 	runID := fs.String("run", "", "exact Standard Code Run identity")
@@ -67,7 +95,7 @@ func (a *App) drydockCommand(ctx context.Context, args []string) error {
 	}
 	if fs.NArg() != 0 || *confirmFull && (!*confirm ||
 		(action != "rewind" && action != "undo" && action != "fork")) {
-		return errors.New(drydockCLIUsage)
+		return errors.New(drydockOperationUsage(action))
 	}
 	if err := a.ensureStore(); err != nil {
 		return err
@@ -102,13 +130,13 @@ func (a *App) drydockCommand(ctx context.Context, args []string) error {
 	switch action {
 	case "status":
 		if run == "" || *limit < 1 {
-			return errors.New(drydockCLIUsage)
+			return errors.New(drydockOperationUsage(action))
 		}
 		value, err = service.Projection(ctx, run, *limit)
 	case "create":
 		if run == "" || key == "" || actor == "" ||
 			*confirmTrust && strings.TrimSpace(*expectedTrust) == "" {
-			return errors.New(drydockCLIUsage)
+			return errors.New(drydockOperationUsage(action))
 		}
 		value, err = service.Create(ctx, application.DrydockCreateRequest{
 			RunID: run, OperationKey: key, RequestedBy: actor,
@@ -117,13 +145,13 @@ func (a *App) drydockCommand(ctx context.Context, args []string) error {
 		})
 	case "use":
 		if run == "" || key == "" || actor == "" || *generation < 1 {
-			return errors.New(drydockCLIUsage)
+			return errors.New(drydockOperationUsage(action))
 		}
 		value, err = service.Use(ctx, application.DrydockUseRequest{RunID: run,
 			ExpectedGeneration: *generation, OperationKey: key, RequestedBy: actor})
 	case "checkpoint":
 		if run == "" || key == "" || actor == "" || *generation < 1 {
-			return errors.New(drydockCLIUsage)
+			return errors.New(drydockOperationUsage(action))
 		}
 		value, err = service.Checkpoint(ctx, application.DrydockCheckpointRequest{
 			RunID: run, ExpectedGeneration: *generation, OperationKey: key,
@@ -132,7 +160,7 @@ func (a *App) drydockCommand(ctx context.Context, args []string) error {
 	case "rewind":
 		if run == "" || key == "" || actor == "" || *generation < 1 ||
 			strings.TrimSpace(*targetCheckpoint) == "" {
-			return errors.New(drydockCLIUsage)
+			return errors.New(drydockOperationUsage(action))
 		}
 		value, err = service.Rewind(ctx, application.DrydockRewindRequest{
 			RunID: run, TargetCheckpointID: strings.TrimSpace(*targetCheckpoint),
@@ -140,7 +168,7 @@ func (a *App) drydockCommand(ctx context.Context, args []string) error {
 			Confirm: *confirm, ConfirmObservedChanges: *confirmChanges})
 	case "undo":
 		if run == "" || key == "" || actor == "" || *generation < 1 {
-			return errors.New(drydockCLIUsage)
+			return errors.New(drydockOperationUsage(action))
 		}
 		value, err = service.Undo(ctx, application.DrydockUndoRequest{
 			RunID: run, ExpectedGeneration: *generation, OperationKey: key,
@@ -153,7 +181,7 @@ func (a *App) drydockCommand(ctx context.Context, args []string) error {
 			strings.TrimSpace(*forkWorkspaceName) == "" ||
 			strings.TrimSpace(*forkWorkspaceRoot) == "" ||
 			strings.TrimSpace(*forkBranch) == "" {
-			return errors.New(drydockCLIUsage)
+			return errors.New(drydockOperationUsage(action))
 		}
 		value, err = service.Fork(ctx, application.DrydockForkRequest{RunID: run,
 			TargetCheckpointID:          strings.TrimSpace(*targetCheckpoint),
@@ -165,14 +193,14 @@ func (a *App) drydockCommand(ctx context.Context, args []string) error {
 			Confirm: true})
 	case "deliver":
 		if run == "" || key == "" || actor == "" || *generation < 1 || !*confirm {
-			return errors.New(drydockCLIUsage)
+			return errors.New(drydockOperationUsage(action))
 		}
 		value, err = service.Deliver(ctx, application.DrydockDeliveryRequest{
 			RunID: run, ExpectedGeneration: *generation, OperationKey: key,
 			RequestedBy: actor, Confirm: true})
 	case "cleanup":
 		if run == "" || key == "" || actor == "" || *generation < 1 || !*confirm {
-			return errors.New(drydockCLIUsage)
+			return errors.New(drydockOperationUsage(action))
 		}
 		value, err = service.Cleanup(ctx, application.DrydockCleanupRequest{
 			RunID: run, ExpectedGeneration: *generation, OperationKey: key,
@@ -181,7 +209,7 @@ func (a *App) drydockCommand(ctx context.Context, args []string) error {
 		value, err = service.Reconcile(ctx)
 	case "gc":
 		if !*confirm || *limit < 1 {
-			return errors.New(drydockCLIUsage)
+			return errors.New(drydockOperationUsage(action))
 		}
 		value, err = service.GarbageCollect(ctx, *limit)
 	}

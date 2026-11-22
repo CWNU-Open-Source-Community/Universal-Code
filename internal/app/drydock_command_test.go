@@ -163,3 +163,29 @@ func runDrydockCLIGit(t *testing.T, root string, args ...string) string {
 	}
 	return strings.TrimSpace(string(output))
 }
+
+// Eleven drydock subcommands share one flag surface only loosely: the old
+// single usage line made required flags like --generation undiscoverable
+// and blocked the checkpoint/rewind lifecycle entirely.
+func TestDrydockUsagePerSubcommand(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	cases := map[string]string{
+		"checkpoint": "--generation <n>",
+		"rewind":     "--target-checkpoint <id>",
+		"fork":       "--enable-permission-control",
+		"deliver":    "--confirm",
+		"create":     "--confirm-workspace-trust",
+		"gc":         "--confirm",
+	}
+	for sub, want := range cases {
+		_, stderr, code := executeTestCommand(t, "drydock", sub)
+		if code != 2 || !strings.Contains(stderr, "usage: cyberagent drydock "+sub) ||
+			!strings.Contains(stderr, want) {
+			t.Fatalf("drydock %s usage must expose its own flags (want %q): stderr=%q code=%d", sub, want, stderr, code)
+		}
+	}
+	if _, stderr, code := executeTestCommand(t, "drydock", "not-an-op"); code != 2 ||
+		!strings.Contains(stderr, "status|create|use|checkpoint") {
+		t.Fatalf("unknown subcommand must keep the overview line: stderr=%q code=%d", stderr, code)
+	}
+}
