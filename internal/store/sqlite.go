@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"cyberagent-workbench/internal/agent"
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/artifact"
 	"cyberagent-workbench/internal/contextmgr"
 	"cyberagent-workbench/internal/fileedit"
@@ -52,8 +53,16 @@ type ArtifactRecord struct {
 }
 
 func Open(path string) (*SQLiteStore, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
+	directory := filepath.Dir(path)
+	// MkdirAll against an existing non-directory reports a misleading
+	// ENOENT on Windows ("The system cannot find the path specified") even
+	// though the path exists; name the actual condition instead.
+	if info, statErr := os.Stat(directory); statErr == nil && !info.IsDir() {
+		return nil, apperror.New(apperror.CodeInvalidArgument,
+			fmt.Sprintf("store directory path exists but is not a directory: %s", directory))
+	}
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return nil, fmt.Errorf("create store directory: %w", err)
 	}
 	db, err := sql.Open("sqlite3", sqliteDSN(path))
 	if err != nil {

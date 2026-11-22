@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"cyberagent-workbench/internal/apperror"
+
 	"cyberagent-workbench/internal/agent"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/approval"
@@ -1275,4 +1277,19 @@ func approveStoredProposal(t *testing.T, st *SQLiteStore, proposalID string, suf
 		t.Fatal(err)
 	}
 	return result.Approval
+}
+
+// A CYBERAGENT_HOME that points at a regular file must fail with the actual
+// condition: MkdirAll against an existing non-directory reports a misleading
+// Windows ENOENT ("path not found") even though the path exists.
+func TestOpenRejectsFileAsStoreDirectory(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "home-is-a-file")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Open(filepath.Join(file, "cyberagent.db"))
+	if apperror.CodeOf(err) != apperror.CodeInvalidArgument ||
+		!strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("file store directory must be invalid-argument naming the condition: %v", err)
+	}
 }
