@@ -293,6 +293,10 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     return pinnedThreads.filter((thread) => threadProjectID(thread) === activeProjectFilter);
   }, [pinnedThreads, activeProjectFilter, searchOpen]);
 
+  // 项目筛选只能看到已加载的会话分页；还有未加载记录时，不能断言某项目“暂无会话”。
+  const threadListFullyLoaded = !loading && !loadingMore && !loadFailed && !loadMoreFailed &&
+    !hasMore && !truncated && !pinsQuery.isError;
+
   const priorityGrouping = useMemo(() => {
     void cacheVersion;
     return groupThreadsByPriority(unpinnedFilteredThreads, resolveThreadSignals, t, locale);
@@ -509,7 +513,10 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
             renderThread={renderThread}
           />
           {activeProjectFilter !== null && unpinnedFilteredThreads.length === 0 && visiblePinnedThreads.length === 0 && !loading && (
-            <p className="v2-project-empty">{t("所选置顶项目暂无会话", "No chats in the selected pinned project")}</p>
+            <p className="v2-project-empty">{threadListFullyLoaded
+              ? t("所选置顶项目暂无会话", "No chats in the selected pinned project")
+              : t("已加载的记录中暂无该项目的会话，可加载更早对话继续查找。",
+                "No chats for this project among the loaded records; load earlier conversations to keep looking.")}</p>
           )}
         </>
       )}
@@ -537,6 +544,13 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
         const workspace = workspaces.find(({ id }) => id === workspaceID) ?? { id: workspaceID, name: label, created_at: "" };
         const expanded = !collapsedProjects.has(workspaceID);
         const summary = projectCounts.get(workspaceID);
+        let emptyProjectHint = t("暂无聊天", "No chats yet");
+        if (draggingThreadID) {
+          emptyProjectHint = t("拖到这里", "Drop here");
+        } else if (activeProjectFilter === workspaceID && !threadListFullyLoaded) {
+          emptyProjectHint = t("已加载的记录中暂无该项目的会话，可加载更早对话继续查找。",
+            "No chats for this project among the loaded records; load earlier conversations to keep looking.");
+        }
         return <section aria-label={t(`项目 ${label}`, `Project ${label}`)} className={`v2-thread-group${workspaceID ? "" : " is-local"}${dropProjectID === workspaceID ? " is-drop-target" : ""}`} key={workspaceID}
           onDragOver={(event) => { if (acceptsDrop) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropProjectID(workspaceID); } }}
           onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropProjectID(null); }}
@@ -553,7 +567,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           {onNewInProject && <button className="v2-project-new-chat" aria-label={t(`在 ${label} 中新建聊天`, `New chat in ${label}`)}
             onClick={() => onNewInProject(workspaceID)} type="button"><SquarePen aria-hidden="true" size={14} /></button>}
         </header>}
-        {expanded && workspaceThreads.length === 0 && <p className="v2-project-empty">{draggingThreadID ? t("拖到这里", "Drop here") : t("暂无聊天", "No chats yet")}</p>}
+        {expanded && workspaceThreads.length === 0 && <p className="v2-project-empty">{emptyProjectHint}</p>}
         {expanded && workspaceThreads.map((thread) => renderThread(thread))}
       </section>; })}
       {!searchPending && loadFailed && <p className="v2-history-scope v2-history-error" role="alert">{threads.length ? t("对话列表加载失败，已有记录仍可打开。", "The conversation list could not be loaded. Existing records can still be opened.") : t("对话列表加载失败，请重试读取。", "The conversation list could not be loaded. Please try again.")}
