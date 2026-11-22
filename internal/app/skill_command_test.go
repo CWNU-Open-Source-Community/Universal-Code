@@ -325,8 +325,18 @@ func TestSkillPackageRegistryCLIRequiresCatalogAndRejectsBuiltins(t *testing.T) 
 	writeTestSkillPackage(t, packagePath, manifest, content)
 	if _, stderr, code := executeTestCommand(t, "skill", "import", packagePath,
 		"--operation-key", "skill-package-boundary-0001",
-		"--confirm-untrusted-skill"); code != 2 || !strings.Contains(stderr, "unsupported execution surface") {
-		t.Fatalf("missing catalog surface: code=%d stderr=%q", code, stderr)
+		"--confirm-untrusted-skill"); code != 2 || !strings.Contains(stderr, "--surface is required") {
+		t.Fatalf("missing catalog surface must name the required flag: code=%d stderr=%q", code, stderr)
+	}
+	if _, stderr, code := executeTestCommand(t, "skill", "import-dir", packagePath,
+		"--operation-key", "skill-package-boundary-0001",
+		"--confirm-untrusted-skill"); code != 2 || !strings.Contains(stderr, "--surface is required") {
+		t.Fatalf("import-dir missing surface must name the required flag: code=%d stderr=%q", code, stderr)
+	}
+	if _, stderr, code := executeTestCommand(t, "skill", "import", packagePath,
+		"--surface", "web", "--operation-key", "skill-package-boundary-0001",
+		"--confirm-untrusted-skill"); code != 2 || !strings.Contains(stderr, "unsupported execution surface \"web\"") || !strings.Contains(stderr, "must be code or cyber") {
+		t.Fatalf("invalid catalog surface must name valid choices: code=%d stderr=%q", code, stderr)
 	}
 	if _, stderr, code := executeTestCommand(t, "skill", "import", packagePath,
 		"--surface", "code", "--operation-key", "skill-package-boundary-0001",

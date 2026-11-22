@@ -106,9 +106,12 @@ func (a *App) skillCommand(ctx context.Context, args []string) error {
 		if flags.NArg() != 1 {
 			return errors.New("usage: cyberagent skill import <package.zip> --surface code|cyber --operation-key <stable-key> --confirm-untrusted-skill [--operator cli_operator]")
 		}
+		if strings.TrimSpace(*surfaceValue) == "" {
+			return errors.New("usage: cyberagent skill import <package.zip> --surface code|cyber --operation-key <stable-key> --confirm-untrusted-skill; --surface is required")
+		}
 		surface, err := domain.ParseExecutionSurface(*surfaceValue)
 		if err != nil {
-			return err
+			return fmt.Errorf("usage: --surface must be code or cyber; unsupported execution surface %q", *surfaceValue)
 		}
 		raw, err := skills.ReadPackageFile(ctx, flags.Arg(0))
 		if err != nil {
@@ -532,9 +535,13 @@ func (a *App) skillImportSourceCommand(ctx context.Context, args []string, kind 
 		return fmt.Errorf("usage: cyberagent skill import-%s <source> --surface code|cyber --operation-key <stable-key> --confirm-untrusted-skill %s",
 			kind, map[string]string{"url": "--sha256 <hex>", "git": "--commit <sha>", "dir": ""}[kind])
 	}
+	if strings.TrimSpace(*surfaceValue) == "" {
+		return fmt.Errorf("usage: cyberagent skill import-%s <source> --surface code|cyber --operation-key <stable-key>%s; --surface is required",
+			kind, map[string]string{"url": " --sha256 <hex>", "git": " --commit <sha>", "dir": ""}[kind])
+	}
 	surface, err := domain.ParseExecutionSurface(*surfaceValue)
 	if err != nil {
-		return err
+		return fmt.Errorf("usage: --surface must be code or cyber; unsupported execution surface %q", *surfaceValue)
 	}
 	var result application.ImportSkillFromSourceResult
 	switch kind {
