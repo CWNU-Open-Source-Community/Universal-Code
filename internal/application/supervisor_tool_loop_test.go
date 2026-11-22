@@ -121,6 +121,37 @@ func TestAgentRunnerExecutesAllowlistedStructuredToolAndContinuesModel(t *testin
 	}
 }
 
+func TestThreadHandoffCanExplicitlyCreateAWorkItem(t *testing.T) {
+	st := openHistoryRecallStore(t, filepath.Join(t.TempDir(), "handoff-work-board.sqlite"))
+	defer st.Close()
+	_, run := createHistoryRecallRun(t, st, "handoff-work-board", "")
+	p := newGeneratedProtocolProvider()
+	turns, _ := generatedThreadServices(st, p, nil)
+	submitHistoryRecall(t, turns, run.ID, "work-board-record-in-chat", "The catalog check is pending. Just record that here.")
+	submitHistoryRecall(t, turns, run.ID, "work-board-report-pending", "Give a handoff stating the pending check and its status.")
+	_, requests := p.splitRequests()
+	var description string
+	for _, spec := range requests[len(requests)-1].Request.Tools {
+		if spec.Name == "work_item_create" {
+			description = spec.Description
+		}
+	}
+	if !strings.Contains(description, "previously recorded tasks in the reply") || !strings.Contains(description, "current request asks for a board entry") {
+		t.Errorf("handoff request lacks guidance about existing records and new board entries: %q", description)
+	}
+	p.normal = func(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+		if hasToolResults(req) {
+			return historyRecallFinish(), nil
+		}
+		return toolResponse("requested-board-entry", "work_item_create", `{"title":"Check the catalog"}`), nil
+	}
+	submitHistoryRecall(t, turns, run.ID, "create-requested-item", "For this handoff, add a work item titled Check the catalog to the work board.")
+	items, err := st.ListWorkItems(t.Context(), domain.WorkItemFilter{RunID: run.ID})
+	if err != nil || len(items) != 1 || items[0].Title != "Check the catalog" || items[0].Status != domain.WorkItemPending {
+		t.Fatalf("explicitly requested board entry: items=%+v error=%v", items, err)
+	}
+}
+
 func TestAgentRunnerExecutesDurableRunScopedWebFetch(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "supervisor-web-fetch.db"))
 	if err != nil {

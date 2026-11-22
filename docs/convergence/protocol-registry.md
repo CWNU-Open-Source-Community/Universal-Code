@@ -2213,6 +2213,7 @@ These identifiers remain inside the scan. Each exemption is bound to exact files
 | `standard_code_test_root.v1` | `test-fixture` | `internal/application/standard_code_supervisor_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `test-output.v1` | `test-fixture` | `internal/store/batch_delivery_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `thread-compaction-live.v1` | `test-fixture` | `internal/application/thread_context_compaction_live_test.go` | Redacted evidence for opt-in real-model repeated Thread compaction and continuation acceptance. |
+| `thread_compaction_quality.v1` | `test-fixture` | `internal/application/testdata/compaction-quality-cases.json` | Synthetic conversation corpus for comparing public replies after two Thread compactions. |
 | `thread_summary_window.v99` | `test-fixture` | `internal/contextmgr/continuity_summary_window_test.go` | Negative fixture verifies unknown rolling window versions fail closed. |
 | `ui-evidence-ci-launch.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |
 | `ui-evidence-ci-smoke.v1` | `test-fixture` | `internal/browserruntime/ui_evidence_runtime_windows_test.go` | Test-only or golden/negative-vector identifier; exact source binding prevents production classification. |

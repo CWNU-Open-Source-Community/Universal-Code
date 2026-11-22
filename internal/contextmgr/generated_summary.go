@@ -266,18 +266,14 @@ func generatedFromSummaryContent(content string) *GeneratedSummary {
 	return nil
 }
 
-func applyGeneratedHandoff(summary Summary, generated *GeneratedSummary, maxChars int, strategy SummaryStrategy) (Summary, error) {
-	var envelope handoffMemoryEnvelope
-	if err := json.Unmarshal([]byte(summary.Content), &envelope); err != nil {
-		return summary, err
-	}
-	envelope.Generated = generated
-	content, err := fitHandoffRecords(context.Background(), envelope, envelope.Records, maxChars, strategy)
+func applyGeneratedHandoff(ctx context.Context, summary Summary, sources handoffMemoryEnvelope, generated *GeneratedSummary, maxChars int, strategy SummaryStrategy) (Summary, error) {
+	// The fallback may already have discarded sources to fit the previous
+	// generated text. Fit its replacement against the original candidates.
+	sources.Generated = generated
+	content, err := fitHandoffRecords(ctx, sources, sources.Records, maxChars, strategy)
 	if err != nil {
 		return summary, err
 	}
-	// Existing omissions are already counted; fitting the currently visible
-	// records may add new omissions but cannot claim newly compacted messages.
 	var fitted handoffMemoryEnvelope
 	if err := json.Unmarshal([]byte(content), &fitted); err != nil {
 		return summary, err
@@ -304,12 +300,14 @@ func fitGeneratedHandoffRecords(ctx context.Context, envelope handoffMemoryEnvel
 	}
 	plain := envelope
 	plain.Generated = nil
-	plain.generatedAnchorsOnly = false
 	baseline, err := fitPlainHandoffRecords(ctx, plain, records, maxRunes, strategy)
 	if err != nil {
 		return "", err
 	}
-	envelope.generatedAnchorsOnly = true
+	// Share space among the operator sources before growing individual
+	// excerpts. Even a short generated narrative can otherwise leave room
+	// only for the first objective and the two latest operator messages.
+	envelope.preferOperatorRecords = true
 	// An inherited valid handoff may itself exceed a smaller rolling window's
 	// remaining budget. Fall back to its exact-source extractive projection;
 	// cancellation or strategy errors below still propagate normally.
@@ -328,7 +326,7 @@ func fitGeneratedHandoffRecords(ctx context.Context, envelope handoffMemoryEnvel
 	if err := json.Unmarshal([]byte(content), &fitted); err != nil {
 		return "", err
 	}
-	for _, anchor := range handoffAnchorRecords(records) {
+	for _, anchor := range handoffAnchorRecords(records, envelope, true) {
 		found := false
 		for _, record := range fitted.Records {
 			if record.Ordinal == anchor.Ordinal {

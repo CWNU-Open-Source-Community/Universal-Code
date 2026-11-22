@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -650,7 +652,7 @@ func (m *Manager) chat(ctx context.Context, sess Session, userMsg Message) (Send
 		return SendResult{}, apperror.New(apperror.CodeFailedPrecondition,
 			"this provider requires Root Supervisor private assistant history; legacy Session chat is unsupported")
 	}
-	prompt, compacted, err := m.sessionChatPrompt(ctx, sess, ref)
+	prompt, compacted, err := m.sessionChatPrompt(ctx, sess, ref, true)
 	if err != nil {
 		return SendResult{}, err
 	}
@@ -699,11 +701,11 @@ func (m *Manager) compactAfterTurn(ctx context.Context, sess Session) (bool, int
 	if err != nil {
 		return false, 0, err
 	}
-	_, result, err := m.sessionChatPrompt(ctx, sess, ref)
+	_, result, err := m.sessionChatPrompt(ctx, sess, ref, false)
 	return result.Compacted, result.Summary.ID, err
 }
 
-func (m *Manager) sessionChatPrompt(ctx context.Context, sess Session, ref llm.ModelRef) ([]contextmgr.Message, contextmgr.Result, error) {
+func (m *Manager) sessionChatPrompt(ctx context.Context, sess Session, ref llm.ModelRef, replayOriginals bool) ([]contextmgr.Message, contextmgr.Result, error) {
 	var result contextmgr.Result
 	active, err := m.store.ListSessionMessages(ctx, sess.ID, false)
 	if err != nil {
@@ -718,7 +720,11 @@ func (m *Manager) sessionChatPrompt(ctx context.Context, sess Session, ref llm.M
 	if err != nil {
 		return nil, result, err
 	}
-	prompt := m.contextMgr.BuildPrompt(systemPrompt(sess), summary, toContextMessages(active))
+	recent := toContextMessages(active)
+	prompt, err := m.contextMgr.BuildPrompt(systemPrompt(sess), summary, recent)
+	if err != nil {
+		return nil, result, err
+	}
 	estimate := func(messages []contextmgr.Message) int {
 		n := 8
 		for _, message := range messages {
@@ -732,13 +738,102 @@ func (m *Manager) sessionChatPrompt(ctx context.Context, sess Session, ref llm.M
 		if err != nil {
 			return nil, result, err
 		}
-		prompt = m.contextMgr.BuildPrompt(systemPrompt(sess), result.Summary, result.Preserved)
+		summary, recent = result.Summary, result.Preserved
+		prompt, err = m.contextMgr.BuildPrompt(systemPrompt(sess), summary, recent)
+		if err != nil {
+			return nil, result, err
+		}
 		tokens = estimate(prompt)
 	}
 	if tokens > limit {
 		return nil, result, apperror.New(apperror.CodeResourceExhausted, "session context exceeds the model input window")
 	}
+	if replayOriginals && strings.TrimSpace(summary.Content) != "" && len(recent) > 0 {
+		originals, err := m.compactedOperatorOriginals(ctx, sess.ID, recent[0].SourceMessageID, min(MaxRecentOperatorTokens, limit-tokens), summary)
+		if err != nil {
+			return nil, result, err
+		}
+		if len(originals) > 0 {
+			prompt, err = m.contextMgr.BuildSessionPrompt(ctx, sess.ID, systemPrompt(sess), summary, recent, originals)
+			if err != nil {
+				return nil, result, err
+			}
+		}
+	}
 	return prompt, result, nil
+}
+
+func (m *Manager) compactedOperatorOriginals(ctx context.Context, sessionID string, beforeID int64, remaining int, summary contextmgr.Summary) ([]contextmgr.Message, error) {
+	reader, ok := m.store.(interface {
+		ListCompactedSessionOperatorMessages(context.Context, string, int64, int) ([]Message, error)
+	})
+	if !ok || beforeID <= 0 || remaining <= 0 {
+		return nil, nil
+	}
+	messages, err := reader.ListCompactedSessionOperatorMessages(ctx, sessionID, beforeID, remaining)
+	if err != nil {
+		return nil, err
+	}
+	var originals []contextmgr.Message
+	var newestOmitted contextmgr.Message
+	upperID, initialBudget := beforeID, remaining
+	for _, message := range messages {
+		if message.SessionID != sessionID || !message.Compacted || message.ID >= beforeID {
+			return nil, apperror.New(apperror.CodeFailedPrecondition, "compacted operator history does not match the Session prefix")
+		}
+		beforeID = message.ID
+		projected, verified, err := ProjectCompactedOperator(message)
+		if err != nil {
+			return nil, err
+		}
+		if !verified {
+			continue
+		}
+		cost := contextmgr.EstimateMessageTokens(projected.Role, projected.Content)
+		if cost <= remaining {
+			remaining -= cost
+			originals = append(originals, projected)
+		} else if newestOmitted.SourceMessageID == 0 {
+			newestOmitted = projected
+		}
+	}
+	slices.Reverse(originals)
+	if remaining <= 0 || len(originals) >= MaxRecentOperatorMessages {
+		return originals, nil
+	}
+	if oversized, ok := m.store.(interface {
+		LatestOversizedSessionOperator(context.Context, string, int64, int64, int) (Message, bool, error)
+	}); ok {
+		message, found, err := oversized.LatestOversizedSessionOperator(ctx, sessionID, newestOmitted.SourceMessageID, upperID, initialBudget)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			if message.SessionID != sessionID || !message.Compacted || message.ID <= newestOmitted.SourceMessageID || message.ID >= upperID {
+				return nil, apperror.New(apperror.CodeFailedPrecondition, "oversized operator source does not match the Session prefix")
+			}
+			projected, verified, err := ProjectCompactedOperator(message)
+			if err != nil {
+				return nil, err
+			}
+			if verified {
+				newestOmitted = projected
+			}
+		}
+	}
+	if newestOmitted.SourceMessageID != 0 {
+		projected := newestOmitted
+		if contextmgr.EstimateMessageTokens(projected.Role, projected.Content) > remaining {
+			excerpt, fits, err := contextmgr.FitOperatorExcerpt(projected, summary, remaining)
+			if err != nil || !fits {
+				return originals, err
+			}
+			projected = excerpt
+		}
+		at := sort.Search(len(originals), func(i int) bool { return originals[i].SourceMessageID >= projected.SourceMessageID })
+		originals = slices.Insert(originals, at, projected)
+	}
+	return originals, nil
 }
 
 func (m *Manager) compactActiveMessages(ctx context.Context, sess Session) (contextmgr.Result, error) {

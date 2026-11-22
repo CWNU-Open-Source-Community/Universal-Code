@@ -839,6 +839,9 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			prepared.context.memory, err = supervisorMemoryContextWithinBudget(prepared.context.memoryBudget, prepared.context.threadEndTurn, prepared.context.summary, prepared.context.hasSummary, prepared.context.workItems, prepared.context.notes, prepared.context.inbox.Messages,
 				prepared.context.projectInstructionSections, prepared.context.threadPinSections, prepared.context.longTermMemorySections, prepared.context.continuitySections, supervisorGoalContext(turn), prepared.context.recentOperatorSections)
 		}
+		if err == nil && prepared.context.hasSummary {
+			err = loadSupervisorHandoffArchive(ctx, s.store, turn.Run.SessionID, &prepared.context.memory)
+		}
 		if err == nil {
 			err = requireSupervisorContinuityContext(prepared.context.memory, prepared.context.summary, prepared.context.hasSummary, turn.Mission.ID, turn.Run.Config.ContinuityContextFingerprint)
 		}
@@ -1004,7 +1007,11 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 		if pinConfirmationWaiting {
 			modelRequest = contextPinConfirmationRequest(modelRequest)
 		}
-		modelRequest = supervisorToolExposureRequest(modelRequest, exposure, modelContextLayout.HistoryStart)
+		exposurePrefixEnd := modelContextLayout.HistoryStart
+		if modelContextLayout.recentOperatorCount > 0 {
+			exposurePrefixEnd = modelContextLayout.recentOperatorStart
+		}
+		modelRequest = supervisorToolExposureRequest(modelRequest, exposure, exposurePrefixEnd)
 		modelContextLayout = modelContextLayout.shifted(1)
 		modelRequest, err = prepareModelHarnessRequest(s.router, prepared.ref,
 			llm.HarnessWorkloadRoot, modelRequest)
@@ -1035,7 +1042,9 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			previousCount := len(modelRequest.Messages)
 			modelRequest = supervisorFileEditGuidance(modelRequest, prepared.tools.options.AgentCode.Capabilities, modelContextLayout.HistoryStart)
 			modelRequest = supervisorOutputBudgetGuidance(modelRequest, modelWindow, configuredOutputCap, modelContextLayout.HistoryStart)
-			modelContextLayout = modelContextLayout.shifted(len(modelRequest.Messages) - previousCount)
+			// Both advisories are inserted at the live history boundary, after
+			// the retained originals and their compaction summary.
+			modelContextLayout.HistoryStart += len(modelRequest.Messages) - previousCount
 		}
 		readFeedback, err := s.workspaceReadFeedback(ctx, turn.Checkpoint, len(modelRequest.Tools) > 0, prepared.toolRounds)
 		if err != nil {
@@ -1073,7 +1082,8 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 			}
 		}
 		modelMemory := prepared.context.memory
-		modelRequest, modelContextLayout, modelMemory, err = fitRecentOperatorRequest(modelRequest, modelContextLayout, modelMemory, inputLimit)
+		excerptLimit := supervisorRunInputLimit(inputLimit, modelRequest.PlannedOutputTokens(modelWindow), turn.Run.Budget, turn.Checkpoint)
+		modelRequest, modelContextLayout, modelMemory, err = fitRecentOperatorRequest(modelRequest, modelContextLayout, modelMemory, inputLimit, prepared.context.recentOperatorSections, excerptLimit)
 		if err != nil {
 			return result, s.recordFailure(ctx, &result, err, 0)
 		}
@@ -1172,6 +1182,12 @@ func (s *AgentRunner) stepSegmentWithLeaseMode(ctx context.Context, lease domain
 						}
 						if compactErr != nil {
 							return result, s.recordFailure(ctx, &result, compactErr, 0)
+						}
+						// Restored operator originals are fitted after the request is assembled.
+						// The claimed ceiling then bounds the actual retry below the rejected input.
+						_, canFitRecovery := s.store.(supervisorContextRecoveryLimitStore)
+						if compacted && canFitRecovery && prepared.layout.recentOperatorCount > 0 && ctx.Err() == nil {
+							continue
 						}
 						if estimateModelRequestTokens(request) >= before {
 							trySegmentReceipt()
