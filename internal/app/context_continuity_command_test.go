@@ -187,3 +187,36 @@ func TestSessionContinuityCLI_CheckpointTreeAndFork(t *testing.T) {
 		t.Fatalf("fork did not create a fresh non-authorizing branch: %#v", fork)
 	}
 }
+
+// The usage line and the scope guard must agree: --confirm belongs to the
+// --run scope (the pinned snapshot it mutates is run state), and the guard
+// errors are usage-classified so scripts can tell argument mistakes from
+// real failures.
+func TestContextInstructionsConfirmScopeIsDocumentedAndClassified(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	_, stderr, code := executeTestCommand(t, "context", "instructions",
+		"--workspace", "no-such-ws", "--confirm",
+		"--expected-fingerprint", "deadbeef", "--expected-live-fingerprint", "deadbeef")
+	if code != 2 || !strings.Contains(stderr, "requires --run <run-id>") ||
+		!strings.Contains(stderr, "usage:") {
+		t.Fatalf("workspace-scope confirm must be a usage error naming --run: stderr=%q code=%d", stderr, code)
+	}
+	if _, stderr, code := executeTestCommand(t, "workspace", "init", "confirm-scope-ws"); code != 0 {
+		t.Fatalf("workspace init failed: %s", stderr)
+	}
+	created, stderr, code := executeTestCommand(t, "run", "create", "confirm scope probe",
+		"--workspace", "confirm-scope-ws")
+	if code != 0 {
+		t.Fatalf("run create failed: %s", stderr)
+	}
+	runID := runIDPattern.FindString(created)
+	_, stderr, code = executeTestCommand(t, "context", "instructions", "--run", runID, "--confirm")
+	if code != 2 || !strings.Contains(stderr, "pinned and live fingerprints") {
+		t.Fatalf("confirm without fingerprints must be a usage error: stderr=%q code=%d", stderr, code)
+	}
+	_, stderr, code = executeTestCommand(t, "context", "instructions", "--run", runID,
+		"--expected-fingerprint", "abc")
+	if code != 2 || !strings.Contains(stderr, "only with --confirm") {
+		t.Fatalf("fingerprints without confirm must be a usage error: stderr=%q code=%d", stderr, code)
+	}
+}
