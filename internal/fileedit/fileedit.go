@@ -382,7 +382,8 @@ func (m *Manager) ApproveWithPreWriteCheck(ctx context.Context, id string,
 		return m.store.SaveFileEdit(ctx, edit)
 	}
 	if currentHash != edit.OriginalHash {
-		return m.fail(ctx, edit, errors.New("workspace file changed after the proposal; refusing to overwrite"))
+		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
+			"workspace file changed after the proposal; refusing to overwrite"))
 	}
 
 	edit.Status = StatusApproved
@@ -407,14 +408,16 @@ func (m *Manager) ApproveWithPreWriteCheck(ctx context.Context, id string,
 		return m.fail(ctx, edit, err)
 	}
 	if writeTarget != target {
-		return m.fail(ctx, edit, errors.New("workspace path changed during approval; refusing to write"))
+		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
+			"workspace path changed during approval; refusing to write"))
 	}
 	latest, latestExists, err := readCurrentTextFromRoot(root, rootedPath)
 	if err != nil {
 		return m.fail(ctx, edit, err)
 	}
 	if contentHash(latest, latestExists) != edit.OriginalHash {
-		return m.fail(ctx, edit, errors.New("workspace file changed during approval; refusing to overwrite"))
+		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
+			"workspace file changed during approval; refusing to overwrite"))
 	}
 	target = writeTarget
 	mode := os.FileMode(0o644)
@@ -437,7 +440,7 @@ func (m *Manager) ApproveWithPreWriteCheck(ctx context.Context, id string,
 		return m.fail(ctx, edit, err)
 	}
 	if finalTarget != target {
-		return m.fail(ctx, edit, errors.New(
+		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
 			"workspace path changed before atomic replacement; refusing to write"))
 	}
 	latest, latestExists, err = readCurrentTextFromRoot(root, rootedPath)
@@ -445,7 +448,7 @@ func (m *Manager) ApproveWithPreWriteCheck(ctx context.Context, id string,
 		return m.fail(ctx, edit, err)
 	}
 	if contentHash(latest, latestExists) != edit.OriginalHash {
-		return m.fail(ctx, edit, errors.New(
+		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
 			"workspace file changed before atomic replacement; refusing to overwrite"))
 	}
 	if preWrite != nil {
