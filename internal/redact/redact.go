@@ -27,6 +27,15 @@ var defaultRules = []rule{
 		replacement: "[REDACTED:private-key]",
 	},
 	{
+		// Bounded output often cuts a PEM block before its END marker; the
+		// complete-block rule above then misses it and the whole key body
+		// leaks. Match a header whose remainder to the end of the text is
+		// only base64/whitespace.
+		label:       "private-key-truncated",
+		pattern:     regexp.MustCompile(`(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----[A-Za-z0-9+/=\s]+$`),
+		replacement: "[REDACTED:private-key]",
+	},
+	{
 		label:       "mimo-token",
 		pattern:     regexp.MustCompile(`\b` + "t" + `p-[A-Za-z0-9]{30,}\b`),
 		replacement: "[REDACTED:mimo-token]",
@@ -57,8 +66,17 @@ var defaultRules = []rule{
 		replacement: `$1[REDACTED:bearer-token]`,
 	},
 	{
+		// Credentials embedded in connection strings and URLs
+		// (postgres://admin:pw@host, https://user:secret9@host) are a common
+		// real leak shape no other rule covers; the username stays visible
+		// and only the password is removed.
+		label:       "url-credential",
+		pattern:     regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.\-]*://[^\s/:@]+:)([^\s/@]+)@`),
+		replacement: `$1[REDACTED:url-credential]@`,
+	},
+	{
 		label:       "assigned-secret",
-		pattern:     regexp.MustCompile(`(?i)\b([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY)[A-Z0-9_]*\s*[:=]\s*)(["']?)([^\s"']{8,})(["']?)`),
+		pattern:     regexp.MustCompile(`(?i)\b([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|PRIVATE[_-]?KEY)[A-Z0-9_]*\s*[:=]\s*)(["']?)([^\s"']{8,})(["']?)`),
 		replacement: `$1$2[REDACTED:secret]$4`,
 	},
 }
