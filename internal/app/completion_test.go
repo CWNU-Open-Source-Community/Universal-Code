@@ -419,3 +419,62 @@ func TestCompletionCommandRequiresShell(t *testing.T) {
 		}
 	}
 }
+
+// Every declared flag must appear in the command's usage line, so operators
+// never have to read source code to discover a feature. Commands whose usage
+// intentionally covers nested operation flags with a bracketed summary are
+// allowlisted here; each entry is one pending usage-line sweep item.
+func TestCommandUsageMentionsDeclaredFlags(t *testing.T) {
+	allowlist := map[string]string{
+		"drydock":       "nested confirmation flags behind [explicit confirmation flags]",
+		"git-advanced":  "nested typed operation flags behind [typed operation flags]",
+		"github-review": "nested operation flags behind [typed operation flags]",
+		"help":          "rendered by printHelp itself; no dedicated flag set",
+		"completion":    "hidden plumbing emitting the shell scripts",
+		"version":       "handled inline in dispatch without a flag set",
+		"plugin":        "subcommand flags documented by plugin show",
+		"provider":      "price-import --file documented by its own usage error",
+		"sandbox":       "nested flags behind the sandbox usage line",
+		"tui":           "interactive surface; flags documented by tui --print",
+	}
+	flagRe := regexp.MustCompile(`--[a-z][a-z0-9-]*`)
+	declRe := regexp.MustCompile(`fs\.(?:Bool|String|Int|Int64|Float64|Duration)\(\s*"([a-z][a-z0-9-]*)"`)
+	varRe := regexp.MustCompile(`fs\.Var\([^,)]*, *"([a-z][a-z0-9-]*)"`)
+	for _, spec := range commandTable {
+		if allowlist[spec.name] != "" {
+			continue
+		}
+		usageFlags := map[string]bool{}
+		for _, f := range flagRe.FindAllString(spec.usage, -1) {
+			usageFlags[strings.TrimPrefix(f, "--")] = true
+		}
+		body := ""
+		func() {
+			defer func() {
+				if recover() != nil {
+					body = ""
+				}
+			}()
+			body = commandFunctionBody(t, spec.name)
+		}()
+		if body == "" {
+			continue
+		}
+		declared := map[string]bool{}
+		for _, m := range declRe.FindAllStringSubmatch(body, -1) {
+			declared[m[1]] = true
+		}
+		for _, m := range varRe.FindAllStringSubmatch(body, -1) {
+			declared[m[1]] = true
+		}
+		missing := []string{}
+		for f := range declared {
+			if !usageFlags[f] {
+				missing = append(missing, f)
+			}
+		}
+		if len(missing) > 0 {
+			t.Errorf("usage for %q omits declared flags %v; document them or allowlist the curated cover-all", spec.name, missing)
+		}
+	}
+}
