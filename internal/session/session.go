@@ -272,8 +272,12 @@ func executeSessionLifecycleBoundary(ctx context.Context, engine *hooks.Engine,
 		return apperror.New(apperror.CodePolicyDenied,
 			"restricted lifecycle hook denied the operation")
 	}
+	// The wrapped cause is the operator's own hooks.d misconfiguration (an
+	// invalid declaration names the offending file); without it the CLI
+	// shows only "unavailable" and the operator cannot tell which file to
+	// fix — while every lifecycle-protected operation stays blocked.
 	return apperror.Wrap(apperror.CodeUnavailable,
-		"restricted lifecycle hooks are unavailable", err)
+		"restricted lifecycle hooks are unavailable: "+err.Error(), err)
 }
 
 func (m *Manager) Send(ctx context.Context, sessionID string, input string) (SendResult, error) {
