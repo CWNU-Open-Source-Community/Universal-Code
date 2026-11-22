@@ -1418,3 +1418,24 @@ func TestExecImageRejectsSurroundingWhitespace(t *testing.T) {
 		}
 	}
 }
+
+// Argument errors must share the usage-error exit contract (2) instead of
+// surfacing as internal failures (1), matching every other command's
+// classification.
+func TestExecArgumentErrorsAreUsageClassified(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	_, stderr, code := executeTestCommand(t, "exec", "--workspace", "exec-ws",
+		"--stream", "--json", "hi")
+	if code != 2 || !strings.Contains(stderr, "--stream and --json cannot be combined") {
+		t.Fatalf("--stream with --json must be a usage error with exit 2: stderr=%q code=%d", stderr, code)
+	}
+	_, stderr, code = executeTestCommand(t, "exec", "--workspace", "exec-ws",
+		"--output-last-message", " padded ", "hi")
+	if code != 2 || !strings.Contains(stderr, "surrounding whitespace") {
+		t.Fatalf("padded --output-last-message must be a usage error with exit 2: stderr=%q code=%d", stderr, code)
+	}
+	_, stderr, code = executeTestCommand(t, "exec", "prompt without workspace")
+	if code != 2 || !strings.Contains(stderr, "usage: cyberagent exec --workspace") {
+		t.Fatalf("missing --workspace must be a usage error with exit 2: stderr=%q code=%d", stderr, code)
+	}
+}
