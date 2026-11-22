@@ -197,6 +197,12 @@ func TestRunStreamTimeoutValidation(t *testing.T) {
 	if code == 0 || !strings.Contains(stderr, "timeout requires --stream") {
 		t.Fatalf("timeout without stream must be rejected: stderr=%q code=%d", stderr, code)
 	}
+	// An explicit zero timeout on a non-start transition must be a usage
+	// error, not a silent plain cancel.
+	_, stderr, code = executeTestCommand(t, "run", "cancel", runID, "--timeout=0")
+	if code != 2 || !strings.Contains(stderr, "flag provided but not defined") {
+		t.Fatalf("--timeout on cancel must be a usage error with exit code 2: stderr=%q code=%d", stderr, code)
+	}
 	// A rejected timeout must never transition the run.
 	_, stderr, code = executeTestCommand(t, "run", "events", runID)
 	if code != 0 || !strings.Contains(stdoutOnce(t, runID), "created") {

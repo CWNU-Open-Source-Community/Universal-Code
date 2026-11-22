@@ -156,7 +156,17 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 	lastSequence := request.AfterSequence
 	emitted := 0
 	stopped := false
-	var run domain.Run
+	run := initialRun
+	// A deadline that fires while a durable read is in flight must not
+	// discard the records already emitted: the failure routes through the
+	// same framed end record the wait path uses, so consumers still get
+	// stream.end with the resume cursor.
+	interrupted := func(err error) error {
+		if ctx.Err() != nil {
+			return finishContext(encoder, request, run, lastSequence, emitted, ctx.Err())
+		}
+		return err
+	}
 	for {
 		remaining := request.MaxEvents - emitted
 		if remaining > 0 {
@@ -164,7 +174,7 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 			batch, err := e.store.ListRunEventsAfterSequence(ctx, request.RunID,
 				lastSequence, limit)
 			if err != nil {
-				return err
+				return interrupted(err)
 			}
 			for _, event := range batch {
 				if err := validateNextEvent(request.RunID, missionID,
@@ -185,7 +195,7 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 
 		run, err = e.store.GetRun(ctx, request.RunID)
 		if err != nil {
-			return err
+			return interrupted(err)
 		}
 		if run.MissionID != missionID {
 			return apperror.New(apperror.CodeConflict,
@@ -194,7 +204,7 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 		next, err := e.store.ListRunEventsAfterSequence(ctx, request.RunID,
 			lastSequence, 1)
 		if err != nil {
-			return err
+			return interrupted(err)
 		}
 		if len(next) > 0 && emitted < request.MaxEvents {
 			continue

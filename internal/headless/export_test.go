@@ -145,6 +145,54 @@ func TestExporterFollowDeadlineIsFramed(t *testing.T) {
 	}
 }
 
+func TestExporterDeadlineDuringReadStillFrames(t *testing.T) {
+	store := newSlowGetRunStore(t, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	var output bytes.Buffer
+	err := NewExporter(store).Export(ctx, &output, Request{
+		RunID: store.run.ID, MaxEvents: 10, Follow: true,
+		PollInterval: MinPollInterval,
+	})
+	if apperror.CodeOf(err) != apperror.CodeDeadlineExceeded || apperror.ExitCode(err) != 9 {
+		t.Fatalf("deadline during read mapping drifted: code=%s exit=%d err=%v",
+			apperror.CodeOf(err), apperror.ExitCode(err), err)
+	}
+	records := decodeRecords(t, output.Bytes())
+	if len(records) != 2 || records[0]["sequence"] != float64(1) {
+		t.Fatalf("deadline during read lost emitted records: %#v", records)
+	}
+	end := records[len(records)-1]
+	if end["kind"] != EndRecordKind || end["reason"] != "deadline_exceeded" ||
+		end["exit_code"] != float64(9) || end["terminal"] != false ||
+		end["last_sequence"] != float64(1) || end["events_emitted"] != float64(1) ||
+		end["suggested_resume_after"] != float64(1) {
+		t.Fatalf("deadline-during-read end record drifted: %#v", end)
+	}
+}
+
+// slowGetRunStore blocks the second GetRun until the exporter's context is
+// done, simulating a deadline that lands while a durable read is in flight
+// instead of while the follow wait is parked.
+type slowGetRunStore struct {
+	*fakeStore
+	getRuns int
+}
+
+func newSlowGetRunStore(t *testing.T, sequences ...int64) *slowGetRunStore {
+	t.Helper()
+	return &slowGetRunStore{fakeStore: newFakeStore(t, domain.RunRunning, sequences...)}
+}
+
+func (s *slowGetRunStore) GetRun(ctx context.Context, id string) (domain.Run, error) {
+	s.getRuns++
+	if s.getRuns == 1 {
+		return s.fakeStore.GetRun(ctx, id)
+	}
+	<-ctx.Done()
+	return domain.Run{}, ctx.Err()
+}
+
 func TestExporterFollowDrainsTerminalTail(t *testing.T) {
 	store := newFakeStore(t, domain.RunRunning, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
