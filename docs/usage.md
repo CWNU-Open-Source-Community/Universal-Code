@@ -593,6 +593,34 @@ available in `GET /api/v1/runs/{run_id}` and the Desktop Run overview. Runs crea
 without a registered Workspace retain compatibility, but their snapshot marks all
 seven tools unavailable and the Supervisor does not advertise them.
 
+### Shell completion / Shell 补全
+
+Install Bash completion in `~/.bashrc`.
+
+```bash
+cyberagent completion bash >> ~/.bashrc
+```
+
+For Zsh, add `fpath=(~/.zfunc $fpath)` to `~/.zshrc` before
+`autoload -Uz compinit && compinit`, and install the script there.
+
+```zsh
+mkdir -p ~/.zfunc
+cyberagent completion zsh > ~/.zfunc/_cyberagent
+```
+
+In Fish, install the script in the user completions directory.
+
+```fish
+mkdir -p "$__fish_config_dir/completions"
+cyberagent completion fish > "$__fish_config_dir/completions/cyberagent.fish"
+```
+
+The scripts call `cyberagent __complete` with the current word last.
+Setting `CYBERAGENT_COMPLETE_PROTOCOL=4` on that call adds a final
+`:4` to suppress filename completion or `:0` to request it. Older
+scripts receive one candidate per line and an empty result for paths.
+
 ### Read-only LSP code intelligence
 
 Web and Desktop **Settings → Extensions** can stage a language-server configuration
