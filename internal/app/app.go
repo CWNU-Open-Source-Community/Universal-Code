@@ -381,6 +381,8 @@ func (a *App) dispatch(ctx context.Context, args []string) error {
 		return a.githubReviewCommand(ctx, args[1:])
 	case "headless":
 		return a.headlessCommand(ctx, args[1:])
+	case "hooks":
+		return a.hooksCommand(ctx, args[1:])
 	case "exec":
 		return a.execCommand(ctx, args[1:])
 	case "run":
@@ -511,6 +513,7 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.out, "  cyberagent git-op stage|unstage|commit|create-branch|switch-branch --run <run-id> [--path p]... [--all] [--message m] [--branch b] --operation-key <key> [--confirm]")
 	fmt.Fprintln(a.out, "  cyberagent git-remote fetch|pull|push-branch|create-pr|update-pr --run <run-id> --remote <https-url> --branch <name> [--base <name>] [--title <t>] [--body <b>] [--pr-number <n>] [--credential <name>] [--ttl 30s] --operation-key <key> [--confirm]")
 	fmt.Fprintln(a.out, "  cyberagent headless events")
+	fmt.Fprintln(a.out, "  cyberagent hooks list|validate")
 	fmt.Fprintln(a.out, `  cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--instructions <text>] [--timeout 30m] [--json] [--continue <thread-id>]`)
 	fmt.Fprintln(a.out, "  cyberagent run create|adapt-task|list|show|mode|phase|execution-profile|execution-interaction|execution-permission|browser-cdp-permission|capability-readiness|command-plan|command-execute|host-execute|project-action|command-proposal|events|usage|start|step|execute|checkpoint|graph|lease|finish|fail|pause|resume|cancel|delegations|delegation|specialist-step|plans|plan|delivery|steer|fanouts|fanout|sandbox|standard-code|wake|schedule")
 	fmt.Fprintln(a.out, "  cyberagent run plan show|choose|selection")
