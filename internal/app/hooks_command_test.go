@@ -176,6 +176,26 @@ func TestHooksValidateRejectsMalformedDeclaration(t *testing.T) {
 	}
 }
 
+func TestHooksCommandsRejectDuplicateIdentities(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CYBERAGENT_HOME", home)
+	seedScriptHook(t, "same-id")
+	dir := filepath.Join(home, "hooks.d")
+	declaration, err := os.ReadFile(filepath.Join(dir, "same-id.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "duplicate.json"), declaration, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"validate", "list"} {
+		stdout, stderr, code := executeTestCommand(t, "hooks", command)
+		if code == 0 || stdout != "" || !strings.Contains(stderr, "repeats a plugin hook identity") {
+			t.Errorf("hooks %s with duplicate IDs: exit %d, stdout %q, stderr %q", command, code, stdout, stderr)
+		}
+	}
+}
+
 func TestHooksValidateMissingDirectoryIsValid(t *testing.T) {
 	t.Setenv("CYBERAGENT_HOME", t.TempDir())
 	stdout, stderr, code := executeTestCommand(t, "hooks", "validate")
