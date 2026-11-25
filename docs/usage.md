@@ -509,9 +509,14 @@ cyberagent run steer drain <run-id> --max-steps 1
 cyberagent run steer list <run-id> --limit 100
 cyberagent run steer show <steering-id>
 cyberagent run events <run-id>
+# Follow durable events as headless.v1 NDJSON until the run is terminal or 10,000 events are emitted.
+cyberagent run events <run-id> --follow
+# At the cap, an active run exits 8 with reason "max_events". Resume from the cursor in stream.end.
+cyberagent headless events <run-id> --after-sequence <suggested_resume_after> --follow --timeout 30m
 cyberagent headless events <run-id> --max-events 1000
-cyberagent headless events <run-id> --after-sequence <n> --follow --timeout 30m
 cyberagent run start <run-id>
+# Start and follow the same stream. The start receipt and run step hint go to stderr.
+cyberagent run start <run-id> --stream
 cyberagent run step <run-id>
 cyberagent run execute <run-id> --max-steps 3
 cyberagent run execute <run-id> --max-steps 3 --finish --summary "planning complete"
