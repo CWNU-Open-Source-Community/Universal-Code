@@ -50,7 +50,7 @@ describe("sidebar project moves", () => {
   const props = { onArchive: vi.fn(), onNewConversation: vi.fn(), onOpenModels: vi.fn(),
     onOpenSettings: vi.fn(), onSearchOpen: vi.fn(), onSelectThread: vi.fn(),
     searchOpen: false, selectedThreadID: thread.id, workspaces: [workspace, destination],
-    onNewInProject: vi.fn(), defaultViewMode: "project" as const };
+    onNewInProject: vi.fn() };
 
   it("reports only rendered chats in pinned, project and local order as groups collapse", async () => {
     const onVisibleChatOrder = vi.fn();

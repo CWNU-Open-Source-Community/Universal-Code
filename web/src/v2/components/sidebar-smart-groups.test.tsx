@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -12,13 +13,10 @@ import { V2RecoveryProvider, resetV2RecoveryStorageMemory } from "../recovery-st
 import { V2Sidebar } from "./sidebar";
 import {
   DEFAULT_SIDEBAR_CUSTOM_PREFS,
-  classifyThreadPriorityBucket,
   deriveThreadActivityStatus,
   extractCachedThreadSignals,
-  groupThreadsByPriority,
   normalizeSidebarCustomPrefs,
   normalizeSidebarViewMode,
-  type ThreadLiveSignals,
 } from "./sidebar-smart-groups";
 
 const workspaces: WorkspaceView[] = [
@@ -27,21 +25,53 @@ const workspaces: WorkspaceView[] = [
 ];
 
 function makeThread(overrides: Partial<ThreadView> & { id: string; title: string }): ThreadView {
+  const ended = ["completed", "failed", "cancelled"].includes(overrides.execution_state ?? "");
   return {
     protocol_version: "thread.v1",
     workspace_id: "ws-alpha",
     project_workspace_id: "ws-alpha",
     mission_id: `mission-${overrides.id}`,
-    active_run_id: `run-${overrides.id}`,
-    last_run_id: `run-${overrides.id}`,
+    active_run_id: ended ? undefined : `run-${overrides.id}`,
+    last_run_id: overrides.active_run_id ?? `run-${overrides.id}`,
     status: "active",
-    composer_state: "ready",
+    composer_state: ended ? "successor_required" : overrides.execution_state === "waiting_approval" ? "waiting_approval" : "ready",
     execution_state: "idle",
     version: 1,
     created_at: "2026-11-10T08:00:00Z",
     updated_at: "2026-11-10T09:30:00Z",
     ...overrides,
   };
+}
+
+async function showProjectView(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByLabelText("分组选项"));
+  await user.click(screen.getByRole("button", { name: "按项目分组" }));
+}
+
+async function showRowDetails(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "自定义边栏" }));
+  const dialog = screen.getByRole("dialog", { name: "自定义边栏" });
+  await user.click(within(dialog).getByLabelText("显示智能体实时动作详情"));
+  await user.click(within(dialog).getByLabelText("显示所属项目标签"));
+  await user.keyboard("{Escape}");
+}
+
+function activeActionCache(commandThreadID: string, waitingThreadID: string, command: string) {
+  const client = new QueryClient();
+  const runID = `run-${commandThreadID}`;
+  const item: ThreadTranscriptItemView = {
+    version: "thread_transcript.v1", id: "call", canonical_id: "call", durable_call_id: "call", run_id: runID,
+    run_ordinal: 1, sequence: 3, created_at: "2026-11-10T09:30:00Z", stage: "running", kind: "tool_call",
+    title: "Command", tool_name: "command_runtime", activity_type: "execute", source: "harness", durable: true,
+    provisional: false, instruction_authorized: false, verifiable: true,
+    activity_summary: { version: "thread_activity_summary.v1", activity_ref: "activity", command, status: "running",
+      command_count: 1, duration_milliseconds: 0 },
+  };
+  client.setQueryData(v2QueryKeys.transcript(commandThreadID), { pages: [{ items: [item] }], pageParams: [""] });
+  client.setQueryData(v2QueryKeys.approvals(`run-${waitingThreadID}`), {
+    run_id: `run-${waitingThreadID}`, items: [{ id: "first", status: "pending" }, { id: "second", status: "pending" }],
+  });
+  return client;
 }
 
 function LocaleToggle() {
@@ -56,31 +86,34 @@ function LocaleToggle() {
 function renderSidebar({
   threads,
   unreadThreadIDs,
-  liveSignalsByThread,
   onVisibleChatOrder = vi.fn(),
   onNewInProject = vi.fn(),
   onSelectThread = vi.fn(),
   scopeID = "store-smart-sidebar",
   baseURL = "/api/v1",
+  apiClient, hasMore = false,
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 }: {
   threads: ThreadView[];
   unreadThreadIDs?: ReadonlySet<string>;
-  liveSignalsByThread?: Record<string, ThreadLiveSignals>;
   onVisibleChatOrder?: (ids: readonly string[]) => void;
   onNewInProject?: (projectID: string) => void;
   onSelectThread?: (threadID: string) => void;
   scopeID?: string;
   baseURL?: string;
   queryClient?: QueryClient;
+  apiClient?: APIClient;
+  hasMore?: boolean;
 }) {
+  const modeKey = `v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent(baseURL)}:${scopeID}:sidebar-view-mode`;
+  if (!localStorage.getItem(modeKey)) localStorage.setItem(modeKey, JSON.stringify({ version: "v2_recovery.v1", value: "priority" }));
   return render(
-    <QueryClientProvider client={queryClient}>
+    <StrictMode><QueryClientProvider client={queryClient}>
       <LocaleProvider>
         <V2RecoveryProvider client={{ baseURL } as Pick<APIClient, "baseURL">} scopeID={scopeID}>
           <LocaleToggle />
           <V2Sidebar
-            liveSignalsByThread={liveSignalsByThread}
+            client={apiClient} hasMore={hasMore}
             onArchive={vi.fn()}
             onNewConversation={vi.fn()}
             onNewInProject={onNewInProject}
@@ -97,7 +130,7 @@ function renderSidebar({
           />
         </V2RecoveryProvider>
       </LocaleProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider></StrictMode>,
   );
 }
 
@@ -112,108 +145,11 @@ afterEach(() => {
   cleanup();
 });
 
-describe("priority bucket classification & ordering", () => {
-  it("enforces strict priority precedence needs_input > running > unread > idle", () => {
-    const blockedRunningUnread = makeThread({
-      id: "t-blocked",
-      title: "Blocked while running and unread",
-      execution_state: "running",
-    });
-    expect(
-      classifyThreadPriorityBucket(blockedRunningUnread, {
-        pendingApprovals: 2,
-        activeTool: { toolName: "shell", command: "rm -rf build" },
-        isUnread: true,
-      }),
-    ).toBe("needs_input");
-
-    const activeRunningUnread = makeThread({
-      id: "t-running",
-      title: "Running with unread",
-      execution_state: "running",
-    });
-    expect(classifyThreadPriorityBucket(activeRunningUnread, { isUnread: true })).toBe("running");
-
-    const idleUnread = makeThread({
-      id: "t-unread",
-      title: "Completed with unread reply",
-      execution_state: "completed",
-    });
-    expect(classifyThreadPriorityBucket(idleUnread, { isUnread: true })).toBe("unread");
-
-    const idleRead = makeThread({
-      id: "t-idle",
-      title: "Idle read session",
-      execution_state: "idle",
-    });
-    expect(classifyThreadPriorityBucket(idleRead, { isUnread: false })).toBe("idle");
-
-    const grouped = groupThreadsByPriority(
-      [idleRead, idleUnread, activeRunningUnread, blockedRunningUnread],
-      (thread) => {
-        if (thread.id === "t-blocked") return { pendingApprovals: 1, isUnread: true };
-        if (thread.id === "t-running") return { isUnread: true };
-        if (thread.id === "t-unread") return { isUnread: true };
-        return undefined;
-      },
-    );
-
-    expect(grouped.groups.map((group) => [group.bucket, group.items.map((item) => item.thread.id)])).toEqual([
-      ["needs_input", ["t-blocked"]],
-      ["running", ["t-running"]],
-      ["unread", ["t-unread"]],
-      ["idle", ["t-idle"]],
-    ]);
-    expect(grouped.attentionCount).toBe(3);
-  });
-
-  it("classifies composer waiting_approval, paused, and file_edit_review into needs_input", () => {
-    expect(
-      classifyThreadPriorityBucket(makeThread({ id: "c1", title: "Approval", composer_state: "waiting_approval" })),
-    ).toBe("needs_input");
-    expect(
-      classifyThreadPriorityBucket(makeThread({ id: "c3", title: "Paused", execution_state: "paused" })),
-    ).toBe("needs_input");
-    expect(
-      classifyThreadPriorityBucket(
-        makeThread({ id: "c4", title: "Diff review", execution_state: "idle" }),
-        { pendingActionKind: "file_edit_review" },
-      ),
-    ).toBe("needs_input");
-  });
-
-  it("does not treat the between-turns successor_required state as needing user input", () => {
-    // 已完成且回复未读的对话：用户可直接发送下一条消息，应归入未读分组而非“需用户输入”。
-    expect(
-      classifyThreadPriorityBucket(
-        makeThread({
-          id: "c2",
-          title: "Successor unread",
-          active_run_id: undefined,
-          composer_state: "successor_required",
-          execution_state: "completed",
-        }),
-        { isUnread: true },
-      ),
-    ).toBe("unread");
-    expect(
-      classifyThreadPriorityBucket(
-        makeThread({
-          id: "c2b",
-          title: "Successor idle",
-          active_run_id: undefined,
-          composer_state: "successor_required",
-        }),
-      ),
-    ).toBe("idle");
-  });
-});
-
 describe("deriveThreadActivityStatus & QueryClient cache extraction", () => {
   it("distinguishes waiting_input, running_command, thinking, unread, and idle with localized labels", () => {
     const base = makeThread({ id: "t-status", title: "Status probe", execution_state: "running" });
 
-    const waiting = deriveThreadActivityStatus(base, { pendingApprovals: 3 });
+    const waiting = deriveThreadActivityStatus({ ...base, composer_state: "waiting_approval" }, { pendingApprovals: 3 });
     expect(waiting).toMatchObject({
       kind: "waiting_input",
       bucket: "needs_input",
@@ -243,17 +179,13 @@ describe("deriveThreadActivityStatus & QueryClient cache extraction", () => {
       detail: "浏览器操作",
     });
 
-    const thinking = deriveThreadActivityStatus(base, {
-      streamStatus: "live",
-      streamSnapshot: { content_kind: "assistant_text", text: "正在分析架构…" },
-    });
+    const thinking = deriveThreadActivityStatus(base);
     expect(thinking).toMatchObject({
       kind: "thinking",
       bucket: "running",
       tone: "indigo",
       pulse: true,
       label: "思考中",
-      detail: "生成回复中",
     });
 
     const unread = deriveThreadActivityStatus(
@@ -330,10 +262,11 @@ describe("deriveThreadActivityStatus & QueryClient cache extraction", () => {
       capability_grant: false,
       process_execution_enabled: true,
       session_grant_created: false,
-      items: [{ id: "approval-1" } as ApprovalQueueView["items"][number]],
+      items: [{ id: "approval-1", status: "pending" } as ApprovalQueueView["items"][number]],
     });
-    const blockedSignals = extractCachedThreadSignals(queryClient, thread, false, false);
-    expect(deriveThreadActivityStatus(thread, blockedSignals)).toMatchObject({
+    const waiting: ThreadView = { ...thread, composer_state: "waiting_approval" };
+    const blockedSignals = extractCachedThreadSignals(queryClient, waiting, false, false);
+    expect(deriveThreadActivityStatus(waiting, blockedSignals)).toMatchObject({
       kind: "waiting_input",
       bucket: "needs_input",
       detail: "1 项待审批",
@@ -342,7 +275,7 @@ describe("deriveThreadActivityStatus & QueryClient cache extraction", () => {
 
   it("normalizes malformed persisted preferences safely", () => {
     expect(normalizeSidebarViewMode("project")).toBe("project");
-    expect(normalizeSidebarViewMode({ bad: true })).toBe("priority");
+    expect(normalizeSidebarViewMode({ bad: true })).toBe("project");
     expect(normalizeSidebarCustomPrefs(null)).toEqual(DEFAULT_SIDEBAR_CUSTOM_PREFS);
     expect(
       normalizeSidebarCustomPrefs({
@@ -359,7 +292,7 @@ describe("deriveThreadActivityStatus & QueryClient cache extraction", () => {
       idleLimit: 5,
       autoCollapseIdle: true,
       showActivitySubtitle: false,
-      showWorkspaceBadge: true,
+      showWorkspaceBadge: false,
       visibleGroups: { needs_input: true, running: true, unread: true, idle: false },
     });
   });
@@ -380,13 +313,11 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
     renderSidebar({
       threads,
       unreadThreadIDs: new Set(["unread-1"]),
-      liveSignalsByThread: {
-        "cmd-1": { activeTool: { activityType: "execute", command: "go test ./..." } },
-        "wait-1": { pendingApprovals: 2 },
-      },
+      queryClient: activeActionCache("cmd-1", "wait-1", "go test ./..."),
       onVisibleChatOrder,
     });
 
+    await showRowDetails(user);
     const groupRegions = screen
       .getAllByRole("region")
       .map((el) => el.getAttribute("aria-label"))
@@ -429,7 +360,7 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
     ];
 
     const first = renderSidebar({ threads, onNewInProject });
-    expect(screen.getByRole("button", { name: "智能分组" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "优先级" })).toHaveAttribute("aria-expanded", "true");
 
     // Pin "核心引擎" directly from the top pinned-projects bar in Smart Priority view
     await user.click(screen.getByLabelText("管理置顶项目"));
@@ -451,8 +382,8 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
 
     // Clear filter and switch to By Project view
     await user.click(within(pinnedBar).getByRole("button", { name: "清除筛选" }));
-    await user.click(screen.getByRole("button", { name: "按项目" }));
-    expect(screen.getByRole("button", { name: "按项目" })).toHaveAttribute("aria-pressed", "true");
+    await showProjectView(user);
+    expect(screen.getByRole("button", { name: "项目" })).toHaveAttribute("aria-expanded", "true");
 
     // Verify pinned project "核心引擎" is anchored first in Project view
     const projectRegions = screen.getAllByRole("region", { name: /^项目 / }).map((el) => el.getAttribute("aria-label"));
@@ -461,7 +392,7 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
     // Unmount and remount to verify persistence of view mode and project pins
     first.unmount();
     renderSidebar({ threads, onNewInProject });
-    expect(screen.getByRole("button", { name: "按项目" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "项目" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getAllByRole("region", { name: /^项目 / })[0]).toHaveAccessibleName("项目 核心引擎");
 
     // Unpin via the explicit row-level Pin button on ProjectHeader
@@ -470,6 +401,38 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
       "项目 前端工作台",
       "项目 核心引擎",
     ]);
+  });
+
+  it("shows the regular history pagination while the selected project has no loaded chats", async () => {
+    const user = userEvent.setup();
+    renderSidebar({ threads: [], hasMore: true });
+    await user.click(screen.getByLabelText("管理置顶项目"));
+    await user.click(screen.getByRole("button", { name: "核心引擎" }));
+    await user.click(screen.getByRole("button", { name: "筛选项目 核心引擎" }));
+    expect(screen.getByText("已加载的记录中暂无该项目的会话。")).toBeVisible();
+    expect(screen.getByRole("button", { name: "加载更早对话" })).toBeVisible();
+    expect(screen.queryByText("所选置顶项目暂无会话")).not.toBeInTheDocument();
+  });
+
+  it("keeps the selected project's empty state provisional until its pinned chat pages are loaded", async () => {
+    const user = userEvent.setup();
+    const chat = makeThread({ id: "later", title: "稍早的置顶聊天", project_workspace_id: "ws-beta", pinned: true });
+    const getPage = vi.fn(async (_path: string, _query: unknown, cursor: string) => ({
+      items: cursor ? [chat] : [], page: { next_cursor: cursor ? "" : "next-pinned" },
+    }));
+    renderSidebar({ threads: [], apiClient: { getPage } as unknown as APIClient });
+    await user.click(screen.getByLabelText("管理置顶项目"));
+    await user.click(screen.getByRole("button", { name: "核心引擎" }));
+    await user.click(screen.getByRole("button", { name: "筛选项目 核心引擎" }));
+    expect(screen.queryByText("所选置顶项目暂无会话")).not.toBeInTheDocument();
+    expect(screen.getByText("已加载的记录中暂无该项目的会话。")).toBeVisible();
+    await showProjectView(user);
+    const project = within(screen.getByRole("region", { name: "项目 核心引擎" }));
+    expect(project.getByText("已加载的记录中暂无该项目的会话。")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "加载更多置顶聊天" }));
+    const pins = within(await screen.findByRole("region", { name: "置顶聊天" }));
+    expect(await pins.findByRole("button", { name: chat.title })).toBeVisible();
+    expect(project.queryByText("暂无聊天")).not.toBeInTheDocument();
   });
 
   it("customizes density, subtitle/badge visibility, idle auto-collapse, group visibility, and idle limit with persistence", async () => {
@@ -490,6 +453,9 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
     });
 
     const first = renderSidebar({ threads: [runningThread, ...idleThreads] });
+    expect(screen.queryByText("思考中")).not.toBeInTheDocument();
+    expect(document.querySelector(".v2-thread-project-badge")).not.toBeInTheDocument();
+    await showRowDetails(user);
     const sidebar = document.querySelector(".v2-sidebar")!;
     expect(sidebar).toHaveAttribute("data-sidebar-density", "comfortable");
     expect(screen.getByText("思考中")).toBeInTheDocument();
@@ -553,7 +519,7 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
       active_run_id: "run-B",
       last_run_id: "run-B",
       execution_state: "running",
-      updated_at: "2099-01-01T00:00:00Z",
+      updated_at: "2026-11-25T00:00:00Z",
     });
 
     // Previous turn left an unobserved idle execution state and completed run-A in QueryClient cache
@@ -565,8 +531,8 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
       capability_grant: false,
     });
     queryClient.setQueryData<ThreadDetailView>(v2QueryKeys.thread(runningThread.id), {
-      thread: { ...runningThread, active_run_id: "run-A", last_run_id: "run-A", execution_state: "completed" },
-      active_run: { id: "run-A", status: "completed" } as ThreadDetailView["active_run"],
+      thread: { ...runningThread, active_run_id: undefined, last_run_id: "run-A", execution_state: "completed", composer_state: "successor_required" },
+      last_run: { id: "run-A", status: "completed" } as ThreadDetailView["last_run"],
     } as ThreadDetailView);
     queryClient.setQueryData<ApprovalQueueView>(v2QueryKeys.approvals("run-A"), {
       protocol_version: "approval_queue.v1",
@@ -579,59 +545,8 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
     });
 
     const signals = extractCachedThreadSignals(queryClient, runningThread, false, false);
-    expect(signals.execution).toBeNull();
-    expect(signals.run).toBeNull();
-    expect(signals.runStatus).toBeUndefined();
     expect(signals.pendingApprovals).toBeUndefined();
-    expect(classifyThreadPriorityBucket(runningThread, signals)).toBe("running");
-
-    // Also verify explicit extra.run override uses extra.run.status instead of terminal cached run status
-    const matchedThread = makeThread({
-      id: "t-override",
-      title: "Override run status",
-      active_run_id: "run-A",
-      last_run_id: "run-A",
-      execution_state: "completed",
-    });
-    queryClient.setQueryData<ThreadDetailView>(v2QueryKeys.thread(matchedThread.id), {
-      thread: matchedThread,
-      last_run: { id: "run-A", status: "completed" } as ThreadDetailView["last_run"],
-    } as ThreadDetailView);
-    const overridden = extractCachedThreadSignals(queryClient, matchedThread, false, false, {
-      run: { id: "run-live-override", status: "running" },
-    });
-    expect(overridden.runStatus).toBe("running");
-    expect(classifyThreadPriorityBucket(matchedThread, overridden)).toBe("running");
-
-    // Multi-turn open session between turns keeps active_run.status="running" while execution.state="idle";
-    // it must stay in "idle" unless a live tool/stream or running turn is active.
-    const idleOpenSession = makeThread({
-      id: "t-open-idle",
-      title: "Open multi-turn session",
-      active_run_id: "run-open",
-      last_run_id: "run-open",
-      execution_state: "idle",
-      updated_at: "2026-01-01T00:00:00Z",
-    });
-    queryClient.setQueryData<ThreadDetailView>(v2QueryKeys.thread(idleOpenSession.id), {
-      thread: idleOpenSession,
-      active_run: { id: "run-open", status: "running" } as ThreadDetailView["active_run"],
-    } as ThreadDetailView);
-    queryClient.setQueryData<ThreadExecutionView>(v2QueryKeys.execution(idleOpenSession.id), {
-      version: "thread_execution.v1",
-      thread_id: idleOpenSession.id,
-      state: "idle",
-      queued_messages: 0,
-      capability_grant: false,
-    });
-    const idleBetweenTurns = extractCachedThreadSignals(queryClient, idleOpenSession, false, false);
-    expect(classifyThreadPriorityBucket(idleOpenSession, idleBetweenTurns)).toBe("idle");
-    expect(
-      deriveThreadActivityStatus(idleOpenSession, {
-        ...idleBetweenTurns,
-        activeTool: { activityType: "execute", command: "go test ./..." },
-      }).bucket,
-    ).toBe("running");
+    expect(deriveThreadActivityStatus(runningThread, signals).bucket).toBe("running");
   });
 
   it("clears active project filter when its project is unpinned via header or picker, while preserving unrelated filters", async () => {
@@ -657,7 +572,7 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
     expect(screen.queryByRole("button", { name: "前端任务" })).not.toBeInTheDocument();
 
     // Switch to Project view and unpin active ws-beta via ProjectHeader pin button
-    await user.click(screen.getByRole("button", { name: "按项目" }));
+    await showProjectView(user);
     expect(screen.queryByRole("region", { name: "项目 前端工作台" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "取消置顶项目 核心引擎" }));
 
@@ -669,7 +584,7 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
   it("exposes accessible activity descriptions on thread rows and collapsed project headers, and uses zero hex literals in CSS", async () => {
     const user = userEvent.setup();
     const threads = [
-      makeThread({ id: "t-approvals", title: "审批阻塞任务", project_workspace_id: "ws-alpha", execution_state: "running" }),
+      makeThread({ id: "t-approvals", title: "审批阻塞任务", project_workspace_id: "ws-alpha", composer_state: "waiting_approval", execution_state: "running" }),
       makeThread({ id: "t-cmd", title: "命令执行任务", project_workspace_id: "ws-alpha", execution_state: "running" }),
       makeThread({ id: "t-unread", title: "未读完成任务", project_workspace_id: "ws-alpha", execution_state: "completed" }),
     ];
@@ -677,16 +592,14 @@ describe("V2Sidebar smart priority view, project pinning, and customization", ()
     renderSidebar({
       threads,
       unreadThreadIDs: new Set(["t-unread"]),
-      liveSignalsByThread: {
-        "t-approvals": { pendingApprovals: 2 },
-        "t-cmd": { activeTool: { activityType: "execute", command: "npm test" } },
-      },
+      queryClient: activeActionCache("t-cmd", "t-approvals", "npm test"),
     });
 
+    await showRowDetails(user);
     expect(screen.getByRole("button", { name: "审批阻塞任务" })).toHaveAccessibleDescription("执行中 等待回复 · 2 项待审批");
     expect(screen.getByRole("button", { name: "命令执行任务" })).toHaveAccessibleDescription("执行中 执行命令 · npm test");
 
-    await user.click(screen.getByRole("button", { name: "按项目" }));
+    await showProjectView(user);
     const projectRegion = screen.getByRole("region", { name: "项目 前端工作台" });
     const projectToggle = within(projectRegion).getByRole("button", { name: "前端工作台" });
     await user.click(projectToggle);

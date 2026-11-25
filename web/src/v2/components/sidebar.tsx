@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore, ArrowLeft, ChartNoAxesCombined, Box, CalendarClock, ChevronDown, Cpu, FolderInput, MessagesSquare, MoreHorizontal, Pin, RefreshCw,
   Info, Keyboard, PackageSearch, Palette, PlugZap, Search, Settings, ShieldCheck, SquarePen, X } from "lucide-react";
@@ -13,22 +13,18 @@ import {
   PinnedProjectsQuickBar,
   SidebarActivityGlyph,
   SidebarCustomizeControl,
-  SidebarModeBar,
-  SmartPriorityGroups,
+  deriveCanonicalExecutionStatus,
   deriveThreadActivityStatus,
   extractCachedThreadSignals,
-  groupThreadsByPriority,
   normalizeSidebarCustomPrefs,
   normalizeSidebarViewMode,
   type ProjectSummaryCounts,
   type SidebarCustomPrefs,
   type SidebarPriorityBucket,
   type SidebarViewMode,
-  type ThreadActivityDescriptor,
-  type ThreadLiveSignals,
 } from "./sidebar-smart-groups";
 import { useV2PersistentState } from "../recovery-storage";
-import { v2QueryKeys } from "../query-keys";
+import { priorityGroups, threadPriority } from "./sidebar-priority";
 import { shortcutBinding, shortcutLabel, useChatPreferences } from "../chat-preferences";
 import "./project-sidebar.css";
 
@@ -41,17 +37,6 @@ export type V2SettingsSection = "general" | "permissions" | "appearance" | "voic
   "worktrees" | "keyboard" | "records" | "archived" | "extensions" | "skills" |
   "advanced-models" | "about" | "shortcuts" | "connections" | "task-configuration" | "configuration" | "usage";
 
-function lookupThreadSignal(
-  source: ReadonlyMap<string, ThreadLiveSignals> | Record<string, ThreadLiveSignals> | undefined,
-  threadID: string,
-): ThreadLiveSignals | undefined {
-  if (!source) return undefined;
-  if (source instanceof Map) return source.get(threadID);
-  return Object.hasOwn(source as Record<string, ThreadLiveSignals>, threadID)
-    ? (source as Record<string, ThreadLiveSignals>)[threadID]
-    : undefined;
-}
-
 export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, onSearchOpen,
   onNewConversation, onOpenModels, onSelectThread, onVisibleChatOrder, onOpenSettings, onArchive,
   onOpenHistory, historyActive = false, onOpenConnections, onOpenAutomations, automationsActive = false,
@@ -61,8 +46,6 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   projectAction, onNewInProject, onEditProject, client, onMoveThread, movingThreadID = "", moveError = "",
   executionFilter = "", onExecutionFilterChange,
   unreadThreadIDs, onReadStateChange,
-  liveSignalsByThread,
-  defaultViewMode,
   visible = true,
   hasMore = false, truncated = false, loading = false, loadingMore = false, loadFailed = false,
   loadMoreFailed = false, refreshing = false, onLoadMore, onRefresh, onRetry }: {
@@ -102,8 +85,6 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   onExecutionFilterChange?: (value: "" | "running" | "waiting_approval") => void;
   unreadThreadIDs?: ReadonlySet<string>;
   onReadStateChange?: (threadID: string, read: boolean) => void;
-  liveSignalsByThread?: ReadonlyMap<string, ThreadLiveSignals> | Record<string, ThreadLiveSignals>;
-  defaultViewMode?: SidebarViewMode;
   visible?: boolean;
   hasMore?: boolean; truncated?: boolean; loading?: boolean; loadingMore?: boolean; loadFailed?: boolean;
   loadMoreFailed?: boolean; refreshing?: boolean;
@@ -111,24 +92,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
 }) {
   const { t, locale } = useLocale();
   const queryClient = useQueryClient();
-  const [cacheVersion, bumpCacheVersion] = useReducer((count: number) => count + 1, 0);
-  useEffect(() => {
-    let active = true;
-    let queued = false;
-    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-      if (event.type !== "updated") return;
-      const key = event.query.queryKey;
-      if (key[0] === "v2" && (key[1] === "thread" || key[1] === "run") && !queued) {
-        queued = true;
-        queueMicrotask(() => {
-          queued = false;
-          if (active) bumpCacheVersion();
-        });
-      }
-    });
-    return () => { active = false; unsubscribe(); };
-  }, [queryClient]);
-
+  const [, bumpCacheVersion] = useReducer((count: number) => count + 1, 0);
   const preferences = useChatPreferences();
   const newChatKeys = shortcutLabel(shortcutBinding(preferences, "newChat"));
   const searching = Boolean(appliedSearch);
@@ -144,11 +108,30 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     DEFAULT_SIDEBAR_CUSTOM_PREFS,
   );
   const customPrefs = useMemo(() => normalizeSidebarCustomPrefs(rawCustomPrefs), [rawCustomPrefs]);
+  useEffect(() => {
+    if (!customPrefs.showActivitySubtitle || !visible || searchOpen) return;
+    let active = true;
+    let queued = false;
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== "updated") return;
+      const key = event.query.queryKey;
+      if (key[0] === "v2" && ((key[1] === "thread" && key[3] === "transcript") || (key[1] === "run" && key[3] === "approvals")) && !queued) {
+        queued = true;
+        queueMicrotask(() => {
+          queued = false;
+          if (active) bumpCacheVersion();
+        });
+      }
+    });
+    return () => { active = false; unsubscribe(); };
+  }, [customPrefs.showActivitySubtitle, visible, searchOpen, queryClient]);
+
   const [collapsedBuckets, setCollapsedBuckets] = useState<Record<SidebarPriorityBucket, boolean>>(() => ({
     needs_input: false,
     running: false,
     unread: false,
     idle: customPrefs.autoCollapseIdle,
+    unknown: false,
   }));
   const [idleShowAll, setIdleShowAll] = useState(false);
   useEffect(() => {
@@ -168,9 +151,9 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     });
   };
 
-  const initialMode: SidebarViewMode = defaultViewMode ?? "priority";
-  const [rawViewMode, setRawViewMode] = useV2PersistentState<unknown>("sidebar-view-mode", initialMode);
-  const viewMode = normalizeSidebarViewMode(rawViewMode, defaultViewMode ?? customPrefs.defaultLayout);
+  const [rawViewMode, setRawViewMode] = useV2PersistentState<unknown>("sidebar-view-mode", customPrefs.defaultLayout);
+  const viewMode = normalizeSidebarViewMode(rawViewMode, customPrefs.defaultLayout);
+  const showPriorityView = !searchOpen && viewMode === "priority";
   const setViewMode = (mode: SidebarViewMode) => setRawViewMode(mode);
 
   const [savedProjectPins, setProjectPins] = useV2PersistentState<unknown>("pinned-projects", []);
@@ -224,13 +207,6 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
       : name;
   };
 
-  const resolveThreadSignals = (thread: ThreadView): ThreadLiveSignals => {
-    const readFailed = loadFailed || Boolean(thread.pinned && pinsQuery.isError);
-    const unread = unreadThreadIDs?.has(thread.id) === true;
-    const explicit = lookupThreadSignal(liveSignalsByThread, thread.id);
-    return extractCachedThreadSignals(queryClient, thread, unread, readFailed, explicit);
-  };
-
   const allKnownThreads = useMemo(() => {
     const map = new Map<string, ThreadView>();
     for (const thread of pinnedThreads) map.set(thread.id, thread);
@@ -238,47 +214,20 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     return [...map.values()];
   }, [pinnedThreads, threads]);
 
-  const observedRunIDsRef = useRef<Map<string, string>>(new Map());
-  useEffect(() => {
-    const seen = observedRunIDsRef.current;
-    const currentIDs = new Set<string>();
-    for (const thread of allKnownThreads) {
-      currentIDs.add(thread.id);
-      const runID = thread.active_run_id || thread.last_run_id || "";
-      const previousRunID = seen.get(thread.id);
-      if (previousRunID !== undefined && previousRunID !== runID) {
-        const execKey = v2QueryKeys.execution(thread.id);
-        const existing = queryClient.getQueryCache().find({ queryKey: execKey });
-        if (existing) {
-          if (existing.getObserversCount() > 0) {
-            void queryClient.invalidateQueries({ queryKey: execKey });
-          } else {
-            queryClient.removeQueries({ queryKey: execKey, exact: true });
-          }
-        }
-      }
-      seen.set(thread.id, runID);
-    }
-    for (const id of [...seen.keys()]) {
-      if (!currentIDs.has(id)) seen.delete(id);
-    }
-  }, [allKnownThreads, queryClient]);
-
   const projectCounts = useMemo(() => {
-    void cacheVersion;
     const counts = new Map<string, ProjectSummaryCounts>();
     for (const thread of allKnownThreads) {
       const workspaceID = threadProjectID(thread);
-      const activity = deriveThreadActivityStatus(thread, resolveThreadSignals(thread), t, locale);
+      const bucket = threadPriority(thread, loadFailed || Boolean(thread.pinned && pinsQuery.isError), unreadThreadIDs?.has(thread.id) === true);
       const entry = counts.get(workspaceID) ?? { total: 0, needsInput: 0, running: 0, unread: 0 };
       entry.total += 1;
-      if (activity.bucket === "needs_input") entry.needsInput += 1;
-      else if (activity.bucket === "running") entry.running += 1;
-      else if (activity.bucket === "unread") entry.unread += 1;
+      if (bucket === "needs_input") entry.needsInput += 1;
+      else if (bucket === "running") entry.running += 1;
+      else if (bucket === "unread") entry.unread += 1;
       counts.set(workspaceID, entry);
     }
     return counts;
-  }, [allKnownThreads, cacheVersion, liveSignalsByThread, loadFailed, locale, pinsQuery.isError, t, unreadThreadIDs]);
+  }, [allKnownThreads, loadFailed, pinsQuery.isError, unreadThreadIDs]);
 
   const unpinnedFilteredThreads = useMemo(() => {
     return threads.filter((thread) => {
@@ -295,12 +244,17 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
 
   // 项目筛选只能看到已加载的会话分页；还有未加载记录时，不能断言某项目“暂无会话”。
   const threadListFullyLoaded = !loading && !loadingMore && !loadFailed && !loadMoreFailed &&
-    !hasMore && !truncated && !pinsQuery.isError;
+    !hasMore && !truncated && (!client || (pinsQuery.isSuccess && !pinsQuery.hasNextPage));
 
-  const priorityGrouping = useMemo(() => {
-    void cacheVersion;
-    return groupThreadsByPriority(unpinnedFilteredThreads, resolveThreadSignals, t, locale);
-  }, [unpinnedFilteredThreads, cacheVersion, liveSignalsByThread, loadFailed, locale, pinsQuery.isError, t, unreadThreadIDs]);
+  const byPriority = useMemo(() => {
+    const result: Record<SidebarPriorityBucket, ThreadView[]> = { needs_input: [], running: [], unread: [], idle: [], unknown: [] };
+    if (showPriorityView) for (const thread of unpinnedFilteredThreads) {
+      result[threadPriority(thread, loadFailed, unreadThreadIDs?.has(thread.id) === true)].push(thread);
+    }
+    return result;
+  }, [showPriorityView, unpinnedFilteredThreads, loadFailed, unreadThreadIDs]);
+  const hiddenThreadCount = priorityGroups.reduce((total, [key]) =>
+    key !== "unknown" && !customPrefs.visibleGroups[key] ? total + byPriority[key].length : total, 0);
 
   const grouped = useMemo(() => {
     const result = new Map<string, ThreadView[]>();
@@ -329,22 +283,24 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
   const visibleChatOrder: string[] = [];
   useLayoutEffect(() => { onVisibleChatOrder?.(searchOpen ? [] : visibleChatOrder); });
 
-  const showPriorityView = !searchOpen && viewMode === "priority";
-
-  const renderThread = (thread: ThreadView, precomputedActivity?: ThreadActivityDescriptor) => {
+  const renderThread = (thread: ThreadView) => {
     visibleChatOrder.push(thread.id);
-    const activity = precomputedActivity ?? deriveThreadActivityStatus(thread, resolveThreadSignals(thread), t, locale);
+    const readFailed = loadFailed || Boolean(thread.pinned && pinsQuery.isError);
+    const unread = unreadThreadIDs?.has(thread.id) === true;
+    const execution = deriveCanonicalExecutionStatus(thread, readFailed, t);
+    const activity = !searchOpen && customPrefs.showActivitySubtitle
+      ? deriveThreadActivityStatus(thread, extractCachedThreadSignals(queryClient, thread, unread, readFailed), t, locale)
+      : undefined;
     const canMove = Boolean(onMoveThread && !movingThreadID && thread.project_assignment_version &&
-      thread.status === "active" && ["idle", "completed", "failed", "cancelled"].includes(activity.executionState));
+      thread.status === "active" && ["idle", "completed", "failed", "cancelled"].includes(execution.state));
+    const canDrag = canMove && !showPriorityView;
     const statusID = `v2-thread-state-${thread.id}`;
     const activityID = `v2-thread-activity-${thread.id}`;
-    const unread = unreadThreadIDs?.has(thread.id) === true;
     const workspaceID = threadProjectID(thread);
     const workspaceBadgeLabel = resolveWorkspaceLabel(workspaceID);
     const showWorkspaceBadge = !searchOpen && customPrefs.showWorkspaceBadge && (showPriorityView || Boolean(thread.pinned));
-    const showActivitySubtitle = !searchOpen && customPrefs.showActivitySubtitle;
-    const showSubline = showActivitySubtitle || showWorkspaceBadge;
-    const accessibleActivityText = showActivitySubtitle ? activity.accessibleDetail : undefined;
+    const showSubline = Boolean(activity) || showWorkspaceBadge;
+    const accessibleActivityText = activity?.accessibleDetail;
     const describedBy = [
       statusID,
       accessibleActivityText ? activityID : "",
@@ -354,29 +310,27 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
     return <div className={`v2-thread-row-shell${selectedThreadID === thread.id ? " is-selected" : ""}`} key={thread.id}>
       <button aria-current={selectedThreadID === thread.id ? "page" : undefined} aria-describedby={describedBy}
         className={`v2-thread-row${onMoveThread ? " has-project-control" : ""}${showSubline ? " has-subline" : ""}`}
-        data-activity-kind={activity.kind}
-        data-priority-bucket={activity.bucket}
         onClick={() => onSelectThread(thread.id)} type="button"
-        draggable={canMove} onDragStart={(event) => {
-          if (!canMove) { event.preventDefault(); return; }
+        draggable={canDrag} onDragStart={(event) => {
+          if (!canDrag) { event.preventDefault(); return; }
           event.dataTransfer.setData("application/x-universal-code-thread", thread.id);
           event.dataTransfer.effectAllowed = "move"; setDraggingThreadID(thread.id); setProjectsExpanded(true);
         }} onDragEnd={() => { setDraggingThreadID(""); setDropProjectID(null); }}>
-        <SidebarActivityGlyph activity={activity} />
+        {activity && <SidebarActivityGlyph activity={activity} />}
         <span className="v2-thread-main">
           <span className="v2-thread-top">
             <span className="v2-thread-title">{thread.title}</span>
             {unread && <span className="v2-thread-unread" aria-hidden="true" />}
-            {!showActivitySubtitle && (
-              <span aria-hidden="true" className={`v2-thread-state state-${activity.executionState}`} title={activity.executionDescription}>
+            {!activity && (
+              <span aria-hidden="true" className={`v2-thread-state state-${execution.state}`} title={execution.description}>
                 <i />
               </span>
             )}
-            <span aria-hidden="true" className="v2-thread-state-description">{activity.executionLabel}</span>
+            <span aria-hidden="true" className="v2-thread-state-description">{execution.label}</span>
           </span>
           {showSubline && (
             <span aria-hidden="true" className="v2-thread-subline">
-              {showActivitySubtitle && (
+              {activity && (
                 <span
                   className={`v2-thread-activity-pill tone-${activity.tone}${activity.pulse ? " is-pulsing" : ""}`}
                   id={accessibleActivityText ? activityID : undefined}
@@ -393,10 +347,11 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           )}
         </span>
       </button>
-      <span className="v2-thread-state-description" id={statusID}>{activity.executionDescription}</span>
+      <span className="v2-thread-state-description" id={statusID}>{execution.description}</span>
       {unread && <span className="v2-thread-state-description" id={`unread-${thread.id}`}>{t("未读", "Unread")}</span>}
       {onMoveThread && <button aria-label={t(`移动 ${thread.title} 到项目`, `Move ${thread.title} to project`)}
-        className="v2-thread-more v2-thread-move" disabled={!canMove} title={canMove ? t("移动到项目，也可拖动聊天", "Move to a project, or drag the chat")
+        className="v2-thread-more v2-thread-move" disabled={!canMove} title={canDrag ? t("移动到项目，也可拖动聊天", "Move to a project, or drag the chat")
+          : canMove ? t("移动到项目", "Move to a project")
           : t("当前任务暂不可移动，请等待执行或待处理消息结束", "Wait for execution and pending messages to finish before moving")}
         onClick={() => setProjectCandidate(thread)} type="button"><FolderInput aria-hidden="true" size={15} /></button>}
       <ThreadActions thread={thread} client={client} onArchive={onArchive} unread={unread} onReadStateChange={onReadStateChange} />
@@ -422,14 +377,6 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
       <button onClick={onOpenModels} type="button"><Cpu aria-hidden="true" size={16} />
         <span>{t("接入模型", "Connect models")}</span></button>
     </nav>
-    {!searchOpen && (
-      <SidebarModeBar
-        attentionCount={priorityGrouping.attentionCount}
-        onViewModeChange={setViewMode}
-        projectAction={projectAction}
-        viewMode={viewMode}
-      />
-    )}
     {!searchOpen && onExecutionFilterChange && <div className="v2-chat-filters" role="group" aria-label={t("按执行状态筛选", "Filter by execution status")}>
       {(["", "running", "waiting_approval"] as const).map((value) => <button type="button" key={value} aria-pressed={executionFilter === value}
         onClick={() => onExecutionFilterChange(value)}>{value === "" ? t("全部", "All") : value === "running" ? t("运行中", "Running") : t("待审批", "Awaiting approval")}</button>)}
@@ -464,7 +411,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
             : t("结果达到读取上限，可搜索更早记录。", "List limit reached. Search for earlier records."))
           : searching ? t(`${resultCount} 条匹配记录`, `${resultCount} ${resultCount === 1 ? "match" : "matches"}`)
           : t(`${resultCount} 条对话`, `${resultCount} ${resultCount === 1 ? "conversation" : "conversations"}`)}</p>
-      {!searchPending && !loading && !loadFailed && !truncated && resultCount === 0 && (searching || workspaces.length === 0 && !projectAction) && <div className="v2-sidebar-empty"><MessagesSquare aria-hidden="true" size={16} />
+      {!searchPending && !loading && !loadFailed && !truncated && resultCount === 0 && (searching || (showPriorityView
+        ? activeProjectFilter === null && !executionFilter && threadListFullyLoaded : workspaces.length === 0 && !projectAction)) && <div className="v2-sidebar-empty"><MessagesSquare aria-hidden="true" size={16} />
         {searching ? searchCurrentThread ? t("当前聊天没有匹配的消息", "No matching messages in this chat")
           : t("没有匹配的标题或消息", "No matching titles or messages") : t("暂无对话", "No conversations yet")}</div>}
       {!searchPending && searching && <div className="v2-message-search-results">{searchResults.map((result) =>
@@ -497,32 +445,10 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
       </section>}
       {!searchOpen && executionFilter && !loading && !loadFailed && !hasMore && resultCount === 0 && <p className="v2-sidebar-empty">{executionFilter === "running"
         ? t("暂无运行中的聊天", "No running chats") : t("暂无待审批的聊天", "No chats awaiting approval")}</p>}
-      {showPriorityView && !searchPending && !searching && (
-        <>
-          <SmartPriorityGroups
-            collapsedBuckets={collapsedBuckets}
-            groups={priorityGrouping.groups}
-            idleShowAll={idleShowAll}
-            onOpenCustomize={() => updateCustomPrefs((current) => ({
-              ...current,
-              visibleGroups: { needs_input: true, running: true, unread: true, idle: true },
-            }))}
-            onToggleBucket={(bucket) => setCollapsedBuckets((current) => ({ ...current, [bucket]: !current[bucket] }))}
-            onToggleIdleShowAll={() => setIdleShowAll((current) => !current)}
-            prefs={customPrefs}
-            renderThread={renderThread}
-          />
-          {activeProjectFilter !== null && unpinnedFilteredThreads.length === 0 && visiblePinnedThreads.length === 0 && !loading && (
-            <p className="v2-project-empty">{threadListFullyLoaded
-              ? t("所选置顶项目暂无会话", "No chats in the selected pinned project")
-              : t("已加载的记录中暂无该项目的会话，可加载更早对话继续查找。",
-                "No chats for this project among the loaded records; load earlier conversations to keep looking.")}</p>
-          )}
-        </>
-      )}
-      {!showPriorityView && !searchOpen && <div className="v2-project-section-heading">
+      {!searchOpen && <div className="v2-project-section-heading">
         <button className="v2-project-section-toggle" aria-expanded={projectsExpanded} onClick={() => setProjectsExpanded(!projectsExpanded)} type="button">
-          {t("项目", "Projects")}<ChevronDown aria-hidden="true" className={projectsExpanded ? "" : "is-collapsed"} size={14} /></button>
+          {showPriorityView ? t("优先级", "Priority") : t("项目", "Projects")}
+          <ChevronDown aria-hidden="true" className={projectsExpanded ? "" : "is-collapsed"} size={14} /></button>
         <details className="v2-project-section-menu" onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false;
         }} onKeyDown={(event) => { if (event.key === "Escape" && event.currentTarget.open) {
@@ -530,13 +456,56 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           event.currentTarget.open = false;
           event.currentTarget.querySelector("summary")?.focus();
         } }}>
-          <summary aria-label={t("项目选项", "Project options")}><MoreHorizontal aria-hidden="true" size={17} /></summary>
-          <div>{[true, false].map((expand) => <button key={String(expand)} type="button" onClick={(event) => {
+          <summary aria-label={showPriorityView ? t("分组选项", "Grouping options") : t("项目选项", "Project options")}><MoreHorizontal aria-hidden="true" size={17} /></summary>
+          <div><button type="button" onClick={(event) => {
+            setViewMode(showPriorityView ? "project" : "priority");
+            setProjectsExpanded(true);
+            const menu = event.currentTarget.closest("details")!;
+            menu.open = false;
+            menu.querySelector("summary")?.focus();
+          }}>{showPriorityView ? t("按项目分组", "Group by project") : t("按优先级分组", "Group by priority")}</button>
+          {!showPriorityView && [true, false].map((expand) => <button key={String(expand)} type="button" onClick={(event) => {
             setProjectsExpanded(true); setCollapsedProjects(expand ? new Set() : new Set(workspaces.map(({ id }) => id)));
             event.currentTarget.closest("details")!.open = false;
           }}>{expand ? t("展开所有项目", "Expand all projects") : t("折叠所有项目", "Collapse all projects")}</button>)}</div>
         </details>{projectAction}
       </div>}
+      {showPriorityView && projectsExpanded && !searchPending && !searching && (
+        <>
+          {priorityGroups.map(([key, chinese, english]) => {
+            const members = byPriority[key];
+            if (!members.length || (key !== "unknown" && !customPrefs.visibleGroups[key])) return null;
+            const limit = key === "idle" && customPrefs.idleLimit !== "all" ? customPrefs.idleLimit : members.length;
+            const shown = !idleShowAll && members.length > limit ? members.slice(0, limit) : members;
+            const label = t(chinese, english);
+            const expanded = !collapsedBuckets[key];
+            return <section aria-label={label} className="v2-thread-group" key={key}>
+              <header className="v2-project-row"><button type="button" className="v2-project-title" aria-expanded={expanded}
+                onClick={() => setCollapsedBuckets((previous) => ({ ...previous, [key]: !previous[key] }))}>
+                <ChevronDown aria-hidden="true" className="v2-priority-chevron" size={15} />
+                {label}{" "}<span className="v2-priority-count">{members.length}</span>
+              </button></header>
+              {expanded && shown.map(renderThread)}
+              {expanded && members.length > limit && <button className="v2-priority-more" type="button" onClick={() => setIdleShowAll(!idleShowAll)}>
+                {idleShowAll ? t(`仅显示前 ${limit} 条`, `Show first ${limit} only`)
+                  : t(`显示其余 ${members.length - limit} 条空闲会话`, `Show ${members.length - limit} more idle chats`)}
+              </button>}
+            </section>;
+          })}
+          {hiddenThreadCount > 0 && <p className="v2-priority-hidden-hint" role="status">
+            {t(`已按边栏设置隐藏 ${hiddenThreadCount} 条会话`, `${hiddenThreadCount} ${hiddenThreadCount === 1 ? "chat" : "chats"} hidden by sidebar settings`)}
+            <button type="button" onClick={() => updateCustomPrefs((current) => ({ ...current, visibleGroups: DEFAULT_SIDEBAR_CUSTOM_PREFS.visibleGroups }))}>
+              {t("显示全部", "Show all")}
+            </button>
+          </p>}
+          {activeProjectFilter !== null && unpinnedFilteredThreads.length === 0 && visiblePinnedThreads.length === 0 && !loading && (
+            <p className="v2-project-empty">{threadListFullyLoaded
+              ? t("所选置顶项目暂无会话", "No chats in the selected pinned project")
+              : t("已加载的记录中暂无该项目的会话。",
+                "No chats for this project among the loaded records.")}</p>
+          )}
+        </>
+      )}
       {!showPriorityView && !searchPending && !searching && grouped.filter(([id]) => !id || projectsExpanded || searchOpen).map(([workspaceID, workspaceThreads]) => {
         const label = resolveWorkspaceLabel(workspaceID);
         const draggedThread = [...threads, ...pinnedThreads].find((thread) => thread.id === draggingThreadID);
@@ -548,8 +517,8 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
         if (draggingThreadID) {
           emptyProjectHint = t("拖到这里", "Drop here");
         } else if (activeProjectFilter === workspaceID && !threadListFullyLoaded) {
-          emptyProjectHint = t("已加载的记录中暂无该项目的会话，可加载更早对话继续查找。",
-            "No chats for this project among the loaded records; load earlier conversations to keep looking.");
+          emptyProjectHint = t("已加载的记录中暂无该项目的会话。",
+            "No chats for this project among the loaded records.");
         }
         return <section aria-label={t(`项目 ${label}`, `Project ${label}`)} className={`v2-thread-group${workspaceID ? "" : " is-local"}${dropProjectID === workspaceID ? " is-drop-target" : ""}`} key={workspaceID}
           onDragOver={(event) => { if (acceptsDrop) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropProjectID(workspaceID); } }}
@@ -567,7 +536,7 @@ export function V2Sidebar({ threads, workspaces, selectedThreadID, searchOpen, o
           {onNewInProject && <button className="v2-project-new-chat" aria-label={t(`在 ${label} 中新建聊天`, `New chat in ${label}`)}
             onClick={() => onNewInProject(workspaceID)} type="button"><SquarePen aria-hidden="true" size={14} /></button>}
         </header>}
-        {expanded && workspaceThreads.length === 0 && <p className="v2-project-empty">{emptyProjectHint}</p>}
+        {expanded && workspaceThreads.length === 0 && (activeProjectFilter !== workspaceID || visiblePinnedThreads.length === 0) && <p className="v2-project-empty">{emptyProjectHint}</p>}
         {expanded && workspaceThreads.map((thread) => renderThread(thread))}
       </section>; })}
       {!searchPending && loadFailed && <p className="v2-history-scope v2-history-error" role="alert">{threads.length ? t("对话列表加载失败，已有记录仍可打开。", "The conversation list could not be loaded. Existing records can still be opened.") : t("对话列表加载失败，请重试读取。", "The conversation list could not be loaded. Please try again.")}

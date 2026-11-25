@@ -1,32 +1,28 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { QueryClient } from "@tanstack/react-query";
 import {
-  AlertCircle, BellDot, Check, ChevronRight, Clock3, Folder, FolderOpen,
+  AlertCircle, Check, Folder,
   Pin, PinOff, RotateCcw, SlidersHorizontal, Sparkles, SquarePen, Terminal, X,
 } from "lucide-react";
 import { useLocale, type LocaleText } from "../../lib/locale";
 import type {
-  ApprovalQueueView, RunView, ThreadDetailView, ThreadExecutionView,
+  ApprovalQueueView,
   ThreadTranscriptItemView, ThreadView, WorkspaceView,
 } from "../../api/types";
 import { v2QueryKeys } from "../query-keys";
+import { executionLabels, executionState, priorityGroups, threadPriority, type Priority } from "./sidebar-priority";
 
 export type SidebarViewMode = "priority" | "project";
-export type SidebarPriorityBucket = "needs_input" | "running" | "unread" | "idle";
+export type SidebarPriorityBucket = Priority;
 export type SidebarDensity = "comfortable" | "compact";
 export type SidebarIdleLimit = 5 | 15 | "all";
 
-export const PRIORITY_BUCKET_ORDER: readonly SidebarPriorityBucket[] = [
-  "needs_input",
-  "running",
-  "unread",
-  "idle",
-] as const;
+const configurablePriorities = priorityGroups.filter((group) => group[0] !== "unknown");
 
 export interface SidebarCustomPrefs {
   defaultLayout: SidebarViewMode;
-  visibleGroups: Record<SidebarPriorityBucket, boolean>;
+  visibleGroups: Record<Exclude<Priority, "unknown">, boolean>;
   autoCollapseIdle: boolean;
   showActivitySubtitle: boolean;
   showWorkspaceBadge: boolean;
@@ -35,7 +31,7 @@ export interface SidebarCustomPrefs {
 }
 
 export const DEFAULT_SIDEBAR_CUSTOM_PREFS: SidebarCustomPrefs = {
-  defaultLayout: "priority",
+  defaultLayout: "project",
   visibleGroups: {
     needs_input: true,
     running: true,
@@ -43,8 +39,8 @@ export const DEFAULT_SIDEBAR_CUSTOM_PREFS: SidebarCustomPrefs = {
     idle: true,
   },
   autoCollapseIdle: false,
-  showActivitySubtitle: true,
-  showWorkspaceBadge: true,
+  showActivitySubtitle: false,
+  showWorkspaceBadge: false,
   density: "comfortable",
   idleLimit: "all",
 };
@@ -52,7 +48,7 @@ export const DEFAULT_SIDEBAR_CUSTOM_PREFS: SidebarCustomPrefs = {
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-export function normalizeSidebarViewMode(value: unknown, fallback: SidebarViewMode = "priority"): SidebarViewMode {
+export function normalizeSidebarViewMode(value: unknown, fallback: SidebarViewMode = "project"): SidebarViewMode {
   if (value === "priority" || value === "project") return value;
   return fallback;
 }
@@ -60,7 +56,7 @@ export function normalizeSidebarViewMode(value: unknown, fallback: SidebarViewMo
 export function normalizeSidebarCustomPrefs(value: unknown): SidebarCustomPrefs {
   if (!isPlainRecord(value)) return DEFAULT_SIDEBAR_CUSTOM_PREFS;
   const rawGroups = isPlainRecord(value.visibleGroups) ? value.visibleGroups : {};
-  const defaultLayout = value.defaultLayout === "project" ? "project" : "priority";
+  const defaultLayout = normalizeSidebarViewMode(value.defaultLayout);
   const density: SidebarDensity = value.density === "compact" ? "compact" : "comfortable";
   const idleLimit: SidebarIdleLimit = value.idleLimit === 5 || value.idleLimit === 15 || value.idleLimit === "all"
     ? value.idleLimit
@@ -74,27 +70,14 @@ export function normalizeSidebarCustomPrefs(value: unknown): SidebarCustomPrefs 
       idle: typeof rawGroups.idle === "boolean" ? rawGroups.idle : true,
     },
     autoCollapseIdle: typeof value.autoCollapseIdle === "boolean" ? value.autoCollapseIdle : false,
-    showActivitySubtitle: typeof value.showActivitySubtitle === "boolean" ? value.showActivitySubtitle : true,
-    showWorkspaceBadge: typeof value.showWorkspaceBadge === "boolean" ? value.showWorkspaceBadge : true,
+    showActivitySubtitle: value.showActivitySubtitle === true,
+    showWorkspaceBadge: value.showWorkspaceBadge === true,
     density,
     idleLimit,
   };
 }
 
-export const SIDEBAR_EXECUTION_LABELS = {
-  idle: ["空闲", "Idle"],
-  running: ["执行中", "Running"],
-  stopping: ["正在停止", "Stopping"],
-  stop_failed: ["停止失败", "Stop failed"],
-  waiting_approval: ["等待审批", "Awaiting approval"],
-  paused: ["已暂停", "Paused"],
-  completed: ["已完成", "Completed"],
-  failed: ["执行失败", "Failed"],
-  cancelled: ["已取消", "Cancelled"],
-  unknown: ["状态未知", "Unknown"],
-} as const;
-
-export type CanonicalExecutionState = keyof typeof SIDEBAR_EXECUTION_LABELS;
+type CanonicalExecutionState = keyof typeof executionLabels;
 
 export type ThreadActivityStatusKind =
   | "waiting_input"
@@ -118,20 +101,7 @@ export interface ThreadActiveToolSignal {
 
 export interface ThreadLiveSignals {
   pendingApprovals?: number;
-  pendingActionKind?: "approval_pending" | "file_edit_review" | "file_edit_apply" | "steering_pending" | "wake_due";
-  hasBlockedTool?: boolean;
-  run?: Pick<RunView, "id" | "status"> | null;
-  runStatus?: RunView["status"];
-  execution?: Pick<ThreadExecutionView, "state" | "queued_messages" | "last_turn_interrupted"> | null;
   activeTool?: ThreadActiveToolSignal | null;
-  streamSnapshot?: {
-    content_kind?: string;
-    text?: string;
-    message_complete?: boolean;
-    provisional?: boolean;
-    cancel_requested?: boolean;
-  } | null;
-  streamStatus?: "idle" | "connecting" | "waiting" | "live" | "finalizing" | "reconnecting" | "stopped" | "error";
   isUnread?: boolean;
   readFailed?: boolean;
 }
@@ -144,9 +114,6 @@ export interface ThreadActivityDescriptor {
   label: string;
   detail?: string;
   accessibleDetail?: string;
-  executionState: CanonicalExecutionState;
-  executionLabel: string;
-  executionDescription: string;
 }
 
 function truncateInline(value: string, maxLength = 34): string {
@@ -198,15 +165,12 @@ export function deriveCanonicalExecutionStatus(
   readFailed: boolean,
   t: LocaleText = (chinese) => chinese,
 ): { state: CanonicalExecutionState; label: string; description: string } {
-  const raw = thread.execution_state;
-  const state: CanonicalExecutionState = !readFailed && typeof raw === "string" && Object.hasOwn(SIDEBAR_EXECUTION_LABELS, raw)
-    ? (raw as CanonicalExecutionState)
-    : "unknown";
-  const [chinese, english] = SIDEBAR_EXECUTION_LABELS[state];
+  const state = executionState(thread, readFailed);
+  const [chinese, english] = executionLabels[state];
   const label = t(chinese, english);
   const description = readFailed
     ? t("本次列表读取失败，执行状态未知", "The list could not be read; execution status is unknown")
-    : raw && state !== "unknown"
+    : state !== "unknown"
       ? label
       : t("执行状态未知，请刷新列表重试", "Execution status is unknown; refresh the list to try again");
   return { state, label, description };
@@ -224,55 +188,30 @@ export function deriveThreadActivityStatus(
 ): ThreadActivityDescriptor {
   const readFailed = Boolean(signals?.readFailed);
   const canonical = deriveCanonicalExecutionStatus(thread, readFailed, t);
-  const isUnread = Boolean(signals?.isUnread);
+  const bucket = threadPriority(thread, readFailed, signals?.isUnread === true);
 
   if (readFailed) {
     return {
       kind: "unknown",
-      bucket: isUnread ? "unread" : "idle",
+      bucket,
       tone: "neutral",
       pulse: false,
       label: canonical.label,
-      executionState: canonical.state,
-      executionLabel: canonical.label,
-      executionDescription: canonical.description,
     };
   }
 
   const pendingApprovals = Math.max(0, signals?.pendingApprovals ?? 0);
-  const effectiveRunStatus = signals?.runStatus ?? signals?.run?.status;
-  const liveExecState = signals?.execution?.state;
-  const effectiveExecState = liveExecState ?? canonical.state;
 
-  // `composer_state === "successor_required"` is the backend's normal between-turns
-  // state for every active thread without a live run (completed, failed, cancelled…);
-  // the user can simply send the next message, so it must not count as needs-input.
-  const needsOperatorInput =
-    pendingApprovals > 0 ||
-    signals?.hasBlockedTool === true ||
-    signals?.pendingActionKind === "approval_pending" ||
-    signals?.pendingActionKind === "file_edit_review" ||
-    effectiveExecState === "waiting_approval" ||
-    effectiveExecState === "stop_failed" ||
-    canonical.state === "waiting_approval" ||
-    canonical.state === "paused" ||
-    canonical.state === "stop_failed" ||
-    thread.composer_state === "waiting_approval" ||
-    effectiveRunStatus === "waiting_approval" ||
-    effectiveRunStatus === "paused";
-
-  if (needsOperatorInput) {
+  if (bucket === "needs_input") {
     let detail: string | undefined;
     if (pendingApprovals > 0) {
       detail = t(
         `${pendingApprovals} 项待审批`,
         `${pendingApprovals} pending approval${pendingApprovals === 1 ? "" : "s"}`,
       );
-    } else if (signals?.pendingActionKind === "file_edit_review") {
-      detail = t("待审阅改动", "Changes awaiting review");
-    } else if (canonical.state === "stop_failed" || effectiveExecState === "stop_failed") {
+    } else if (canonical.state === "stop_failed") {
       detail = t("停止未完成", "Stop failed");
-    } else if (canonical.state === "paused" || effectiveRunStatus === "paused") {
+    } else if (canonical.state === "paused") {
       detail = t("已暂停", "Paused");
     } else {
       detail = t("待确认授权", "Awaiting approval");
@@ -281,7 +220,6 @@ export function deriveThreadActivityStatus(
     const waitingLabel = t("等待回复", "Waiting for input");
     const hasEnrichedWaitingSignal =
       pendingApprovals > 0 ||
-      signals?.pendingActionKind === "file_edit_review" ||
       !["waiting_approval", "paused", "stop_failed"].includes(canonical.state);
 
     return {
@@ -294,17 +232,10 @@ export function deriveThreadActivityStatus(
       accessibleDetail: hasEnrichedWaitingSignal
         ? (detail ? `${waitingLabel} · ${detail}` : waitingLabel)
         : undefined,
-      executionState: canonical.state,
-      executionLabel: canonical.label,
-      executionDescription: canonical.description,
     };
   }
 
-  if (
-    effectiveExecState === "stopping" ||
-    canonical.state === "stopping" ||
-    signals?.streamSnapshot?.cancel_requested === true
-  ) {
+  if (canonical.state === "stopping") {
     const stoppingLabel = t("正在停止", "Stopping");
     return {
       kind: "stopping",
@@ -312,34 +243,13 @@ export function deriveThreadActivityStatus(
       tone: "amber",
       pulse: true,
       label: stoppingLabel,
-      accessibleDetail: canonical.state !== "stopping" ? stoppingLabel : undefined,
-      executionState: canonical.state,
-      executionLabel: canonical.label,
-      executionDescription: canonical.description,
     };
   }
 
-  const confirmedTerminalByRun = effectiveRunStatus !== undefined &&
-    ["completed", "failed", "cancelled"].includes(effectiveRunStatus);
-  const explicitTurnActivity = !confirmedTerminalByRun && (
-    Boolean(signals?.activeTool) ||
-    signals?.streamStatus === "live" ||
-    signals?.streamStatus === "connecting" ||
-    liveExecState === "running"
-  );
-  const runContainerActive = !confirmedTerminalByRun &&
-    liveExecState !== "idle" && (
-      effectiveRunStatus === "running" ||
-      effectiveRunStatus === "preparing" ||
-      canonical.state === "running"
-    );
-  const isActivelyRunning = explicitTurnActivity || runContainerActive;
-
-  if (isActivelyRunning) {
-    const streamKind = signals?.streamSnapshot?.content_kind;
-    if (signals?.activeTool || streamKind === "tool_call" || streamKind === "command") {
+  if (bucket === "running") {
+    if (signals?.activeTool) {
       const commandLabel = t("执行命令", "Running command");
-      const commandDetail = signals?.activeTool ? describeActiveTool(signals.activeTool, t) : undefined;
+      const commandDetail = describeActiveTool(signals.activeTool, t);
       return {
         kind: "running_command",
         bucket: "running",
@@ -348,21 +258,7 @@ export function deriveThreadActivityStatus(
         label: commandLabel,
         detail: commandDetail,
         accessibleDetail: commandDetail ? `${commandLabel} · ${commandDetail}` : commandLabel,
-        executionState: canonical.state,
-        executionLabel: canonical.label,
-        executionDescription: canonical.description,
       };
-    }
-
-    let thinkingDetail: string | undefined;
-    if (signals?.streamStatus === "live" && signals?.streamSnapshot?.text?.trim() && !signals.streamSnapshot.message_complete) {
-      thinkingDetail = streamKind === "tool_commentary"
-        ? t("同步进展中", "Updating progress")
-        : t("生成回复中", "Streaming reply");
-    } else if (effectiveRunStatus === "preparing") {
-      thinkingDetail = t("准备环境中", "Preparing run");
-    } else if ((signals?.execution?.queued_messages ?? 0) > 0) {
-      thinkingDetail = t(`队列 ${signals!.execution!.queued_messages} 条`, `${signals!.execution!.queued_messages} queued`);
     }
 
     const thinkingLabel = t("思考中", "Thinking");
@@ -372,19 +268,10 @@ export function deriveThreadActivityStatus(
       tone: "indigo",
       pulse: true,
       label: thinkingLabel,
-      detail: thinkingDetail,
-      accessibleDetail: thinkingDetail
-        ? `${thinkingLabel} · ${thinkingDetail}`
-        : canonical.state !== "running"
-          ? thinkingLabel
-          : undefined,
-      executionState: canonical.state,
-      executionLabel: canonical.label,
-      executionDescription: canonical.description,
     };
   }
 
-  if (isUnread) {
+  if (bucket === "unread") {
     const unreadDetail = canonical.state === "failed"
       ? t("执行失败", "Failed")
       : canonical.state === "completed"
@@ -397,13 +284,10 @@ export function deriveThreadActivityStatus(
       pulse: false,
       label: t("未读新进展", "Unread update"),
       detail: unreadDetail,
-      executionState: canonical.state,
-      executionLabel: canonical.label,
-      executionDescription: canonical.description,
     };
   }
 
-  if (canonical.state === "failed" || effectiveRunStatus === "failed") {
+  if (canonical.state === "failed") {
     const failedLabel = t("执行失败", "Failed");
     return {
       kind: "failed",
@@ -412,24 +296,17 @@ export function deriveThreadActivityStatus(
       pulse: false,
       label: failedLabel,
       detail: formatShortUpdatedAt(thread.updated_at, locale),
-      accessibleDetail: canonical.state !== "failed" ? failedLabel : undefined,
-      executionState: canonical.state,
-      executionLabel: canonical.label,
-      executionDescription: canonical.description,
     };
   }
 
-  if (canonical.state === "unknown") {
+  if (bucket === "unknown") {
     return {
       kind: "unknown",
-      bucket: "idle",
+      bucket,
       tone: "neutral",
       pulse: false,
       label: canonical.label,
       detail: formatShortUpdatedAt(thread.updated_at, locale),
-      executionState: canonical.state,
-      executionLabel: canonical.label,
-      executionDescription: canonical.description,
     };
   }
 
@@ -446,119 +323,30 @@ export function deriveThreadActivityStatus(
     pulse: false,
     label: t("空闲", "Idle"),
     detail: idleDetail,
-    executionState: canonical.state,
-    executionLabel: canonical.label,
-    executionDescription: canonical.description,
   };
 }
 
-export function classifyThreadPriorityBucket(
-  thread: ThreadView,
-  signals?: ThreadLiveSignals,
-  t?: LocaleText,
-): SidebarPriorityBucket {
-  return deriveThreadActivityStatus(thread, signals, t).bucket;
-}
-
-export interface GroupedPriorityThread {
-  thread: ThreadView;
-  activity: ThreadActivityDescriptor;
-}
-
-export interface PriorityBucketGroup {
-  bucket: SidebarPriorityBucket;
-  items: GroupedPriorityThread[];
-}
-
-export function groupThreadsByPriority(
-  threads: readonly ThreadView[],
-  resolveSignals?: (thread: ThreadView) => ThreadLiveSignals | undefined,
-  t: LocaleText = (chinese) => chinese,
-  locale = "zh-CN",
-): {
-  groups: PriorityBucketGroup[];
-  counts: Record<SidebarPriorityBucket, number>;
-  attentionCount: number;
-} {
-  const buckets: Record<SidebarPriorityBucket, GroupedPriorityThread[]> = {
-    needs_input: [],
-    running: [],
-    unread: [],
-    idle: [],
-  };
-  for (const thread of threads) {
-    const activity = deriveThreadActivityStatus(thread, resolveSignals?.(thread), t, locale);
-    buckets[activity.bucket].push({ thread, activity });
-  }
-  const counts: Record<SidebarPriorityBucket, number> = {
-    needs_input: buckets.needs_input.length,
-    running: buckets.running.length,
-    unread: buckets.unread.length,
-    idle: buckets.idle.length,
-  };
-  return {
-    groups: PRIORITY_BUCKET_ORDER.map((bucket) => ({ bucket, items: buckets[bucket] })),
-    counts,
-    attentionCount: counts.needs_input + counts.running + counts.unread,
-  };
-}
-
-/**
- * Passively reads cached execution, run, approval, and transcript state from QueryClient
- * without triggering extra background network requests.
- */
+// Only use a matching live run to enrich the action text. Priority comes from the thread list.
 export function extractCachedThreadSignals(
   queryClient: QueryClient,
   thread: ThreadView,
   isUnread: boolean,
   readFailed: boolean,
-  extra?: ThreadLiveSignals,
 ): ThreadLiveSignals {
-  const listedRunID = thread.active_run_id || thread.last_run_id || "";
-  const detail = queryClient.getQueryData<ThreadDetailView>(v2QueryKeys.thread(thread.id));
-  const detailCandidateRun = detail?.active_run ?? detail?.last_run ?? null;
-  const cachedRunMismatch = Boolean(detailCandidateRun && listedRunID && detailCandidateRun.id !== listedRunID);
-  const activeRun = detailCandidateRun && !cachedRunMismatch ? detailCandidateRun : null;
-  const resolvedRun = extra?.run !== undefined ? extra.run : activeRun;
-  const runID = extra?.run !== undefined ? (extra.run?.id || "") : (listedRunID || activeRun?.id || "");
+  const signals: ThreadLiveSignals = { isUnread, readFailed };
+  const runID = thread.active_run_id;
+  if (readFailed || !runID) return signals;
 
-  const executionQuery = queryClient.getQueryCache().find({ queryKey: v2QueryKeys.execution(thread.id) });
-  const rawExecution = queryClient.getQueryData<ThreadExecutionView>(v2QueryKeys.execution(thread.id));
-  const threadUpdatedAtMs = Date.parse(thread.updated_at);
-  const executionOlderThanThread =
-    Number.isFinite(threadUpdatedAtMs) &&
-    executionQuery !== undefined &&
-    threadUpdatedAtMs > executionQuery.state.dataUpdatedAt;
-  const staleIdleExecution =
-    rawExecution?.state === "idle" &&
-    (cachedRunMismatch ||
-      executionOlderThanThread ||
-      executionQuery?.state.isInvalidated === true ||
-      thread.execution_state === "running" ||
-      ((executionQuery?.getObserversCount() ?? 0) === 0 &&
-        !["idle", "completed", "cancelled"].includes(thread.execution_state ?? "")));
-  const execution = staleIdleExecution ? null : rawExecution;
-
-  // In Universal-Code, an open multi-turn Thread keeps `active_run.status === "running"`
-  // between turns while `thread.execution_state` / `execution.state` is `"idle"`.
-  // Only propagate cached `activeRun.status === "running"` when the thread is not idle between turns.
-  const cachedIdleBetweenTurns =
-    extra?.run === undefined &&
-    extra?.runStatus === undefined &&
-    activeRun?.status === "running" &&
-    (execution?.state === "idle" ||
-      (execution?.state !== "running" &&
-        ["idle", "completed", "cancelled"].includes(thread.execution_state ?? "")));
-  const effectiveCachedRunStatus = cachedIdleBetweenTurns ? undefined : resolvedRun?.status;
-
-  const approvals = runID ? queryClient.getQueryData<ApprovalQueueView>(v2QueryKeys.approvals(runID)) : undefined;
+  if (thread.composer_state === "waiting_approval" || thread.execution_state === "waiting_approval") {
+    const queue = queryClient.getQueryData<ApprovalQueueView>(v2QueryKeys.approvals(runID));
+    if (queue?.run_id === runID) signals.pendingApprovals = queue.items.filter((item) => item.status === "pending").length;
+    return signals;
+  }
+  if (thread.execution_state !== "running") return signals;
   const transcriptData = queryClient.getQueryData<{ pages?: Array<{ items?: ThreadTranscriptItemView[] }> }>(
     v2QueryKeys.transcript(thread.id),
   );
-
-  let activeTool: ThreadActiveToolSignal | null = null;
-  let hasBlockedTool = false;
-  if (runID && transcriptData?.pages?.length) {
+  if (transcriptData?.pages?.length) {
     const items = transcriptData.pages
       .flatMap((page) => page.items ?? [])
       .filter((item) => item.run_id === runID && item.durable && !item.provisional);
@@ -575,12 +363,12 @@ export function extractCachedThreadSignals(
       if (!previous || item.sequence >= previous.sequence) tools.set(identity, item);
     }
     const latestTools = [...tools.values()].sort((a, b) => b.sequence - a.sequence);
-    hasBlockedTool = latestTools.some((item) => item.stage === "blocked");
     const runningItem = latestTools.find(
       (item) => item.stage === "running" && item.sequence > latestModelSequence,
     );
     if (runningItem) {
-      activeTool = {
+      signals.activeTool = {
+        command: runningItem.activity_summary?.command,
         toolName: runningItem.tool_name,
         activityType: runningItem.activity_type,
         kind: runningItem.kind,
@@ -588,58 +376,7 @@ export function extractCachedThreadSignals(
     }
   }
 
-  return {
-    pendingApprovals: extra?.pendingApprovals ?? approvals?.items.length,
-    pendingActionKind: extra?.pendingActionKind,
-    hasBlockedTool: extra?.hasBlockedTool ?? (hasBlockedTool || undefined),
-    run: cachedIdleBetweenTurns ? null : resolvedRun,
-    runStatus: extra?.runStatus ?? effectiveCachedRunStatus,
-    execution: extra?.execution !== undefined ? extra.execution : (execution ?? null),
-    activeTool: extra?.activeTool !== undefined ? extra.activeTool : activeTool,
-    streamSnapshot: extra?.streamSnapshot,
-    streamStatus: extra?.streamStatus,
-    isUnread: extra?.isUnread ?? isUnread,
-    readFailed: extra?.readFailed ?? readFailed,
-  };
-}
-
-export function priorityBucketLabel(bucket: SidebarPriorityBucket, t: LocaleText): string {
-  switch (bucket) {
-    case "needs_input":
-      return t("需用户输入", "Needs input");
-    case "running":
-      return t("运行中", "Running");
-    case "unread":
-      return t("未读", "Unread");
-    case "idle":
-      return t("空闲", "Idle");
-  }
-}
-
-export function priorityBucketTone(bucket: SidebarPriorityBucket): ActivityTone {
-  switch (bucket) {
-    case "needs_input":
-      return "amber";
-    case "running":
-      return "indigo";
-    case "unread":
-      return "blue";
-    case "idle":
-      return "neutral";
-  }
-}
-
-function PriorityBucketIcon({ bucket }: { bucket: SidebarPriorityBucket }) {
-  switch (bucket) {
-    case "needs_input":
-      return <AlertCircle aria-hidden="true" className="v2-priority-bucket-icon tone-amber" size={14} />;
-    case "running":
-      return <Sparkles aria-hidden="true" className="v2-priority-bucket-icon tone-indigo" size={14} />;
-    case "unread":
-      return <BellDot aria-hidden="true" className="v2-priority-bucket-icon tone-blue" size={14} />;
-    case "idle":
-      return <Clock3 aria-hidden="true" className="v2-priority-bucket-icon tone-neutral" size={14} />;
-  }
+  return signals;
 }
 
 export function SidebarActivityGlyph({ activity }: { activity: ThreadActivityDescriptor }) {
@@ -658,52 +395,6 @@ export function SidebarActivityGlyph({ activity }: { activity: ThreadActivityDes
         <i />
       )}
     </span>
-  );
-}
-
-export function SidebarModeBar({
-  viewMode,
-  attentionCount = 0,
-  onViewModeChange,
-  projectAction,
-}: {
-  viewMode: SidebarViewMode;
-  attentionCount?: number;
-  onViewModeChange: (mode: SidebarViewMode) => void;
-  projectAction?: ReactNode;
-}) {
-  const { t } = useLocale();
-  return (
-    <div className="v2-sidebar-mode-bar">
-      <div
-        aria-label={t("会话分组方式", "Conversation grouping mode")}
-        className="v2-sidebar-mode-switch"
-        role="group"
-      >
-        <button
-          aria-pressed={viewMode === "priority"}
-          onClick={() => onViewModeChange("priority")}
-          type="button"
-        >
-          <Sparkles aria-hidden="true" size={13} />
-          <span>{t("智能分组", "Smart priority")}</span>
-          {attentionCount > 0 && (
-            <em aria-hidden="true" className="v2-mode-attention-count">
-              {attentionCount}
-            </em>
-          )}
-        </button>
-        <button
-          aria-pressed={viewMode === "project"}
-          onClick={() => onViewModeChange("project")}
-          type="button"
-        >
-          <FolderOpen aria-hidden="true" size={13} />
-          <span>{t("按项目", "By project")}</span>
-        </button>
-      </div>
-      {viewMode === "priority" && projectAction}
-    </div>
   );
 }
 
@@ -885,7 +576,7 @@ export function SidebarCustomizeControl({
           <div className="v2-sidebar-customize-section">
             <span className="v2-sidebar-customize-label">{t("显示的优先级分组", "Visible priority groups")}</span>
             <div className="v2-sidebar-group-checks">
-              {PRIORITY_BUCKET_ORDER.map((bucket) => {
+              {configurablePriorities.map(([bucket, chinese, english]) => {
                 const checkboxID = `${groupCheckboxBaseID}-${bucket}`;
                 return (
                   <div className="v2-sidebar-check" key={bucket}>
@@ -901,7 +592,7 @@ export function SidebarCustomizeControl({
                       }))}
                       type="checkbox"
                     />
-                    <label htmlFor={checkboxID}>{priorityBucketLabel(bucket, t)}</label>
+                    <label htmlFor={checkboxID}>{t(chinese, english)}</label>
                   </div>
                 );
               })}
@@ -1104,111 +795,5 @@ export function PinnedProjectsQuickBar({
         </div>
       )}
     </section>
-  );
-}
-
-export function SmartPriorityGroups({
-  groups,
-  prefs,
-  collapsedBuckets,
-  onToggleBucket,
-  idleShowAll,
-  onToggleIdleShowAll,
-  renderThread,
-  onOpenCustomize,
-}: {
-  groups: readonly PriorityBucketGroup[];
-  prefs: SidebarCustomPrefs;
-  collapsedBuckets: Record<SidebarPriorityBucket, boolean>;
-  onToggleBucket: (bucket: SidebarPriorityBucket) => void;
-  idleShowAll: boolean;
-  onToggleIdleShowAll: () => void;
-  renderThread: (thread: ThreadView, activity: ThreadActivityDescriptor) => ReactNode;
-  onOpenCustomize?: () => void;
-}) {
-  const { t } = useLocale();
-  const basePanelID = useId();
-
-  let hiddenThreadCount = 0;
-  const visibleNonEmptyGroups = groups.filter(({ bucket, items }) => {
-    if (!prefs.visibleGroups[bucket]) {
-      hiddenThreadCount += items.length;
-      return false;
-    }
-    return items.length > 0;
-  });
-
-  return (
-    <div className="v2-priority-groups">
-      {visibleNonEmptyGroups.map(({ bucket, items }) => {
-        const label = priorityBucketLabel(bucket, t);
-        const tone = priorityBucketTone(bucket);
-        const expanded = !collapsedBuckets[bucket];
-        const panelID = `${basePanelID}-${bucket}`;
-        const cappedLimit = bucket === "idle" && prefs.idleLimit !== "all" ? prefs.idleLimit : null;
-        const displayedItems = cappedLimit !== null && !idleShowAll && items.length > cappedLimit
-          ? items.slice(0, cappedLimit)
-          : items;
-        const remainingCount = items.length - displayedItems.length;
-
-        return (
-          <section
-            aria-label={label}
-            className={`v2-priority-group bucket-${bucket} tone-${tone}`}
-            key={bucket}
-          >
-            <h2 className="v2-priority-heading">
-              <button
-                aria-controls={panelID}
-                aria-expanded={expanded}
-                className="v2-priority-toggle"
-                onClick={() => onToggleBucket(bucket)}
-                type="button"
-              >
-                <ChevronRight
-                  aria-hidden="true"
-                  className={`v2-priority-chevron${expanded ? " is-expanded" : ""}`}
-                  size={14}
-                />
-                <PriorityBucketIcon bucket={bucket} />
-                <span className="v2-priority-title">{label}</span>{" "}
-                <span className={`v2-priority-count tone-${tone}`}>{items.length}</span>
-              </button>
-            </h2>
-            {expanded && (
-              <div className="v2-priority-list" id={panelID}>
-                {displayedItems.map(({ thread, activity }) => renderThread(thread, activity))}
-                {bucket === "idle" && cappedLimit !== null && items.length > cappedLimit && (
-                  <button
-                    className="v2-priority-more"
-                    onClick={onToggleIdleShowAll}
-                    type="button"
-                  >
-                    {remainingCount > 0
-                      ? t(`显示其余 ${remainingCount} 条空闲会话`, `Show ${remainingCount} more idle chats`)
-                      : t(`仅显示前 ${cappedLimit} 条`, `Show first ${cappedLimit} only`)}
-                  </button>
-                )}
-              </div>
-            )}
-          </section>
-        );
-      })}
-      {hiddenThreadCount > 0 && (
-        <p className="v2-priority-hidden-hint" role="status">
-          <span>
-            {t(
-              `已按边栏设置隐藏 ${hiddenThreadCount} 条会话`,
-              `${hiddenThreadCount} ${hiddenThreadCount === 1 ? "chat" : "chats"} hidden by sidebar settings`,
-            )}
-          </span>
-          {onOpenCustomize && (
-            <button onClick={onOpenCustomize} type="button">
-              {t("调整", "Adjust")}
-            </button>
-          )}
-        </p>
-      )}
-    </div>
   );
 }

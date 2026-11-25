@@ -22,7 +22,7 @@ function page(scopeID = "store-a", baseURL = "/api/v1") {
     <LocaleProvider><V2RecoveryProvider client={{ baseURL }} scopeID={scopeID}>
       <V2Sidebar workspaces={projects} threads={threads} selectedThreadID={thread.id} searchOpen={false}
         onSearchOpen={vi.fn()} onNewConversation={vi.fn()} onOpenModels={vi.fn()} onSelectThread={vi.fn()}
-        onOpenSettings={vi.fn()} onArchive={vi.fn()} onNewInProject={vi.fn()} onVisibleChatOrder={onVisibleChatOrder} defaultViewMode="project" />
+        onOpenSettings={vi.fn()} onArchive={vi.fn()} onNewInProject={vi.fn()} onVisibleChatOrder={onVisibleChatOrder} />
     </V2RecoveryProvider></LocaleProvider>
   </QueryClientProvider>;
 }

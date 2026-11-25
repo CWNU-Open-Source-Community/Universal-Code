@@ -126,7 +126,7 @@ describe("V2Workbench adjacent chat navigation", () => {
     const storageKey = `v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent("/api/v1")}:${scope}:reply-read-state`;
     localStorage.setItem(storageKey, JSON.stringify({ version: "v2_recovery.v1", value: { cursor: "known-feed", threads: {
       [other.id]: { pending: [], seen: [], manualUnread: true },
-    } } })); localStorage.setItem(`v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent("/api/v1")}:${scope}:sidebar-view-mode`, JSON.stringify({ version: "v2_recovery.v1", value: "project" }));
+    } } }));
     window.history.replaceState({}, "", `#/threads/${createdThread.id}`);
     const client = Object.assign(navigationClient(), { baseURL: "/api/v1" });
     vi.mocked(client.getPage).mockImplementation(async (path: string) => ({
@@ -308,7 +308,7 @@ describe("V2Workbench resource navigation", () => {
     const key = `v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent("/api/v1")}:${scope}:reply-read-state`;
     localStorage.setItem(key, JSON.stringify({ version: "v2_recovery.v1", value: { cursor: "known-feed", threads: {
       [createdThread.id]: { pending: [], seen: [], manualUnread: true },
-    } } })); localStorage.setItem(`v2_recovery.v1:${encodeURIComponent(window.location.origin)}:${encodeURIComponent("/api/v1")}:${scope}:sidebar-view-mode`, JSON.stringify({ version: "v2_recovery.v1", value: "project" }));
+    } } }));
     window.history.replaceState({}, "", `#/threads/${createdThread.id}`);
     const client = Object.assign(navigationClient(), { baseURL: "/api/v1" });
     vi.mocked(client.get).mockResolvedValue({ version: "thread_reply_updates.v1", data_store_id: scope, cursor: "known-feed", has_more: false, items: [] });
@@ -1740,7 +1740,7 @@ it("switches the new conversation and shell language without changing user proje
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <LocaleSwitch /><V2Workbench client={client} /></QueryClientProvider>);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "按项目" })); await screen.findByRole("region", { name: "项目 我的新对话项目" });
+  await screen.findByRole("region", { name: "项目 我的新对话项目" });
   const input = screen.getByRole("textbox", { name: "开始新对话" });
   await user.type(input, "保持这段新对话需求");
   expect(screen.getByRole("heading", { name: "接下来要做什么？" })).toBeInTheDocument();
