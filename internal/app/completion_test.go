@@ -231,8 +231,8 @@ var commandFlagScanTargets = map[string]string{
 	"run delegation apply":            "runDelegationApply",
 	"run delegation schedule":         "runDelegationSchedule",
 	"run delegations":                 "runDelegations",
-	"run delivery checkpoint list":    "runDeliveryCheckpointList",
-	"run delivery checkpoint record":  "runDeliveryCheckpointRecord",
+	"run delivery checkpoint":         "runDeliveryCheckpointRecord",
+	"run delivery list":               "runDeliveryCheckpointList",
 	"run execute":                     "runSupervisorExecute",
 	"run execution-interaction":       "runExecutionInteraction",
 	"run execution-permission":        "runExecutionPermission",
@@ -944,6 +944,48 @@ func TestCompleteFlagValues(t *testing.T) {
 	}
 	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 3 || got[0] != "owner" || got[1] != "root" || got[2] != "run" {
 		t.Fatalf("'note create --visibility' must complete the three visibilities, got %v", got)
+	}
+}
+
+func TestCompleteAttachedFlagValues(t *testing.T) {
+	for _, test := range []struct {
+		args      []string
+		want      []string
+		directive string
+	}{
+		{[]string{"exec", "--profile=re"}, []string{"--profile=review"}, ":4"},
+		{[]string{"todo", "create", "title", "--priority="}, []string{"--priority=critical", "--priority=high", "--priority=low", "--priority=normal"}, ":4"},
+		{[]string{"exec", "--profile=unknown"}, nil, ":4"},
+		{[]string{"tool", "invoke", "tool-name", "--payload-file=sample"}, nil, ":0"},
+	} {
+		out, err := dispatchForOutput(t, append([]string{"__complete"}, test.args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := completionCandidatesFromOutput(t, out, test.directive); !slices.Equal(got, test.want) {
+			t.Errorf("%v: got %v, want %v", test.args, got, test.want)
+		}
+	}
+}
+
+func TestCompleteDeliveryFlagsAtTheirDispatchPaths(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"run", "delivery", "checkpoint", "work-id", "--oper"}, []string{"--operation-key", "--operator"}},
+		{[]string{"run", "delivery", "list", "run-id", "--l"}, []string{"--limit"}},
+	} {
+		out, err := dispatchForOutput(t, append([]string{"__complete"}, test.args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := completionCandidatesFromOutput(t, out, ":4"); !slices.Equal(got, test.want) {
+			t.Errorf("%v: got %v, want %v", test.args, got, test.want)
+		}
+	}
+	if got := commandSubcommands["run delivery checkpoint"]; len(got) != 0 {
+		t.Errorf("checkpoint takes a work ID, unexpected subcommands %v", got)
 	}
 }
 

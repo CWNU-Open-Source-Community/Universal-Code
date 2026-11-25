@@ -171,15 +171,14 @@ var commandSubcommands = map[string][]string{
 
 	// Two-level groups: "command group" keys complete the first argument
 	// after the group, mirroring the nested dispatch switches.
-	"context instructions":    {"scaffold"},
-	"context memory":          {"create", "delete", "disable", "edit", "enable", "export", "list", "show"},
-	"run delivery":            {"checkpoint", "list", "record", "report", "show"},
-	"run delivery checkpoint": {"list", "record"},
-	"run schedule":            {"cancel", "create", "pause", "resume"},
-	"workspace checkpoint":    {"capture", "fork", "preview", "redo", "rewind", "timeline", "undo"},
-	"run fanout":              {"execute", "execution", "plan", "report", "show"},
-	"run plan":                {"choose", "selection", "show"},
-	"run delegation":          {"apply", "approve", "continue", "reject", "schedule", "show"},
+	"context instructions": {"scaffold"},
+	"context memory":       {"create", "delete", "disable", "edit", "enable", "export", "list", "show"},
+	"run delivery":         {"checkpoint", "list", "record", "report", "show"},
+	"run schedule":         {"cancel", "create", "pause", "resume"},
+	"workspace checkpoint": {"capture", "fork", "preview", "redo", "rewind", "timeline", "undo"},
+	"run fanout":           {"execute", "execution", "plan", "report", "show"},
+	"run plan":             {"choose", "selection", "show"},
+	"run delegation":       {"apply", "approve", "continue", "reject", "schedule", "show"},
 	"run sandbox": {
 		"begin", "cancel", "candidate", "candidate-show",
 		"candidates", "cleanup", "docker-admit", "docker-attempt-resume",
@@ -268,8 +267,8 @@ var commandFlags = map[string][]string{
 	"run delegation apply":            {"--operation-key", "--operator"},
 	"run delegation schedule":         {"--agent", "--max-rounds", "--operation-key", "--operator", "--tools"},
 	"run delegations":                 {"--limit"},
-	"run delivery checkpoint list":    {"--limit"},
-	"run delivery checkpoint record":  {"--diff-audit", "--focused", "--functional", "--handoff", "--operation-key", "--operator", "--robustness", "--security-audit"},
+	"run delivery checkpoint":         {"--diff-audit", "--focused", "--functional", "--handoff", "--operation-key", "--operator", "--robustness", "--security-audit"},
+	"run delivery list":               {"--limit"},
 	"run execute":                     {"--confirm-full", "--enable-danger-full-access", "--enable-permission-control", "--finish", "--max-steps", "--summary"},
 	"run execution-interaction":       {"--confirm-container-boundary", "--confirm-debug-boundary", "--confirm-workspace-trust", "--operation-key", "--operator", "--reason", "--trust"},
 	"run execution-permission":        {"--confirm-full", "--enable-danger-full-access", "--enable-permission-control", "--operation-key", "--operator", "--reason"},
@@ -387,6 +386,17 @@ func flagValueKey(prior []string, flag string) (string, bool) {
 // still complete, cobra-style.
 func completionCandidates(context []string, prefix string) ([]string, int) {
 	if strings.HasPrefix(prefix, "-") {
+		if flag, value, attached := strings.Cut(prefix, "="); attached {
+			key, ok := flagValueKey(context, flag)
+			if !ok {
+				return nil, completionDirectiveDefault
+			}
+			matches := matchedNames(flagValueVocabulary[key], value)
+			for i := range matches {
+				matches[i] = flag + "=" + matches[i]
+			}
+			return matches, completionDirectiveNoFileComp
+		}
 		key, ok := flagCompletionKey(context)
 		if !ok {
 			return nil, completionDirectiveNoFileComp
@@ -481,7 +491,14 @@ _cyberagent_completions() {
   local i
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
+  # Bash normally splits --flag=value at '='. Readline replaces the value.
+  if (( COMP_CWORD > 1 )) && [[ $cur == = && ${COMP_WORDS[COMP_CWORD-1]} == -* ]]; then
+    cur=""
+  fi
   for ((i = 1; i < COMP_CWORD; i++)); do
+    if (( i > 1 && i == COMP_CWORD-1 )) && [[ ${COMP_WORDS[i]} == = && ${COMP_WORDS[i-1]} == -* ]]; then
+      continue
+    fi
     context_words+=("${COMP_WORDS[i]}")
   done
   local raw candidates directive line
@@ -501,9 +518,14 @@ _cyberagent_completions() {
       COMPREPLY+=("$line")
     done <<<"$candidates"
   elif [ "$directive" = 0 ]; then
+    local file_word="$cur" flag_prefix=""
+    if [[ $cur == -*=* ]]; then
+      flag_prefix="${cur%%=*}="
+      file_word="${cur#*=}"
+    fi
     while IFS= read -r line; do
-      COMPREPLY+=("$line")
-    done < <(compgen -f -- "$cur" 2>/dev/null)
+      COMPREPLY+=("$flag_prefix$line")
+    done < <(compgen -f -- "$file_word" 2>/dev/null)
   fi
 }
 
@@ -524,7 +546,7 @@ function __cyberagent_complete
     set -l candidates
     set -l directive 4
     for line in (env CYBERAGENT_COMPLETE_PROTOCOL=4 cyberagent __complete $tokens[2..-1] 2>/dev/null)
-        if string match -q ':*' $line
+        if string match -q -- ':*' "$line"
             set directive (string replace -r '^:' '' $line)
         else
             set -a candidates $line
@@ -533,7 +555,15 @@ function __cyberagent_complete
     if test (count $candidates) -gt 0
         printf '%s\n' $candidates
     else if test "$directive" = 0
-        __fish_complete_path (commandline -ct)
+        set -l word (commandline -ct)
+        if string match -q -- '-*=*' "$word"
+            set -l parts (string split -m1 = -- "$word")
+            for path in (__fish_complete_path "$parts[2]")
+                printf '%s=%s\n' "$parts[1]" "$path"
+            end
+        else
+            __fish_complete_path "$word"
+        end
     end
 end
 
@@ -560,6 +590,10 @@ _cyberagent() {
   if ((${#candidates[@]})); then
     _describe -t cyberagent-commands 'cyberagent command' candidates
   elif [[ $directive == 0 ]]; then
+    if [[ $PREFIX == -*=* ]]; then
+      local flag_prefix="${PREFIX%%=*}="
+      compset -p ${#flag_prefix}
+    fi
     _files
   fi
 }
