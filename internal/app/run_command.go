@@ -2928,8 +2928,8 @@ func (a *App) runTransition(ctx context.Context, service *application.RunService
 		}
 		return fmt.Errorf("usage: cyberagent run %s <run-id>", action)
 	}
-	if *stream && action != "start" {
-		return fmt.Errorf("usage: cyberagent run start <run-id> [--stream]; --stream is only valid for run start")
+	if action != "start" && flagWasSet(fs, "stream") {
+		return apperror.New(apperror.CodeInvalidArgument, "--stream is only valid for run start")
 	}
 	var run domain.Run
 	var err error
