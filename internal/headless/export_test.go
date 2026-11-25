@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"cyberagent-workbench/internal/apperror"
@@ -146,51 +148,106 @@ func TestExporterFollowDeadlineIsFramed(t *testing.T) {
 }
 
 func TestExporterDeadlineDuringReadStillFrames(t *testing.T) {
-	store := newSlowGetRunStore(t, 1)
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	for _, tc := range []struct {
+		name    string
+		read    int
+		status  string
+		emitted int
+	}{
+		{"initial run", 1, "", 0},
+		{"initial tail", 2, "running", 0},
+		{"event batch", 3, "running", 0},
+		{"run refresh after event", 4, "running", 1},
+		{"tail probe after event", 5, "running", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+				defer cancel()
+				base := newFakeStore(t, domain.RunRunning, 1, 2)
+				store := &failingReadStore{Store: base, remaining: tc.read, fail: func() error {
+					<-ctx.Done()
+					return fmt.Errorf("store read: %w", ctx.Err())
+				}}
+				var output bytes.Buffer
+				err := NewExporter(store).Export(ctx, &output, Request{
+					RunID: base.run.ID, AfterSequence: 1, Follow: true,
+				})
+				if !errors.Is(err, context.DeadlineExceeded) || apperror.ExitCode(err) != 9 {
+					t.Fatalf("expected a deadline with exit 9, got %v", err)
+				}
+				records := decodeRecords(t, output.Bytes())
+				if len(records) != tc.emitted+1 {
+					t.Fatalf("expected %d events and one end record: %#v", tc.emitted, records)
+				}
+				if tc.emitted == 1 && (records[0]["kind"] != EventRecordKind || records[0]["sequence"] != float64(2)) {
+					t.Fatalf("wrong resumed event: %#v", records[0])
+				}
+				end := records[tc.emitted]
+				cursor := float64(1 + tc.emitted)
+				if end["kind"] != EndRecordKind || end["run_id"] != base.run.ID || end["status"] != tc.status ||
+					end["reason"] != "deadline_exceeded" || end["exit_code"] != float64(9) || end["terminal"] != false ||
+					end["after_sequence"] != float64(1) || end["events_emitted"] != float64(tc.emitted) ||
+					end["last_sequence"] != cursor || end["suggested_resume_after"] != cursor {
+					t.Fatalf("wrong end record: %#v", end)
+				}
+			})
+		})
+	}
+}
+
+func TestExporterPreservesStoreErrorWhenContextAlsoEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
+	base := newFakeStore(t, domain.RunRunning, 1)
+	storeErr := errors.New("store read failed")
+	store := &failingReadStore{Store: base, remaining: 4, fail: func() error {
+		cancel()
+		return storeErr
+	}}
 	var output bytes.Buffer
 	err := NewExporter(store).Export(ctx, &output, Request{
-		RunID: store.run.ID, MaxEvents: 10, Follow: true,
-		PollInterval: MinPollInterval,
+		RunID: base.run.ID, Follow: true,
 	})
-	if apperror.CodeOf(err) != apperror.CodeDeadlineExceeded || apperror.ExitCode(err) != 9 {
-		t.Fatalf("deadline during read mapping drifted: code=%s exit=%d err=%v",
-			apperror.CodeOf(err), apperror.ExitCode(err), err)
-	}
 	records := decodeRecords(t, output.Bytes())
-	if len(records) != 2 || records[0]["sequence"] != float64(1) {
-		t.Fatalf("deadline during read lost emitted records: %#v", records)
-	}
-	end := records[len(records)-1]
-	if end["kind"] != EndRecordKind || end["reason"] != "deadline_exceeded" ||
-		end["exit_code"] != float64(9) || end["terminal"] != false ||
-		end["last_sequence"] != float64(1) || end["events_emitted"] != float64(1) ||
-		end["suggested_resume_after"] != float64(1) {
-		t.Fatalf("deadline-during-read end record drifted: %#v", end)
+	if !errors.Is(err, storeErr) || len(records) != 1 || records[0]["kind"] != EventRecordKind {
+		t.Fatalf("store error after publishing an event: err=%v records=%#v", err, records)
 	}
 }
 
-// slowGetRunStore blocks the second GetRun until the exporter's context is
-// done, simulating a deadline that lands while a durable read is in flight
-// instead of while the follow wait is parked.
-type slowGetRunStore struct {
-	*fakeStore
-	getRuns int
+type failingReadStore struct {
+	Store
+	remaining int
+	fail      func() error
 }
 
-func newSlowGetRunStore(t *testing.T, sequences ...int64) *slowGetRunStore {
-	t.Helper()
-	return &slowGetRunStore{fakeStore: newFakeStore(t, domain.RunRunning, sequences...)}
-}
-
-func (s *slowGetRunStore) GetRun(ctx context.Context, id string) (domain.Run, error) {
-	s.getRuns++
-	if s.getRuns == 1 {
-		return s.fakeStore.GetRun(ctx, id)
+func (s *failingReadStore) beforeRead() error {
+	s.remaining--
+	if s.remaining == 0 {
+		return s.fail()
 	}
-	<-ctx.Done()
-	return domain.Run{}, ctx.Err()
+	return nil
+}
+
+func (s *failingReadStore) GetRun(ctx context.Context, id string) (domain.Run, error) {
+	if err := s.beforeRead(); err != nil {
+		return domain.Run{}, err
+	}
+	return s.Store.GetRun(ctx, id)
+}
+
+func (s *failingReadStore) LatestRunEventSequence(ctx context.Context, id string) (int64, error) {
+	if err := s.beforeRead(); err != nil {
+		return 0, err
+	}
+	return s.Store.LatestRunEventSequence(ctx, id)
+}
+
+func (s *failingReadStore) ListRunEventsAfterSequence(ctx context.Context, id string, after int64, limit int) ([]events.Event, error) {
+	if err := s.beforeRead(); err != nil {
+		return nil, err
+	}
+	return s.Store.ListRunEventsAfterSequence(ctx, id, after, limit)
 }
 
 func TestExporterFollowDrainsTerminalTail(t *testing.T) {

@@ -2892,8 +2892,8 @@ func (a *App) runEvents(ctx context.Context, service *application.RunService, ar
 	if *timeout < 0 || *timeout > maxRunFollowTimeout {
 		return apperror.New(apperror.CodeInvalidArgument, "timeout must be between zero and 24h")
 	}
-	if *timeout > 0 && !*follow {
-		return fmt.Errorf("usage: cyberagent run events <run-id> --follow [--timeout <duration>]; timeout requires --follow")
+	if !*follow && flagWasSet(fs, "timeout") {
+		return apperror.New(apperror.CodeInvalidArgument, "timeout requires --follow")
 	}
 	if *follow {
 		return a.streamRunEvents(ctx, fs.Arg(0), *timeout)
@@ -2935,19 +2935,12 @@ func (a *App) streamRunEvents(ctx context.Context, runID string, timeout time.Du
 func (a *App) runTransition(ctx context.Context, service *application.RunService, action string, args []string) error {
 	fs := newFlagSet("run "+action, a.errOut)
 	stream := fs.Bool("stream", false, "stream run events as NDJSON until the run reaches a terminal status or the 10000-event ceiling (start only)")
-	// --timeout only exists for start: defining it for every transition let
-	// `run cancel <id> --timeout=0` slip past the value checks and silently
-	// perform a plain cancel.
-	var timeoutFlag *time.Duration
+	var timeout time.Duration
 	if action == "start" {
-		timeoutFlag = fs.Duration("timeout", 0, "optional stream timeout (bounded to 24h)")
+		fs.DurationVar(&timeout, "timeout", 0, "optional stream timeout (bounded to 24h)")
 	}
 	if err := fs.Parse(reorderFlags(args, map[string]bool{"stream": false, "timeout": true})); err != nil {
 		return err
-	}
-	timeout := time.Duration(0)
-	if timeoutFlag != nil {
-		timeout = *timeoutFlag
 	}
 	if fs.NArg() != 1 {
 		if action == "start" {
@@ -2961,8 +2954,8 @@ func (a *App) runTransition(ctx context.Context, service *application.RunService
 	if timeout < 0 || timeout > maxRunFollowTimeout {
 		return apperror.New(apperror.CodeInvalidArgument, "timeout must be between zero and 24h")
 	}
-	if timeout > 0 && !*stream {
-		return fmt.Errorf("usage: cyberagent run start <run-id> --stream [--timeout <duration>]; timeout requires --stream")
+	if !*stream && flagWasSet(fs, "timeout") {
+		return apperror.New(apperror.CodeInvalidArgument, "timeout requires --stream")
 	}
 	var run domain.Run
 	var err error
