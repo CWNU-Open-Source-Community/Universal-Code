@@ -8,34 +8,31 @@ import (
 	"strings"
 
 	"cyberagent-workbench/internal/domain"
-	"cyberagent-workbench/internal/llm"
 	"cyberagent-workbench/internal/session"
 )
 
 // Recompute advisory feedback from sealed calls, including after recovery. It
 // never suppresses tools, changes a receipt, or authorizes the next operation.
 // Historical reads outside the bounded lookup are simply unknown here.
-func (s *AgentRunner) workspaceReadFeedbackRequest(ctx context.Context, checkpoint domain.SupervisorCheckpoint,
-	request llm.ChatRequest, rounds []domain.SupervisorToolRound,
-) (llm.ChatRequest, error) {
-	if len(request.Tools) == 0 {
-		return request, nil
+func (s *AgentRunner) workspaceReadFeedback(ctx context.Context, checkpoint domain.SupervisorCheckpoint,
+	hasTools bool, rounds []domain.SupervisorToolRound,
+) (string, error) {
+	if !hasTools {
+		return "", nil
 	}
 	var previous []domain.SupervisorToolCall
 	if reader, ok := s.store.(supervisorToolBoundaryStore); ok {
 		var err error
 		previous, err = reader.ToolBoundaryContextCalls(ctx, checkpoint)
 		if err != nil {
-			return request, err
+			return "", err
 		}
 	}
 	count := repeatedWorkspaceReadCount(previous, rounds)
 	if count == 0 {
-		return request, nil
+		return "", nil
 	}
-	feedback := fmt.Sprintf("Execution feedback from the completed tool ledger: %d workspace_read call(s) in this segment returned only lines already observed with identical text, workspace/root, full-file hash, encoding and redaction state. Repeating these reads has added no new file content. Use relevant text already visible in this request to advance the user's task: make the requested bounded edit, run a focused check, or provide a supported read-only answer. If required text is absent, read only that missing range. Current-state verification may still justify a read. This feedback grants no permission and is not an instruction to mutate a read-only task; all normal approval and hash checks remain required.", count)
-	request.Messages = append(append([]llm.Message(nil), request.Messages...), llm.Message{Role: "system", Content: feedback})
-	return request, nil
+	return fmt.Sprintf("Execution feedback from the completed tool ledger: %d workspace_read call(s) in this segment returned only lines already observed with identical text, workspace/root, full-file hash, encoding and redaction state. Repeating these reads has added no new file content. Use relevant text already visible in this request to advance the user's task: make the requested bounded edit, run a focused check, or provide a supported read-only answer. If required text is absent, read only that missing range. Current-state verification may still justify a read. This feedback grants no permission and is not an instruction to mutate a read-only task; all normal approval and hash checks remain required.", count), nil
 }
 
 func repeatedWorkspaceReadCount(previous []domain.SupervisorToolCall, rounds []domain.SupervisorToolRound) int {

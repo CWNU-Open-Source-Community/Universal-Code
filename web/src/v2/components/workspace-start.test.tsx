@@ -52,7 +52,7 @@ it("creates with an explicit name and source folder only after the final confirm
   const name = within(dialog).getByRole("textbox", { name: "Project name" });
   expect(name).toHaveFocus();
   await user.type(name, "我的项目");
-  await user.click(within(dialog).getByRole("button", { name: "Add" }));
+  await user.click(within(dialog).getByRole("button", { name: "Add folder" }));
   await user.type(within(dialog).getByRole("textbox", { name: "Project folder path" }), "D:\\我的项目 ");
   await user.click(within(dialog).getByRole("button", { name: "Add" }));
   expect(importer).not.toHaveBeenCalled();
@@ -68,7 +68,7 @@ it("keeps invalid source and name for correction, then submits the corrected pat
   const onSelect = show({ hasWorkspaceImport: true, importWorkspace: importer });
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "接入项目" }));
-  await user.click(screen.getByRole("button", { name: "添加" }));
+  await user.click(screen.getByRole("button", { name: "添加文件夹" }));
   await user.type(screen.getByRole("textbox", { name: "项目文件夹路径" }), "D:\\missing project");
   await user.click(screen.getByRole("button", { name: "添加" }));
   await user.click(screen.getByRole("button", { name: "创建项目" }));
@@ -93,7 +93,7 @@ it("keeps Escape working after confirming the folder with Enter", async () => {
   const user = userEvent.setup();
   const trigger = screen.getByRole("button", { name: "接入项目" });
   await user.click(trigger);
-  await user.click(screen.getByRole("button", { name: "添加" }));
+  await user.click(screen.getByRole("button", { name: "添加文件夹" }));
   await user.type(screen.getByRole("textbox", { name: "项目文件夹路径" }), "D:\\design{Enter}");
   expect(screen.getByRole("textbox", { name: "项目名称" })).toHaveFocus();
   await user.keyboard("{Escape}");
@@ -107,7 +107,7 @@ it("keeps the path editor open while an IME candidate is still composing", async
   const onSelect = show({ hasWorkspaceImport: true, importWorkspace: importer });
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "接入项目" }));
-  await user.click(screen.getByRole("button", { name: "添加" }));
+  await user.click(screen.getByRole("button", { name: "添加文件夹" }));
   const path = screen.getByRole("textbox", { name: "项目文件夹路径" });
   await user.type(path, "D:\\文档");
   fireEvent.keyDown(path, { key: "Enter", isComposing: true });
@@ -127,13 +127,13 @@ it("selects a native directory without registering a project on cancel", async (
   const onSelect = show({});
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "接入项目" }));
-  await user.click(screen.getByRole("button", { name: "添加" }));
+  await user.click(screen.getByRole("button", { name: "添加文件夹" }));
   expect(await screen.findByText("D:\\design")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "取消" }));
   expect(desktop.createDesktopWorkspace).not.toHaveBeenCalled();
   expect(onSelect).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "接入项目" }));
-  await user.click(screen.getByRole("button", { name: "添加" }));
+  await user.click(screen.getByRole("button", { name: "添加文件夹" }));
   await screen.findByText("D:\\design");
   await user.click(screen.getByRole("button", { name: "创建项目" }));
   await waitFor(() => expect(onSelect).toHaveBeenCalledWith(workspace));

@@ -57,8 +57,7 @@ it("explains incomplete attribution and a non-Git directory without claiming no 
     revision: { state: "available", repository_kind: "none", reasons: [] } }));
   await screen.findByText("尚未使用 Git");
   expect(screen.getByText(/请在执行记录和提交页面核对其余改动与检查/)).toBeInTheDocument();
-  expect(screen.getByText(/尚无已记录的应用编辑。工作目录的其他改动可在提交页面核对/)).toBeInTheDocument();
-  expect(screen.getByText(/命令、手动编辑等产生的其他变化，请在提交页面核对/)).toBeInTheDocument();
+  expect(screen.getByText(/暂无已应用的编辑/)).toBeInTheDocument();
   expect(screen.getByText(/覆盖 2 \/ 53 次执行/)).toBeInTheDocument();
 });
 
@@ -83,7 +82,7 @@ it("groups unapplied proposals without repeated status descriptions", async () =
   expect(screen.queryByText("当前内容尚不同于提案")).not.toBeInTheDocument();
   expect(screen.queryByText("当前内容与提案相同，仍以应用记录为准")).not.toBeInTheDocument();
   expect(screen.queryByText("此后已有修改")).not.toBeInTheDocument();
-  expect(screen.getByText(/尚无已记录的应用编辑/)).toBeInTheDocument();
+  expect(screen.getByText(/暂无已应用的编辑/)).toBeInTheDocument();
 });
 
 it("keeps wrapping beside file review actions and scopes it to the selected file", async () => {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/hooks"
 	"cyberagent-workbench/internal/plugins"
 )
@@ -15,6 +17,9 @@ import (
 func (a *App) hooksCommand(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("hooks subcommand is required")
+	}
+	if a.scriptHooksDir() == "" {
+		return apperror.New(apperror.CodeInvalidArgument, "CYBERAGENT_HOME must be an absolute path")
 	}
 	switch args[0] {
 	case "list":
@@ -42,15 +47,16 @@ func (a *App) hooksValidate(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("hooks configuration is invalid: %w", err)
 	}
-	fmt.Fprintln(a.out, "hooks configuration valid")
-	fmt.Fprintf(a.out, "directory: %s\n", a.scriptHooksDir())
-	fmt.Fprintf(a.out, "declarations: %d\n", len(registrations))
+	out := bufio.NewWriter(a.out)
+	fmt.Fprintln(out, "hooks configuration valid")
+	fmt.Fprintf(out, "directory: %s\n", a.scriptHooksDir())
+	fmt.Fprintf(out, "declarations: %d\n", len(registrations))
 	for _, registration := range registrations {
 		declaration := registration.Declaration
-		fmt.Fprintf(a.out, "hook=%s\tevent=%s\tscript=%s\n",
+		fmt.Fprintf(out, "hook=%s\tevent=%s\tscript=%s\n",
 			declaration.ID, declaration.Event, hookScript(declaration))
 	}
-	return nil
+	return out.Flush()
 }
 
 // hooksList reports the lifecycle hook registrations exactly as the engine
@@ -72,15 +78,7 @@ func (a *App) hooksList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	pluginHooks, err := service.ActiveHooks(ctx)
-	if err != nil {
-		return err
-	}
-	operatorHooks, err := hooks.LoadOperatorScriptHooks(ctx, a.scriptHooksDir())
-	if err != nil {
-		return err
-	}
-	registrations, err := hooks.MergeRegistrations(pluginHooks, operatorHooks)
+	registrations, err := a.hookRegistrations(service)(ctx)
 	if err != nil {
 		return err
 	}
@@ -96,14 +94,15 @@ func (a *App) hooksList(ctx context.Context, args []string) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(registrations)
 	}
-	fmt.Fprintf(a.out, "registered: %d\n", len(registrations))
+	out := bufio.NewWriter(a.out)
+	fmt.Fprintf(out, "registered: %d\n", len(registrations))
 	for _, registration := range registrations {
 		declaration := registration.Declaration
-		fmt.Fprintf(a.out, "plugin=%s\thook=%s\tevent=%s\taction=%s\tasync=%t\ttimeout_ms=%d\tmatcher=%s\tscript=%s\n",
+		fmt.Fprintf(out, "plugin=%s\thook=%s\tevent=%s\taction=%s\tasync=%t\ttimeout_ms=%d\tmatcher=%s\tscript=%s\n",
 			registration.PluginID, declaration.ID, declaration.Event, declaration.Action,
 			declaration.Async, declaration.TimeoutMillis, hookMatcher(declaration), hookScript(declaration))
 	}
-	return nil
+	return out.Flush()
 }
 
 func hookMatcher(declaration hooks.Declaration) string {

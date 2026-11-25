@@ -20,8 +20,8 @@ it.each([
 ] as const)("updates, reopens and resets accessible %s font controls", (locale, messageLabel, codeLabel, resetLabel) => {
   localStorage.setItem("prayu.locale.v1", locale);
   const view = render(<TypographySettingsPanel />, { wrapper: LocaleProvider });
-  expect(screen.getByRole("slider", { name: messageLabel })).toHaveValue("14");
-  expect(screen.getByRole("slider", { name: codeLabel })).toHaveValue("13");
+  expect(screen.getByRole("slider", { name: messageLabel })).toHaveValue("16");
+  expect(screen.getByRole("slider", { name: codeLabel })).toHaveValue("15");
   expect(screen.getByRole("button", { name: resetLabel })).toBeDisabled();
   fireEvent.change(screen.getByRole("slider", { name: messageLabel }), { target: { value: "24" } });
   fireEvent.change(screen.getByRole("slider", { name: codeLabel }), { target: { value: "20" } });
@@ -32,9 +32,9 @@ it.each([
   expect(screen.getByRole("slider", { name: messageLabel })).toHaveValue("24");
   expect(screen.getByRole("slider", { name: codeLabel })).toHaveValue("20");
   fireEvent.click(screen.getByRole("button", { name: resetLabel }));
-  expect(readTypography()).toEqual({ messageSize: 14, codeSize: 13 });
-  expect(document.documentElement.style.getPropertyValue("--prayu-message-size")).toBe("14px");
-  expect(document.documentElement.style.getPropertyValue("--prayu-code-size")).toBe("13px");
+  expect(readTypography()).toEqual({ messageSize: 16, codeSize: 15 });
+  expect(document.documentElement.style.getPropertyValue("--prayu-message-size")).toBe("16px");
+  expect(document.documentElement.style.getPropertyValue("--prayu-code-size")).toBe("15px");
 });
 
 it("reports storage failure and leaves the previous control value intact", () => {
@@ -43,7 +43,7 @@ it("reports storage failure and leaves the previous control value intact", () =>
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Storage unavailable"); });
   fireEvent.change(screen.getByRole("slider", { name: "Message font size" }), { target: { value: "24" } });
   expect(screen.getByRole("alert")).toHaveTextContent("Font sizes could not be saved");
-  expect(screen.getByRole("slider", { name: "Message font size" })).toHaveValue("14");
+  expect(screen.getByRole("slider", { name: "Message font size" })).toHaveValue("16");
 });
 
 it("mounts the reading controls in the production Appearance settings", () => {

@@ -123,19 +123,16 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
 
   return <section className="detail-section workflow-panel" aria-label={t("工作流", "Workflows")}>
     <div className="section-heading"><h2>{t("工作流", "Workflows")}</h2><span>{t("保存、执行与继续", "Save, run and continue")}</span></div>
-    <p>{t("共享工作区子代理与隔离交付可以组合；已保存结果可用于分支、循环和并行子任务。", "Combine shared workspace workers and isolated deliveries. Saved results can drive branches, loops and parallel tasks.")}</p>
-    <p>{t("应用运行期间会自动推进已启动的流程；刷新页面不会中断执行。", "The app advances started workflows while it is running; refreshing this page does not interrupt execution.")}</p>
     <details>
       <summary>{t("创建工作流", "Create workflow")}</summary>
       <div className="workflow-form">
         <label className="workflow-checkbox"><input type="checkbox" checked={advanced} onChange={(event) => setAdvanced(event.target.checked)} />{t("编辑 JSON 程序", "Edit JSON program")}</label>
         {advanced ? <>
-          <p>{t("先检查模板的任务与预算，再保存。if 比较已完成步骤的结构化字段；repeat 每次完成后检查条件，最多执行 max_iterations 次。$input 引用启动输入。", "Review the template tasks and budgets before saving. if compares committed result fields; repeat checks its condition after each iteration, up to max_iterations. $input references launch inputs.")}</p>
+          <p>{t("if 比较步骤结果，repeat 最多执行 max_iterations 次，$input 引用启动输入。", "if compares step results. repeat runs up to max_iterations times. $input references launch inputs.")}</p>
           <button type="button" className="command-button" onClick={() => setSource(pretty(workflowExample()))}>{t("载入分支与循环模板", "Load branch and loop template")}</button>
           <button type="button" className="command-button" onClick={() => setSource(pretty(dynamicWorkflowExample()))}>{t("载入动态并行审阅模板", "Load dynamic parallel review template")}</button>
           <button type="button" className="command-button" onClick={() => setSource(pretty(isolatedWorkflow(name.trim() || "Isolated delivery")))}>{t("载入隔离交付模板", "Load isolated delivery template")}</button>
-          <p>{t("并行审阅模板根据读取结果展开最多 3 项任务，同时执行最多 2 项，全部完成后汇总。任务与读取范围在保存时固定，结果只提供输入；总预算跨重试累计。", "The parallel review template expands up to 3 items from read results, runs up to 2 at once, then joins their results. Tasks and reading scope are fixed when saved; results supply inputs. Total budgets accumulate across retries.")}</p>
-          <label>{t("工作流 JSON（可复制）", "Workflow JSON (copyable)")}<textarea className="workflow-json" rows={20} value={source} onChange={(event) => setSource(event.target.value)} spellCheck={false} /></label>
+          <label>{t("工作流 JSON", "Workflow JSON")}<textarea className="workflow-json" rows={20} value={source} onChange={(event) => setSource(event.target.value)} spellCheck={false} /></label>
         </> : <>
           <label>{t("名称", "Name")}<input value={name} onChange={(event) => setName(event.target.value)} /></label>
           <label>{t("工作区方式", "Workspace mode")}<select value={isolated ? "batch" : "shared"} onChange={(event) => setIsolated(event.target.value === "batch")}>
@@ -152,11 +149,11 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
             </select></label>
             {completionMode === "verified_code" ? <>
               <label>{t("测试目录（可选）", "Test directory (optional)")}<input value={verificationTarget} onChange={(event) => setVerificationTarget(event.target.value)} placeholder={t("留空使用项目根目录", "Leave blank for the project root")} /></label>
-              <p>{t("完成前核对当前源码的真实测试结果；代码变化或测试失败后，旧结果不能用于交付。委派工具需包含 run_tests。", "Completion checks real test results for the current source. Changed code or a failed test invalidates the earlier result. Delegated tools must include run_tests.")}</p>
-            </> : <p>{t("以分析报告完成，不要求项目测试结果。", "Finish with an analysis report; project test results are not required.")}</p>}
+              <p>{t("需委派 run_tests，并通过当前源码的测试。", "Delegate run_tests and pass tests on the current source.")}</p>
+            </> : null}
             <label>{t("委派工具（逗号分隔，可留空）", "Delegated tools (comma-separated, optional)")}<input value={tools} onChange={(event) => setTools(event.target.value)} placeholder={t("留空继承当前可委派工具", "Leave blank to inherit available worker tools")} /></label>
             <label className="workflow-checkbox"><input type="checkbox" checked={parentHistory} onChange={(event) => setParentHistory(event.target.checked)} />{t("同时交付当前父会话历史", "Include current parent history")}</label>
-            <p>{parentHistory ? t("创建子代理时固定当时父会话可见的历史范围；后续新增消息不会自动加入。", "Capture the parent's visible history when the child is created; later messages are not added automatically.") : t("默认仅能回读自己的记录和明确交付的任务材料。", "Recall is limited to the child's records and explicitly delivered task material.")}</p>
+            {parentHistory && <p>{t("仅共享创建子代理时已有的消息。", "Only messages present when the child is created are shared.")}</p>}
           </>
             : <p>{t("只读模式：允许读取当前工作区。", "Read-only mode: allow reading the current workspace.")}</p>}
           <p>{t("单步骤：最多 4 轮、8,000 tokens、10 分钟；完整流程：最多 16 轮、32,000 tokens、30 分钟。JSON 编辑器可调整。", "Per job: 4 turns, 8,000 tokens, 10 minutes. Whole workflow: 16 turns, 32,000 tokens, 30 minutes. Adjust in the JSON editor.")}</p>
@@ -174,7 +171,6 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
       </select></label>
       {definition && <details><summary>{t("检查任务、工具和预算", "Review tasks, tools and budgets")}</summary><pre>{pretty(definition.spec)}</pre></details>}
       <label>{t("启动输入 JSON", "Launch inputs JSON")}<textarea rows={3} value={inputs} onChange={(event) => setInputs(event.target.value)} spellCheck={false} /></label>
-      <p>{t("启动后，子代理在流程预算和主代理权限内执行。工具名单留空会继承当前可委派工具。隔离交付完成时产物位于集成分支，后续共享步骤仍使用当前工作区。", "Workers execute within the workflow budgets and parent permissions. An omitted tool list inherits available worker tools. Isolated results live on an integration branch; later shared steps still use the current workspace.")}</p>
       <button type="button" className="command-button" disabled={!canControl || !selected || action.isPending || pause.isPending || runStatus !== "running"} onClick={() => action.mutate({ kind: "start" })}>{t("启动并运行", "Start and run")}</button>
       {runStatus !== "running" && <p>{t("先恢复当前任务，再启动或继续工作流。", "Resume the current task before starting or continuing a workflow.")}</p>}
       {!canControl && <p>{t("运行工作流需要模型控制权限。", "Model control permission is required to run workflows.")}</p>}
@@ -218,7 +214,6 @@ export function WorkflowPanel({ client, runID, runStatus }: { client: APIClient;
           </article>)}
         </section>}
         {item.status === "waiting_approval" && <p role="status">{t("子代理正在等待工具审批。完成任务中的待审批项后，应用会自动继续。", "The child is waiting for tool approval. The app continues automatically after the pending approval is resolved.")}</p>}
-        {item.status === "running" && runStatus === "running" && <p role="status">{t("应用正在推进流程；每轮自动保存检查点。", "The app is advancing this workflow; each turn saves a checkpoint.")}</p>}
         {item.status === "failed" && item.state.blocked?.retryable && <p>{t("可以仅重试失败项，保留成功项和原输入；总预算与截止时间不会重置。", "Retry failed items while preserving successful items and original inputs. Total budgets and the deadline are not reset.")}</p>}
         <div className="workflow-actions">
           {!["completed", "failed", "paused"].includes(item.status) && <>

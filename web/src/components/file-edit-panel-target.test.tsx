@@ -50,7 +50,7 @@ it.each(["run-current", "run-history"])("reads the precise target in %s before o
   expect(within(drawer).queryByText("cached-preview")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Close review" })).toHaveFocus();
   if (runID === "run-history") {
-    expect(within(drawer).getByText(/historical edit in its original directory/)).toBeInTheDocument();
+    expect(within(drawer).getByText("Original directory record")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve and apply same.txt" })).not.toBeInTheDocument();
   } else {
     expect(screen.getByRole("button", { name: "Approve and apply same.txt" })).toBeEnabled();

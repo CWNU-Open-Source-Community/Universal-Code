@@ -59,12 +59,12 @@ export function V2DraftConflict({ state, client, workspaceID, onResolve }: {
     </div>}
     {state.conflict && <>
       <div className="v2-draft-conflict-summary">
-        <p role="status"><strong>{t(`草稿有 ${state.heads.length} 个待核对版本。`, `The draft has ${state.heads.length} versions to review.`)}</strong> {t("请先比较并选用一份，再发送消息。", "Compare and choose a version before sending.")}</p>
+        <p role="status"><strong>{t(`草稿有 ${state.heads.length} 个待核对版本。`, `The draft has ${state.heads.length} versions to review.`)}</strong> {t("发送前请选择一个版本。", "Choose a version before sending.")}</p>
         <button type="button" aria-expanded={expanded} aria-controls={`${id}-versions`}
           onClick={() => setExpanded((value) => !value)}>{expanded ? t("收起版本", "Hide versions") : t("查看版本", "View versions")}</button>
       </div>
       {expanded && <div className="v2-draft-conflict-versions" id={`${id}-versions`}>
-        <p>{t("选用时以该版本的整份文字、文件引用、图片和附件为准；其余版本不在本次发送中。需要合并文字时，请先复制所需内容，选用后在草稿中编辑。", "The selected version supplies all text, file references, images and attachments for this message. To combine text, copy what you need first, choose a version, then edit the draft.")}</p>
+        <p>{t("选用的版本会替换当前草稿的文字、文件引用、图片和附件。", "The selected version replaces the current draft’s text, file references, images and attachments.")}</p>
         <fieldset>
           <legend>{t("选择要继续编辑的完整版本", "Choose the complete version to continue editing")}</legend>
           <div className="v2-draft-conflict-grid">{state.heads.map((head, index) => {
@@ -87,7 +87,6 @@ export function V2DraftConflict({ state, client, workspaceID, onResolve }: {
         {actionError?.token === state.headToken && <p className="v2-draft-conflict-error" role="alert">{actionError.message}</p>}
         <div className="v2-draft-conflict-actions">
           <button type="button" disabled={!selected} onClick={confirm}>{t("确认选用此版本", "Use this version")}</button>
-          <span>{t("选用后替换输入框中的草稿，确认内容后再发送。", "This replaces the composer draft. Review it before sending.")}</span>
         </div>
       </div>}
     </>}

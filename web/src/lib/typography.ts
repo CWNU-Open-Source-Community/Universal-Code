@@ -4,7 +4,7 @@ export interface TypographySettings {
 }
 
 export const typographyStorageKey = "prayu.typography.v1";
-export const defaultTypography: Readonly<TypographySettings> = Object.freeze({ messageSize: 14, codeSize: 13 });
+export const defaultTypography: Readonly<TypographySettings> = Object.freeze({ messageSize: 16, codeSize: 15 });
 export const typographyLimits = { messageSize: { min: 12, max: 24 }, codeSize: { min: 10, max: 24 } } as const;
 
 function fontSize(value: unknown, key: keyof TypographySettings): number {

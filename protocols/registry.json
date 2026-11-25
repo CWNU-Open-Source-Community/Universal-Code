@@ -4521,6 +4521,14 @@
       "reason": "Redacted evidence for opt-in real-model repeated Thread compaction and continuation acceptance."
     },
     {
+      "identifier": "thread_compaction_quality.v1",
+      "kind": "test-fixture",
+      "sources": [
+        "internal/application/testdata/compaction-quality-cases.json"
+      ],
+      "reason": "Synthetic conversation corpus for comparing public replies after two Thread compactions."
+    },
+    {
       "identifier": "thread_summary_window.v99",
       "kind": "test-fixture",
       "sources": [

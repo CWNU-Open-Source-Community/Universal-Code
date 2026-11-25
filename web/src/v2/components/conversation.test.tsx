@@ -470,6 +470,30 @@ describe("V2Conversation", () => {
       ?.pages[0].items).toEqual(items);
   });
 
+  it("keeps queued follow-ups available during approval without repeating the current input", async () => {
+    const queue = queueSnapshot();
+    const original = { ...queue.items[0], prepared: true };
+    const followUp = { ...queue.items[0], id: "next-input", sequence: 2 };
+    const input = queuedTranscript("input-event", original.id, { canonical_id: original.id });
+    const transcript = { ...input, task: { id: "task-current", input_message_id: original.id, state: "running" as const } };
+    const approval = { id: "approval-one", run_id: queue.run_id, tool_name: "web_fetch", proposal_id: "web-fetch-authorization-1",
+      status: "pending", version: 1, allowed_actions: ["approve_once", "deny"], workspace_id: "", exact_target: "example.org" };
+    const client = baseClient({
+      get: vi.fn(async (path: string) => path.endsWith("/queued-messages")
+        ? { ...queue, prepared: 1, items: [original, followUp] }
+        : { ...detail("thread-a"), active_run: { id: queue.run_id, session_id: queue.session_id, status: "waiting_approval" } }),
+      getPage: vi.fn(async () => page([transcript])),
+      approvalQueue: vi.fn().mockResolvedValue({ items: [approval], truncated: false }),
+      approvalPreview: vi.fn().mockResolvedValue({ fields: [], source_current: true }),
+    } as unknown as Partial<APIClient>);
+    const ui = renderConversation(client);
+    await screen.findByRole("region", { name: "待处理审批" });
+    await screen.findByRole("button", { name: "查看消息 2 全文" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "查看消息 1 全文" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "待处理 1 条" })).toBeVisible();
+    expect(within(ui.container.querySelector(".v2-narrative")!).getByText(original.content)).toBeVisible();
+  });
+
   it("keeps an unconfirmed pending bubble and restores it when a complete queue refresh fails", async () => {
     const pendingQueue = deferred<unknown>(); let fail = false, first = true;
     const client = baseClient({ get: vi.fn((path: string) => {
@@ -1459,7 +1483,7 @@ describe("V2Conversation", () => {
     await user.click(termTrigger);
 
     expect(await screen.findByRole("dialog", { name: "任务终端" })).toBeInTheDocument();
-    expect(screen.getByText("当前运行环境未启用桌面终端。仅在 Universal-Code 桌面端运行时支持本机 Debug 终端。")).toBeInTheDocument();
+    expect(screen.getByText("本机终端仅在 Universal-Code 桌面端可用。")).toBeInTheDocument();
 
     const collapseBtn = screen.getByRole("button", { name: "收起终端" });
     await user.click(collapseBtn);

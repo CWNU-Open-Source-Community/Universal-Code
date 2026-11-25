@@ -117,7 +117,7 @@ func TestSupervisorToolExposureMatchesActualOpenAIChatStreamSchema(t *testing.T)
 				t.Fatal(err)
 			}
 			for i, request := range []llm.ChatRequest{normal, supervisorToolBoundaryRequest(normal)} {
-				request = supervisorToolExposureRequest(request, supervisorToolExposureContext{})
+				request = supervisorToolExposureRequest(request, supervisorToolExposureContext{}, 1)
 				chunks, err := provider.StreamChat(t.Context(), request)
 				if err != nil {
 					t.Fatal(err)

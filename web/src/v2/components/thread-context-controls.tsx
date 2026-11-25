@@ -16,7 +16,7 @@ const compactionsKey = (client: APIClient, threadID: string) => ["thread-context
 const unfinishedCompaction = (operation: ThreadCompactionOperation) => ["prepared", "started", "generated"].includes(operation.status);
 const compactionNotice = (result: ThreadCompactionResult, t: LocaleText) => result.status === "noop" ? t("当前没有需要压缩的较早消息。", "There are no earlier messages to compact.")
   : t(`已压缩 ${result.removed_messages} 条较早消息，保留 ${result.preserved_messages} 条近期消息。`, `Compacted ${result.removed_messages} earlier messages and kept ${result.preserved_messages} recent messages.`) +
-    (result.input_messages_omitted ? t(` 为适配模型窗口，生成摘要时省略了最早的 ${result.input_messages_omitted} 条记录；这些原文仍可回读。`, ` The earliest ${result.input_messages_omitted} records were omitted from summary generation to fit the model window; their original text remains readable.`) : "");
+    (result.input_messages_omitted ? t(` 摘要输入省略了 ${result.input_messages_omitted} 条记录，仍可查看原文。`, ` The summary input omitted ${result.input_messages_omitted} records. You can still read the originals.`) : "");
 function usePins(client: APIClient, threadID: string, poll = false) {
   return useQuery({ queryKey: pinsKey(client, threadID), retry: false, refetchOnMount: "always",
     refetchInterval: poll ? 3000 : false,
@@ -73,7 +73,7 @@ export function V2ThreadPinsPanel({ client, threadID, onReply }: {
   };
   return <section className="v2-context-pins" aria-labelledby="thread-context-pins-title">
     <h3 id="thread-context-pins-title"><Pin size={16} aria-hidden="true" />{t("本次任务始终保留", "Keep for this task")}</h3>
-    <p className="v2-context-help">{t("固定的原文会在压缩后继续提供给 Agent，仅用于当前任务。可随时编辑或取消固定。", "Pinned text stays available to the agent after compaction for this task. You can edit or unpin it at any time.")}</p>
+    <p className="v2-context-help">{t("本任务压缩后仍保留固定原文。", "Pinned text stays available in this task after compaction.")}</p>
     {pins.isError ? <p role="alert">{message(pins.error, t)} <button type="button" onClick={() => void pins.refetch()}>{t("重新读取固定要求", "Reload pinned requirements")}</button></p>
       : !state ? <p role="status">{t("正在读取固定要求…", "Loading pinned requirements…")}</p> : <>
         {!state.pins.length ? <p>{t("还没有固定要求。", "No pinned requirements yet.")}</p> : <ul>{state.pins.map((pin) => <li key={pin.id}>
@@ -85,7 +85,7 @@ export function V2ThreadPinsPanel({ client, threadID, onReply }: {
       </>}
     <label htmlFor="thread-context-pin-draft">{editing ? t("编辑固定要求", "Edit pinned requirement") : t("添加固定要求", "Add pinned requirement")}</label>
     <textarea id="thread-context-pin-draft" rows={3} value={draft} disabled={pending}
-      onChange={(event) => setDraft(event.target.value)} placeholder={t("例如：本次任务不得修改公共 API；验证失败必须如实报告。", "For example: keep the public API unchanged and report any failed checks.")} />
+      onChange={(event) => setDraft(event.target.value)} />
     {reviewEdit && <p role="status">{t("固定要求已有变化。草稿已保留，请核对上方最新内容并重新选择“编辑”。", "Pinned requirements have changed. Your draft is kept. Review the latest text above and select Edit again.")}</p>}
     <div className="v2-context-control-actions"><button type="button" disabled={blocked || reviewEdit || !draft.trim()}
       onClick={() => void change(editing ? "edit" : "add", editing ?? undefined)}>{pending ? t("正在保存…", "Saving…") : editing ? t("保存修改", "Save changes") : t("固定到本次任务", "Pin to this task")}</button>
@@ -166,9 +166,8 @@ export function V2ThreadCompactControl({ client, threadID, runID }: { client: AP
   };
   return <div className="v2-context-compact-control">
     <label htmlFor="thread-context-compact-focus">{t("压缩重点（可选）", "Compaction focus (optional)")}</label>
-    <input id="thread-context-compact-focus" value={focus} disabled={pending} onChange={(event) => setFocus(event.target.value)}
-      placeholder={t("例如：保留失败原因与尚未完成的工作", "For example: preserve failure reasons and unfinished work")} />
-    <p className="v2-context-help">{t("空闲时压缩当前对话。固定要求与近期用户原文单独保留，历史原文仍可读取。", "Compact this conversation when idle. Pinned requirements and recent user messages are kept separately; original history remains readable.")}</p>
+    <input id="thread-context-compact-focus" value={focus} disabled={pending} onChange={(event) => setFocus(event.target.value)} />
+    <p className="v2-context-help">{t("固定要求和近期消息单独保留，历史原文仍可读取。", "Pinned requirements and recent messages are kept separately. The original history stays available.")}</p>
     <button type="button" disabled={blocked || hasUnfinished || !records}
       onClick={() => void compact()}>{pending ? t("正在压缩…", "Compacting…") : t("压缩当前对话", "Compact conversation")}</button>
     {pins.data?.busy && <p role="status">{t("任务正在执行，结束后可以压缩。", "The task is running. Compact it when it finishes.")}</p>}

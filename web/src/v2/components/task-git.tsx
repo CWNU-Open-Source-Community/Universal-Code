@@ -217,7 +217,7 @@ export function TaskGit({ client, threadID, working, onFeedback, onAddComment, o
           <p>{shownResult.receipt_saved ? t("执行收据已保存。", "Execution receipt saved.") : t("执行收据尚未保存；是否完成以上方对原操作的核对状态为准。", "Execution receipt not yet saved. Use the original operation's checked status above to determine completion.")}</p>
         </details>}
         {shownResult.reason && <p>{shownResult.reason}</p>}
-        {shownResult.worktree_path && <><p>{t("独立目录：", "Worktree: ")}{shownResult.worktree_path}</p><p>{t("新目录已从已提交版本创建。要在其中工作，点击“在此目录开始新任务”并确认新任务权限；原任务和未提交修改保留在原目录。", "The worktree was created from committed content. Select Start a new task here and confirm its permissions. The original task and uncommitted changes remain in the original directory.")}</p>
+        {shownResult.worktree_path && <><p>{t("独立目录：", "Worktree: ")}{shownResult.worktree_path}</p><p>{t("新目录来自已提交版本。未提交的改动保留在原目录，新任务需单独确认权限。", "The worktree uses the committed revision. Uncommitted changes stay in the original directory. A new task requires its own permissions.")}</p>
           {onOpenWorktree && <button type="button" disabled={!client.hasWorkspaceImport || openWorktree.isPending} onClick={() => openWorktree.mutate(shownResult.worktree_path!)}>{t("在此目录开始新任务", "Start a new task here")}</button>}</>}
         {shownResult.state === "completed" && shownResult.spec?.operation === "push_branch" && <button type="button" onClick={onPullRequest}>{t("继续创建或查看 PR", "Create or view PR")}</button>}
       </div>}
@@ -246,7 +246,7 @@ export function TaskGit({ client, threadID, working, onFeedback, onAddComment, o
           </details>
         </div>
         <h3>{operations[operation]}</h3>
-        {needsFiles && <p>{t("以下包含手动编辑和其他任务的修改。仅处理你选中的文件，其他已暂存内容会保留。", "These include manual edits and other tasks' changes. Only selected files are processed; other staged changes are preserved.")}</p>}
+        {needsFiles && state.data.changes.length > 0 && <p>{t("文件列表包含手动编辑和其他任务的改动。未选中的暂存内容会保留。", "Files include manual edits and changes from other tasks. Unselected staged changes are preserved.")}</p>}
         {needsFiles && missingPaths.length > 0 && <div className="v2-git-form-notice" role="alert"><p>{t("以下已选文件不在当前可用列表中；可能已提交、移除或因列表截断未显示，不能直接用于本次操作。", "These selected files are unavailable, possibly committed, removed or outside the truncated list. They cannot be used for this action.")}</p>
           <ul>{missingPaths.map((path) => <li key={path}>{path}</li>)}</ul>
           <button type="button" disabled={operationLocked} onClick={() => { changed(); setPaths((previous) => previous.filter((path) => !missingPaths.includes(path))); }}>{t("移除这些不可用选择", "Remove unavailable selections")}</button>
@@ -260,7 +260,7 @@ export function TaskGit({ client, threadID, working, onFeedback, onAddComment, o
         {operation === "commit" && <label>{t("提交说明", "Commit message")}<textarea rows={3} required maxLength={4096} disabled={Boolean(saved) || prepare.isPending} value={message} onChange={(event) => { changed(); setMessage(event.target.value); }} /></label>}
         {["create_branch", "worktree_create"].includes(operation) && <label>{t("新分支名称", "New branch name")}<input required value={branch} disabled={Boolean(saved) || prepare.isPending} onChange={(event) => { changed(); setBranch(event.target.value); }} placeholder="feature/my-change" /></label>}
         {operation === "worktree_create" && <><label>{t("独立目录名称", "Worktree name")}<input required value={worktreeName} disabled={Boolean(saved) || prepare.isPending} onChange={(event) => { changed(); setWorktreeName(event.target.value); }} placeholder="my-change" /></label>
-          <p>{t("从当前已提交版本创建独立分支和 worktree 目录。当前任务保持原目录与权限；创建后可在新目录开始新任务，权限需独立确认。", "Create a branch and worktree from the current commit. This task keeps its directory and permissions. Start a new task in the worktree with separately confirmed permissions.")}</p></>}
+          <p>{t("新分支和工作目录基于当前提交。新任务需要单独授权。", "The new branch and worktree start at the current commit. A new task requires separate authorization.")}</p></>}
         {operation === "switch_branch" && <label>{t("目标分支", "Target branch")}<select required value={branch} disabled={Boolean(saved) || prepare.isPending} onChange={(event) => { changed(); setBranch(event.target.value); }}>
           <option value="">{t("选择分支", "Choose branch")}</option>{unavailableBranch && <option value={branch} disabled>{t("原选择已不可用：", "Previous selection unavailable: ")}{branch}</option>}{state.data.branches.filter((name) => name !== state.data!.branch).map((name) => <option key={name}>{name}</option>)}</select></label>}
         {operation === "push_branch" && <><label>{t("推送目标", "Push target")}<select required value={selectedRemote} disabled={Boolean(saved) || prepare.isPending} onChange={(event) => { changed(); setRemote(event.target.value); }}>
@@ -269,7 +269,7 @@ export function TaskGit({ client, threadID, working, onFeedback, onAddComment, o
           <label>{t("凭据名称", "Credential name")}<input list={`task-git-credentials-${threadID}`} value={credentialName} disabled={Boolean(saved) || prepare.isPending} onChange={(event) => { changed(); setCredentialName(event.target.value); }} placeholder={t("选择或填写已保存的 GitHub 凭据名称", "Select or enter a saved GitHub credential name")} /></label>
           <datalist id={`task-git-credentials-${threadID}`}>{credentials.data?.filter((item) => item.credential.configured && item.connection.credential.kind !== "github_app_device").map((item) => <option value={item.connection.credential.name} key={item.connection.id}>{item.connection.repository.full_name}</option>)}</datalist>
           <button type="button" onClick={onPullRequest}>{t("到 PR 页面接入 GitHub", "Connect GitHub on the PR page")}</button>
-          <p>{t("推送范围为当前分支已有提交。要包含工作目录中的修改，请先提交所选文件。", "Push includes existing commits on this branch. Commit selected working directory changes first to include them.")}</p></>}
+          {state.data.changes.length > 0 && <p>{t("未提交的改动不会推送。", "Uncommitted changes will not be pushed.")}</p>}</>}
         <details className="v2-git-limits"><summary>{t("项目检查与提交签名", "Project checks and commit signing")}</summary><p>{t("内置 Git 操作跳过本地 hooks，生成无签名提交。项目要求的本地检查与 GPG 或 SSH 签名需另行完成。", "Built-in Git operations skip local hooks and create unsigned commits. Run required local checks and GPG or SSH signing separately.")}</p></details>
         {(unavailableRemote || unavailableBranch) && <p role="alert">{t("原目标已不可用，请明确选择当前有效的目标后重新预览。", "The previous target is unavailable. Select a valid target and preview again.")}</p>}
         <button type="submit" className="v2-delivery-primary" disabled={mutationBlocked || prepare.isPending || (needsFiles && (!paths.length || missingPaths.length > 0)) || unavailableRemote || unavailableBranch}>{prepare.isPending ? t("正在生成预览…", "Generating preview…") : t("预览本次操作", "Preview action")}</button>
@@ -282,7 +282,7 @@ export function TaskGit({ client, threadID, working, onFeedback, onAddComment, o
         {preview.target_commit_oid && <p>{t("目标提交：", "Target commit: ")}{preview.target_commit_oid.slice(0, 8)}</p>}
         {preview.commit_author && <p>{t("提交作者：", "Commit author: ")}{preview.commit_author.name} &lt;{preview.commit_author.email}&gt;</p>}
         {preview.spec.message && <pre>{preview.spec.message}</pre>}
-        {preview.spec.operation === "commit" && <p>{t("提交说明末尾会附加 Traverse-Operation 操作标识，用于断线后核对原提交。", "A Traverse-Operation ID is appended to the commit message to check the original commit after a disconnect.")}</p>}
+        {preview.spec.operation === "commit" && <p>{t("提交说明末尾会附加 Traverse-Operation 标识。", "A Traverse-Operation ID is appended to the commit message.")}</p>}
         {preview.spec.paths?.length ? <div className="v2-git-selected"><p>{t("本次所选文件（", "Selected files (")}{preview.spec.paths.length}）</p><ul>{preview.spec.paths.map((path) => <li key={path}>{path}</li>)}</ul></div> : null}
         <details className="v2-git-evidence"><summary>{t("完整位置与预览记录", "Full location and preview record")}</summary><dl>
           <div><dt>{t("操作目录", "Working directory")}</dt><dd>{preview.repository_root}</dd></div>
@@ -292,8 +292,7 @@ export function TaskGit({ client, threadID, working, onFeedback, onAddComment, o
         </dl></details>
         {preview.diff && <ReviewDiff patch={preview.diff} source={t(`Git 预览：${preview.preview_fingerprint}\n分支：${preview.branch}\n提交：${preview.head_oid}\n目录：${preview.repository_root}`, `Git preview: ${preview.preview_fingerprint}\nBranch: ${preview.branch}\nCommit: ${preview.head_oid}\nDirectory: ${preview.repository_root}`)} onFeedback={onFeedback} onAddComment={onAddComment} />}
         {!preview.can_execute && <p role="alert">{preview.blocked_reason || t("此预览当前不能执行。", "This preview cannot currently be executed.")}</p>}
-        {preview.spec.operation === "commit" && <p>{t("本次提交会跳过本地 hooks，生成无签名提交。请确认这种提交方式符合项目要求。", "This commit skips local hooks and is unsigned. Confirm this meets project requirements.")}</p>}
-        <p>{t("确认后仅执行这份预览；内容或分支变化时需要重新预览。", "Confirmation executes only this preview. Content or branch changes require a new preview.")}</p>
+        {preview.spec.operation === "commit" && <p>{t("本次提交会跳过本地 hooks，生成无签名提交。", "This commit skips local hooks and is unsigned.")}</p>}
         <button type="button" className="v2-delivery-primary" disabled={mutationBlocked || prepare.isPending || !store || !preview.can_execute || Boolean(state.data && gitFormRevision(preview) !== gitFormRevision(state.data))} onClick={() => void confirm()}>{checking ? t("正在重新核对仓库…", "Rechecking repository…") : execute.isPending ? t("正在执行…", "Running…") : t(`确认${operations[preview.spec.operation as Operation] ?? t("执行", "Execute")}`, `Confirm: ${operations[preview.spec.operation as Operation] ?? t("执行", "Execute")}`)}</button>
       </section>}
     </>}

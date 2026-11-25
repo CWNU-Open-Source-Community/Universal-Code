@@ -166,6 +166,12 @@ func portableSkillReadReferences(ctx context.Context, source builtinSkillReadSto
 	if err != nil {
 		return nil, portableSkillReadGuidance{}, err
 	}
+	return portableSkillReferencesForCalls(ctx, source, runID, mode, messages, calls)
+}
+
+func portableSkillReferencesForCalls(ctx context.Context, source builtinSkillReadStore, runID string,
+	mode domain.RunModeSnapshot, messages []llm.Message, calls []domain.SupervisorToolCall,
+) ([]llm.Message, portableSkillReadGuidance, error) {
 	store, ok := source.(portableSkillReadStore)
 	var available []toolgateway.SkillReadRequest
 	var guidance portableSkillReadGuidance

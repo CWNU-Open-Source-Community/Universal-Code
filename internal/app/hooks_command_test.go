@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,6 +105,32 @@ func TestHooksValidateRejectsExtraArguments(t *testing.T) {
 	_, stderr, code := executeTestCommand(t, "hooks", "validate", "hooks.d")
 	if code != 2 || !strings.Contains(stderr, "usage: cyberagent hooks validate") {
 		t.Fatalf("extra arguments must be a usage error with exit code 2: stderr=%q code=%d", stderr, code)
+	}
+}
+
+func TestHooksCommandsRejectRelativeHome(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("CYBERAGENT_HOME", "relative")
+	for _, command := range []string{"list", "validate"} {
+		stdout, stderr, code := executeTestCommand(t, "hooks", command)
+		if code != 2 || stdout != "" || !strings.Contains(stderr, "CYBERAGENT_HOME must be an absolute path") {
+			t.Fatalf("hooks %s with relative home: exit %d, stdout %q, stderr %q", command, code, stdout, stderr)
+		}
+	}
+}
+
+func TestHooksCommandsReturnTextOutputErrors(t *testing.T) {
+	for _, command := range []string{"list", "validate"} {
+		t.Run(command, func(t *testing.T) {
+			t.Setenv("CYBERAGENT_HOME", t.TempDir())
+			reader, writer := io.Pipe()
+			reader.Close()
+			defer writer.Close()
+			var stderr strings.Builder
+			if code := Execute([]string{"hooks", command}, writer, &stderr); code != 1 || !strings.Contains(stderr.String(), io.ErrClosedPipe.Error()) {
+				t.Fatalf("expected closed output pipe error, got exit %d, stderr %q", code, stderr.String())
+			}
+		})
 	}
 }
 

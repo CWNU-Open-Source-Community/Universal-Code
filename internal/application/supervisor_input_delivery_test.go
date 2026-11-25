@@ -13,6 +13,30 @@ import (
 	"cyberagent-workbench/internal/session"
 )
 
+func assertFreshInputDelivery(t *testing.T, request llm.ChatRequest, original string) {
+	t.Helper()
+	if delivery := request.Metadata["input_delivery"]; delivery != "" {
+		t.Fatalf("fresh submission has input_delivery=%q", delivery)
+	}
+	for i := len(request.Messages) - 1; i >= 0; i-- {
+		message := request.Messages[i]
+		// A previous completed reply ends the search even when both submissions have identical text.
+		if message.Role == "assistant" && len(message.ToolCalls) == 0 {
+			break
+		}
+		if message.Role != "user" || len(message.ToolResults) != 0 {
+			continue
+		}
+		if message.Content == original {
+			return
+		}
+		if strings.HasPrefix(message.Content, "Harness input delivery:") {
+			t.Fatal("fresh submission was wrapped as an internal continuation")
+		}
+	}
+	t.Fatal("fresh request is missing the original user message")
+}
+
 func assertInternalInputDelivery(t *testing.T, request llm.ChatRequest, original string) {
 	t.Helper()
 	if request.Metadata["input_delivery"] != "tool_boundary_continuation" {
@@ -45,9 +69,7 @@ func TestToolBoundaryInputDeliveryDistinguishesSameTextNewSubmission(t *testing.
 	provider.respond = func(ctx context.Context, request llm.ChatRequest, index int) (*llm.ChatResponse, error) {
 		switch {
 		case index <= domain.MaxSupervisorToolRounds:
-			if request.Metadata["input_delivery"] != "" || request.Messages[len(request.Messages)-1].Content == "" {
-				t.Fatal("first submission acquired an internal-continuation identity")
-			}
+			assertFreshInputDelivery(t, request, input.Content)
 			return boundaryRead(fmt.Sprintf("initial-read-%d", index), 1), nil
 		case index == domain.MaxSupervisorToolRounds+1:
 			assertBoundaryPrompt(t, request)
@@ -60,16 +82,7 @@ func TestToolBoundaryInputDeliveryDistinguishesSameTextNewSubmission(t *testing.
 			assertInternalInputDelivery(t, request, input.Content)
 			return textResponse(rootActionResponse(domain.RootActionFinish, "Check complete", "done", "")), nil
 		case index == domain.MaxSupervisorToolRounds+4:
-			if request.Metadata["input_delivery"] != "" {
-				t.Fatal("a new submission with the same text inherited a prior continuation")
-			}
-			found := false
-			for _, message := range request.Messages {
-				found = found || message.Role == "user" && message.Content == input.Content
-			}
-			if !found {
-				t.Fatal("the newly submitted user input was replaced")
-			}
+			assertFreshInputDelivery(t, request, input.Content)
 			return textResponse(rootActionResponse(domain.RootActionFinish, "New request answered", "done", "")), nil
 		default:
 			return nil, fmt.Errorf("unexpected model request %d", index)

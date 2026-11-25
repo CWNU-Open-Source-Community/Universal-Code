@@ -202,7 +202,7 @@ test("makes a truncated or redacted public summary explicit without inventing a 
   expect(await screen.findByText("只剩公开片段")).toBeVisible();
   expect(screen.getByText(/当前只展示部分摘要/u)).toBeVisible();
   expect(screen.getByText(/显示文本已脱敏/u)).toBeVisible();
-  expect(screen.getByText(/查看此执行保存的项目指令、引用和摘要/u)).toBeVisible();
+  expect(screen.getByRole("region", { name: "摘要与压缩" })).toContainElement(screen.getByText("只剩公开片段"));
 });
 
 test("shows rolling inherited excerpts as readable history with explicit omissions and no execution action", async () => {

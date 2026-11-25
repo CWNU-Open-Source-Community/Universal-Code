@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronRight, FileCheck2, FileDiff, FileText, History,
   LoaderCircle, PanelRightClose, X } from "lucide-react";
 import type { APIClient } from "../api/client";
-import type { ApprovalContinuationView, FileEditApplyView, FileEditPreviewView, FileEditQueueView, FileEditReviewRequestView, OperationReceiptView } from "../api/types";
+import type { ApprovalContinuationView, FileEditApplyView, FileEditPreviewView, FileEditQueueView, FileEditReviewRequestView, FileEditReviewView, OperationReceiptView } from "../api/types";
 import { formatBytes, formatDate } from "../lib/format";
 import { useLocale } from "../lib/locale";
 import { EmptyState, ErrorState, LoadingState, StatusBadge, StatusLabel } from "./common";
@@ -38,7 +38,7 @@ export function FileEditPanel({ client, runID, runStatus, onRequestChange, onReq
   onRequestChange?: (edit: FileEditPreviewView) => void;
   onRequestRevert?: (edit: FileEditPreviewView) => void;
   requestRevertUnavailableReason?: string;
-  onChanged?: () => void;
+  onChanged?: (review?: FileEditReviewView) => void;
   initialTarget?: FileEditReviewTarget;
 }) {
   const { t } = useLocale();
@@ -150,14 +150,19 @@ export function FileEditPanel({ client, runID, runStatus, onRequestChange, onReq
     revert.mutate(attempt);
   };
   const review = useMutation({
-    mutationFn: ({ requestedRunID, editID, action }: { requestedRunID: string; editID: string;
-      action: FileEditReviewRequestView["action"] }) =>
-      client.reviewFileEdit(requestedRunID, editID, { version: "file_edit_review.v1", action }),
+    mutationFn: async ({ requestedRunID, edit, action }: { requestedRunID: string; edit: FileEditPreviewView;
+      action: FileEditReviewRequestView["action"] }) => {
+      const result = await client.reviewFileEdit(requestedRunID, edit.id, { version: "file_edit_review.v1", action });
+      if (result.edit.session_id !== edit.session_id || result.edit.workspace_id !== edit.workspace_id || result.edit.operation !== edit.operation) {
+        throw new Error(t("文件审阅结果与所选提案不一致，请刷新后重试。", "The file review result does not match the selected proposal. Refresh and retry."));
+      }
+      return result;
+    },
     onSuccess: (result, { requestedRunID }) => {
       queryClient.setQueryData(["run", requestedRunID, "file-edit", result.edit.id], result.edit);
       if (result.continuation) setContinuations((current) => ({ ...current,
         [`${requestedRunID}:${result.edit.id}`]: result.continuation! }));
-      if (selection.current.runID === requestedRunID) onChanged?.();
+      if (selection.current.runID === requestedRunID) onChanged?.(result);
     },
     onSettled: (_result, _error, { requestedRunID }) => refreshEdits(requestedRunID),
   });
@@ -222,7 +227,7 @@ export function FileEditPanel({ client, runID, runStatus, onRequestChange, onReq
   }
   if (query.isError || !query.data) return <div>{pendingOperations}<ErrorState error={query.error} />
     <button onClick={() => void query.refetch()} type="button">{t("重试文件变更", "Retry file changes")}</button></div>;
-  if (changeSetQuery.isSuccess && query.data.items.length === 0 && !selectedEditID && !targetRunMismatch && !Object.keys(attempts).length && !Object.keys(applyAttempts).length) return <EmptyState>{t("还没有文件修改。在对话中描述要改的内容，生成提案后可在这里审阅。", "No file changes yet. Describe the change in the conversation, then review its proposal here.")}</EmptyState>;
+  if (changeSetQuery.isSuccess && query.data.items.length === 0 && !selectedEditID && !targetRunMismatch && !Object.keys(attempts).length && !Object.keys(applyAttempts).length) return <EmptyState>{t("暂无文件修改。", "No file changes yet.")}</EmptyState>;
   const operationError = review.error;
   const changeSet = changeSetQuery.data;
   const partial = changeSet && changeSet.applied_count > 0 &&
@@ -247,7 +252,7 @@ export function FileEditPanel({ client, runID, runStatus, onRequestChange, onReq
     {changeSetQuery.isError && <div role="alert"><p>{t("当前执行目录无法确认，已有编辑仍可按原目录审阅；暂不提供新的应用或撤销操作。",
       "The current execution directory could not be confirmed. Existing edits remain reviewable in their original scope; new apply and revert actions are unavailable.")}</p>
       <button onClick={() => void changeSetQuery.refetch()} type="button">{t("重试变更汇总", "Retry change summary")}</button></div>}
-    {changeSet && !changeSetQuery.isError && <><p>{t("变更范围：当前执行目录。", "Change scope: the current execution directory.")}</p>
+    {changeSet && !changeSetQuery.isError && <>
     <details><summary>{t("查看当前执行目录身份", "View current execution directory identity")}</summary><code>{changeSet.workspace_id}</code></details>
     <div aria-label={t("多文件变更集", "Multi-file change set")} className="file-change-set-summary">
       <span>{t("待审", "Pending")} <strong>{changeSet.proposed_count}</strong></span>
@@ -309,8 +314,8 @@ export function FileEditPanel({ client, runID, runStatus, onRequestChange, onReq
           setSelectedEditID("");
           requestAnimationFrame(() => (fileButtons.current.get(selectedEdit.id) ?? panel.current)?.focus());
         }} onRecover={() => setRecoveryEditID(selectedEdit.id)}
-        onReview={(action) => review.mutate({ requestedRunID: runID, editID: selectedEdit.id, action })}
-        receipt={receipts[`${runID}:${selectedEdit.id}`]} reviewing={review.isPending && review.variables?.editID === selectedEdit.id}
+        onReview={(action) => review.mutate({ requestedRunID: runID, edit: selectedEdit, action })}
+        receipt={receipts[`${runID}:${selectedEdit.id}`]} reviewing={review.isPending && review.variables?.edit.id === selectedEdit.id}
         reviewAction={review.variables?.action} applying={Boolean(applyAttempts[selectedEdit.id])} />}
     </div>
     {recoveryEditID && <FileProposalRecovery client={client} editID={recoveryEditID}
@@ -318,8 +323,7 @@ export function FileEditPanel({ client, runID, runStatus, onRequestChange, onReq
     {review.isError && review.variables.requestedRunID === runID && <div className="inline-warning" role="alert">
       {operationError instanceof Error ? operationError.message : t("文件编辑操作失败", "File edit operation failed")}
     </div>}
-    {query.data.truncated && <p role="status">{t("当前显示部分编辑记录。核对完整变更范围时，请结合项目差异。",
-      "A portion of edit history is displayed. Use the project diff to review the full change scope.")}</p>}
+    {query.data.truncated && <p role="status">{t("仅显示部分编辑记录。", "Only part of the edit history is shown.")}</p>}
   </section>;
 }
 
@@ -363,9 +367,7 @@ function FileReviewDrawer({ applyEnabled, applying, client, diff, edit, onApply,
         <PanelRightClose aria-hidden="true" size={16} />
       </button>
     </header>
-    <p>{currentTarget ? t("此编辑属于当前执行目录。", "This edit belongs to the current execution directory.")
-      : t("这是原目录中的历史编辑，可查看当时的差异。", "This is a historical edit in its original directory. Review its recorded diff here.")}</p>
-    <details><summary>{t("查看此编辑的原目录身份", "View this edit's original directory identity")}</summary><code>{edit.workspace_id}</code></details>
+    <details><summary>{currentTarget ? t("当前执行目录", "Current execution directory") : t("原目录记录", "Original directory record")}</summary><code>{edit.workspace_id}</code></details>
     <div className="file-review-meta">
       <span>{metadataOnlyDiff(edit, diff) ? t("未提供文本行数", "Text line counts unavailable") :
         <><b className="diff-additions">+{diff.additions}</b> <b className="diff-deletions">-{diff.deletions}</b></>}</span>

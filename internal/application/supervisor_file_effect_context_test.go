@@ -80,17 +80,17 @@ func TestOutputBudgetGuidanceUsesActualCapWithoutIncreasingIt(t *testing.T) {
 	for _, requested := range []int{0, 700, 9000} {
 		r := llm.ChatRequest{MaxTokens: requested, Tools: []llm.ToolSpec{{Name: "workspace_change"}}, Messages: []llm.Message{{Role: "user", Content: "make a file"}}}
 		window := llm.DefaultContextWindow()
-		guided := supervisorOutputBudgetGuidance(r, window)
+		guided := supervisorRuntimeFacts(supervisorOutputBudgetGuidance(r, window, requested, 0), window, requested, 1, nil, "")
 		allowance := "This request uses the provider's default output allowance."
 		if requested > 0 {
-			allowance = fmt.Sprintf("This request has an output limit of %d tokens including tool arguments.", window.OutputLimit(requested))
+			allowance = fmt.Sprintf("The model's output limit is at most %d tokens including tool arguments", window.OutputLimit(requested))
 		}
 		if guided.MaxTokens != requested || len(r.Messages) != 1 || r.Messages[0].Content != "make a file" ||
 			len(guided.Messages) != 2 || guided.Messages[1].Content != r.Messages[0].Content ||
-			!strings.HasPrefix(guided.Messages[0].Content, allowance) ||
+			!strings.Contains(guided.Messages[0].Content, allowance) ||
 			!strings.Contains(guided.Messages[0].Content, "A truncated response will not dispatch its tool calls") ||
 			!strings.Contains(guided.Messages[0].Content, "Do not claim that a proposal was applied without its successful apply result") {
-			t.Fatal("output guidance changed cap or input", guided)
+			t.Fatal("current allowance, static tool policy or operator input changed")
 		}
 	}
 }

@@ -22,6 +22,20 @@ func TestPrepareMessageForStorageSealsRedactedContentAndAuthority(t *testing.T) 
 	}
 }
 
+func TestCompactedOperatorProtectsNestedTextAndRetainsItsSource(t *testing.T) {
+	const original = `{"description":"pa\u0073sword=example-value"}`
+	row, err := PrepareMessageForStorage(Message{SessionID: "nested", Role: "user", Content: original})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.ID, row.Compacted = 4, true
+	got, verified, err := ProjectCompactedOperator(row)
+	if err != nil || !verified || got.SourceMessageID != 4 || got.ContentSHA256 != ContentSHA256(original) ||
+		!strings.Contains(got.Content, "[REDACTED") || strings.Contains(got.Content, "example-value") {
+		t.Fatalf("compacted original or protected provider text lost its binding: verified=%t err=%v", verified, err)
+	}
+}
+
 func TestPrepareMessageForStorageRejectsForgedEvidenceAuthorityAndDigest(t *testing.T) {
 	message := NewEvidenceMessage("session-provenance", SourceWorkspaceFile, "README.md", "facts")
 	message.Provenance.InstructionAuthorized = true

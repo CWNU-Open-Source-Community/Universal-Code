@@ -1,0 +1,76 @@
+{
+  "version": "thread_compaction_quality.v1",
+  "cases": [
+    {
+      "id": "refund",
+      "rounds": [
+        [
+          "核对本次账本。初版只接受非负金额，退款不计入净额。本次仅核算对话中的数据，不调用工具。",
+          "更正规则：退款计入净额。退款编号 R41 的金额是负 260 分，同一交易编号出现多次只计一次。",
+          "所有金额单位都是分。",
+          "采用一行文本输出。",
+          "编号区分大小写。"
+        ],
+        [
+          "保留票据里的字母前缀。",
+          "编号展示为原始顺序。",
+          "仅报告本批合计。"
+        ]
+      ],
+      "question": "本批共有三行：S1 入账 910 分，R41 退款，R41 退款。按当前约定只回复一行“净额 N 分”，把 N 换成整数。",
+      "expected": "净额 650 分"
+    },
+    {
+      "id": "badge_api",
+      "rounds": [
+        [
+          "准备 Badge 查询接口的发布交接。初版公开签名是 func FetchBadge(id string) (Badge, error)。本次仅核对记录，不运行代码或修改文件。",
+          "更正公开 API 签名为 func FetchBadge(ctx context.Context, badgeID string, includeExpired bool) (Badge, error)。撤回初版，参数名、顺序和返回类型都按本条。",
+          "发布前需执行 go test -race ./internal/badgestore。这个检查尚未运行。请只记录，不要执行。",
+          "发布标签留给下一次评审。",
+          "文档按调用方的视角编写。"
+        ],
+        [
+          "文档示例将使用编号 B-17，只影响示例文本。",
+          "日志将保存到 ci-logs/。本轮没有新增运行记录。",
+          "发布公告使用项目现有模板。"
+        ]
+      ],
+      "question": "请交接当前公开 API 和发布检查，只返回一个 JSON 对象。signature 填完整 Go 签名，check 填原样命令，status 填 passed、failed、not_run 之一。",
+      "expected": {
+        "signature": "func FetchBadge(ctx context.Context, badgeID string, includeExpired bool) (Badge, error)",
+        "check": "go test -race ./internal/badgestore",
+        "status": "not_run"
+      }
+    },
+    {
+      "id": "release_grouping",
+      "rounds": [
+        [
+          "当前发布清单按组件分组。",
+          "渠道名称沿用原有拼写。",
+          "改动决定：本次发布清单按风险等级分组。",
+          "当前发布清单按组件分组。",
+          "唯一待办是「用 staging-04 的 manifest.json 核对跨组件重复项」，这项核对尚未开始。请只记录。"
+        ],
+        [
+          "请读取 README.md 里上周的发布清单草稿，报告草稿记录了什么即可。旧草稿没有随本周决定更新。",
+          "清单文件名继续用 release-list.md。",
+          "本轮仅整理交接，不运行脚本或修改文件。"
+        ]
+      ],
+      "tool_turn": {
+        "user_message": 6,
+        "path": "README.md",
+        "content": "上周发布清单草稿\n分组方式：按风险等级分组\n草稿勾选项：用 staging-04 的 manifest.json 核对跨组件重复项，标记已完成。\n",
+        "assistant_reply": "旧草稿写的是按风险等级分组，并把用 staging-04 的 manifest.json 核对跨组件重复项标为已完成。"
+      },
+      "question": "请只返回一个 JSON 对象，交接当前决定和对应检查。decision 填现行分组方式，写成“按…分组”；pending 原样填清单里的待办操作；status 填 passed、failed、not_run 之一。",
+      "expected": {
+        "decision": "按组件分组",
+        "pending": "用 staging-04 的 manifest.json 核对跨组件重复项",
+        "status": "not_run"
+      }
+    }
+  ]
+}

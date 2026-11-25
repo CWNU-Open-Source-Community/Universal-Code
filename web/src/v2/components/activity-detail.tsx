@@ -67,7 +67,7 @@ function itemRunning(item: ActivityItem): boolean {
 
 function itemSummaryMeta(item: ActivityItem, t: LocaleText): string {
   const summary = item.summary;
-  if (!summary) return item.detail;
+  if (!summary) return item.detail === item.title ? "" : item.detail;
   const duration = durationLabel(summary.duration_milliseconds, summary.status);
   const count = summary.command_count > 1 ? t(`${summary.command_count} 条命令`, `${summary.command_count} commands`) : "";
   return [count, duration].filter(Boolean).join(" · ");
@@ -609,7 +609,7 @@ export function V2ActivityGroup({ client, entry, threadID }: {
     ? distinctChanges.size === 1 ? fileChangeLabel(fileChanges[0], t) : t("文件修改记录", "File edit records")
     : entry.count > 1 ? t(`${labels[entry.activity]}了 ${entry.count} 项`, `${labels[entry.activity]} · ${entry.count} items`) : labels[entry.activity];
   const detail = entry.activity === "edit"
-    ? fileChanges.length > 1 ? fileChangeLabel(fileChanges.at(-1)!, t) : t("展开查看请求与审阅记录", "Expand to view requests and review records")
+    ? distinctChanges.size > 1 && fileChangeLabel(fileChanges.at(-1)!, t)
     : latestItem?.summary ? [latestItem.summary.command,
     itemSummaryStatus(latestItem), itemSummaryMeta(latestItem, t)].filter(Boolean).map((part, index) =>
       <Fragment key={index}>{index > 0 && " · "}{part}</Fragment>) :
@@ -624,7 +624,7 @@ export function V2ActivityGroup({ client, entry, threadID }: {
     onToggle={(event) => setOpen(event.currentTarget.open)} open={open}>
     <summary><ActivityIcon activity={entry.activity} />
       <span>{label}</span>
-      <small>{detail}</small><ChevronDown aria-hidden="true" size={14} /></summary>
+      {detail && detail !== label && <small>{detail}</small>}<ChevronDown aria-hidden="true" size={14} /></summary>
     <ul>{entry.items.map((item, index) => <ActivityItemDetail client={client} item={item} activity={entry.activity}
       key={`${entry.id}:${item.detailRef ?? index}`} threadID={threadID} />)}</ul>
   </details>;

@@ -100,7 +100,7 @@ export function isFinalTaskReply(entry: NarrativeEntry, task: NarrativeTask): en
 export function taskDurationLabel(task: NarrativeTask, t: LocaleText): string | undefined {
   if (!task.startedAt || !task.finishedAt) return;
   const start = Date.parse(task.startedAt), end = Date.parse(task.finishedAt);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 1000) return;
   const elapsed = Math.floor((end - start) / 1000);
   const hours = Math.floor(elapsed / 3600), minutes = Math.floor(elapsed % 3600 / 60), seconds = elapsed % 60;
   const chinese = `${hours ? `${hours}小时` : ""}${minutes ? `${minutes}分钟` : ""}${seconds || !hours && !minutes ? `${seconds}秒` : ""}`;

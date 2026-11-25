@@ -222,7 +222,7 @@ it("recovers an unknown image-only request and clears only original image identi
   expect([...Array(localStorage.length)].map((_, index) => localStorage.getItem(localStorage.key(index)!)).join("")).not.toContain("base64");
 });
 
-it("merges the image capability and local draft hints into one caption line", async () => {
+it("shows image delivery information and announces local autosave without a second caption", async () => {
   const client = fixture();
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<QueryClientProvider client={queries}>
@@ -237,7 +237,8 @@ it("merges the image capability and local draft hints into one caption line", as
   await screen.findByRole("button", { name: "移除图片 布局.png" });
   fireEvent.change(input, { target: { value: "看图说话" } });
   const caption = await screen.findByText(/将发送原始图片/);
-  expect(caption).toHaveTextContent("草稿与附件保存在此设备");
+  expect(caption).not.toHaveTextContent("草稿与附件保存在此设备");
+  expect(screen.getByText("草稿与附件保存在此设备")).toHaveClass("sr-only");
   const hintLines = screen.getAllByRole("status").filter((el) =>
     el.classList.contains("v2-composer-caption") && /图片|草稿/.test(el.textContent ?? ""));
   expect(hintLines).toHaveLength(1);

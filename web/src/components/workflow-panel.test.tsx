@@ -91,7 +91,7 @@ it.each(["verified_code", "report"] as const)("saves the selected %s completion 
   await user.selectOptions(screen.getByLabelText("Task type"), mode);
   if (mode === "report") {
     expect(screen.queryByLabelText("Test directory (optional)")).not.toBeInTheDocument();
-    expect(screen.getByText("Finish with an analysis report; project test results are not required.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Task type")).toHaveValue("report");
   }
   const completion = mode === "report" ? { mode } : { mode, target: "unit" };
   const spec = workerWorkflow("Check parser", "Check the requested parser behavior", true, "", false, completion);
@@ -102,7 +102,7 @@ it.each(["verified_code", "report"] as const)("saves the selected %s completion 
   expect(posted).toHaveLength(1);
   expect(JSON.parse(posted[0][1].body).steps[0].completion).toEqual(completion);
   await user.click(screen.getByRole("button", { name: "Edit task and budgets in JSON" }));
-  const source = JSON.parse((screen.getByLabelText("Workflow JSON (copyable)") as HTMLTextAreaElement).value);
+  const source = JSON.parse((screen.getByLabelText("Workflow JSON") as HTMLTextAreaElement).value);
   expect(source.steps[0].completion).toEqual(completion);
 });
 
@@ -117,7 +117,7 @@ it("requires an explicit choice to include parent history", async () => {
   expect(workerWorkflow("Read", "Inspect", true, "").steps[0].task?.worker?.history_scope).toBeUndefined();
   await user.click(screen.getByLabelText("Include current parent history"));
   await user.click(screen.getByRole("button", { name: "Edit task and budgets in JSON" }));
-  const spec = JSON.parse((screen.getByLabelText("Workflow JSON (copyable)") as HTMLTextAreaElement).value);
+  const spec = JSON.parse((screen.getByLabelText("Workflow JSON") as HTMLTextAreaElement).value);
   expect(spec.steps[0].task.worker.history_scope).toBe("parent_snapshot");
   expect(workerWorkflow("Read", "Inspect", false, "", true).steps[0].task?.worker).toBeUndefined();
 });

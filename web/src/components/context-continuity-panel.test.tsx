@@ -61,7 +61,7 @@ describe("ContextContinuityPanel", () => {
     renderPanel({ hasControl: true, get, postControl, patchControl,
       deleteControl: vi.fn() } as unknown as APIClient);
 
-    expect(await screen.findByText("Carry context forward and review permissions")).toBeInTheDocument();
+    expect(await screen.findByText("Branching or resuming creates a new run with fresh permissions.")).toBeInTheDocument();
     expect(await screen.findByText("Repository workflow")).toBeInTheDocument();
     await user.click(screen.getByText("Repository workflow"));
     expect(screen.getByText("root applies to src/main.go")).toBeInTheDocument();

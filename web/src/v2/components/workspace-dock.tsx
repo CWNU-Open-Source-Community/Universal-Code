@@ -70,6 +70,8 @@ const V2TaskReview = lazy(() => import("./task-review").then((module) => ({ defa
 const V2ApplicationPreview = lazy(() =>
   import("./application-preview").then((module) => ({ default: module.V2ApplicationPreview })));
 
+type WorkspaceMenu = "add" | "records";
+
 function sanitizeDomToken(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/gu, "-");
 }
@@ -164,7 +166,6 @@ export function V2FileWorkspaceContent({
 
   return <>
     {runID && <div className="v2-file-drawer-context">
-      <p>{t("查看此执行绑定目录中的文件。", "View files in the directory bound to this run.")}</p>
       <V2IdentityDisclosure identity={runID} identityLabel={t("执行 ID", "Run ID")} summary={t("执行信息", "Run details")} />
     </div>}
     <div className="v2-file-drawer-body">
@@ -175,7 +176,7 @@ export function V2FileWorkspaceContent({
         </div>
       ) : workspaceQuery.isError ? (
         <div className="v2-notice" role="alert">
-          <p>{t("无法确认此执行的工作区，文件目录可能已清理或暂时无法读取。请重试确认后查看文件。", "The workspace for this run could not be confirmed. Its directory may have been cleaned up or may be temporarily unavailable. Retry before viewing files.")}</p>
+          <p>{t("无法确认此执行的工作区。", "Could not confirm the workspace for this run.")}</p>
           <button className="compact-command" disabled={workspaceQuery.isFetching} onClick={() => void workspaceQuery.refetch()} type="button">
             {t("重试工作区确认", "Retry workspace check")}
           </button>
@@ -261,18 +262,20 @@ export function V2WorkspaceDock({
   const collapseButtonRef = useRef<HTMLButtonElement>(null);
   const addAnchorRef = useRef<HTMLDivElement>(null);
   const addTriggerRef = useRef<HTMLButtonElement>(null);
-  const firstMenuItemRef = useRef<HTMLButtonElement>(null);
   const tabTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<WorkspaceMenu | null>(null);
   const [browserTabTarget, setBrowserTabTarget] = useState<HTMLDivElement | null>(null);
   const browserFullViewBeforeFullscreen = useRef<boolean | null>(null);
-  const [recordsMenuOpen, setRecordsMenuOpen] = useState(false);
   const recordsMenuAnchor = useRef<HTMLDivElement>(null);
   const recordsMenuTrigger = useRef<HTMLButtonElement>(null);
-  const recordsMenuInitialFocus = useRef("first");
-  const closeRecordsMenu = () => {
-    setRecordsMenuOpen(false);
-    recordsMenuTrigger.current?.focus();
+  const menuInitialFocus = useRef<"first" | "last">("first");
+  const toggleMenu = (menu: WorkspaceMenu) => {
+    menuInitialFocus.current = "first";
+    setOpenMenu((current) => current === menu ? null : menu);
+  };
+  const closeMenu = (menu: WorkspaceMenu) => {
+    setOpenMenu(null);
+    (menu === "add" ? addTriggerRef : recordsMenuTrigger).current?.focus();
   };
   const dragRef = useRef<{
     pointerID: number;
@@ -303,62 +306,39 @@ export function V2WorkspaceDock({
     returnFocusRef,
   });
 
+  useEffect(() => { setOpenMenu(null); }, [threadID, panelVisible, activeTab?.id]);
   useEffect(() => {
-    setAddMenuOpen(false);
-  }, [threadID, panelVisible]);
-
-  useEffect(() => {
-    if (!addMenuOpen) return;
-    firstMenuItemRef.current?.focus();
+    if (!openMenu) return;
+    const anchor = (openMenu === "add" ? addAnchorRef : recordsMenuAnchor).current;
+    if (!anchor) return;
+    const items = anchor.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    items[menuInitialFocus.current === "last" ? items.length - 1 : 0]?.focus();
     const closeOutside = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node) || addAnchorRef.current?.contains(target)) return;
-      setAddMenuOpen(false);
-    };
-    const closeEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      setAddMenuOpen(false);
-      addTriggerRef.current?.focus();
-    };
-    document.addEventListener("click", closeOutside);
-    document.addEventListener("keydown", closeEscape, true);
-    return () => {
-      document.removeEventListener("click", closeOutside);
-      document.removeEventListener("keydown", closeEscape, true);
-    };
-  }, [addMenuOpen]);
-
-  useEffect(() => { setRecordsMenuOpen(false); }, [threadID, panelVisible, activeTab?.id]);
-  useEffect(() => {
-    if (!recordsMenuOpen) return;
-    const items = recordsMenuAnchor.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
-    (recordsMenuInitialFocus.current === "last" ? items?.[items.length - 1] : items?.[0])?.focus();
-    const closeOutside = (event: MouseEvent) => {
-      if (event.target instanceof Node && !recordsMenuAnchor.current?.contains(event.target)) setRecordsMenuOpen(false);
+      if (event.target instanceof Node && !anchor.contains(event.target)) {
+        setOpenMenu((current) => current === openMenu ? null : current);
+      }
     };
     document.addEventListener("click", closeOutside);
     return () => document.removeEventListener("click", closeOutside);
-  }, [recordsMenuOpen]);
+  }, [openMenu]);
 
-  const onRecordsMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>, menu: WorkspaceMenu) => {
     if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
-    if (recordsMenuOpen && event.key === "Escape") {
+    const isOpen = openMenu === menu;
+    if (isOpen && event.key === "Escape") {
       event.stopPropagation();
       if (!event.nativeEvent.isComposing && event.keyCode !== 229) {
-        event.preventDefault(); closeRecordsMenu();
+        event.preventDefault(); closeMenu(menu);
       }
       return;
     }
-    if (recordsMenuOpen && event.key === "Tab") { closeRecordsMenu(); return; }
+    if (isOpen && event.key === "Tab") { closeMenu(menu); return; }
     const arrow = event.key === "ArrowDown" || event.key === "ArrowUp";
-    if (!arrow && (!recordsMenuOpen || event.key !== "Home" && event.key !== "End")) return;
+    if (!arrow && (!isOpen || event.key !== "Home" && event.key !== "End")) return;
     event.preventDefault();
-    if (!recordsMenuOpen) {
-      setAddMenuOpen(false);
-      recordsMenuInitialFocus.current = event.key === "ArrowUp" ? "last" : "first";
-      setRecordsMenuOpen(true);
+    if (!isOpen) {
+      menuInitialFocus.current = event.key === "ArrowUp" ? "last" : "first";
+      setOpenMenu(menu);
       return;
     }
     const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
@@ -563,31 +543,32 @@ export function V2WorkspaceDock({
               );
             })}
           </div>
-          <div className="v2-workspace-add-anchor" ref={addAnchorRef}>
+          <div className="v2-workspace-add-anchor" ref={addAnchorRef} onKeyDownCapture={(event) => onMenuKeyDown(event, "add")}>
             <button
-              aria-expanded={addMenuOpen}
+              aria-expanded={openMenu === "add"}
+              aria-controls={openMenu === "add" ? `v2-workspace-add-${sanitizeDomToken(threadID)}` : undefined}
               aria-haspopup="menu"
               aria-label={t("新建或切换工作区标签", "Open workspace tab")}
               className="v2-workspace-icon-btn"
-              onClick={() => { setRecordsMenuOpen(false); setAddMenuOpen((open) => !open); }}
+              onClick={() => toggleMenu("add")}
               ref={addTriggerRef}
               title={t("打开标签", "Open tab")}
               type="button"
             >
               {hasBrowserTab ? <MoreHorizontal aria-hidden="true" size={15} /> : <Plus aria-hidden="true" size={15} />}
             </button>
-            {addMenuOpen && (
-              <div className="v2-workspace-add-menu" role="menu">
+            {openMenu === "add" && (
+              <div className="v2-workspace-add-menu" id={`v2-workspace-add-${sanitizeDomToken(threadID)}`}
+                aria-label={t("工作区标签", "Workspace tabs")} role="menu">
                 <button
                   onClick={() => {
-                    setAddMenuOpen(false);
+                    closeMenu("add");
                     if (activeTab?.kind === "file") {
                       leaveFileEdit(() => addWorkspaceFileTab(threadID, currentRunID));
                       return;
                     }
                     addWorkspaceFileTab(threadID, currentRunID);
                   }}
-                  ref={firstMenuItemRef}
                   role="menuitem"
                   type="button"
                 >
@@ -596,7 +577,7 @@ export function V2WorkspaceDock({
                 </button>
                 <button
                   onClick={() => {
-                    setAddMenuOpen(false);
+                    closeMenu("add");
                     if (activeTab?.kind === "file") {
                       leaveFileEdit(() => focusWorkspaceSingletonTab(threadID, "terminal"));
                       return;
@@ -611,7 +592,7 @@ export function V2WorkspaceDock({
                 </button>
                 <button
                   onClick={() => {
-                    setAddMenuOpen(false);
+                    closeMenu("add");
                     if (activeTab?.kind === "file") {
                       leaveFileEdit(() => focusWorkspaceSingletonTab(threadID, "preview"));
                       return;
@@ -625,17 +606,17 @@ export function V2WorkspaceDock({
                   <span>{t("应用预览", "App preview")}</span>
                 </button>
                 {browserAvailable && <button role="menuitem" type="button" onClick={() => {
-                  setAddMenuOpen(false);
+                  closeMenu("add");
                   const open = () => focusWorkspaceSingletonTab(threadID, "browser");
                   if (activeTab.kind === "file") leaveFileEdit(open); else open();
                 }}><Globe aria-hidden="true" size={15} /><span>{t("浏览器", "Browser")}</span></button>}
                 {hasBrowserTab && <button role="menuitem" type="button" onClick={() => {
-                  setAddMenuOpen(false);
+                  closeMenu("add");
                   handleCloseTab(state.tabs.find((tab) => tab.kind === "browser")!);
                 }}><X aria-hidden="true" size={15} /><span>{t("关闭浏览器面板", "Close browser panel")}</span></button>}
                 <button
                   onClick={() => {
-                    setAddMenuOpen(false);
+                    closeMenu("add");
                     if (activeTab?.kind === "file") {
                       leaveFileEdit(() => focusWorkspaceSingletonTab(threadID, "review"));
                       return;
@@ -649,7 +630,7 @@ export function V2WorkspaceDock({
                   <span>{t("改动与交付", "Changes and delivery")}</span>
                 </button>
                 <button onClick={() => {
-                  setAddMenuOpen(false);
+                  closeMenu("add");
                   const open = () => focusWorkspaceSingletonTab(threadID, "records");
                   if (activeTab.kind === "file") leaveFileEdit(open);
                   else open();
@@ -657,7 +638,7 @@ export function V2WorkspaceDock({
                   <Microscope aria-hidden="true" size={15} /><span>{t("执行记录", "Execution records")}</span>
                 </button>
                 {hasLegacyWorkspaceTabs(threadID) && <button onClick={() => {
-                  setAddMenuOpen(false);
+                  closeMenu("add");
                   promptLegacyWorkspaceTabs(threadID);
                 }} role="menuitem" type="button">
                   <FolderTree aria-hidden="true" size={15} /><span>{t("查看旧标签恢复选项", "Review old tabs for restore")}</span>
@@ -668,18 +649,18 @@ export function V2WorkspaceDock({
         </div>
         <div className="v2-workspace-window-actions">
           {activeTab.kind === "records" && (onOpenRecordRun || onOpenRecordUIEvidence) && <div
-            className="v2-workspace-add-anchor" ref={recordsMenuAnchor} onKeyDownCapture={onRecordsMenuKeyDown}>
-            <button aria-label={t("执行记录选项", "Execution record options")} aria-expanded={recordsMenuOpen}
-              aria-haspopup="menu" aria-controls={recordsMenuOpen ? `v2-record-options-${sanitizeDomToken(threadID)}` : undefined}
+            className="v2-workspace-add-anchor" ref={recordsMenuAnchor} onKeyDownCapture={(event) => onMenuKeyDown(event, "records")}>
+            <button aria-label={t("执行记录选项", "Execution record options")} aria-expanded={openMenu === "records"}
+              aria-haspopup="menu" aria-controls={openMenu === "records" ? `v2-record-options-${sanitizeDomToken(threadID)}` : undefined}
               className="v2-workspace-icon-btn" ref={recordsMenuTrigger} type="button"
-              onClick={() => { setAddMenuOpen(false); recordsMenuInitialFocus.current = "first"; setRecordsMenuOpen((open) => !open); }}>
+              onClick={() => toggleMenu("records")}>
               <MoreHorizontal aria-hidden="true" size={16} />
             </button>
-            {recordsMenuOpen && <div className="v2-workspace-add-menu v2-workspace-records-menu" role="menu"
+            {openMenu === "records" && <div className="v2-workspace-add-menu v2-workspace-records-menu" role="menu"
               id={`v2-record-options-${sanitizeDomToken(threadID)}`} aria-label={t("执行记录选项", "Execution record options")}>
-              {onOpenRecordRun && <button role="menuitem" type="button" onClick={() => { closeRecordsMenu(); onOpenRecordRun(); }}>
+              {onOpenRecordRun && <button role="menuitem" type="button" onClick={() => { closeMenu("records"); onOpenRecordRun(); }}>
                 {t("运行与工具", "Runs and tools")}</button>}
-              {onOpenRecordUIEvidence && <button role="menuitem" type="button" onClick={() => { closeRecordsMenu(); onOpenRecordUIEvidence(); }}>
+              {onOpenRecordUIEvidence && <button role="menuitem" type="button" onClick={() => { closeMenu("records"); onOpenRecordUIEvidence(); }}>
                 {t("界面观察证据", "UI evidence")}</button>}
             </div>}
           </div>}
@@ -792,7 +773,7 @@ export function V2WorkspaceDock({
               ) : (
                 <div className="v2-terminal-disabled-notice" role="status">
                   <SquareTerminal aria-hidden="true" size={24} />
-                  <p>{t("当前运行环境未启用桌面终端。仅在 Universal-Code 桌面端运行时支持本机 Debug 终端。", "The desktop terminal is unavailable in this environment. Local debug terminals require the Universal-Code desktop app.")}</p>
+                  <p>{t("本机终端仅在 Universal-Code 桌面端可用。", "The local terminal requires the Universal-Code desktop app.")}</p>
                 </div>
               )}
             </div>

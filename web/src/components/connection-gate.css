@@ -1,0 +1,62 @@
+.connection-page {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 20px;
+  background: var(--prayu-sidebar);
+}
+
+.connection-panel {
+  display: grid;
+  gap: 24px;
+  width: min(424px, 100%);
+  min-width: 0;
+  padding: clamp(22px, 5vw, 32px);
+  color: var(--prayu-text);
+  background: var(--prayu-panel-strong);
+  border: 1px solid var(--prayu-border);
+  border-radius: var(--prayu-radius-dialog);
+  box-shadow: var(--prayu-elevation-panel);
+}
+
+.connection-heading { display: grid; justify-items: start; gap: 16px; }
+.connection-heading .prayu-brand-icon { width: 42px; height: 42px; }
+.connection-heading h1 { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -.025em; }
+.connection-field { display: grid; gap: 7px; min-width: 0; }
+.connection-field label { font-size: 14px; font-weight: 600; }
+.connection-field label span { margin-inline-start: 4px; font-size: 12px; font-weight: 400; color: var(--prayu-muted); }
+.connection-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--prayu-border-strong);
+  border-radius: var(--prayu-radius-control);
+  color: inherit;
+  background: var(--prayu-control);
+  font-size: 14px;
+}
+
+.connection-submit, .desktop-connecting { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.connection-submit {
+  min-height: 42px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--prayu-radius-control);
+  background: var(--prayu-text);
+  color: var(--prayu-surface-solid);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--prayu-motion-fast) ease;
+}
+.connection-submit:hover:enabled { background: color-mix(in srgb, var(--prayu-text) 86%, var(--prayu-muted)); }
+.connection-submit:disabled { background: var(--prayu-control); border-color: var(--prayu-border); color: var(--prayu-muted); cursor: default; }
+.connection-panel .connection-error { margin: 0; }
+.desktop-connecting { justify-content: start; color: var(--prayu-muted); font-size: 13px; }
+@supports (corner-shape: superellipse(1.5)) {
+  .connection-panel, .connection-field input, .connection-submit { corner-shape: superellipse(1.5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .connection-submit { transition: none; }
+}

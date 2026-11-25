@@ -17,10 +17,19 @@
 .v2-project-row:hover .v2-project-folder { display: none; }
 .v2-project-row:hover .v2-project-chevron { display: block; width: 17px; }
 .v2-project-chevron.is-expanded { transform: rotate(90deg); }
-.v2-project-row-actions { align-items: center; display: flex; padding-right: 4px; opacity: 0; }
+.v2-project-row-actions { align-items: center; display: flex; padding-right: 4px; }
+/* Hidden pointer actions should not shorten a long project name. Keep them
+   focusable so tabbing to an action reveals it in its normal column. */
+@media (hover: hover) {
+  .v2-project-row:not(:hover, :focus-within, .is-open) .v2-project-row-actions {
+    position: absolute;
+    inset-inline-end: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
 .v2-project-row-actions button { align-items: center; background: transparent; border: 0; border-radius: 6px; color: var(--v2-muted); display: flex; height: 26px; justify-content: center; padding: 0; width: 26px; }
 .v2-project-row-actions button:hover { background: var(--v2-control); color: var(--v2-ink); }
-.v2-project-row:hover .v2-project-row-actions, .v2-project-row:focus-within .v2-project-row-actions, .v2-project-row.is-open .v2-project-row-actions { opacity: 1; }
 .v2-project-card { background: var(--prayu-surface-solid); border: 1px solid var(--v2-border-strong); border-radius: 14px; box-shadow: 0 8px 28px rgb(0 0 0 / 12%); box-sizing: border-box; color: var(--v2-ink); font: 13px/1.6 var(--prayu-font-ui); max-height: calc(100dvh - 24px); overflow: auto; padding: 12px; position: fixed; width: min(350px, calc(100vw - 24px)); z-index: 200; }
 .v2-project-card > strong, .v2-project-card > p { align-items: flex-start; display: flex; gap: 10px; margin: 0; padding: 5px 2px; overflow-wrap: anywhere; }
 .v2-project-card > strong { font-size: 15px; font-weight: 600; }
@@ -32,6 +41,20 @@
 .v2-project-card svg { flex-shrink: 0; margin-top: 3px; }
 .v2-project-card > p svg { color: var(--v2-muted); }
 .v2-project-card > .v2-project-card-path { border-top: 1px solid var(--v2-border); margin-top: 7px; padding-block: 12px; }
-.v2-project-card-edit { align-items: center; background: transparent; border: 0; border-top: 1px solid var(--v2-border); display: flex; font: inherit; gap: 10px; padding: 9px 2px 1px; text-align: left; width: 100%; }
-.v2-project-card-edit:hover { color: var(--v2-accent); }
-@media (hover: none) { .v2-project-row-actions { opacity: 1; } }
+.v2-project-card-edit {
+  align-items: center;
+  justify-content: center;
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--prayu-radius-control);
+  background: var(--v2-control);
+  color: var(--v2-ink);
+  font: inherit;
+  width: 100%;
+}
+.v2-project-card-edit > svg { margin: 0; }
+.v2-project-card-edit:hover { background: var(--v2-control-hover); }

@@ -141,7 +141,7 @@ func supervisorToolNames(tools []llm.ToolSpec) []string {
 	return names
 }
 
-func supervisorToolExposureRequest(request llm.ChatRequest, current supervisorToolExposureContext) llm.ChatRequest {
+func supervisorToolExposureRequest(request llm.ChatRequest, current supervisorToolExposureContext, historyStart int) llm.ChatRequest {
 	value := struct {
 		Version string   `json:"version"`
 		Tools   []string `json:"tools"`
@@ -152,7 +152,16 @@ func supervisorToolExposureRequest(request llm.ChatRequest, current supervisorTo
 	if current.CommandEnvironment != nil && supervisorOffersTool(request.Tools, string(toolgateway.CommandRuntimeTool)) {
 		guidance += " For native commands, send command text with optional cwd, timeout (ms), and run_in_background. The host chooses the shell. Inspect failed jobs and correct the command. Read, wait on, or cancel background jobs by job_id. For explicit processes use an observed process_executables path with literal arguments and no script. command_environment describes the host only. Shells, script hosts and privilege brokers are not process executables."
 	}
-	request.Messages = append([]llm.Message{{Role: "system", Content: guidance + "\n" + string(encoded)}}, request.Messages...)
+	// Workspace paths and host capabilities vary between runs. Keep them
+	// behind the common policy, without inserting into historical messages.
+	index := 0
+	for index < historyStart && index < len(request.Messages) && request.Messages[index].Role == "system" {
+		index++
+	}
+	messages := make([]llm.Message, 0, len(request.Messages)+1)
+	messages = append(messages, request.Messages[:index]...)
+	messages = append(messages, llm.Message{Role: "system", Content: guidance + "\n" + string(encoded)})
+	request.Messages = append(messages, request.Messages[index:]...)
 	return request
 }
 

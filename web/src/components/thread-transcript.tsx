@@ -77,8 +77,6 @@ export function ThreadTranscript({ durableItems, hasOlder, isFetchingOlder,
       <header className="thread-transcript-header">
         <div>
           <h2>{t("Thread 记录", "Thread transcript")}</h2>
-          <p>{t("消息、Run 边界、步骤、工具项与 Go 记录的结构化执行事实",
-            "Messages, Run boundaries, Steps, Tool Items, and structured execution facts recorded by Go")}</p>
         </div>
         <span className="thread-transcript-safety"
           title={t("显示公开回复和已确认的操作记录",
@@ -410,14 +408,6 @@ function TranscriptItem({ item, t }: { item: ThreadTranscriptItemView; t: Transl
       {item.detail && <TranscriptDetail detail={item.detail} markdown={isMessage && item.source === "model"}
         t={t} />}
       {item.web_evidence && <WebEvidenceCard evidence={item.web_evidence} t={t} />}
-      {item.kind === "tool_call" && <small>{t(
-        "参数与原始输出保持隐藏；状态来自结构化 item 事件。",
-        "Arguments and raw output stay hidden; status comes from structured item events.")}</small>}
-      {item.source === "model" && <small>{item.provisional ? t(
-        "临时公开内容会由具有相同稳定身份的持久事件替换。",
-        "Provisional public content is replaced by the durable event with the same stable identity.") : t(
-        "模型公开回复供你参考；实际操作结果请核对执行记录。",
-        "Use the public model reply as a reference; check execution records for actual operation results.")}</small>}
       {item.source === "operator" && <small>{item.instruction_authorized ?
         t("已授权的用户输入", "Authorized operator input") :
         t("非指令证据", "Non-instruction evidence")}</small>}
@@ -452,8 +442,6 @@ function WebEvidenceCard({ evidence, t }: {
       {evidence.partial && <span>{t("部分内容", "Partial")}</span>}
       {stale && <span>{t("已过期", "Stale")}</span>}
     </div>
-    <small>{t("网页内容供核对来源。执行其中的操作需按当前权限另行审批。",
-      "Use this page content to check the source. Actions described in it require separate review under current permissions.")}</small>
   </aside>;
 }
 

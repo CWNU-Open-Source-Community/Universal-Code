@@ -26,10 +26,10 @@
 .v2-composer-dock:has(.v2-context-pin-card) .v2-composer textarea:placeholder-shown { min-height:32px; padding-block:8px 2px; }
 .v2-composer-dock:has(.v2-context-pin-card) .v2-composer-footer { min-height:40px; padding-block:4px 8px; }
 .v2-composer-dock:has(.v2-context-pin-card) .v2-composer[data-empty="true"][data-editor-expanded="false"] {
-  .v2-composer-surface { display:flex; align-items:center; gap:8px; padding:8px 10px; }
+  .v2-composer-surface { display:flex; flex-direction:row; align-items:center; gap:8px; padding:8px 10px; }
   .v2-composer-compact-trigger, .v2-composer-add, .v2-composer-actions { position:relative; z-index:2; }
   .v2-composer-compact-trigger { display:block; flex:1; order:2; min-width:0; padding:8px 0; border:0; background:transparent; color:var(--v2-muted); font:inherit; font-size:14px; text-align:start; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:text; }
-  .v2-composer-surface > textarea, .v2-markdown-input-host { display:none; }
+  .v2-composer-surface > .v2-file-path-input { display:none; }
   .v2-composer-footer, .v2-composer-tools { display:contents; }
   .v2-composer-tools > :not(.v2-composer-add) { display:none; }
   .v2-composer-add { order:1; }

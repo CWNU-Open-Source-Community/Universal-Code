@@ -87,12 +87,12 @@ export function V2MCPReferencePicker({ client, workspaceID, runID, kind, onClose
       className="v2-detail-drawer v2-mcp-picker" ref={dialog} role="dialog" tabIndex={-1}>
       <header><strong>{kind === "resource" ? t("引用 MCP 资源", "Reference MCP resource") : t("使用 MCP Prompt", "Use MCP prompt")}</strong>
         <button aria-label={t("关闭 MCP 选择", "Close MCP picker")} onClick={onClose} ref={close} type="button"><X aria-hidden="true" size={17} /></button></header>
-      <p>{t("发送消息即授权读取这次选定的内容。服务器返回的内容会作为参考资料提供给模型。", "Sending the message authorizes reading the selected content. The server's response is provided to the model as reference material.")}</p>
+      <p>{t("发送消息即授权读取所选内容，作为参考资料提供给模型。", "Sending authorizes reading the selected content and providing it to the model as a reference.")}</p>
       {selection ? <form className="v2-mcp-arguments" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); add(selection); }}>
         <button className="v2-mcp-back" onClick={() => { setSelection(null); setValues({}); }} type="button">
           <ArrowLeft aria-hidden="true" size={15} /> {t("返回列表", "Back to list")}</button>
         <strong>{selection.server.name}</strong><code>{selection.name}</code>
-        {selection.kind === "template" && <p>{t("填写需要的模板变量；空的可选变量将省略。", "Enter template variables. Empty optional variables are omitted.")}</p>}
+        {selection.kind === "template" && <p>{t("留空的可选变量将省略。", "Empty optional variables are omitted.")}</p>}
         {selection.fields.map((field, index) => <label key={field.name}><span>{field.name}{field.required ? t("（必填）", " (required)") : t("（可选）", " (optional)")}</span>
           {field.description && <small>{field.description}</small>}
           <input autoComplete="off" maxLength={16384} ref={index === 0 ? firstField : undefined} required={field.required} value={fieldValue(field.name)}

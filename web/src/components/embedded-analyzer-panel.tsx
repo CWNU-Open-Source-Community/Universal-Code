@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Binary, FileText, LoaderCircle, ShieldCheck } from "lucide-react";
+import { Binary, FileText, LoaderCircle } from "lucide-react";
 import type { APIClient } from "../api/client";
 import type { EmbeddedAnalyzerExecutionControlView } from "../api/types";
 import { useLocale } from "../lib/locale";
@@ -43,9 +43,7 @@ export function EmbeddedAnalyzerPanel({ client, runID }: {
       <header className="panel-heading-row">
         <div>
           <h2><Binary aria-hidden="true" size={18} />{t("内置分析器", "Embedded analyzer")}</h2>
-          <p>{t("分析你提供的文本或项目文件，生成大小、行数和摘要。输入上限为 64 KiB，处理在隔离环境中完成。", "Analyze supplied text or project files to obtain size, line count, and digest. Input is limited to 64 KiB and processed in an isolated environment.")}</p>
         </div>
-        <span className="safety-chip"><ShieldCheck aria-hidden="true" size={14} />{t("固定隔离边界", "Fixed isolation boundary")}</span>
       </header>
       <div className="prayu-segmented" role="group" aria-label={t("分析器输入方式", "Analyzer input mode")}>
         <button aria-pressed={mode === "text"} onClick={() => setMode("text")}

@@ -1,16 +1,18 @@
 package application
 
 import (
-	"cyberagent-workbench/internal/llm"
 	"fmt"
+	"slices"
+	"strings"
+
+	"cyberagent-workbench/internal/llm"
 )
 
-// Explain the effective cap without raising it or retrying a truncated response.
-// Every emitted tool request still has to be complete and valid.
-func supervisorOutputBudgetGuidance(request llm.ChatRequest, window llm.ContextWindow) llm.ChatRequest {
+// Keep tool-output policy stable across rounds. The current numeric allowance follows the transcript.
+func supervisorOutputBudgetGuidance(request llm.ChatRequest, window llm.ContextWindow, configuredCap, historyStart int) llm.ChatRequest {
 	allowance := "This request uses the provider's default output allowance."
-	if request.MaxTokens > 0 {
-		allowance = fmt.Sprintf("This request has an output limit of %d tokens including tool arguments.", window.OutputLimit(request.MaxTokens))
+	if configuredCap > 0 {
+		allowance = fmt.Sprintf("The model's output limit is at most %d tokens including tool arguments; the remaining task budget can lower it.", window.OutputLimit(configuredCap))
 	}
 	guide := llm.Message{Role: "system", Content: allowance + " Emit complete tool arguments and preserve prior successful work. A truncated response will not dispatch its tool calls and will stop the attempt. Do not claim that a proposal was applied without its successful apply result. Validate generated code or markup with an offered parser/test command before claiming it works; browser XML errors are failures to fix, not successful rendering."}
 	for _, tool := range request.Tools {
@@ -19,6 +21,68 @@ func supervisorOutputBudgetGuidance(request llm.ChatRequest, window llm.ContextW
 			break
 		}
 	}
-	request.Messages = append([]llm.Message{guide}, request.Messages...)
+	request.Messages = slices.Insert(slices.Clone(request.Messages), historyStart, guide)
+	return request
+}
+
+// Append after binding the operator input and attachments, before replaying this turn's tools.
+func supervisorInitialStandardCodeState(messages []llm.Message, standardCode *standardCodeSupervisorTurn) []llm.Message {
+	if standardCode == nil || standardCode.initialStateText == "" {
+		return messages
+	}
+	return append(messages, llm.Message{Role: standardCode.initialStateRole,
+		Content: "Host-reported Standard Code state at the start of this turn (no permission grant):\n" + standardCode.initialStateText})
+}
+
+func supervisorHostStateRole(transport string) string {
+	if transport == llm.HarnessTransportAnthropicMessages {
+		return "user" // The Messages API hoists system items ahead of the entire transcript.
+	}
+	return "system"
+}
+
+// Project request-local facts separately from the reusable instructions and history.
+// The Go budget and permission gates remain authoritative.
+func supervisorRuntimeFacts(request llm.ChatRequest, window llm.ContextWindow, configuredCap, historyEnd int, standardCode *standardCodeSupervisorTurn, readFeedback string) llm.ChatRequest {
+	var facts []string
+	if len(request.Tools) > 0 && request.MaxTokens > 0 && window.OutputLimit(request.MaxTokens) != window.OutputLimit(configuredCap) {
+		facts = append(facts, fmt.Sprintf("This request has an output limit of %d tokens including tool arguments.", window.OutputLimit(request.MaxTokens)))
+	}
+	if standardCode != nil {
+		if current := standardCode.runtimeState(); current != standardCode.initialStateText {
+			facts = append(facts, current)
+		}
+	}
+	if readFeedback != "" {
+		facts = append(facts, readFeedback)
+	}
+	if len(facts) == 0 {
+		return request
+	}
+	role := supervisorHostStateRole(request.Metadata["harness_transport"])
+	text := "Current host-reported request state (no permission grant):\n" + strings.Join(facts, "\n")
+	request.Messages = slices.Clone(request.Messages)
+	for i := len(request.Messages) - 1; i >= max(0, historyEnd); i-- {
+		msg := &request.Messages[i]
+		if msg.Role != "user" || len(msg.ToolResults) == 0 {
+			continue
+		}
+		// Never insert between a native tool call and its results or modify a result.
+		// The Messages API supports text in the same result turn. Chat, Responses
+		// and Ollama map that text to a new operator turn, which can end replay.
+		if role == "system" {
+			after := i + 1
+			for after < len(request.Messages) && request.Messages[after].Role == "system" {
+				after++ // Keep guidance bound to this completed read ahead of transient facts.
+			}
+			request.Messages = slices.Insert(request.Messages, after, llm.Message{Role: role, Content: text})
+		} else if msg.Content == "" {
+			msg.Content = text
+		} else {
+			msg.Content += "\n\n" + text
+		}
+		return request
+	}
+	request.Messages = append(request.Messages, llm.Message{Role: role, Content: text})
 	return request
 }

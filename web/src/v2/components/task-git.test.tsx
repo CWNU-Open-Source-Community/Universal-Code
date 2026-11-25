@@ -281,7 +281,7 @@ it("uses the returned managed worktree path only after confirmation and opens it
   await user.click(screen.getByRole("button", { name: "确认创建独立工作目录" }));
   const open = await screen.findByRole("button", { name: "在此目录开始新任务" });
   expect(screen.getByText(`独立目录：${returnedPath}`)).toBeInTheDocument();
-  expect(screen.getByText(/原任务和未提交修改保留在原目录/u)).toBeInTheDocument();
+  expect(screen.getByText(/未提交的改动保留在原目录，新任务需单独确认权限/u)).toBeInTheDocument();
   expect(f.importWorkspace).not.toHaveBeenCalled();
   expect(view.onOpenWorktree).not.toHaveBeenCalled();
   await user.click(open);
@@ -336,7 +336,7 @@ it("keeps the author and commit effects visible while project requirements and e
   await user.click(screen.getByRole("button", { name: "提交", pressed: true }));
   expect(confirmation).toBeInTheDocument();
   expect(within(confirmation).getByText("提交作者：Local Author <local@example.invalid>")).toBeVisible();
-  expect(within(confirmation).getByText("本次提交会跳过本地 hooks，生成无签名提交。请确认这种提交方式符合项目要求。")).toBeVisible();
+  expect(within(confirmation).getByText("本次提交会跳过本地 hooks，生成无签名提交。")).toBeVisible();
   const projectRequirements = screen.getByText(/内置 Git 操作跳过本地 hooks/u);
   expect(projectRequirements).not.toBeVisible();
   await user.click(screen.getByText("项目检查与提交签名"));

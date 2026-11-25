@@ -66,7 +66,7 @@ it("keeps direct resource navigation unbound to a previously selected Thread and
   const onOpenSettings = vi.fn();
   render(<V2RunDetailsPage client={{} as APIClient} resourceID="run-history"
     threadID="" onBack={onBack} onOpenSettings={onOpenSettings} />);
-  expect(screen.getByText(/此记录尚未绑定来源对话/)).toBeInTheDocument();
+  expect(screen.queryByText("来源对话：")).not.toBeInTheDocument();
   expect(screen.queryByText(/unrelated-stale-thread/)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "设置" })).not.toBeVisible();
   fireEvent.click(screen.getByText("来源与设置"));
@@ -104,7 +104,7 @@ it("keeps source Thread activity separate from a historical resource and does no
   const activity = () => screen.getByRole("status", { name: "来源任务的 Agent 活动" });
   await waitFor(() => expect(activity()).toHaveTextContent("来源任务的 Agent：等待新消息"));
   expect(screen.getByLabelText("Resource identity")).toHaveTextContent("run:historical-run");
-  expect(screen.getByText(/下方是所选记录，可能来自较早的执行/)).toBeInTheDocument();
+  expect(screen.getByText("task-a", { selector: "code" })).toBeInTheDocument();
   await act(async () => { queryClient.setQueryData(v2QueryKeys.execution("task-a"), {
     ...idle("task-a"), state: "running", execution_id: "live-execution-a",
   }); });

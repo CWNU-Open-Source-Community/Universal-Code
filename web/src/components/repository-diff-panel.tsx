@@ -93,13 +93,13 @@ function RepositoryDiffPages({ client, workspaceID, onRequestChange }: Repositor
           {query.data.items.map((item) => {
             const heading = <span className="repository-diff-file-heading">
                 <code title={item.path}>{item.path}</code>
+                {item.statistics_complete && <span className="repository-diff-file-counts">{t(`${item.added_lines} 行新增 / ${item.deleted_lines} 行删除`, `${item.added_lines} added / ${item.deleted_lines} deleted`)}</span>}
                 <span className="repository-diff-file-meta">
                   {item.staging !== "unmodified" && item.staging !== "untracked" &&
                     <span>{t("暂存区：", "Index: ")}{changeStatusLabel(item.staging)}</span>}
                   {item.worktree !== "unmodified" && item.worktree !== "untracked" &&
                     <span>{t("工作区：", "Working tree: ")}{changeStatusLabel(item.worktree)}</span>}
                   {(item.staging === "untracked" || item.worktree === "untracked") && <StatusLabel status="untracked" />}
-                  {item.statistics_complete && <span className="repository-diff-file-counts">{t(`${item.added_lines} 行新增 / ${item.deleted_lines} 行删除`, `${item.added_lines} added / ${item.deleted_lines} deleted`)}</span>}
                   {item.redacted && <span>{item.patch ? t("已脱敏，原文行数未统计", "Redacted; original line counts unavailable") : t("敏感变更已隐藏", "Sensitive changes hidden")}</span>}
                   {!item.patch && !(item.redacted && item.content_state === "text") && <span>{previewReason(item.content_state)}</span>}
                   {item.patch && item.truncated && <span title={item.statistics_complete ? t("行数包含该文件全部变更", "Counts include all changes in this file") : undefined}>{t("预览已截断", "Preview truncated")}</span>}

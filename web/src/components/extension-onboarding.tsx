@@ -20,7 +20,7 @@ export function ExtensionSteps({ steps, current }: { steps: string[]; current: n
     {steps.map((step, index) => <li aria-current={index === current ? "step" : undefined}
       className={index < current ? "is-complete" : index === current ? "is-current" : ""} key={step}>
       <span className="extension-step-marker" aria-hidden="true">{index < current ? "✓" : index + 1}</span>
-      <span>{step}<small>{index < current ? t("已完成", "Complete") : index === current ? t("当前步骤", "Current step") : t("后续步骤", "Up next")}</small></span>
+      <span>{step}{index < current && <span className="sr-only">{t("（已完成）", " (complete)")}</span>}</span>
     </li>)}
   </ol>;
 }
@@ -59,8 +59,6 @@ export function MCPRegistrationForm({ client, enabled, workspaceID, runID, capab
   });
   const change = (update: () => void) => { update(); registration.reset(); };
   return <details className="extension-onboarding"><summary>{t("登记 MCP Server", "Register MCP server")}</summary>
-    <p>{t("填写服务器地址与范围，保存为人工登记。随后批准连接以发现能力，核对工具后启用，并在任务中发起首次调用。",
-      "Save the server address and scope as a manual registration. Then approve a discovery connection, review and enable its tools, and make the first call in a task.")}</p>
     {!enabled && <p role="status">{!capabilityKnown ? t("MCP 接入能力尚未确认，请刷新状态。", "MCP onboarding capability is unconfirmed; refresh state.") :
       t("当前服务未开放 MCP 登记或当前连接没有控制权限。请检查服务版本与控制连接。", "MCP registration is unavailable. Check the service version and control connection.")}</p>}
     {!workspaceID && <p role="status">{t("先选择工作区，或打开一个任务。", "Select a workspace or open a task first.")}</p>}
@@ -141,8 +139,7 @@ export function PluginImportForm({ client, enabled, sourceEnabled = false, capab
   });
   const change = (update: () => void) => { update(); imported.reset(); };
   return <details className="extension-onboarding"><summary>{t("导入 Plugin ZIP", "Import Plugin ZIP")}</summary>
-    <p>{t("上传 plugin.v1 ZIP，或从固定的 HTTPS 地址或 Git 提交获取 ZIP，最大 4 MiB。导入后核对包信息、审查并选择要启用的能力。Skill 请前往“Skill 包”设置。",
-      "Upload a plugin.v1 ZIP or fetch it from a pinned HTTPS URL or Git commit, up to 4 MiB. Review the package, then select capabilities to enable. For Skills, open Skill package settings.")}</p>
+    <p>{t("支持 plugin.v1 ZIP（最大 4 MiB）、固定 HTTPS 地址或 Git 提交。", "Accepts a plugin.v1 ZIP up to 4 MiB, a pinned HTTPS URL, or a Git commit.")}</p>
     {!enabled && <p role="status">{!capabilityKnown ? t("Plugin 接入能力尚未确认，请刷新状态。", "Plugin onboarding capability is unconfirmed; refresh state.") :
       t("当前服务未开放 Plugin 导入或当前连接没有控制权限。请检查服务版本与控制连接。", "Plugin import is unavailable. Check the service version and control connection.")}</p>}
     <label>{t("导入来源", "Import source")}<select value={source} disabled={!enabled || imported.isPending}
@@ -160,7 +157,6 @@ export function PluginImportForm({ client, enabled, sourceEnabled = false, capab
       {t("选择 Plugin ZIP", "Choose Plugin ZIP")}</button>
     {file && <div className="extension-review">
       <p>{file.name} · {file.size} bytes</p>
-      <p>{t("下一步暂存此包以读取来源与能力。执行权限由后续审查和启用步骤管理。", "Stage this package to inspect its source and capabilities. Execution authority is managed in the subsequent review and enable steps.")}</p>
       <button className="settings-action" disabled={!enabled || imported.isPending || imported.isSuccess}
         onClick={() => imported.mutate()} type="button">{imported.isPending ? t("正在导入…", "Importing…") : t("暂存 Plugin 包", "Stage Plugin package")}</button>
     </div>}</> : <form className="extension-form" onSubmit={(event) => { event.preventDefault(); imported.mutate(); }}>
@@ -209,12 +205,9 @@ export function MCPReviewControls({ client, server, onOpenTask, credentialCapabi
     {server.cwd && <p>{t("工作目录", "Working directory")}: {server.cwd}</p>}
     {server.env && Object.keys(server.env).length > 0 && <p>{t("显式非敏感环境", "Explicit non-sensitive environment")}: {Object.entries(server.env).map(([name, value]) => `${name}=${value}`).join(" · ")}</p>}
     {server.headers && Object.keys(server.headers).length > 0 && <p>{t("固定 HTTP header", "Fixed HTTP headers")}: {Object.entries(server.headers).map(([name, value]) => `${name}: ${value}`).join(" · ")}</p>}
-    {!client.hasExtensionControl && <p role="status">{t("当前连接为只读。查看登记与调用记录；连接具备控制权限的服务后可继续审查或启用。", "This connection is read-only. Inspect registration and call records; connect with control access to review or enable capabilities.")}</p>}
-    <p>{server.state === "enabled" ? t("能力已启用；实际调用仍需当前任务的权限、审批与参数。", "Capabilities enabled; calls still require task permissions, approval, and arguments.")
-      : server.state === "discovery_approved" ? t("发现审查已通过。下一步点击“重新发现”，连接服务器并读取工具与能力清单。", "Discovery reviewed. Select Rediscover to connect and read the tools and capability lists.")
-      : server.state === "capabilities_pending" ? t("发现已完成，请核对工具和能力指纹后启用。", "Discovery complete. Review tools and the capability fingerprint before enabling.")
-      : server.state === "revoked" ? t("此登记已撤销。重新接入时，请登记新的服务器描述符并审查。", "This registration is revoked. Register and review a new server descriptor to reconnect.")
-      : t("先核对来源、目标、范围与描述符指纹，再明确批准发现。", "Inspect source, target, scope, and descriptor fingerprint before approving discovery.")}</p>
+    {!client.hasExtensionControl && <p role="status">{t("当前为只读连接。审查或启用需要控制权限。", "Read-only connection. Review and enablement require control access.")}</p>}
+    {server.state === "enabled" && <p>{t("调用工具仍需当前任务授权。", "Tool calls still require permission from the task.")}</p>}
+    {server.state === "revoked" && <p>{t("重新接入需要登记并审查新的服务器描述符。", "To reconnect, register and review a new server descriptor.")}</p>}
     {server.health_message && <p className="inline-warning">{server.health_message}</p>}
     <p>{t("已发现能力", "Discovered capabilities")}: {server.capabilities.negotiated.join(", ") || "—"}</p>
     {server.state === "enabled" && server.capabilities.tools.length + server.capabilities.resources.length + server.capabilities.prompts.length + (server.capabilities.resource_templates?.length ?? 0) === 0 && <p>{t("未发现工具、资源、资源模板或 Prompt，请重新发现并检查服务器发布的能力。",
@@ -262,11 +255,7 @@ export function PluginReviewControls({ client, installation }: {
     {(approve || enable || installation.state === "enabled") && <ExtensionSteps current={approve ? 0 : enable ? 1 : 2}
       steps={[t("审查包信息", "Review package"), t("选择并启用能力", "Choose and enable capabilities"), t("任务中使用", "Use in a task")]} />}
     {!client.hasExtensionControl && <p role="status">{t("当前连接为只读。连接具备控制权限的服务后可审查并启用此包。", "This connection is read-only. Connect with control access to review and enable this package.")}</p>}
-    <p>{approve ? t("包已暂存。核对来源、签名、声明能力和指纹后审查。", "Package staged. Review its source, signature, declared capabilities, and fingerprint.")
-      : enable ? t("包已审查。选择当前需要的能力并启用，再到任务中使用相应贡献。", "Package reviewed. Select and enable the capabilities you need, then use their contributions in a task.")
-      : installation.state === "rolled_back" ? t("此版本已保留。展开“版本与发布者”查看当前启用版本与版本记录。", "This version is retained. Open Versions and publisher to inspect the enabled version and version records.")
-      : installation.state !== "enabled" ? t("此安装已撤销。核对版本记录与发布者信任后，导入并审查要接入的包。", "This installation is revoked. Inspect version records and publisher trust, then import and review the package to connect.")
-      : t("已启用的贡献可由任务加载。MCP 贡献请继续完成服务器发现和能力审查；使用结果在任务中查看。", "Tasks can load enabled contributions. Complete server discovery and capability review for MCP contributions; inspect usage results in the task.")}</p>
+    {installation.state === "enabled" && installation.enabled_capabilities.includes("mcp_servers") && <p>{t("使用 MCP 前需完成服务器发现与能力审查。", "MCP requires server discovery and capability review before use.")}</p>}
     <p>{t("声明能力", "Declared capabilities")}: {installation.manifest.capabilities.join(", ") || "—"}</p>
     {(approve || enable) && <>
       {enable && <div className="extension-checks" role="group" aria-label={t("启用 Plugin 能力", "Enable Plugin capabilities")}>

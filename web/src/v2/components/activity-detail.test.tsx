@@ -245,7 +245,7 @@ describe("V2ActivityGroup", () => {
       expect(entry.items).toHaveLength(2); // Both original audit records remain accessible.
       const rendered = renderActivity(client, entry);
       const summary = rendered.container.querySelector(".v2-activity > summary");
-      expect(summary).toHaveTextContent(expected);
+      expect(summary?.textContent).toBe(expected);
       expect(summary).not.toHaveTextContent(/修改了|2 项|workspace_change/u);
       if (status !== "completed") expect(summary).not.toHaveTextContent("修改已应用");
       rendered.unmount();

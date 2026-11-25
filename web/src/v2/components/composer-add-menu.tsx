@@ -5,7 +5,7 @@ import { useLocale } from "../../lib/locale";
 export interface ComposerAddAction {
   id: string;
   label: string;
-  detail: string;
+  detail?: string;
   icon: ReactNode;
   disabled?: boolean;
   compactOnly?: boolean;
@@ -70,12 +70,11 @@ export function V2ComposerAddMenu({ actions, disabled, triggerRef }: {
           : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
         items[next]?.focus();
       }}>
-      <div className="v2-composer-add-heading" role="presentation">{t("添加到对话", "Add to conversation")}</div>
-      {actions.map((action) => <button aria-label={action.label} aria-describedby={`${id}-${action.id}`}
+      {actions.map((action) => <button aria-label={action.label} aria-describedby={action.detail ? `${id}-${action.id}` : undefined}
         className={action.compactOnly ? "v2-composer-compact-action" : undefined}
         disabled={action.disabled} key={action.id} role="menuitem" tabIndex={-1} type="button"
         onClick={() => { close(true); action.onSelect(); }}>
-        {action.icon}<span><strong>{action.label}</strong><small id={`${id}-${action.id}`}>{action.detail}</small></span>
+        {action.icon}<span>{action.label}{action.detail && <small id={`${id}-${action.id}`}>{action.detail}</small>}</span>
       </button>)}
     </div>}
   </div>;

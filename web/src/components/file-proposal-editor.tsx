@@ -127,7 +127,6 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
         <span title={`SHA-256: ${activeSource.content_sha256}`}>{t("来源", "Source")} {activeSource.content_sha256.slice(0, 12)}</span>
       </div>
       <div className="file-proposal-actions">
-        <p>{t("审阅后才会修改文件", "File changes require review")}</p>
         {!proposalCreated && (expired || mutation.isError) &&
           <button className="compact-command" disabled={refresh.isPending}
             onClick={() => refresh.mutate()} type="button">
@@ -141,7 +140,7 @@ function FileProposalSession({ client, runID, source, onClose }: Parameters<type
           onClick={() => mutation.mutate(recovery.captureSubmission(draft))} type="button">
           {mutation.isPending ? <LoaderCircle aria-hidden="true" className="spin" size={14} />
             : <FileDiff aria-hidden="true" size={14} />}
-          {t("创建提案", "Create proposal")}
+          {t("提交审阅", "Submit for review")}
         </button>}
       </div>
     </footer>

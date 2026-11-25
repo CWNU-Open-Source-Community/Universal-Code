@@ -10,6 +10,36 @@ import (
 	"cyberagent-workbench/internal/redact"
 )
 
+func TestHistoricalStructuredExcerptProtectsContentAndKeepsSource(t *testing.T) {
+	const opening = `{"note":"pa\u0073sword=example-value","diagnostic":"`
+	const ending = `","status":"exit 7"}`
+	original := opening + strings.Repeat("large diagnostic ", 150) + ending
+	current := excerptHandoffContent(original, 180)
+	legacy := opening + "detail" + handoffExcerptMarker + "detail" + ending
+	prose := "[release] Use component grouping. " + handoffExcerptMarker + "The review is still pending. [todo]"
+	numbered := "[1] Use component grouping. " + shortHandoffExcerptMarker + "Pending [review]"
+	for _, tc := range []struct {
+		text, want string
+	}{
+		{current, "exit 7"},
+		{legacy, structuredHandoffReadback},
+		{prose, prose},
+		{numbered, numbered},
+	} {
+		row := handoffMemoryRecord{SourceMessageID: 8, Content: tc.text,
+			SourceContentSHA256: handoffContentSHA256(original), ContentSHA256: handoffContentSHA256(tc.text)}
+		safe, err := modelHandoffRecordText(row)
+		if err != nil || strings.Contains(safe, "example-value") || !strings.Contains(safe, tc.want) {
+			t.Fatalf("unsafe or incomplete projected excerpt: %q, %v", safe, err)
+		}
+		row.Content = safe
+		section := (Section{handoff: &modelHandoff{records: []handoffMemoryRecord{row}}}).WithReplayedOperators(nil)
+		if !strings.Contains(section.Content, "message:8") || !strings.Contains(section.Content, row.SourceContentSHA256) {
+			t.Fatal("a projected excerpt must preserve its complete source identity")
+		}
+	}
+}
+
 // storageRedactionMessage mirrors session.ProjectContextMessage: durable
 // provenance carries the digest of the redacted text and the same redacted
 // content, so a masked credential already sits inside the record text before

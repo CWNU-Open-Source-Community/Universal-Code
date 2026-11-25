@@ -13,6 +13,7 @@ interface ActivityInput {
   threadID: string;
   runID?: string;
   runStatus?: string;
+  approvalVisible?: boolean;
   archived: boolean;
   execution?: ThreadExecutionView;
   executionReadable: boolean;
@@ -33,7 +34,7 @@ export function projectAgentActivity(input: ActivityInput, t: LocaleText = (chin
   if (execution && execution.thread_id !== input.threadID) return { label: t("活动状态未知", "Activity status unknown") };
   if (execution?.state === "stopping") return { label: t("正在停止", "Stopping") };
   if (execution?.state === "stop_failed") return { label: t("停止未完成", "Stopping did not finish"), attention: true };
-  if (input.runStatus === "waiting_approval") return { label: t("等待批准", "Awaiting approval") };
+  if (input.runStatus === "waiting_approval") return input.approvalVisible ? null : { label: t("等待批准", "Awaiting approval") };
   if (input.runStatus === "paused") return { label: t("已暂停", "Paused") };
   if (execution?.state !== "running") {
     if (input.reconciling) return { label: t("正在核对提交", "Checking submission") };

@@ -1,22 +1,49 @@
-.v2-history-page { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 12px; height: 100%; overflow: auto; padding: 24px; text-align: center; }
-.v2-history-page h1 { font-size: 24px; margin: 0; }
-.v2-history-page p { max-width: 560px; margin: 0; line-height: 1.7; color: var(--v2-muted); }
-.v2-history-page button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--v2-border); border-radius: 7px; background: var(--v2-control); cursor: pointer; font-size: 12px; min-height: 30px; }
-.v2-record-browser { width: min(900px, 100%); min-width: 0; margin-top: 16px; text-align: left; display: grid; gap: 12px; }
-.v2-history-page .v2-record-browser p { max-width: none; font-size: 13px; }
-.v2-record-kinds { display: flex; flex-wrap: wrap; gap: 8px; }
-.v2-record-kinds button[aria-pressed="true"] { border-color: var(--v2-accent); background: color-mix(in srgb, var(--v2-accent) 10%, var(--v2-control)); }
-.v2-record-search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--v2-border); border-radius: 8px; padding: 8px 10px; }
-.v2-record-search input { width: 100%; min-width: 0; border: 0; background: transparent; font-size: 14px; color: var(--v2-ink); }
-.v2-record-list { padding: 0; margin: 0; list-style: none; display: grid; gap: 8px; }
-.v2-history-page .v2-record-list button { width: 100%; min-width: 0; padding: 12px; display: flex; justify-content: space-between; text-align: left; gap: 16px; font-size: 14px; }
-.v2-record-list button > span { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
-.v2-record-list code, .v2-record-list small { font-size: 12px; line-height: 1.6; color: var(--v2-muted); }
-.v2-record-list small { flex-shrink: 0; }
+.v2-history-page { height: 100%; }
+.v2-record-browser { display: grid; gap: 12px; min-width: 0; }
+.v2-history-collections { display: grid; gap: 2px; }
+
+.v2-history-collections button,
+.v2-record-list button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--prayu-radius-control);
+  color: var(--v2-ink);
+  cursor: pointer;
+  display: grid;
+  min-width: 0;
+  text-align: start;
+  width: 100%;
+}
+.v2-history-collections button { gap: 12px; grid-template-columns: auto minmax(0, 1fr) auto; min-height: 48px; padding: 10px 12px; }
+.v2-history-collections svg { color: var(--v2-muted); }
+:is(.v2-history-collections, .v2-record-list) button:hover { background: var(--v2-control-hover); }
+
+.v2-record-search { align-items: center; background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: var(--prayu-radius-control); color: var(--v2-muted); display: flex; gap: 8px; margin-top: 6px; min-height: 38px; padding-inline: 12px; }
+.v2-record-search svg { flex: none; }
+.v2-record-search input { background: transparent; border: 0; color: var(--v2-ink); flex: 1; min-width: 0; padding-block: 8px; }
+.v2-record-search:focus-within { outline: 2px solid var(--prayu-focus); outline-offset: 2px; }
+.v2-shell .v2-record-search input:focus-visible { outline: 0; }
+.v2-record-browser p { color: var(--v2-muted); font-size: 13px; line-height: 1.6; margin: 0; }
+.v2-record-browser p[role="status"] { padding-block: 20px; }
+.v2-record-browser p[role="alert"] { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+.v2-record-browser p[role="alert"] button,
+.v2-record-load-more { background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: var(--prayu-radius-control); color: var(--v2-ink); cursor: pointer; line-height: 1.4; min-height: 32px; padding: 5px 12px; text-align: center; }
+.v2-record-browser p[role="alert"] button:hover, .v2-record-load-more:hover:not(:disabled) { background: var(--v2-control-hover); }
+.v2-record-load-more { justify-self: center; }
+
+.v2-record-list { list-style: none; margin: 0; padding: 0; }
+.v2-record-list > li + li { border-top: 1px solid var(--v2-border); }
+.v2-record-list button { gap: 4px 16px; grid-template-columns: minmax(0, 1fr) minmax(6rem, .32fr) minmax(8rem, .42fr); line-height: 1.5; min-height: 52px; padding: 12px; }
+.v2-record-name { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.v2-record-name strong { font-weight: 550; }
+.v2-record-list :is(code, time, .v2-record-status) { color: var(--v2-muted); font-size: 12px; overflow-wrap: anywhere; }
+.v2-record-list time { font-variant-numeric: tabular-nums; text-align: end; }
 .v2-record-status.is-failed { color: var(--v2-danger); }
 .v2-record-status.is-pending { color: var(--v2-accent); }
-.v2-record-load-more { justify-self: center; }
-[data-prayu-density="compact"] .v2-record-list > li > button { padding-block: 8px; }
-@media (max-width: 760px) {
-  .v2-history-page .v2-record-list button { align-items: flex-start; flex-direction: column; gap: 8px; }
+[data-prayu-density="compact"] .v2-record-list button { min-height: 40px; padding-block: 6px; }
+
+@container secondary-page (max-width: 600px) {
+  .v2-record-list button { grid-template-columns: minmax(0, 1fr) auto; }
+  .v2-record-name { grid-column: 1 / -1; }
 }

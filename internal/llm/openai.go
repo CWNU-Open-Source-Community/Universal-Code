@@ -413,20 +413,22 @@ func (p *OpenAICompatibleProvider) normalizeResponse(defaultModel string, respon
 	if err != nil {
 		return nil, openAIProtocolError(p.name, "returned invalid token usage")
 	}
+	// The upstream model may be a dated snapshot of the selected route.
 	if _, err := normalizeOpenAIModel(response.Model); err != nil {
 		return nil, openAIProtocolError(p.name, "returned an invalid model identity")
 	}
+	// A rejected completion can still have a billable receipt. Keep output
+	// separate until its validation succeeds.
+	result := &ChatResponse{Usage: usage, Model: defaultModel, Provider: p.name}
 	finishReason := openAIFinishReason(choice.FinishReason)
 	refusal, err := decodeOpenAIRefusal(choice.Message.Refusal)
 	if err != nil {
-		return &ChatResponse{Usage: usage, Model: defaultModel, Provider: p.name},
-			openAIProtocolError(p.name, "returned invalid refusal")
+		return result, openAIProtocolError(p.name, "returned invalid refusal")
 	}
 	if refusal != "" {
 		if text != "" || len(choice.Message.ToolCalls) != 0 ||
 			(finishReason != FinishReasonStop && finishReason != FinishReasonRefusal) {
-			return &ChatResponse{Usage: usage, Model: defaultModel, Provider: p.name},
-				openAIProtocolError(p.name, "mixed a refusal with incompatible output")
+			return result, openAIProtocolError(p.name, "mixed a refusal with incompatible output")
 		}
 		finishReason = FinishReasonRefusal
 	}
@@ -434,19 +436,13 @@ func (p *OpenAICompatibleProvider) normalizeResponse(defaultModel string, respon
 	if CompletionError(p.name, finishReason) == nil {
 		calls, err = normalizeOpenAIToolCalls(choice.Message.ToolCalls)
 		if err != nil {
-			return nil, openAIProtocolError(p.name, "returned invalid tool calls")
+			return result, openAIProtocolError(p.name, "returned invalid tool calls")
 		}
 		if err := validateOpenAIFinishReason(finishReason, text != "", len(calls)); err != nil {
-			return nil, openAIProtocolError(p.name, "returned an incompatible finish reason")
+			return result, openAIProtocolError(p.name, "returned an incompatible finish reason")
 		}
 	}
-	result := &ChatResponse{
-		Text: text, ToolCalls: calls, Usage: usage, Raw: nil,
-		// OpenAI may resolve a stable alias to a dated snapshot in the wire
-		// response. Keep the selected Router identity stable while still
-		// requiring a valid upstream identity above.
-		Model: defaultModel, Provider: p.name, FinishReason: finishReason,
-	}
+	result.Text, result.ToolCalls, result.FinishReason = text, calls, finishReason
 	if completionErr := CompletionError(p.name, finishReason); completionErr != nil {
 		return result, completionErr
 	}

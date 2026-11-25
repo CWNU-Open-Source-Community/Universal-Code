@@ -32,7 +32,7 @@ test("native Agent Browser uses the production API and visible workbench", async
   await page.getByRole("button", { name: "切换为纯文本编辑" }).click();
   await page.getByRole("button", { name: "接入项目", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "创建项目" });
-  await dialog.getByRole("button", { name: "添加", exact: true }).click();
+  await dialog.getByRole("button", { name: before ? "添加" : "添加文件夹", exact: true }).click();
   await dialog.getByRole("textbox", { name: "项目文件夹路径" }).fill(metadata.workspace);
   await dialog.getByRole("button", { name: "添加", exact: true }).click();
   await dialog.getByRole("button", { name: "创建项目", exact: true }).click();

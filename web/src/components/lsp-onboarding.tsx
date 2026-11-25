@@ -26,8 +26,7 @@ export function LSPConfigurationForm({ client, enabled, workspaceID, capabilityK
   }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ["code-intel"] }) });
   const change = (update: () => void) => { update(); stage.reset(); };
   return <details className="extension-onboarding"><summary>{t("配置本地 LSP", "Configure local LSP")}</summary>
-    <p>{t("先准备已安装的语言服务器及 SHA-256，登记后核对来源并审查，再执行一次只读查询。待审查配置保存在当前服务进程中；重启后需重新登记。",
-      "Prepare an installed language server and its SHA-256. Register it, review its source, then run one readonly query. Pending configurations live in this service process and need registration again after a restart.")}</p>
+    <p>{t("服务重启后，待审查的配置需重新登记。", "Pending configurations must be registered again after a service restart.")}</p>
     {!enabled && <p role="status">{!capabilityKnown ? t("LSP 接入能力尚未确认，请刷新状态。", "LSP onboarding capability is unconfirmed; refresh state.") :
       t("当前服务未开放 LSP 设置管理。请检查控制权限与服务版本；使用显式 LSP 配置文件的服务需通过 CLI 或文件配置，或不指定该文件重启后使用设置管理。已配置服务器的状态仍可读取。",
         "LSP settings management is unavailable. Check control access and service version. Services using an explicit LSP config file require CLI/file configuration, or restart without that file to manage settings here. Existing server state remains readable.")}</p>}
@@ -52,7 +51,7 @@ export function LSPConfigurationForm({ client, enabled, workspaceID, capabilityK
           {stage.isPending ? t("正在登记…", "Registering…") : t("登记 LSP 配置", "Register LSP configuration")}</button>
       </fieldset>
     </form>
-    {stage.data && <p role="status">{t("LSP 配置已暂存。下一步核对下方来源与指纹，确认后保存审查。", "LSP configuration staged. Next, inspect the source and fingerprint below, then confirm the review.")}</p>}
+    {stage.data && <p role="status">{t("LSP 配置已暂存。", "LSP configuration staged.")}</p>}
     {stage.error && <p className="inline-warning" role="alert">{stage.error.message}</p>}
   </details>;
 }
@@ -94,7 +93,7 @@ export function LSPConfigurationCard({ client, enabled, configuration }: {
         <button className="settings-action" disabled={!enabled || !confirmed || review.isPending} onClick={() => review.mutate()} type="button">
           {t("审查并保存 LSP 配置", "Review and save LSP configuration")}</button>
       </> : <>
-        <p>{t("配置已审查。选择查询类型并填写文件或符号，提交后启动已固定的服务器并执行一次只读查询。", "Configuration reviewed. Select a query type and provide a file or symbol. Submitting starts the pinned server and runs one readonly query.")}</p>
+        <p>{t("测试会启动此语言服务器并执行一次只读查询。", "The test starts this language server and runs a read-only query.")}</p>
         <label>{t("只读测试", "Readonly test")}<select aria-label={t("LSP 只读测试", "LSP readonly test")} value={tool} disabled={probe.isPending}
           onChange={(event) => { setTool(event.target.value); probe.reset(); }}>
           <option value="code_document_symbols">文件符号 / Document symbols</option><option value="code_workspace_symbols">工作区符号 / Workspace symbols</option>

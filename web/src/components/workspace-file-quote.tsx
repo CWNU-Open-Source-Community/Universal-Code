@@ -82,8 +82,7 @@ export function WorkspaceFileQuote({ rootRef, snapshot, runID, disabled, onQuote
 
   return <section className="workspace-file-quote" aria-label={t("引用文件片段", "Quote file excerpt")}>
     <div>
-      <span>{selected ? t(`预览第 ${selected.first}–${selected.last} 行`, `Preview lines ${selected.first}–${selected.last}`)
-        : t("选中代码后可引用到聊天草稿", "Select code to quote it in the chat draft")}</span>
+      {selected && <span>{t(`预览第 ${selected.first}–${selected.last} 行`, `Preview lines ${selected.first}–${selected.last}`)}</span>}
       <button className="compact-command" disabled={disabled || !selected} type="button"
         onMouseDown={(event) => event.preventDefault()} onClick={quote}>{t("引用选中行", "Quote selected lines")}</button>
     </div>

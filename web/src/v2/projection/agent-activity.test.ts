@@ -42,6 +42,13 @@ describe("Agent activity reflects execution evidence", () => {
     expect(projectAgentActivity({ ...base, execution: { ...execution, state }, snapshot,
       streamStatus: "live", transcript: [tool()] })?.mode).toBeUndefined();
   });
+  it("lets the docked request replace the waiting label while still showing a failed stop", () => {
+    const waiting = { ...base, runStatus: "waiting_approval" };
+    expect(projectAgentActivity(waiting)?.label).toBe("等待批准");
+    expect(projectAgentActivity({ ...waiting, approvalVisible: true })).toBeNull();
+    expect(projectAgentActivity({ ...waiting, approvalVisible: true,
+      execution: { ...execution, state: "stop_failed" } })?.attention).toBe(true);
+  });
   it("does not animate after a failed status/progress read or a mismatched thread", () => {
     for (const patch of [{ executionError: true }, { progressError: true },
       { execution: { ...execution, thread_id: "other" } }]) {

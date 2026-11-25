@@ -36,7 +36,7 @@ it("shows the configured directory in General and saves the server directory wit
   const user = userEvent.setup();
   const controls = fixture({}, true);
   expect(await screen.findByText(initial.directory_path)).toBeVisible();
-  expect(screen.getByText(/每个新建本地聊天使用独立文件夹/)).toBeVisible();
+  expect(screen.getByText(/新建的本地聊天各用一个子目录/)).toBeVisible();
   await user.click(screen.getByRole("button", { name: "更改目录" }));
   await user.type(screen.getByLabelText("服务电脑上的目录"), next.directory_path);
   await user.click(screen.getByRole("button", { name: "使用此目录" }));

@@ -14,7 +14,6 @@ export function PluginLifecycleControls({ client, installationID }: { client: AP
   return <details className="plugin-lifecycle extension-review" onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>{t("版本与发布者", "Versions and publisher")}</summary>
     {open && <>
-      <p>{t("查看本机保留的版本。选择版本与能力，核对后切换。", "Inspect retained local versions. Choose a version and its capabilities, then review and switch.")}</p>
       {history.isLoading && <p role="status">{t("正在读取版本记录…", "Reading version records…")}</p>}
       {history.error && <p className="inline-warning" role="alert">{t("版本记录读取失败。选择“刷新版本记录”继续核对。", "Version records could not be read. Select Refresh version records to continue.")}</p>}
       <button className="settings-action" disabled={history.isFetching || busy} onClick={() => void history.refetch()} type="button">{t("刷新版本记录", "Refresh version records")}</button>
@@ -128,8 +127,8 @@ function PluginVersionActions({ client, history, fetching, refresh, setBusy }: {
       </>}
     </section>
     {pending && <p role="status">{t("正在更新插件状态…", "Updating Plugin state…")}</p>}
-    {rollback.isSuccess && <p role="status">{t("回退已完成，所选版本已启用。刷新版本记录查看当前状态。", "Rollback completed and the selected version is enabled. Refresh version records to inspect current state.")}</p>}
-    {revoke.isSuccess && <p role="status">{t("发布者信任已撤销。刷新版本记录查看安装状态。", "Publisher trust revoked. Refresh version records to inspect installation state.")}</p>}
+    {rollback.isSuccess && <p role="status">{t("回退已完成，所选版本已启用。", "Rollback completed. The selected version is enabled.")}</p>}
+    {revoke.isSuccess && <p role="status">{t("发布者信任已撤销。", "Publisher trust revoked.")}</p>}
     {trust.isSuccess && <p role="status">{t("发布者信任已建立。逐包能力仍需单独审查和启用。", "Publisher trust granted. Package capabilities still require separate review and enablement.")}</p>}
     {(rollback.error || revoke.error || trust.error) && <>
       <p className="inline-warning" role="alert">{t("操作结果需要核对。选择“核对最新版本状态”读取当前记录，再决定下一步。", "Check the operation result. Select Check latest version state to read current records before continuing.")}</p>
@@ -147,7 +146,7 @@ export function HookDiagnostics({ client, runID, workspaceID }: { client: APICli
   return <details className="extension-onboarding hook-diagnostics" onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>{t("Hooks 声明与触发记录", "Hook declarations and observations")}</summary>
     {open && <>
-      <p>{t("查看本机规则的触发条件与加载状态，以及当前范围最近保留的 200 条触发记录。刷新读取记录。", "Inspect local rule conditions and loading state, plus the newest 200 retained observations in this scope. Refresh reads records.")}</p>
+      <p>{t("显示当前范围最近的 200 条触发记录。", "Shows the 200 most recent observations in this scope.")}</p>
       <p>{runID ? t("记录范围：当前任务执行", "Observation scope: current task execution") : workspaceID ? t("记录范围：当前项目", "Observation scope: current project") : t("记录范围：本机全部项目", "Observation scope: all local projects")}</p>
       <button className="settings-action" disabled={diagnostics.isFetching} onClick={() => void diagnostics.refetch()} type="button">{t("刷新 Hooks 记录", "Refresh Hook records")}</button>
       {diagnostics.isLoading && <p role="status">{t("正在读取 Hooks 记录…", "Reading Hook records…")}</p>}
@@ -165,7 +164,7 @@ function HookRecords({ value }: { value: HookDiagnosticsView }) {
   const actions: Record<string, string> = { deny: t("拒绝操作", "Reject operation"), annotate: t("附加说明", "Annotate"), narrow: t("移除所列参数", "Remove listed fields"), record: t("记录触发", "Record observation"), script: t("运行操作者脚本", "Run operator script") };
   return <div className="hook-records">
     <h3>{t("声明的规则", "Declared rules")}</h3>
-    {value.declarations.length === 0 && <p>{t("当前安装包尚无 Hooks 声明。导入含 Hooks 的 Plugin 包后，在这里核对规则。", "Installed packages have no Hook declarations yet. Import a Plugin with Hooks to inspect its rules here.")}</p>}
+    {value.declarations.length === 0 && <p>{t("暂无 Hooks 声明。", "No Hook declarations.")}</p>}
     <ul>{value.declarations.map((item) => <li key={`${item.installation_id}/${item.hook_id}`}>
       <div><strong>{item.plugin_id} / {item.hook_id}</strong><span>{item.active ? t("已加载", "Loaded") : item.installation_state === "revoked" ? t("安装已撤销", "Installation revoked") : item.installation_state === "rolled_back" ? t("此版本已停用", "Version retired") : t("等待启用 Hooks 能力", "Awaiting Hook enablement")}</span></div>
       <p>{events[item.event]} · {actions[item.action]}</p>

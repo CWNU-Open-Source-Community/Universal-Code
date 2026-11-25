@@ -42,7 +42,7 @@ describe("SessionWorkspace", () => {
       expect.any(AbortSignal)));
     await waitFor(() => expect(screen.getByText("Bound execution record state").parentElement).toHaveTextContent("completed"));
     expect(screen.getByText("Bound execution record state")).toBeVisible();
-    expect(screen.getByRole("note")).toHaveTextContent("Context records for this execution");
+    expect(screen.getByText("Bound Run")).toBeVisible();
     expect(screen.getByLabelText("Run-local Session message")).not.toBeVisible();
     await userEvent.setup().click(screen.getByText("Add input to this Session (advanced)"));
     expect(screen.getByLabelText("Run-local Session message")).toBeDisabled();
@@ -85,7 +85,7 @@ describe("SessionWorkspace", () => {
     const toggle = screen.getByText("Add input to this Session (advanced)");
     await user.click(toggle);
     expect(screen.getByLabelText("Run-local Session message")).toBeDisabled();
-    expect(screen.getByText(/Input target: the execution bound to this context/u)).toBeVisible();
+    expect(screen.getByLabelText("Run-local Session message")).toBeVisible();
     await user.click(toggle);
     expect(within(status).getByText("failed")).toBeVisible();
     expect(screen.getByLabelText("Run-local Session message")).not.toBeVisible();

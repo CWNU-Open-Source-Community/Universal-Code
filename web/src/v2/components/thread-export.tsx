@@ -70,7 +70,7 @@ export function V2ThreadExport({ client, threadID, title, onClose, returnFocusRe
         {!messages && error && <button type="button" onClick={() => setAttempt((value) => value + 1)}><RefreshCw size={15} aria-hidden="true" />{t("重新读取", "Read again")}</button>}
         {notice && <p role="status">{notice}</p>}
       </div>
-      <footer><button type="button" disabled={!messages?.length || copying} onClick={() => void save(true)}><Copy size={15} aria-hidden="true" />{copying ? t("正在复制…", "Copying…") : t("复制文本", "Copy text")}</button>
+      <footer><button type="button" disabled={!messages?.length} aria-disabled={copying || undefined} onClick={() => void save(true)}><Copy size={15} aria-hidden="true" />{copying ? t("正在复制…", "Copying…") : t("复制文本", "Copy text")}</button>
         <button type="button" className="primary" disabled={!messages?.length || copying} onClick={() => void save(false)}><Download size={15} aria-hidden="true" />{t("下载文件", "Download file")}</button></footer>
     </section>
   </div>, document.body);

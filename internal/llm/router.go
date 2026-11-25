@@ -462,8 +462,7 @@ func redactModelJSON(raw json.RawMessage) (json.RawMessage, error) {
 	if err := ensureModelJSONEOF(decoder); err != nil {
 		return nil, err
 	}
-	nodes := 0
-	safe, err := redactModelJSONValue(value, 0, &nodes)
+	safe, err := redact.ModelJSONValue(value, false)
 	if err != nil {
 		return nil, err
 	}
@@ -479,76 +478,4 @@ func ensureModelJSONEOF(decoder *json.Decoder) error {
 		return err
 	}
 	return fmt.Errorf("model tool JSON contains trailing data")
-}
-
-func redactModelJSONValue(value any, depth int, nodes *int) (any, error) {
-	return redactModelJSONValueMode(value, depth, nodes, false)
-}
-
-func redactModelJSONValueMode(value any, depth int, nodes *int, nestedData bool) (any, error) {
-	if depth > 64 {
-		return nil, fmt.Errorf("model tool JSON exceeds depth limit")
-	}
-	(*nodes)++
-	if *nodes > 100000 {
-		return nil, fmt.Errorf("model tool JSON exceeds node limit")
-	}
-	switch current := value.(type) {
-	case string:
-		if nestedData {
-			trimmed := strings.TrimSpace(current)
-			if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
-				decoder := json.NewDecoder(strings.NewReader(current))
-				decoder.UseNumber()
-				var inner any
-				if decoder.Decode(&inner) == nil && ensureModelJSONEOF(decoder) == nil {
-					safe, err := redactModelJSONValueMode(inner, depth+1, nodes, true)
-					if err != nil {
-						return nil, err
-					}
-					before, err := json.Marshal(inner)
-					if err != nil {
-						return nil, err
-					}
-					after, err := json.Marshal(safe)
-					if err != nil {
-						return nil, err
-					}
-					if bytes.Equal(before, after) {
-						return current, nil
-					}
-					return string(after), nil
-				}
-			}
-		}
-		return redact.String(current), nil
-	case []any:
-		out := make([]any, len(current))
-		for index, item := range current {
-			redacted, err := redactModelJSONValueMode(item, depth+1, nodes, nestedData)
-			if err != nil {
-				return nil, err
-			}
-			out[index] = redacted
-		}
-		return out, nil
-	case map[string]any:
-		out := make(map[string]any, len(current))
-		for key, item := range current {
-			redacted, err := redactModelJSONValueMode(item, depth+1, nodes, nestedData)
-			if err != nil {
-				return nil, err
-			}
-			if nestedData {
-				key = redact.String(key)
-				if _, exists := out[key]; exists {
-					return nil, fmt.Errorf("model compaction JSON keys collide after redaction")
-				}
-			}
-			out[key] = redacted
-		}
-		return out, nil
-	default:
-		return value, nil
-	}
 }

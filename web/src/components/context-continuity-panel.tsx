@@ -8,7 +8,6 @@ import {
   Plus,
   RefreshCw,
   Save,
-  ShieldOff,
   Trash2,
 } from "lucide-react";
 import type { APIClient } from "../api/client";
@@ -217,17 +216,6 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
   };
 
   return <div className="context-continuity">
-    <section className="context-boundary" aria-label={t("上下文安全边界", "Context safety boundary")}>
-      <ShieldOff aria-hidden="true" size={18} />
-      <div>
-        <strong>{t("带上上下文，重新核对权限", "Carry context forward and review permissions")}</strong>
-        <p>{t(
-          "这里保存指令、记忆和历史快照。分支或恢复后，请按新执行的状态核对审批、能力、凭据、网络权限、进程、终端租约和执行档位。",
-          "Save instructions, memories, and historical snapshots here. After branching or resuming, review approvals, capabilities, credentials, network access, processes, terminal leases, and execution profiles for the new execution.",
-        )}</p>
-      </div>
-    </section>
-
     <ProjectInstructionsSection client={client} query={instructionsQuery}
       refreshing={refreshInstructions.isPending} refreshError={refreshInstructions.error}
       onRefresh={() => instructionsQuery.data && refreshInstructions.mutate(instructionsQuery.data)} />
@@ -236,7 +224,6 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
       <header className="context-section-header">
         <div><MemoryStick aria-hidden="true" size={17} />
           <span><strong>{t("长期记忆", "Long-term memory")}</strong>
-            <small>{t("由你选择并保存，可设置保留期、禁用、导出或永久删除", "Choose what to save, with retention, disable, export, and permanent deletion controls")}</small>
           </span>
         </div>
         <div className="context-header-actions">
@@ -362,8 +349,7 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
               </article>;
             })}
             {(memoriesQuery.data?.length ?? 0) === 0 && <p className="context-empty">{t(
-              "此范围还没有记忆。在上方填写要保留的偏好或事实，点击「写入记忆」保存。",
-              "This scope has no saved memories. Add a preference or fact above, then choose Create memory to save it.",
+              "暂无记忆", "No saved memories",
             )}</p>}
           </div>}
     </section>
@@ -372,7 +358,6 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
       <header className="context-section-header">
         <div><History aria-hidden="true" size={17} />
           <span><strong>{t("上下文分支与检查点", "Context branches and checkpoints")}</strong>
-            <small>{t("保存一个继续工作的起点，或将已有上下文复制到独立执行", "Save a starting point for later work or copy existing context into an independent execution")}</small>
           </span>
         </div>
       </header>
@@ -388,9 +373,10 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
           <Plus aria-hidden="true" size={14} />{t("创建检查点", "Create checkpoint")}
         </button>
       </div>
+      {treeNodes.some((node) => !node.derived) && <p className="context-empty">{t("分支和恢复会创建新执行，需重新授权。", "Branching or resuming creates a new run with fresh permissions.")}</p>}
       <input aria-label={t("新分支目标", "New branch goal")} className="context-branch-goal"
         maxLength={4096} onChange={(event) => setBranchGoal(event.target.value)}
-        placeholder={t("可选：填写新分支要继续完成的目标", "Optional: set the goal to continue in the new branch")}
+        placeholder={t("新分支目标（可选）", "New branch goal (optional)")}
         value={branchGoal} />
       {createCheckpoint.error && <div className="inline-warning">{humanError(createCheckpoint.error)}</div>}
       {branch.error && <div className="inline-warning">{humanError(branch.error)}</div>}
@@ -420,7 +406,7 @@ export function ContextContinuityPanel({ client, runID, sessionID, workspaceID, 
               </div>}
             </article>)}
           </div>
-          {treeNodes.length === 0 && <p className="context-empty">{t("先创建检查点，再选择从该上下文分支或继续。", "Create a checkpoint, then choose to branch or continue from its context.")}</p>}
+          {treeNodes.length === 0 && <p className="context-empty">{t("暂无检查点", "No checkpoints")}</p>}
           {treeNodes.length > 1 && <div className="context-branch-compare">
             <header><strong>{t("分支比较", "Branch comparison")}</strong></header>
             <div>
@@ -474,7 +460,6 @@ function ProjectInstructionsSection({ client, query, refreshing, refreshError, o
     <header className="context-section-header">
       <div><GitBranch aria-hidden="true" size={17} />
         <span><strong>{t("项目指令快照", "Project instruction snapshot")}</strong>
-          <small>{t("本次执行使用创建时保存的指令；核对差异并确认后可更新", "This execution uses the instructions saved at creation; review and confirm differences to update them")}</small>
         </span>
       </div>
       <div className="context-header-actions">
@@ -512,7 +497,7 @@ function ProjectInstructionsSection({ client, query, refreshing, refreshError, o
         <p><strong>{t("可信级别：", "Trust: ")}</strong>{source.trust}; {t("作为上下文使用，执行授权需单独审批", "used as context; execution authority requires separate approval")}</p>
         <pre>{source.content}</pre>
       </details>)}
-      {snapshot.sources.length === 0 && <p className="context-empty">{t("此路径尚无项目指令。可在项目中添加适用的指令文件，再确认刷新。", "This path has no project instructions. Add an applicable instruction file to the project, then confirm a refresh.")}</p>}
+      {snapshot.sources.length === 0 && <p className="context-empty">{t("此路径暂无项目指令", "No project instructions for this path")}</p>}
     </div>
     {snapshot.conflicts.length > 0 && <div className="instruction-conflicts">
       <strong>{t("优先级冲突", "Precedence conflicts")}</strong>

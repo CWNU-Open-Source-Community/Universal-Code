@@ -80,7 +80,7 @@ import { CommandPalette, type CommandPaletteCommand } from "./command-palette";
 import { CodeJourney } from "./code-journey";
 import { CodeHandoffPanel } from "./code-handoff-panel";
 import { EvidenceInventory } from "./evidence-inventory";
-import { FileEditPanel } from "./file-edit-panel";
+import { FileEditPanel, type FileEditReviewTarget } from "./file-edit-panel";
 import { OperationReceiptHistory } from "./operation-receipt-history";
 import { OperatorActionCenter } from "./operator-action-center";
 import { RunWakePanel } from "./run-wake-panel";
@@ -239,6 +239,7 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
 }) {
   const { t } = useLocale();
   const [tab, changeTab] = useState<RunTab>(initialTab);
+  const [approvalEdit, setApprovalEdit] = useState<FileEditReviewTarget>();
   const leaveFileEdit = useFileEditLeave();
   const setTab = useCallback((next: RunTab) => leaveFileEdit(() => changeTab(next)), [leaveFileEdit]);
   const [inputOpen, setInputOpen] = useState(false);
@@ -419,11 +420,13 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
         {tab === "actions" && <OperatorActionCenter client={client} runID={runID}
           onNavigate={(destination) => setTab(destination === "approvals" ? "approvals" :
             destination === "diffs" ? "diffs" : "overview")} />}
-        {tab === "approvals" && <ApprovalPanel client={client} runID={runID} />}
-        {tab === "diffs" && <FileEditPanel client={client} runID={runID} runStatus={detail.run.status} />}
+        {tab === "approvals" && <ApprovalPanel client={client} runID={runID}
+          onReviewFile={(target) => { setApprovalEdit(target); setTab("diffs"); }} />}
+        {tab === "diffs" && <FileEditPanel client={client} runID={runID} runStatus={detail.run.status}
+          initialTarget={approvalEdit?.runID === runID ? approvalEdit : undefined} />}
         {tab === "repository" && <div className="projection-stack">
           <div className="resource-repository-heading"><h2>{t("当前运行的仓库工具", "Repository tools for this Run")}</h2>
-            <p>{t("操作范围：本次执行绑定的仓库。任务提交和 PR 请从对话的审阅入口进入；此处可使用独立执行的高级工具。", "Scope: the repository bound to this execution. Use conversation review for task commits and PRs; advanced tools for independent executions are available here.")}</p></div>
+          </div>
           <RepositoryStatePanel client={client} workspaceID={detail.mission.workspace_id ?? ""} />
           <details className="resource-workspace-section" open={Boolean(gitAdvancedReview)}><summary>{t("Git 操作（高级）", "Git operations (advanced)")}</summary>
           <GitAdvancedPanel client={client} onOpenApprovals={() => setTab("approvals")}
@@ -520,7 +523,6 @@ export function RunWorkspace({ client, runID, onOpenPlugins, onOpenRun, initialT
       {detail.run.session_id && client.hasSessionMessages && <details className="resource-workspace-input" open={inputOpen}
         onToggle={(event) => setInputOpen(event.currentTarget.open)}><summary><span>{t("向此运行补充输入（高级）", "Add input to this Run (advanced)")}</span>
           <span role="status">{inputStatus.pending ? t(" · 输入请求处理中", " · Input in progress") : inputStatus.error ? t(" · 输入未完成，请查看原因", " · Input needs attention") : ""}</span></summary>
-        <p>{t("输入目标：本次执行。发送时会核对执行状态与权限；继续整个任务请返回对话。", "Input target: this execution. Sending checks its state and permissions. Return to the conversation to continue the whole task.")}</p>
         <SessionComposer client={client} onStatusChange={showInputStatus}
         contextPartial={Boolean(contextMessagesQuery.hasNextPage)} contextTokens={contextTokens}
         onOpenPlugins={onOpenPlugins} run={detail.run} sessionID={detail.run.session_id}
