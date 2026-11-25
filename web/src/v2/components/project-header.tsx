@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronRight, Copy, Folder, FolderOpen, MessageCircle, MoreHorizontal, Pin, Settings, SquarePen } from "lucide-react";
@@ -31,12 +31,27 @@ function ProjectDirectoryCopy({ path }: { path: string }) {
   </button>;
 }
 
-export function ProjectHeader({ workspace, label, expanded, onToggle, onNewChat, onEdit, client, pinned = false, onTogglePin }: {
+export function ProjectHeader({ workspace, label, expanded, onToggle, onNewChat, onEdit, client, pinned = false, onTogglePin, activitySummary }: {
   workspace: WorkspaceView; label: string; expanded: boolean; onToggle: () => void;
   onNewChat?: () => void; onEdit?: (workspace: WorkspaceView) => void; client?: APIClient;
   pinned?: boolean; onTogglePin?: () => void;
+  activitySummary?: { needsInput: number; running: number; unread: number };
 }) {
   const { t } = useLocale();
+  const summaryID = useId();
+  const activityParts: string[] = [];
+  if (activitySummary) {
+    if (activitySummary.needsInput > 0) {
+      activityParts.push(t(`${activitySummary.needsInput} 项需用户输入`, `${activitySummary.needsInput} needing input`));
+    }
+    if (activitySummary.running > 0) {
+      activityParts.push(t(`${activitySummary.running} 项运行中`, `${activitySummary.running} running`));
+    }
+    if (activitySummary.unread > 0) {
+      activityParts.push(t(`${activitySummary.unread} 项未读`, `${activitySummary.unread} unread`));
+    }
+  }
+  const activityDescription = activityParts.join(t("，", ", "));
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
   const row = useRef<HTMLElement>(null);
@@ -86,16 +101,33 @@ export function ProjectHeader({ workspace, label, expanded, onToggle, onNewChat,
   const leaveFocus = (target: EventTarget | null) => {
     if (!row.current?.contains(target as Node) && !card.current?.contains(target as Node)) setOpen(false);
   };
-  return <header className={`v2-project-row${open ? " is-open" : ""}`} ref={row}
+  return <header className={`v2-project-row${open ? " is-open" : ""}${pinned ? " is-pinned" : ""}`} ref={row}
     onMouseEnter={() => { clearTimer(); timer.current = setTimeout(() => setOpen(true), 350); }}
     onMouseLeave={scheduleClose} onBlur={(event) => leaveFocus(event.relatedTarget)}>
-    <button className="v2-project-title" aria-expanded={expanded} onClick={onToggle} type="button" title={label}>
+    <button className="v2-project-title" aria-describedby={activityDescription ? summaryID : undefined} aria-expanded={expanded} onClick={onToggle} type="button" title={label}>
       <FolderOpen aria-hidden="true" className="v2-project-folder" size={17} />
       <ChevronRight aria-hidden="true" className={`v2-project-chevron${expanded ? " is-expanded" : ""}`} size={16} />
       <span>{label}</span>
-      {pinned && <Pin className="v2-project-pin-marker" size={12} aria-hidden="true" />}
+      {pinned && <Pin className="v2-project-pin-marker" size={12} fill="currentColor" aria-hidden="true" />}
+      {activitySummary && (activitySummary.needsInput > 0 || activitySummary.running > 0 || activitySummary.unread > 0) && (
+        <span className="v2-project-live-badges" aria-hidden="true">
+          {activitySummary.needsInput > 0 && <em className="v2-project-live-badge tone-amber">{activitySummary.needsInput}</em>}
+          {activitySummary.running > 0 && <em className="v2-project-live-badge tone-indigo is-pulsing">{activitySummary.running}</em>}
+          {activitySummary.needsInput === 0 && activitySummary.running === 0 && activitySummary.unread > 0 && (
+            <i className="v2-project-live-dot" />
+          )}
+        </span>
+      )}
     </button>
+    {activityDescription && <span className="v2-thread-state-description" id={summaryID}>{activityDescription}</span>}
     <div className="v2-project-row-actions">
+      {onTogglePin && <button
+        aria-label={pinned ? t(`取消置顶项目 ${label}`, `Unpin project ${label}`) : t(`置顶项目 ${label}`, `Pin project ${label}`)}
+        aria-pressed={pinned}
+        className={`v2-project-row-pin${pinned ? " is-pinned" : ""}`}
+        onClick={() => { clearTimer(); onTogglePin(); }}
+        title={pinned ? t("取消置顶项目", "Unpin project") : t("置顶项目", "Pin project")}
+        type="button"><Pin aria-hidden="true" size={14} fill={pinned ? "currentColor" : "none"} /></button>}
       <button aria-label={t(`${label} 项目信息`, `${label} project details`)} aria-expanded={open} aria-haspopup="dialog" ref={more}
       onClick={() => { clearTimer(); if (open) (edit.current ?? card.current)?.focus(); else { focusCard.current = true; setOpen(true); } }} type="button">
         <MoreHorizontal aria-hidden="true" size={16} /></button>
