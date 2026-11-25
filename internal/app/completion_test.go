@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -429,6 +430,7 @@ func TestCompleteDeeperPositionsOfferNothing(t *testing.T) {
 // completion scripts installed by earlier releases never see protocol
 // markers like ":4" among the offered candidates.
 func TestCompleteOmitsDirectiveWithoutHandshake(t *testing.T) {
+	t.Setenv(completeProtocolEnvironment, "")
 	var out bytes.Buffer
 	a := &App{out: &out}
 	if err := a.dispatch(context.Background(), []string{"__complete", "git-"}); err != nil {
@@ -493,6 +495,52 @@ func TestCompletionCommandEmitsBashScript(t *testing.T) {
 	}
 	if strings.Contains(out, "COMPREPLY=($(compgen") {
 		t.Fatalf("bash script must not re-split candidates through compgen, which cuts names at spaces: %q", out)
+	}
+}
+
+func TestBashReadlineCompletesFilesAndCommands(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX shell and executable")
+	}
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is unavailable")
+	}
+	dir := t.TempDir()
+	// Print the arguments that Bash actually passes after a Tab completion.
+	const cli = `#!/bin/sh
+if [ "$1" = __complete ]; then
+    [ "$CYBERAGENT_COMPLETE_PROTOCOL" = 4 ] || exit 1
+    case "$2" in
+        skill) printf ':0\n' ;;
+        wo) printf 'workspace\n:4\n' ;;
+    esac
+else
+    printf '[%s]' "$@"
+    printf '\n'
+fi
+`
+	if err := os.WriteFile(filepath.Join(dir, "cyberagent"), []byte(cli), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), bash, "--noprofile", "--norc", "-i")
+	cmd.Dir = dir
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "INPUTRC=/dev/null", "TERM=dumb"}
+	cmd.Stdin = strings.NewReader(bashCompletionScript + `
+export PATH="$PWD:$PATH"
+mkdir packages workspace
+touch 'release notes.zip'
+` +
+		"cyberagent skill import rele\t\n" +
+		"cyberagent skill import pack\tbundle.zip\n" +
+		"cyberagent wo\tlist\nexit\n")
+	got, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "[skill][import][release notes.zip]\n[skill][import][packages/bundle.zip]\n[workspace][list]\n"
+	if string(got) != want {
+		t.Fatalf("arguments after Tab completion:\ngot  %q\nwant %q", got, want)
 	}
 }
 

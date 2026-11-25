@@ -306,6 +306,8 @@ _cyberagent_completions() {
       COMPREPLY+=("$line")
     done <<<"$candidates"
   elif [ "$directive" = 0 ]; then
+    # Bash 3.2 enables Readline's filename mode when compgen runs in this shell.
+    compopt -o filenames 2>/dev/null || compgen -f /dev/null >/dev/null
     while IFS= read -r line; do
       COMPREPLY+=("$line")
     done < <(compgen -f -- "$cur" 2>/dev/null)

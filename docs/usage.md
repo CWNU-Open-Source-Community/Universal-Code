@@ -548,24 +548,6 @@ cyberagent ui-evidence show <attempt-id>
 cyberagent ui-evidence artifact <attempt-id> <artifact-id> --output <new-path>
 ```
 
-### Shell completion / Shell 补全
-
-Emit completion scripts for bash, zsh, and fish; install them with the
-standard shell mechanism. All three scripts delegate to the hidden
-`cyberagent __complete` protocol: every argument is a command-line word,
-the last one is the word being completed, candidates print one per line,
-and a trailing `:<directive>` line mirrors cobra's values — `4` when the
-CLI provided candidates (file completion suppressed) and `0` when the
-position is handed back to the shell, so path-shaped arguments such as
-`skill import`'s package still complete.
-
-```bash
-cyberagent completion bash >> ~/.bashrc
-cyberagent completion zsh > "${fpath[1]}/_cyberagent"
-cyberagent completion fish > ~/.config/fish/completions/cyberagent.fish
-```
-
-
 `run delivery report` reads the same freshness-aware
 `standard_code_delivery.v1` projection used by Desktop, authenticated HTTP,
 Code Handoff, GitHub Review, and Standard Code completion. `run delivery record`
@@ -603,6 +585,34 @@ generation, and one availability/refusal line per tool. The same snapshot is
 available in `GET /api/v1/runs/{run_id}` and the Desktop Run overview. Runs created
 without a registered Workspace retain compatibility, but their snapshot marks all
 seven tools unavailable and the Supervisor does not advertise them.
+
+### Shell completion / Shell 补全
+
+Install Bash completion in `~/.bashrc`.
+
+```bash
+cyberagent completion bash >> ~/.bashrc
+```
+
+For Zsh, add `fpath=(~/.zfunc $fpath)` to `~/.zshrc` before
+`autoload -Uz compinit && compinit`, and install the script there.
+
+```zsh
+mkdir -p ~/.zfunc
+cyberagent completion zsh > ~/.zfunc/_cyberagent
+```
+
+In Fish, install the script in the user completions directory.
+
+```fish
+mkdir -p "$__fish_config_dir/completions"
+cyberagent completion fish > "$__fish_config_dir/completions/cyberagent.fish"
+```
+
+The scripts call `cyberagent __complete` with the current word last.
+Setting `CYBERAGENT_COMPLETE_PROTOCOL=4` on that call adds a final
+`:4` to suppress filename completion or `:0` to request it. Older
+scripts receive one candidate per line and an empty result for paths.
 
 ### Read-only LSP code intelligence
 
