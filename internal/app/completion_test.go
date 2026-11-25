@@ -834,13 +834,16 @@ touch 'release notes.zip'
 		"cyberagent skill import pack\tbundle.zip\n" +
 		"cyberagent exec --profile=re\t\n" +
 		"cyberagent tool invoke example --payload-file=rele\t\n" +
+		"COMP_WORDBREAKS=${COMP_WORDBREAKS//=/}\n" +
+		"cyberagent tool invoke example --payload-file=pack\tbundle.zip\n" +
 		"cyberagent wo\tlist\nexit\n")
 	got, err := cmd.Output()
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := "[skill][import][release notes.zip]\n[skill][import][packages/bundle.zip]\n" +
-		"[exec][--profile=review]\n[tool][invoke][example][--payload-file=release notes.zip]\n[workspace][list]\n"
+		"[exec][--profile=review]\n[tool][invoke][example][--payload-file=release notes.zip]\n" +
+		"[tool][invoke][example][--payload-file=packages/bundle.zip]\n[workspace][list]\n"
 	if string(got) != want {
 		t.Fatalf("arguments after Tab completion:\ngot  %q\nwant %q", got, want)
 	}

@@ -503,6 +503,11 @@ _cyberagent_completions() {
     fi
     context_words+=("${COMP_WORDS[i]}")
   done
+  # Bash 3.2 keeps --flag=value in COMP_WORDS even when Readline replaces only the value.
+  if (( $# >= 2 )) && [[ $cur == -*=* && $2 == "${cur#*=}" ]]; then
+    context_words+=("${cur%%=*}")
+    cur=$2
+  fi
   local raw candidates directive line
   raw="$(CYBERAGENT_COMPLETE_PROTOCOL=4 command cyberagent __complete ${context_words[@]+"${context_words[@]}"} "$cur" 2>/dev/null)" || return 0
   candidates=""
@@ -530,6 +535,15 @@ _cyberagent_completions() {
     while IFS= read -r line; do
       COMPREPLY+=("$flag_prefix$line")
     done < <(compgen -f -- "$file_word" 2>/dev/null)
+    # Readline cannot stat a directory when the completion still includes --flag=.
+    if [[ $flag_prefix && ${COMPREPLY[0]-} && -z ${COMPREPLY[1]-} ]]; then
+      line=${COMPREPLY[0]#"$flag_prefix"}
+      if [[ -d $line ]]; then
+        COMPREPLY[0]="$flag_prefix${line%/}/"
+        # Bash 3.2 has no compopt. Two directory spellings leave their common slash open.
+        compopt -o nospace 2>/dev/null || COMPREPLY+=("${COMPREPLY[0]}.")
+      fi
+    fi
   fi
 }
 
