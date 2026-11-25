@@ -234,6 +234,7 @@ var commandFlagScanTargets = map[string]string{
 	"run delegations":                 "runDelegations",
 	"run delivery checkpoint":         "runDeliveryCheckpointRecord",
 	"run delivery list":               "runDeliveryCheckpointList",
+	"run events":                      "runEvents",
 	"run execute":                     "runSupervisorExecute",
 	"run execution-interaction":       "runExecutionInteraction",
 	"run execution-permission":        "runExecutionPermission",
@@ -260,6 +261,7 @@ var commandFlagScanTargets = map[string]string{
 	"run standard-code docker-cancel": "runStandardCodeCancel",
 	"run standard-code preset":        "runStandardCodePreset",
 	"run delegation":                  "runDelegation",
+	"run start":                       "runTransition",
 	"run steer":                       "runOperatorSteering",
 	"workspace checkpoint":            "workspaceCheckpointCommand",
 	"workspace checkpoint undo":       "workspaceCheckpointCursorAction",
@@ -1020,13 +1022,15 @@ func TestCompleteAttachedFlagValues(t *testing.T) {
 	}
 }
 
-func TestCompleteDeliveryFlagsAtTheirDispatchPaths(t *testing.T) {
+func TestCompleteRunFlagsAtTheirDispatchPaths(t *testing.T) {
 	for _, test := range []struct {
 		args []string
 		want []string
 	}{
 		{[]string{"run", "delivery", "checkpoint", "work-id", "--oper"}, []string{"--operation-key", "--operator"}},
 		{[]string{"run", "delivery", "list", "run-id", "--l"}, []string{"--limit"}},
+		{[]string{"run", "events", "run-id", "--"}, []string{"--follow", "--timeout"}},
+		{[]string{"run", "start", "run-id", "--"}, []string{"--stream", "--timeout"}},
 	} {
 		out, err := dispatchForOutput(t, append([]string{"__complete"}, test.args...)...)
 		if err != nil {
