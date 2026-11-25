@@ -44,6 +44,9 @@ func (a *App) hooksValidate(ctx context.Context, args []string) error {
 		return errors.New("usage: cyberagent hooks validate")
 	}
 	registrations, err := hooks.LoadOperatorScriptHooks(ctx, a.scriptHooksDir())
+	if err == nil {
+		err = hooks.NewEngine(nil).Replace(registrations)
+	}
 	if err != nil {
 		return fmt.Errorf("hooks configuration is invalid: %w", err)
 	}
@@ -79,6 +82,9 @@ func (a *App) hooksList(ctx context.Context, args []string) error {
 		return err
 	}
 	registrations, err := a.hookRegistrations(service)(ctx)
+	if err == nil {
+		err = hooks.NewEngine(nil).Replace(registrations)
+	}
 	if err != nil {
 		return err
 	}
