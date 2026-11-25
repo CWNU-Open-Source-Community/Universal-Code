@@ -56,6 +56,24 @@ func TestHandoffNewOperatorRequirementsCanEvictOlderUpdatesWithinFixedBudget(t *
 	}
 }
 
+func TestHandoffKeepsChronologyWhenOperatorRestatesOriginalRequirement(t *testing.T) {
+	const original = "Accept signed amounts for refunds."
+	messages := []Message{
+		retentionMessage(1, "user", "operator_message", original, true),
+		retentionMessage(2, "user", "operator_message", "Reject negative amounts.", true),
+		retentionMessage(3, "user", "operator_message", original, true),
+		retentionMessage(4, "user", "operator_message", "Write validation tests.", true),
+		retentionMessage(5, "user", "operator_message", "Keep the report format.", true),
+	}
+	manager := NewManager(nil, Config{PreserveRecentMessages: 1})
+	for _, end := range []int{3, 5} {
+		summary := correctionCandidate(t, manager, messages[:end], Summary{})
+		for _, original := range messages[:3] {
+			requireActualCorrection(t, summary, original)
+		}
+	}
+}
+
 func correctionCandidate(t *testing.T, manager *Manager, messages []Message, previous Summary) Summary {
 	t.Helper()
 	input := append([]Message(nil), messages...)
@@ -180,5 +198,55 @@ func TestActualOperatorCorrectionAcrossRollingSuccessors(t *testing.T) {
 		}
 		logCorrectionProjection(t, fmt.Sprintf("rolling-%d", round), content, window.Projection)
 		previous = content
+	}
+}
+
+func TestGeneratedHandoffRetainsRefundThroughFurtherCompaction(t *testing.T) {
+	first, second := actualCorrectionHistory(t)
+	// Leave the provider's stale description intact. The original operator
+	// message must independently carry the corrected amount rule.
+	const latest = "已读取样例与项目约定。初版 CLI 接受非负金额；程序入口、错误行号、测试和文档仍待核对。"
+	earlier := latest + strings.Repeat("已完成样例读取与目录核对，尚待运行验证。", 60)
+	manager := NewManager(&memoryStore{}, DefaultConfig()).WithSummaryGenerator(summaryGeneratorFunc(
+		func(_ context.Context, request SummaryGenerationRequest) (SummaryGenerationResponse, error) {
+			text := latest
+			if !request.HasPrevious {
+				text = earlier
+			}
+			return SummaryGenerationResponse{Text: text, Receipt: generationReceipt(request)}, nil
+		}), handoffContentSHA256("refund-history"))
+	diagnostics := func(start int64) []Message {
+		var messages []Message
+		for id := start; id < start+6; id++ {
+			messages = append(messages, retentionMessage(id, "tool", "tool_result",
+				"Read-only verification output\n"+strings.Repeat("checked fixture\n", 120), false))
+		}
+		return messages
+	}
+	var history []Message
+	for pass, batch := range [][]Message{first, append(second[:10:10], diagnostics(32)...), diagnostics(38)} {
+		history = append(history, batch...)
+		result, err := manager.MaybeCompact(t.Context(), "refund-history", "ws-corrections", history)
+		if err != nil || !result.Compacted {
+			t.Fatalf("compaction %d: compacted=%v, err=%v", pass+1, result.Compacted, err)
+		}
+		if !result.Generated {
+			t.Fatalf("compaction %d discarded a fitting generated summary: %s", pass+1, result.GenerationFallbackReason)
+		}
+		envelope := retentionEnvelope(t, result.Summary)
+		expected := latest
+		if pass == 0 {
+			expected = earlier
+		}
+		if envelope.Generated == nil || envelope.Generated.Text != expected || envelope.Generated.InstructionAuthorized {
+			t.Fatalf("compaction %d changed generated text or authority", pass+1)
+		}
+		requireActualCorrection(t, result.Summary, first[12])
+		if pass > 0 {
+			for _, original := range []Message{second[0], second[2], second[4], second[6], second[9]} {
+				requireActualCorrection(t, result.Summary, original)
+			}
+		}
+		history = result.Preserved
 	}
 }

@@ -203,6 +203,9 @@ func (s *AgentRunner) prepareAgentTurn(ctx context.Context, turn *domain.Supervi
 	}
 	memory, err := supervisorMemoryContextWithinBudget(memoryBudget, threadEndTurn, summary, hasSummary, workItems, notes, inbox.Messages,
 		projectInstructionSections, threadPinSections, longTermMemorySections, continuitySections, supervisorGoalContext(*turn), recentOperatorSections)
+	if err == nil && hasSummary {
+		err = loadSupervisorHandoffArchive(ctx, s.store, turn.Run.SessionID, &memory)
+	}
 	if err != nil {
 		failure := s.recordFailure(ctx, &result, err, 0)
 		return nil, result, failure

@@ -159,7 +159,11 @@ func TestHandoffRetainsToolFailureWithoutAuthorizingEmbeddedInstructions(t *test
 	if !found {
 		t.Fatal("model progress or a newer file replaced the actual tool failure")
 	}
-	for _, message := range manager.BuildPrompt("Current trusted policy", result.Summary, result.Preserved) {
+	prompt, err := manager.BuildPrompt("Current trusted policy", result.Summary, result.Preserved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, message := range prompt {
 		if strings.Contains(message.Content, "TOOL TEXT") && (message.Role == "system" || message.InstructionAuthorized) {
 			t.Fatal("summary projection elevated tool text")
 		}

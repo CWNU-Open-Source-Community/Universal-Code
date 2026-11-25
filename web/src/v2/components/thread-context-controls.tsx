@@ -16,7 +16,7 @@ const compactionsKey = (client: APIClient, threadID: string) => ["thread-context
 const unfinishedCompaction = (operation: ThreadCompactionOperation) => ["prepared", "started", "generated"].includes(operation.status);
 const compactionNotice = (result: ThreadCompactionResult, t: LocaleText) => result.status === "noop" ? t("当前没有需要压缩的较早消息。", "There are no earlier messages to compact.")
   : t(`已压缩 ${result.removed_messages} 条较早消息，保留 ${result.preserved_messages} 条近期消息。`, `Compacted ${result.removed_messages} earlier messages and kept ${result.preserved_messages} recent messages.`) +
-    (result.input_messages_omitted ? t(` 为适配模型窗口，生成摘要时省略了最早的 ${result.input_messages_omitted} 条记录；这些原文仍可回读。`, ` The earliest ${result.input_messages_omitted} records were omitted from summary generation to fit the model window; their original text remains readable.`) : "");
+    (result.input_messages_omitted ? t(` 摘要输入省略了 ${result.input_messages_omitted} 条记录，仍可查看原文。`, ` The summary input omitted ${result.input_messages_omitted} records. You can still read the originals.`) : "");
 function usePins(client: APIClient, threadID: string, poll = false) {
   return useQuery({ queryKey: pinsKey(client, threadID), retry: false, refetchOnMount: "always",
     refetchInterval: poll ? 3000 : false,

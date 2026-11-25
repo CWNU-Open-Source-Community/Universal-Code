@@ -92,19 +92,19 @@ func supervisorReceiptInputLimit(request llm.ChatRequest, window llm.ContextWind
 	if err != nil {
 		return 0, err
 	}
-	if budget.MaxTokens > 0 {
-		remaining := budget.MaxTokens - checkpoint.TotalTokens - int64(output)
-		if remaining < 0 {
-			remaining = 0
-		}
-		if remaining < int64(limit) {
-			limit = int(remaining)
-		}
-	}
+	limit = supervisorRunInputLimit(limit, output, budget, checkpoint)
 	if recoveryLimit != nil && *recoveryLimit < limit {
 		limit = *recoveryLimit
 	}
 	return limit, nil
+}
+
+func supervisorRunInputLimit(limit, output int, budget domain.Budget, checkpoint domain.SupervisorCheckpoint) int {
+	if budget.MaxTokens <= 0 {
+		return limit
+	}
+	remaining := max(0, budget.MaxTokens-checkpoint.TotalTokens)
+	return int(min(int64(limit), max(0, remaining-int64(output))))
 }
 
 // Replace exactly the Go-authored message already inserted for this plan.

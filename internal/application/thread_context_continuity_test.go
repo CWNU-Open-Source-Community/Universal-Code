@@ -201,11 +201,11 @@ func TestThreadContextContinuityPreservesOriginalIntentAndEvidenceAfterCompactio
 	}
 	for index, request := range provider.generatedRequests {
 		var payload struct {
-			History contextmgr.SummaryGenerationRequest `json:"history"`
+			SourceSHA256 string `json:"source_sha256"`
 		}
 		if len(request.Messages) != 2 || json.Unmarshal([]byte(request.Messages[1].Content), &payload) != nil ||
-			len(payload.History.SourceSHA256) != 64 || len(payload.History.InputFingerprint) != 64 ||
-			request.Metadata["source_sha256"] != payload.History.SourceSHA256 || request.Metadata["input_fingerprint"] != payload.History.InputFingerprint ||
+			len(payload.SourceSHA256) != 64 || request.Metadata["source_sha256"] != payload.SourceSHA256 ||
+			request.Metadata["input_fingerprint"] != session.ContentSHA256(request.Messages[1].Content) ||
 			len(request.Tools) != 0 {
 			t.Errorf("summary request %d lost exact source identity or advertised tools", index)
 		}

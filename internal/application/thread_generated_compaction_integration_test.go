@@ -79,12 +79,12 @@ func TestThreadGeneratedCompactionDefaultTwoPassesKeepSourcesAndUsage(t *testing
 			t.Fatalf("auxiliary call changed model, advertised tools, or streamed publicly: %+v", captured)
 		}
 		var payload struct {
-			History contextmgr.SummaryGenerationRequest `json:"history"`
+			SourceSHA256 string `json:"source_sha256"`
 		}
-		if len(captured.Request.Messages) != 2 || json.Unmarshal([]byte(captured.Request.Messages[1].Content), &payload) != nil || len(payload.History.SourceSHA256) != 64 || len(payload.History.InputFingerprint) != 64 {
+		if len(captured.Request.Messages) != 2 || json.Unmarshal([]byte(captured.Request.Messages[1].Content), &payload) != nil || len(payload.SourceSHA256) != 64 {
 			t.Fatal("auxiliary request lacks the exact Go-owned input identity")
 		}
-		if captured.Request.Metadata["source_sha256"] != payload.History.SourceSHA256 || captured.Request.Metadata["input_fingerprint"] != payload.History.InputFingerprint {
+		if captured.Request.Metadata["source_sha256"] != payload.SourceSHA256 || captured.Request.Metadata["input_fingerprint"] != session.ContentSHA256(captured.Request.Messages[1].Content) {
 			t.Fatal("auxiliary transport identity differs from its source payload")
 		}
 		body := generatedRequestText(captured.Request)
