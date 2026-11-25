@@ -517,6 +517,8 @@ cyberagent headless events <run-id> --max-events 1000
 cyberagent run start <run-id>
 # Start and follow the same stream. The start receipt and run step hint go to stderr.
 cyberagent run start <run-id> --stream
+# Either streaming command accepts --timeout up to 24h. Zero waits without a deadline.
+cyberagent run events <run-id> --follow --timeout 30m
 cyberagent run step <run-id>
 cyberagent run execute <run-id> --max-steps 3
 cyberagent run execute <run-id> --max-steps 3 --finish --summary "planning complete"
@@ -1049,6 +1051,8 @@ D0-B also makes second-instance launch data non-authoritative: arguments and wor
 `--after-sequence <n>` resumes strictly after a previously emitted durable sequence. A cursor beyond the current tail is rejected before stdout is written. `--max-events` defaults to 1,000 and is bounded to 10,000; a truncated export returns exit 8 and reports `suggested_resume_after` in the end record. Reads occur in batches of at most 100 and validate contiguous sequence, Run/Mission identity, UTF-8 metadata, and a 1 MiB payload ceiling. The command never writes a Run event.
 
 Without `--follow`, a nonterminal Run ends with `reason: "snapshot"` and exit 0. `--follow` polls the same local SQLite database every 250 ms by default, accepts only 50 ms through 5 s, drains any final event before returning, and may be bounded with `--timeout` up to 24 hours. Terminal completion returns 0, terminal failure returns 4, terminal cancellation returns 7, the event cap returns 8, and timeout returns 9. Caller cancellation returns 7. These codes reuse the stable `apperror` contract.
+
+On a deadline, `stream.end` carries the last observed run status and the last emitted sequence as `suggested_resume_after`. If no event was emitted, the cursor equals the requested `--after-sequence` (default 0). If the initial run lookup was interrupted, `run_id` is the requested ID, `status` is empty, and `terminal` is false.
 
 Headless mode is a read adapter, not another execution engine: it does not call `RunSupervisor`, a Provider, Tool Gateway, Sandbox, Shell, network, or file-write path. Run execution remains in the existing CLI/Session/operator services, so closing the Headless consumer cannot stop or mutate a background Run.
 

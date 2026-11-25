@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -148,6 +149,76 @@ func TestRunStreamFlagValidation(t *testing.T) {
 		_, stderr, code = executeTestCommand(t, "run", "cancel", runID, flag)
 		if code != 2 || !strings.Contains(stderr, "--stream is only valid for run start") {
 			t.Fatalf("run cancel %s: stderr=%q code=%d", flag, stderr, code)
+		}
+	}
+	requireRunStillCreated(t, runID)
+}
+
+func TestRunStreamTimeoutEmitsResumableDeadlineRecord(t *testing.T) {
+	for _, tc := range []struct{ action, flag, timeout string }{
+		{"events", "--follow", "300ms"},
+		{"start", "--stream", "1ns"},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			t.Setenv("CYBERAGENT_HOME", t.TempDir())
+			created, stderr, code := executeTestCommand(t, "run", "create", "run stream timeout")
+			if code != 0 {
+				t.Fatal(stderr)
+			}
+			runID := runIDPattern.FindString(created)
+			stdout, stderr, code := executeTestCommand(t, "run", tc.action, runID, tc.flag, "--timeout", tc.timeout)
+			if code != 9 || !strings.Contains(stderr, "deadline") {
+				t.Fatalf("stream deadline: code=%d stderr=%s", code, stderr)
+			}
+			records := decodeHeadlessCLIRecords(t, stdout)
+			if len(records) == 0 {
+				t.Fatal("timeout omitted the end record")
+			}
+			end := records[len(records)-1]
+			if end.Kind != "stream.end" || end.Reason != "deadline_exceeded" || end.RunID != runID ||
+				end.ExitCode != 9 || end.Terminal || end.EventsEmitted != len(records)-1 ||
+				end.LastSequence != int64(end.EventsEmitted) || end.SuggestedResume != end.LastSequence {
+				t.Fatalf("wrong deadline end record: %#v", end)
+			}
+
+			if _, stderr, code := executeTestCommand(t, "run", "cancel", runID); code != 0 {
+				t.Fatal(stderr)
+			}
+			stdout, stderr, code = executeTestCommand(t, "headless", "events", runID, "--after-sequence",
+				strconv.FormatInt(end.SuggestedResume, 10))
+			resumed := decodeHeadlessCLIRecords(t, stdout)
+			if code != 7 || len(resumed) < 2 || resumed[0].Sequence != end.LastSequence+1 ||
+				resumed[len(resumed)-1].Status != "cancelled" {
+				t.Fatalf("resume after %d: code=%d stderr=%q records=%#v", end.LastSequence, code, stderr, resumed)
+			}
+		})
+	}
+}
+
+func TestRunStreamTimeoutValidation(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	created, stderr, code := executeTestCommand(t, "run", "create", "run stream timeout validation")
+	if code != 0 {
+		t.Fatalf("run create failed: %s", stderr)
+	}
+	runID := runIDPattern.FindString(created)
+
+	for _, tc := range []struct {
+		action  string
+		flags   []string
+		message string
+	}{
+		{"events", []string{"--timeout", "1s"}, "timeout requires --follow"},
+		{"events", []string{"--timeout=0"}, "timeout requires --follow"},
+		{"events", []string{"--follow", "--timeout", "25h"}, "between zero and 24h"},
+		{"start", []string{"--timeout", "30m"}, "timeout requires --stream"},
+		{"start", []string{"--timeout=0"}, "timeout requires --stream"},
+		{"cancel", []string{"--timeout=0"}, "flag provided but not defined"},
+	} {
+		args := append([]string{"run", tc.action, runID}, tc.flags...)
+		_, stderr, code := executeTestCommand(t, args...)
+		if code != 2 || !strings.Contains(stderr, tc.message) {
+			t.Errorf("%v: expected usage error %q, got code=%d stderr=%q", args, tc.message, code, stderr)
 		}
 	}
 	requireRunStillCreated(t, runID)

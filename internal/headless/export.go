@@ -137,26 +137,34 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 	if err != nil {
 		return err
 	}
-	initialRun, err := e.store.GetRun(ctx, request.RunID)
-	if err != nil {
+	encoder := json.NewEncoder(writer)
+	encoder.SetEscapeHTML(false)
+	lastSequence := request.AfterSequence
+	emitted := 0
+	// Before the first successful read we have only the requested ID and cursor.
+	run := domain.Run{ID: request.RunID}
+	readError := func(err error) error {
+		if cause := ctx.Err(); cause != nil && errors.Is(err, cause) {
+			return finishContext(encoder, request, run, lastSequence, emitted, cause)
+		}
 		return err
 	}
-	missionID := initialRun.MissionID
+	snapshot, err := e.store.GetRun(ctx, request.RunID)
+	if err != nil {
+		return readError(err)
+	}
+	run = snapshot
+	missionID := run.MissionID
 	tail, err := e.store.LatestRunEventSequence(ctx, request.RunID)
 	if err != nil {
-		return err
+		return readError(err)
 	}
 	if request.AfterSequence > tail {
 		return apperror.New(apperror.CodeInvalidArgument,
 			"headless after-sequence is beyond the durable event tail")
 	}
 
-	encoder := json.NewEncoder(writer)
-	encoder.SetEscapeHTML(false)
-	lastSequence := request.AfterSequence
-	emitted := 0
 	stopped := false
-	var run domain.Run
 	for {
 		remaining := request.MaxEvents - emitted
 		if remaining > 0 {
@@ -164,7 +172,7 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 			batch, err := e.store.ListRunEventsAfterSequence(ctx, request.RunID,
 				lastSequence, limit)
 			if err != nil {
-				return err
+				return readError(err)
 			}
 			for _, event := range batch {
 				if err := validateNextEvent(request.RunID, missionID,
@@ -183,18 +191,19 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, request Request
 			}
 		}
 
-		run, err = e.store.GetRun(ctx, request.RunID)
+		snapshot, err := e.store.GetRun(ctx, request.RunID)
 		if err != nil {
-			return err
+			return readError(err)
 		}
-		if run.MissionID != missionID {
+		if snapshot.MissionID != missionID {
 			return apperror.New(apperror.CodeConflict,
 				"headless Run Mission projection changed unexpectedly")
 		}
+		run = snapshot
 		next, err := e.store.ListRunEventsAfterSequence(ctx, request.RunID,
 			lastSequence, 1)
 		if err != nil {
-			return err
+			return readError(err)
 		}
 		if len(next) > 0 && emitted < request.MaxEvents {
 			continue
