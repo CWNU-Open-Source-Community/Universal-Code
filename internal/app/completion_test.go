@@ -808,7 +808,8 @@ func TestBashReadlineCompletesFilesAndCommands(t *testing.T) {
 if [ "$1" = __complete ]; then
     [ "$CYBERAGENT_COMPLETE_PROTOCOL" = 4 ] || exit 1
     case "$2" in
-        skill) printf ':0\n' ;;
+        skill|tool) printf ':0\n' ;;
+        exec) [ "$3" = --profile ] && [ "$4" = re ] && printf 'review\n:4\n' ;;
         wo) printf 'workspace\n:4\n' ;;
     esac
 else
@@ -829,12 +830,15 @@ touch 'release notes.zip'
 ` +
 		"cyberagent skill import rele\t\n" +
 		"cyberagent skill import pack\tbundle.zip\n" +
+		"cyberagent exec --profile=re\t\n" +
+		"cyberagent tool invoke example --payload-file=rele\t\n" +
 		"cyberagent wo\tlist\nexit\n")
 	got, err := cmd.Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "[skill][import][release notes.zip]\n[skill][import][packages/bundle.zip]\n[workspace][list]\n"
+	want := "[skill][import][release notes.zip]\n[skill][import][packages/bundle.zip]\n" +
+		"[exec][--profile=review]\n[tool][invoke][example][--payload-file=release notes.zip]\n[workspace][list]\n"
 	if string(got) != want {
 		t.Fatalf("arguments after Tab completion:\ngot  %q\nwant %q", got, want)
 	}
