@@ -50,7 +50,7 @@ import { MCPInputCards } from "./mcp-input-cards";
 import { V2ApprovalCards } from "./approval-cards";
 import { V2Composer } from "./composer";
 import { V2ThreadRunRecovery } from "./thread-run-recovery";
-import { useV2ThreadExecution, V2ThreadExecutionControl, V2PausedThreadControl } from "./thread-execution-control";
+import { useV2ThreadExecution, useV2ThreadStop, V2PausedThreadControl } from "./thread-execution-control";
 import { useFileEditLeave } from "../../components/file-edit-drafts";
 import { UserTerminalPanel, type TerminalQuoteResult } from "../../components/user-terminal-panel";
 import { desktopSharedBrowserEnabled, desktopUserTerminalEnabled } from "../../lib/desktop-bridge";
@@ -472,7 +472,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     }
   }, [submissions]);
   const executionQuery = useV2ThreadExecution(client, threadID);
-  const stopButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmedExecution = client.hasThreadExecutionRead === true && !executionQuery.isError &&
+    executionQuery.data?.thread_id === threadID ? executionQuery.data : undefined;
+  const stopAction = useV2ThreadStop(client, threadID, confirmedExecution);
   const conversationRef = useRef<HTMLElement>(null);
   const workbenchSlot = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -876,8 +878,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   };
   const canSteer = executionQuery.data?.state === "running" ||
     (!executionQuery.data && detail.active_run?.status === "running");
-  const confirmedExecution = client.hasThreadExecutionRead === true && !executionQuery.isError &&
-    executionQuery.data?.thread_id === threadID ? executionQuery.data : undefined;
   const fileReferenceUnavailableReason = currentRun.status === "waiting_approval"
       ? t("当前任务正在等待批准，暂时不能新增文件引用。请先处理待批准的操作。", "This task is awaiting approval. Resolve pending approvals before adding file references.")
       : working || runActive ? modelActive || confirmedExecution?.state === "running" || confirmedExecution?.state === "stopping"
@@ -1114,8 +1114,6 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </div>
     </nav>
       <div className="v2-header-actions">
-        <V2ThreadExecutionControl client={client} execution={executionQuery.data}
-          threadID={threadID} stopButtonRef={stopButtonRef} />
         <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label={t("对话操作", "Conversation actions")}
           onClick={() => { focusLastMenuItem.current = false; setMenuOpen((value) => !value); }}
           onKeyDown={(event) => {
@@ -1272,6 +1270,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       </p>}
       {managedDraft && <V2DraftConflict key={threadID} client={client} workspaceID={detail.thread.workspace_id ?? ""}
         state={managedDraft.state} onResolve={(token, ref) => { managedDraft.document.resolve(managedDraft.scope, token, ref); }} />}
+      {stopAction?.unconfirmed && <p className="v2-composer-caption" role="alert">
+        {t("停止请求未确认，请刷新执行状态后重试。", "The stop request is unconfirmed. Refresh execution status before retrying.")}
+      </p>}
       {executionQuery.data?.state === "stop_failed" && <p className="v2-composer-caption" role="alert">
         {t("停止尚未完成。请重试停止，确认后再发送；已受理的要求会保留。", "Stopping has not finished. Retry stopping and confirm before sending. Accepted instructions are kept.")}
       </p>}
@@ -1279,8 +1280,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         : executionQuery.data?.state === "stopping" && <p className="v2-composer-caption" role="status">{t("正在停止执行。可以继续编辑，停止完成后再发送。", "Stopping execution. You can keep editing and send when stopping finishes.")}</p>}
       {detail.recovery && <V2ThreadRunRecovery recovery={detail.recovery}
         approvalSaved={narrative.some((entry) => recoveryRepresentsNotice(entry, detail.recovery))} />}
-      {executionQuery.data?.state === "idle" && executionQuery.data.last_turn_interrupted &&
-        <p className="v2-composer-caption" role="status">{t("上次执行已中断。可以发送新消息继续，已完成的修改会保留。", "The previous execution was interrupted. Send a new message to continue; completed changes are kept.")}</p>}
+      {executionQuery.data?.state === "idle" && executionQuery.data.last_turn_interrupted && detail.recovery?.run_id !== currentRun.id &&
+        !visibleNarrative.some((entry) => entry.kind === "notice" && entry.stoppedRunID === currentRun.id) &&
+        <p className="v2-composer-caption" role="status">{t("已停止", "Stopped")}</p>}
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
         paused={working || approvalReplacesComposer || contextOpen || modalVisible || stageFullView || menuOpen} onReply={replyToPinProposal}
         onClose={() => setComposerFocusRequest({ threadID })} />}
@@ -1305,12 +1307,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         draft={draft} onDraftChange={onDraftChange}
         onStartNextMessage={working && draft && onDraftChange && submittedContents.has(draft.trim())
           ? () => onDraftChange("") : undefined}
-        onStop={() => {
-          const button = stopButtonRef.current;
-          if (!button || button.disabled) return false;
-          button.click();
-          return true;
-        }}
+        onStop={stopAction?.request} stopState={stopAction?.state}
         threadControls={(hasUnsentDraft) => <V2ThreadPlanControl client={client} threadID={threadID} runID={currentRun.id}
           active={detail.thread.status === "active"} working={working || turnSubmitting || reconciling}
           hasUnsentDraft={hasUnsentDraft}

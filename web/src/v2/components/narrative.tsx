@@ -281,7 +281,8 @@ const NarrativeRow = memo(function NarrativeRow({ client, entry, threadID, onOpe
   </li>;
   if (entry.kind === "activity") return <li hidden={hidden} className="v2-activity-turn" data-conv-entry-key={entry.id} tabIndex={-1}>
     <V2ActivityGroup client={client} entry={entry} threadID={threadID} /></li>;
-  return <li className={`v2-notice tone-${entry.tone}`} data-conv-entry-key={entry.id} tabIndex={-1}>{entry.text}</li>;
+  return <li className={`v2-notice tone-${entry.tone}`} data-conv-entry-key={entry.id} tabIndex={-1}
+    aria-live={entry.stoppedRunID ? "polite" : undefined}>{entry.text}</li>;
 }, (previous, next) => previous.client === next.client && previous.threadID === next.threadID &&
   previous.onOpenFile === next.onOpenFile &&
   previous.onBranch === next.onBranch &&

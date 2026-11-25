@@ -16,7 +16,6 @@ import * as desktopBridge from "../../lib/desktop-bridge";
 import { V2Conversation, V2FileDrawer, V2TerminalDrawer, parseProjectFileLink } from "./conversation";
 
 const composerFiles = vi.hoisted(() => ({ current: undefined as V2FileReference[] | undefined }));
-const composerStop = vi.hoisted(() => ({ current: undefined as (() => boolean) | undefined }));
 const streams = vi.hoisted(() => ({ events: "live", model: "waiting" }));
 
 vi.mock("../../hooks/use-run-event-stream", () => ({
@@ -48,19 +47,18 @@ vi.mock("../projection/narrative", async (original) => ({
 }));
 
 vi.mock("./composer", () => ({
-  V2Composer: ({ disabled, onSubmit, onStop, onStartNextMessage, threadID, fileReferenceUnavailableReason }: {
+  V2Composer: ({ disabled, onSubmit, onStartNextMessage, threadID, fileReferenceUnavailableReason }: {
     disabled: boolean;
     onSubmit: (content: string, files?: V2FileReference[]) => Promise<void>;
-    onStop?: () => boolean;
     onStartNextMessage?: () => void;
     threadID: string;
     fileReferenceUnavailableReason?: string;
-  }) => { composerStop.current = onStop; return <div data-testid="composer">
+  }) => <div data-testid="composer">
     {onStartNextMessage && <button onClick={onStartNextMessage} type="button">编写下一条</button>}
     <button data-file-reference-unavailable={fileReferenceUnavailableReason}
     disabled={disabled} onClick={() => void onSubmit(`pending-${threadID}`, composerFiles.current).catch(() => undefined)} type="button">
     发送 {threadID}
-  </button></div>; },
+  </button></div>,
 }));
 
 vi.mock("../../components/user-terminal-panel", () => ({
@@ -73,7 +71,7 @@ vi.mock("../../components/user-terminal-panel", () => ({
   </div>,
 }));
 
-afterEach(() => { cleanup(); composerFiles.current = undefined; composerStop.current = undefined; streams.events = "live"; streams.model = "waiting"; });
+afterEach(() => { cleanup(); composerFiles.current = undefined; streams.events = "live"; streams.model = "waiting"; });
 
 const workspaces = [{ id: "workspace-1", name: "Workspace 1" }] as WorkspaceView[];
 
@@ -655,61 +653,6 @@ describe("V2Conversation", () => {
     await waitFor(() => expect(screen.queryByText("状态读取失败")).not.toBeInTheDocument());
     expect(screen.queryByText("等待新消息")).not.toBeInTheDocument();
     expect(composer).not.toHaveAttribute("data-file-reference-unavailable");
-  });
-
-  it("restores actual execution control on reopen and waits for confirmed stopping", async () => {
-    let execution: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a",
-      execution_id: "thread-execution-a", state: "running", queued_messages: 0, capability_grant: false };
-    const interruptThread = vi.fn(async () => { execution = { ...execution, state: "stopping" }; return execution; });
-    const client = baseClient({ hasRunExecution: true, hasThreadExecutionRead: true,
-      threadExecution: vi.fn(async () => execution), interruptThread });
-    const view = renderConversation(client);
-    const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "停止当前执行" }));
-    expect(interruptThread).toHaveBeenCalledWith("thread-a", "thread-execution-a", expect.any(String));
-    expect(await screen.findByRole("button", { name: "正在停止" })).toBeDisabled();
-    await act(async () => {
-      execution = { version: "thread_execution.v1", thread_id: "thread-a", state: "idle",
-        queued_messages: 0, capability_grant: false };
-      view.queryClient.setQueryData(v2QueryKeys.execution("thread-a"), execution);
-    });
-    await waitFor(() => expect(screen.queryByRole("button", { name: "正在停止" })).not.toBeInTheDocument());
-    expect(screen.queryByText("正在工作")).not.toBeInTheDocument();
-  });
-
-  it("routes the composer stop action through the existing authorized button and pending state", async () => {
-    const execution: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a",
-      execution_id: "execution-a", state: "running", queued_messages: 0, capability_grant: false };
-    const pending = deferred<ThreadExecutionView>();
-    const interruptThread = vi.fn(() => pending.promise);
-    const threadExecution = vi.fn().mockResolvedValue(execution);
-    const view = renderConversation(baseClient({ hasRunExecution: true, hasThreadExecutionRead: true,
-      threadExecution, interruptThread }));
-    const button = await screen.findByRole("button", { name: "停止当前执行" });
-    expect(button).toHaveAttribute("aria-keyshortcuts", "Escape");
-    expect(button).toHaveAttribute("title", expect.stringContaining("输入框内 Esc"));
-    act(() => expect(composerStop.current?.()).toBe(true));
-    await waitFor(() => expect(interruptThread).toHaveBeenCalledWith("thread-a", "execution-a", "v2-thread-stop-execution-a"));
-    await waitFor(() => expect(screen.getByRole("button", { name: "正在停止" })).toBeDisabled());
-    act(() => expect(composerStop.current?.()).toBe(false));
-    threadExecution.mockResolvedValue({ ...execution, state: "stopping" });
-    await act(async () => pending.resolve({ ...execution, state: "stopping" }));
-    act(() => expect(composerStop.current?.()).toBe(false));
-    threadExecution.mockResolvedValue({ ...execution, state: "idle" });
-    await act(async () => view.queryClient.invalidateQueries({ queryKey: v2QueryKeys.execution("thread-a") }));
-    await waitFor(() => expect(screen.queryByRole("button", { name: "正在停止" })).not.toBeInTheDocument());
-    act(() => expect(composerStop.current?.()).toBe(false));
-    expect(interruptThread).toHaveBeenCalledOnce();
-  });
-
-  it("does not offer a composer stop action when execution permission is missing", async () => {
-    const interruptThread = vi.fn();
-    renderConversation(baseClient({ hasRunExecution: false, hasThreadExecutionRead: true, interruptThread,
-      threadExecution: vi.fn().mockResolvedValue({ version: "thread_execution.v1", thread_id: "thread-a",
-        execution_id: "execution-a", state: "running", queued_messages: 0, capability_grant: false }) }));
-    await screen.findByText("正在工作");
-    act(() => expect(composerStop.current?.()).toBe(false));
-    expect(interruptThread).not.toHaveBeenCalled();
   });
 
   it("keeps the reader's scroll position when new content arrives and restores it on return", async () => {

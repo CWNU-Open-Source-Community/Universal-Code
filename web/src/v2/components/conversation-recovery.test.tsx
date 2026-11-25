@@ -6,7 +6,7 @@ import { act, fireEvent, render as renderComponent, screen, waitFor, within } fr
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { APIRequestError, APIClient } from "../../api/client";
-import type { ApprovalPreviewView, ThreadDetailView, ThreadTranscriptItemView, WorkspaceView } from "../../api/types";
+import type { ApprovalPreviewView, ThreadDetailView, ThreadExecutionView, ThreadTranscriptItemView, WorkspaceView } from "../../api/types";
 import { V2Conversation } from "./conversation";
 import { v2QueryKeys } from "../query-keys";
 import { v2FileReferenceKey, type V2FileReference } from "./file-context";
@@ -232,8 +232,12 @@ it("docks a pending request in the editor's place and keeps the same unsent draf
     workspace_id: "", exact_target: "example.org", canonical_url: "https://example.org/", version: 1 };
   const submit = vi.fn();
   const decideApproval = vi.fn();
+  const interruptThread = vi.fn();
   const { queryClient } = renderRecovery(submit, {
     hasApprovalControl: true, decideApproval,
+    hasThreadExecutionRead: true, hasRunExecution: true, interruptThread,
+    threadExecution: vi.fn().mockResolvedValue({ version: "thread_execution.v1", thread_id: "thread-a",
+      execution_id: "execution-a", state: "running", queued_messages: 0, capability_grant: false }),
     get: vi.fn().mockResolvedValue({ ...recoveredThread("thread-a"), active_run: { id: runID, status: "waiting_approval" } }),
     approvalQueue: vi.fn().mockResolvedValue(empty),
     approvalPreview: vi.fn().mockImplementation(async (_run: string, approvalID: string) => ({ run_id: runID, approval_id: approvalID, proposal_id: item.proposal_id,
@@ -242,12 +246,15 @@ it("docks a pending request in the editor's place and keeps the same unsent draf
   });
   const user = userEvent.setup();
   const input = await screen.findByRole("textbox", { name: "继续对话" });
+  await screen.findByRole("button", { name: "停止当前执行" });
   await user.type(input, "A draft in progress");
   await act(async () => { queryClient.setQueryData(queueKey, { ...empty, items: [item] }); });
   const approvals = await screen.findByRole("region", { name: "待处理审批" });
   expect(approvals.closest(".v2-composer-dock")).toBe(input.closest(".v2-composer-dock"));
   expect(approvals.closest(".v2-conversation-scroll")).toBeNull();
   expect(input).not.toBeVisible();
+  await act(async () => { fireEvent.keyDown(input, { key: "Escape" }); });
+  expect(interruptThread).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "对话操作" }));
   await user.click(screen.getByRole("menuitem", { name: "编辑聊天草稿" }));
   await waitFor(() => expect(input).toHaveFocus());
@@ -339,6 +346,110 @@ it("continues a paused task by sending a message without a separate lifecycle ac
   await waitFor(() => expect(input).toHaveValue(""));
   expect(submit).toHaveBeenCalledTimes(1);
   expect(controlRunLifecycle).not.toHaveBeenCalled();
+});
+
+it("uses the composer's primary action for stopping and for sending a new requirement", async () => {
+  let execution: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a", execution_id: "execution-a",
+    state: "running", queued_messages: 0, capability_grant: false };
+  const idle: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a",
+    state: "idle", last_turn_interrupted: true, queued_messages: 0, capability_grant: false };
+  let completeStop!: (state: ThreadExecutionView) => void;
+  const interruptThread = vi.fn(() => new Promise<ThreadExecutionView>((resolve) => { completeStop = resolve; }));
+  let acceptFollowUp!: () => void;
+  const submit = vi.fn(() => new Promise((resolve) => {
+    acceptFollowUp = () => resolve({ steering: { id: "follow-up", status: "committed" } });
+  }));
+  const view = renderRecovery(submit, { hasThreadExecutionRead: true, hasRunExecution: true,
+    threadExecution: vi.fn(async () => execution), interruptThread });
+  const user = userEvent.setup();
+  const stop = await screen.findByRole("button", { name: "停止当前执行" });
+  const form = within(screen.getByRole("form", { name: "消息编辑器" }));
+  expect(form.getByRole("button", { name: "停止当前执行" })).toBe(stop);
+  expect(stop).toHaveTextContent(/^$/);
+  expect(stop).toHaveAttribute("aria-keyshortcuts", "Escape");
+  expect(stop).toHaveAttribute("title", expect.stringContaining("Esc"));
+  expect(stop.querySelector("svg")).toHaveAttribute("fill", "currentColor");
+  expect(form.queryByRole("button", { name: "发送消息" })).not.toBeInTheDocument();
+  const input = form.getByRole("textbox", { name: "继续对话" });
+  await user.type(input, "A new requirement");
+  expect(screen.queryByRole("button", { name: "停止当前执行" })).not.toBeInTheDocument();
+  await user.click(form.getByRole("button", { name: "发送消息" }));
+  expect(await form.findByRole("button", { name: "停止当前执行" })).toBeEnabled();
+  expect(input).toHaveValue("A new requirement");
+  await act(async () => acceptFollowUp());
+  await waitFor(() => expect(input).toHaveValue(""));
+  expect(submit).toHaveBeenCalledOnce();
+  expect(submit).toHaveBeenCalledWith("thread-a", expect.objectContaining({ content: "A new requirement" }),
+    expect.any(String));
+  await user.click(form.getByRole("button", { name: "停止当前执行" }));
+  const stopping = await form.findByRole("button", { name: "正在停止" });
+  expect(stopping).toBeDisabled();
+  await user.type(input, "Keep my draft{Escape}");
+  expect(interruptThread).toHaveBeenCalledOnce();
+  expect(interruptThread).toHaveBeenCalledWith("thread-a", "execution-a", "v2-thread-stop-execution-a");
+  expect(input).toHaveValue("Keep my draft");
+  execution = { ...execution, state: "stopping" };
+  await act(async () => completeStop(execution));
+  expect(stopping).toBeDisabled();
+  execution = idle;
+  await act(async () => { await view.queryClient.invalidateQueries({ queryKey: v2QueryKeys.execution("thread-a") }); });
+  expect(await form.findByRole("button", { name: "发送消息" })).toBeEnabled();
+  expect(await screen.findByText("已停止")).toHaveAttribute("role", "status");
+  expect(input).toHaveValue("Keep my draft");
+  expect(submit).toHaveBeenCalledOnce();
+});
+
+it("announces a recorded interruption only once when the execution receipt also reports it", async () => {
+  const detail = "本轮已停止。已完成的修改和已受理的补充要求已保留，可发送消息继续。";
+  const notice = { ...failureItem("message-a", 42, detail), activity_type: "checkpoint", title: "本轮已停止", status: "cancelled" };
+  renderRecovery(vi.fn(), { hasThreadExecutionRead: true, threadExecution: vi.fn().mockResolvedValue({
+    version: "thread_execution.v1", thread_id: "thread-a", state: "idle", last_turn_interrupted: true,
+    queued_messages: 0, capability_grant: false }),
+    getPage: vi.fn().mockResolvedValue({ items: [notice], page: { limit: 100 } }) });
+  const record = await screen.findByText("已停止", { selector: "li" });
+  expect(record).toHaveAttribute("aria-live", "polite");
+  expect(screen.getAllByText("已停止")).toHaveLength(1);
+  expect(screen.queryByText(detail)).not.toBeInTheDocument();
+});
+
+it("keeps the draft and retry available when an input Escape does not finish stopping", async () => {
+  let execution: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a", execution_id: "execution-a",
+    state: "running", queued_messages: 0, capability_grant: false };
+  const interruptThread = vi.fn(async () => {
+    execution = { ...execution, state: "stop_failed" };
+    return execution;
+  });
+  const submit = vi.fn();
+  renderRecovery(submit, { hasThreadExecutionRead: true, hasRunExecution: true, interruptThread,
+    threadExecution: vi.fn(async () => execution) });
+  const user = userEvent.setup();
+  const input = await screen.findByRole("textbox", { name: "继续对话" });
+  await user.type(input, "Unsaved instruction");
+  expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
+  act(() => {
+    fireEvent.keyDown(input, { key: "Escape" });
+    fireEvent.keyDown(input, { key: "Escape" });
+  });
+  const retry = await screen.findByRole("button", { name: "重试停止" });
+  expect(retry.closest("form")).toContainElement(input);
+  expect(interruptThread).toHaveBeenCalledOnce();
+  await user.click(retry);
+  await waitFor(() => expect(interruptThread).toHaveBeenCalledTimes(2));
+  expect(interruptThread.mock.calls[1]).toEqual(interruptThread.mock.calls[0]);
+  expect(input).toHaveValue("Unsaved instruction");
+  expect(submit).not.toHaveBeenCalled();
+});
+
+it("leaves the send action and editor Escape alone without run control", async () => {
+  const interruptThread = vi.fn();
+  renderRecovery(vi.fn(), { hasThreadExecutionRead: true, hasRunExecution: false, interruptThread,
+    threadExecution: vi.fn().mockResolvedValue({ version: "thread_execution.v1", thread_id: "thread-a",
+      execution_id: "execution-a", state: "running", queued_messages: 0, capability_grant: false }) });
+  await screen.findByText("正在工作");
+  expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "停止当前执行" })).not.toBeInTheDocument();
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "继续对话" }), { key: "Escape" });
+  expect(interruptThread).not.toHaveBeenCalled();
 });
 
 it.each(["stopping", "stop_failed"] as const)("keeps a draft editable while %s prevents a new submission", async (state) => {
