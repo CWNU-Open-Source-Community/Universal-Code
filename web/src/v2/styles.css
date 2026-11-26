@@ -944,12 +944,66 @@
 .v2-header-actions .v2-thread-menu button > svg { flex: none; }
 .v2-header-actions .v2-thread-menu button:focus-visible { outline-offset: -2px; }
 
-@container conversation (min-width: 721px) and (max-width: 1160px) {
-  .v2-task-workbench > button:not(:nth-child(2)) .v2-task-nav-label,
-  .v2-task-workflows > button:not(:first-child) .v2-task-nav-label {
-    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+@container conversation (width > 720px) {
+  .v2-conversation-main-column > .v2-conversation-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    margin: 6px 16px 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
-  .v2-task-workbench > button:not(:nth-child(2)), .v2-task-workflows > button:not(:first-child) { width: 30px; padding: 0; }
+  /* The capsule spans the row. Its last grid track reserves the actual width of the actions. */
+  .v2-conversation-header > .v2-chat-heading {
+    grid-area: 1 / 1 / 2 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    align-self: stretch;
+    min-height: 44px;
+    padding: 6px 16px;
+    border: 1px solid var(--v2-border-strong);
+    border-radius: 20px;
+    background: var(--v2-main-surface);
+    box-shadow: var(--prayu-elevation-panel);
+  }
+  .v2-conversation-header > .v2-header-actions {
+    grid-area: 1 / 3;
+    justify-self: end;
+    margin-block: 7px;
+    margin-inline-end: 17px;
+    z-index: 1;
+  }
+  .v2-task-navigation {
+    grid-area: 2 / 1 / 3 / -1;
+    gap: 12px;
+    padding: 8px 15px;
+    border: 1px solid var(--v2-border);
+    border-radius: 14px;
+    background: var(--v2-main-surface);
+    box-shadow: inset 0 1px 0 var(--prayu-glass-highlight);
+  }
+  .v2-task-workbench, .v2-task-workflows { min-width: 0; gap: 4px; }
+  .v2-task-workflows { padding-inline-start: 12px; }
+  .v2-task-navigation button {
+    min-width: 0;
+    min-height: 32px;
+    flex-shrink: 1;
+    padding: 5px 9px;
+    border-radius: 7px;
+  }
+  .v2-task-nav-label { overflow: hidden; text-overflow: ellipsis; }
+  .v2-task-navigation button[aria-pressed="true"] {
+    border-color: var(--v2-border);
+    background: color-mix(in srgb, var(--v2-accent) 8%, var(--v2-control));
+  }
+  @media not (prefers-reduced-transparency: reduce) {
+    :where([data-prayu-theme="glass"]) :is(.v2-conversation-header > .v2-chat-heading, .v2-task-navigation) {
+      -webkit-backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+      backdrop-filter: blur(var(--prayu-glass-blur, 5px));
+    }
+  }
 }
 
 @container conversation (max-width: 720px) {

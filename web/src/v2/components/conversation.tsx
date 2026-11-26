@@ -300,6 +300,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
   const fullViewShortcutLabel = fullViewShortcut ? shortcutLabel(fullViewShortcut) : "";
   const [contextOpen, setContextOpen] = useState(false);
   const [roomForDock, setRoomForDock] = useState(false);
+  const [wideHeader, setWideHeader] = useState(false);
   const [compactPaneOpen, setCompactPaneOpen] = useState(false);
   const [dockResizing, setDockResizing] = useState(false);
   const [liveDockWidth, setLiveDockWidth] = useState<number | null>(null);
@@ -825,7 +826,9 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     const container = conversationRef.current;
     if (!container) return;
     const shell = container.closest<HTMLElement>(".v2-shell");
+    const column = mainColumnRef.current;
     const measure = () => {
+      if (column) setWideHeader(column.getBoundingClientRect().width > 720);
       const fits = (shell ?? container).clientWidth > (shell?.classList.contains("has-sidebar") ? 960 : 720);
       if (!fits && workbenchSlot.current?.contains(document.activeElement)) {
         workspaceFocusTarget.current?.focus();
@@ -837,6 +840,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
     const observer = new ResizeObserver(measure);
     observer.observe(container);
     if (shell) observer.observe(shell);
+    if (column) observer.observe(column);
     return () => observer.disconnect();
   }, [detailQuery.isSuccess]);
 
@@ -1041,12 +1045,8 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       workspaceName={workspace?.name ?? t("本地工作区", "Local workspace")}
     />
   );
-  return <section className="v2-conversation" ref={conversationRef}>
-    <div className={`v2-conversation-stage${stageFullView ? " is-full-view" : ""}`}>
-    <div className="v2-conversation-main-column" ref={mainColumnRef} aria-hidden={stageFullView || undefined} inert={stageFullView}>
-    <header className="v2-conversation-header">
-      <div className="v2-chat-heading"><MessageSquare aria-hidden="true" size={16} /><h1 title={detail.thread.title}>{detail.thread.title}</h1></div>
-    <nav className="v2-task-navigation" aria-label={t("任务工作区", "Task workspace")}>
+  const taskNavigation = (
+    <nav key="task-navigation" className="v2-task-navigation" aria-label={t("任务工作区", "Task workspace")}>
       <div className="v2-task-workbench" role="group" aria-label={t("对话与工作台", "Conversation and workbench")}>
         <button aria-pressed={!workspaceVisible && !contextOpen}
           onClick={() => {
@@ -1113,6 +1113,13 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
           <Microscope aria-hidden="true" size={16} /><span className="v2-task-nav-label">{t("执行记录", "Execution records")}</span></button>
       </div>
     </nav>
+  );
+  return <section className="v2-conversation" ref={conversationRef}>
+    <div className={`v2-conversation-stage${stageFullView ? " is-full-view" : ""}`}>
+    <div className="v2-conversation-main-column" ref={mainColumnRef} aria-hidden={stageFullView || undefined} inert={stageFullView}>
+    <header className="v2-conversation-header">
+      <div className="v2-chat-heading"><MessageSquare aria-hidden="true" size={16} /><h1 title={detail.thread.title}>{detail.thread.title}</h1></div>
+      {!wideHeader && taskNavigation}
       <div className="v2-header-actions">
         <V2ThreadExecutionControl client={client} execution={executionQuery.data}
           threadID={threadID} stopButtonRef={stopButtonRef} />
@@ -1165,6 +1172,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
             <Microscope aria-hidden="true" size={15} />{t("执行记录", "Execution records")}</button>
         </div>}
       </div>
+      {wideHeader && taskNavigation}
     </header>
     <div className="v2-conversation-viewport">
     <div className="v2-conversation-scroll" ref={scrollRef} onScroll={scrollMemory.onScroll}>
