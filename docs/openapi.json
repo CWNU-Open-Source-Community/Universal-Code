@@ -34604,7 +34604,7 @@
       "get": {
         "operationId": "listThreadTranscript",
         "summary": "Read the unified Thread transcript",
-        "description": "Returns the newest bounded page of one Go-owned narrative projection across immutable Run boundaries, public messages, allowlisted Harness facts, structured tool item stages, approvals, verification, checkpoints, and delivery. The opaque keyset cursor pages older records without shifting when the active Run appends events or a successor Run is created. Tool arguments, raw output, provider bytes, secrets, and private reasoning are never included.",
+        "description": "Returns the newest bounded page of one Go-owned narrative projection across immutable Run boundaries, public messages, allowlisted Harness facts, structured tool item stages, approvals, verification, checkpoints, and delivery. The opaque keyset cursor pages older records without shifting when the active Run appends events or a successor Run is created. Send Prefer: include-agent-identity to include the recorded model name and specialist ID on model calls. Tool arguments, raw output, provider bytes, secrets, and private reasoning are never included.",
         "tags": [
           "Threads"
         ],
@@ -38726,6 +38726,9 @@
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
+          },
+          "active_attempt_live": {
+            "type": "boolean"
           },
           "allowed_read_paths": {
             "items": {
@@ -74636,6 +74639,11 @@
             ],
             "type": "string"
           },
+          "agent_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
           "attachments": {
             "items": {
               "$ref": "#/components/schemas/WorkspaceFileAttachment"
@@ -74714,6 +74722,9 @@
           "model_attempt": {
             "format": "int32",
             "type": "integer"
+          },
+          "model_name": {
+            "type": "string"
           },
           "peer_message": {
             "$ref": "#/components/schemas/ThreadPeerMessage"

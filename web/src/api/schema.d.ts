@@ -5859,7 +5859,7 @@ export interface paths {
         };
         /**
          * Read the unified Thread transcript
-         * @description Returns the newest bounded page of one Go-owned narrative projection across immutable Run boundaries, public messages, allowlisted Harness facts, structured tool item stages, approvals, verification, checkpoints, and delivery. The opaque keyset cursor pages older records without shifting when the active Run appends events or a successor Run is created. Tool arguments, raw output, provider bytes, secrets, and private reasoning are never included.
+         * @description Returns the newest bounded page of one Go-owned narrative projection across immutable Run boundaries, public messages, allowlisted Harness facts, structured tool item stages, approvals, verification, checkpoints, and delivery. The opaque keyset cursor pages older records without shifting when the active Run appends events or a successor Run is created. Send Prefer: include-agent-identity to include the recorded model name and specialist ID on model calls. Tool arguments, raw output, provider bytes, secrets, and private reasoning are never included.
          */
         get: operations["listThreadTranscript"];
         put?: never;
@@ -6700,6 +6700,7 @@ export interface components {
         };
         AgentNodeView: {
             active_attempt_id?: string;
+            active_attempt_live?: boolean;
             allowed_read_paths?: string[];
             /** Format: int32 */
             child_limit: number;
@@ -15681,6 +15682,7 @@ export interface components {
             activity_summary?: components["schemas"]["ThreadActivitySummaryView"];
             /** @enum {string} */
             activity_type: "message" | "search" | "read" | "edit" | "execute" | "verify" | "approval" | "checkpoint" | "delivery";
+            agent_id?: string;
             attachments?: components["schemas"]["WorkspaceFileAttachment"][];
             attempt_id?: string;
             boundary_reason?: string;
@@ -15700,6 +15702,7 @@ export interface components {
             model?: string;
             /** Format: int32 */
             model_attempt?: number;
+            model_name?: string;
             peer_message?: components["schemas"]["ThreadPeerMessage"];
             /** Format: int32 */
             position?: number;

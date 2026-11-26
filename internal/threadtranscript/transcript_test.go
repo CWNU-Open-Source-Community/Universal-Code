@@ -50,6 +50,37 @@ func TestBuildAttributesDurableReplyWithLatestModelCallAttempt(t *testing.T) {
 	}
 }
 
+func TestBuildKeepsSpecialistModelCallsWithTheirAgent(t *testing.T) {
+	now := time.Now().UTC()
+	root := eventSource("run-1", 1, 1, events.ModelStartedEvent,
+		`{"provider":"gateway","model":"gpt-5","attempt_id":"root-attempt","model_attempt":1}`, now)
+	root.Event.Source = "model_gateway"
+	child := eventSource("run-1", 1, 2, events.ModelStartedEvent,
+		`{"provider":"gateway","model":"claude-sonnet-5","agent_id":"child-id","agent_attempt_id":"child-attempt","model_attempt":1}`, now)
+	child.Event.Source = "specialist_model_gateway"
+	cancel := eventSource("run-1", 1, 3, events.ModelCancelObservedEvent,
+		`{"agent_id":"child-id","agent_attempt_id":"child-attempt","model_attempt":1}`, now)
+	cancel.Event.Source = "specialist_runner"
+	reply := eventSource("run-1", 1, 4, events.SessionMessageEvent,
+		`{"role":"assistant","content":"the root reply","source_kind":"model_response","instruction_authorized":false}`, now)
+	providerOnly := eventSource("run-1", 1, 5, events.ModelFailedEvent, `{"provider":"deepseek"}`, now)
+	items, err := Build("thread-1", []Source{root, child, cancel, reply, providerOnly})
+	if err != nil || len(items) != 5 {
+		t.Fatalf("projected items=%v, err=%v", items, err)
+	}
+	if items[1].ModelName != "claude-sonnet-5" || items[2].Status != "cancelled" {
+		t.Fatalf("lost specialist model or cancellation: %v", items[1:3])
+	}
+	for _, item := range items[1:3] {
+		if item.AgentID != "child-id" || item.AttemptID != "child-attempt" || item.ModelAttempt != 1 {
+			t.Fatalf("lost specialist attempt: %+v", item)
+		}
+	}
+	if items[3].Model != "gateway / gpt-5" || items[3].AttemptID != "root-attempt" || items[4].ModelName != "" {
+		t.Fatalf("incorrect model attribution: %v", items[3:])
+	}
+}
+
 func TestBuildAttributesDurableReplyWithMultipleModelAttempts(t *testing.T) {
 	now := time.Date(2026, 10, 28, 2, 0, 0, 0, time.UTC)
 	// Realistic supervisor event sequence:

@@ -249,8 +249,19 @@ func (a *API) threadTranscript(request *http.Request, threadID string) (any, *Pa
 	detailService := application.NewThreadActivityDetailService(a.store).
 		WithCommandRuntimeSource(a.commandActivitySource)
 	summaries := make(map[string]*ThreadActivitySummaryView)
+	includeAgentIdentity := false
+	for _, preference := range strings.Split(request.Header.Get("Prefer"), ",") {
+		if strings.EqualFold(strings.TrimSpace(preference), "include-agent-identity") {
+			includeAgentIdentity = true
+			break
+		}
+	}
 	for index := range items {
 		views[index] = threadTranscriptItemView(items[index])
+		// Previous transcript.v1 clients reject unknown fields.
+		if !includeAgentIdentity {
+			views[index].AgentID, views[index].ModelName = "", ""
+		}
 		if items[index].Source == "peer" && peerStore != nil {
 			peer, lookupErr := peerStore.GetThreadPeerMessage(request.Context(), items[index].SourceRef)
 			if lookupErr != nil {

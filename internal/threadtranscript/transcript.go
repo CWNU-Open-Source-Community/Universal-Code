@@ -91,9 +91,11 @@ type Item struct {
 	Status                string
 	Verifiable            bool
 	InstructionAuthorized bool
+	AgentID               string
 	AttemptID             string
 	ModelAttempt          int
 	Model                 string
+	ModelName             string
 	ToolRound             int
 	ToolName              string
 	StreamResponseID      string
@@ -289,7 +291,7 @@ func Build(threadID string, source []Source) ([]Item, error) {
 			// The final durable reply is a SessionMessageEvent without attempt
 			// or model identity; inherit the run's latest producing model call so
 			// the web narrative attributes the reply to the exact model that generated it.
-			if projected.Kind == runactivity.KindModelCall {
+			if projected.Kind == runactivity.KindModelCall && item.AgentID == "" {
 				call := modelCallByRun[record.RunID]
 				if projected.ModelAttempt != 0 && projected.ModelAttempt != call.modelAttempt {
 					call = producingModelCall{
@@ -476,8 +478,21 @@ func projectActivity(source Source, projected runactivity.Item) Item {
 		Source: projected.Source, Title: projected.Title, Detail: projected.Detail,
 		Status: projected.Status, Verifiable: projected.Verifiable,
 		InstructionAuthorized: projected.InstructionAuthorized,
-		AttemptID:             projected.AttemptID, ModelAttempt: projected.ModelAttempt, Model: projected.Model,
+		AttemptID:             projected.AttemptID, ModelAttempt: projected.ModelAttempt, Model: projected.Model, ModelName: projected.ModelName,
 		ToolRound: projected.ToolRound, Durable: true, CreatedAt: projected.CreatedAt,
+	}
+	if projected.Kind == runactivity.KindModelCall && (source.Event.Source == "specialist_model_gateway" ||
+		source.Event.Type == events.ModelCancelRequestedEvent && source.Event.Source == "control_api" ||
+		source.Event.Type == events.ModelCancelObservedEvent && source.Event.Source == "specialist_runner") {
+		var child struct {
+			AgentID      string `json:"agent_id"`
+			AttemptID    string `json:"agent_attempt_id"`
+			ModelAttempt int    `json:"model_attempt"`
+		}
+		if json.Unmarshal([]byte(source.Event.PayloadJSON), &child) == nil && child.AgentID != "" && child.AttemptID != "" {
+			item.AgentID, item.AttemptID = safeIdentity(child.AgentID), safeIdentity(child.AttemptID)
+			item.ModelAttempt = child.ModelAttempt
+		}
 	}
 	if (source.Event.Type == events.ThreadTurnFailedEvent && source.Event.Source == "thread_turn") ||
 		(source.Event.Type == events.RunExecutionHandoffCompletedEvent && source.Event.Source == "run_execution_handoff") {
