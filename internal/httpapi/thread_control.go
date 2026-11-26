@@ -258,7 +258,7 @@ func (a *API) threadTranscript(request *http.Request, threadID string) (any, *Pa
 	}
 	for index := range items {
 		views[index] = threadTranscriptItemView(items[index])
-		// Previous transcript.v1 clients reject unknown fields.
+		// Older transcript clients reject unknown fields.
 		if !includeAgentIdentity {
 			views[index].AgentID, views[index].ModelName = "", ""
 		}
