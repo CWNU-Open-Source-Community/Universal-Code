@@ -109,7 +109,28 @@ test("normal entry reads a real project file and retains the task after reload",
       await expect(page.getByText("Read README.md: JOURNEY_FILE_PROOF_2026", { exact: true })).toBeVisible();
       expect(page.url()).toBe(taskURL);
     });
+    const heading = page.locator(".v2-conversation-header > .v2-chat-heading");
+    const navigation = page.getByRole("navigation", { name: "任务工作区" });
+    for (const colorScheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme });
+      await expect(page.locator("html")).toHaveAttribute("data-prayu-theme", colorScheme);
+      await expect(heading).toHaveCSS("border-top-left-radius", "20px");
+      await expect(navigation).toHaveCSS("border-top-left-radius", "14px");
+      const titleRow = (await heading.boundingBox())!;
+      const toolRow = (await navigation.boundingBox())!;
+      expect(toolRow.x).toBe(titleRow.x);
+      expect(toolRow.y - (titleRow.y + titleRow.height)).toBe(8);
+    }
+    await page.getByRole("button", { name: "对话操作" }).press("ArrowDown");
+    await expect(page.getByRole("menuitem", { name: "归档对话" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(navigation.getByRole("button", { name: "对话", exact: true })).toBeFocused();
+
     await narrowConversation(page);
+    const compactTitle = (await heading.boundingBox())!;
+    const compactTools = (await navigation.boundingBox())!;
+    expect(compactTools.x).toBeGreaterThanOrEqual(compactTitle.x + compactTitle.width);
+    expect(compactTools.y).toBeLessThan(compactTitle.y + compactTitle.height);
     await withinViewport(page.getByRole("textbox", { name: "继续对话" }), page);
     await withinViewport(page.getByRole("button", { name: "发送消息", exact: true }), page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);

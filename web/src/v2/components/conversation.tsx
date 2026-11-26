@@ -1132,7 +1132,12 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
               (event.relatedTarget !== menuTriggerRef.current || tabbingFromMenu.current)) setMenuOpen(false);
           }}
           onKeyDown={(event) => {
-            if (event.key === "Tab") { tabbingFromMenu.current = true; return; }
+            if (event.key === "Tab") {
+              tabbingFromMenu.current = true;
+              // Continue from the trigger in the header's current visual order.
+              if (!event.shiftKey) menuTriggerRef.current?.focus();
+              return;
+            }
             if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
             event.preventDefault();
             const items = conversationMenuItems(event.currentTarget);
