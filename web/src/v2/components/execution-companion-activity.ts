@@ -67,11 +67,25 @@ function rootState(execution?: ThreadExecutionView, cancelRequested = false): Co
   }
 }
 
+function compareTimestamps(left: string, right: string) {
+  const millis = Date.parse(left) - Date.parse(right);
+  if (millis !== 0) return millis;
+  // Go can emit multiple events within a millisecond. Date.parse discards those digits.
+  const fraction = (value: string) => Number((/\.(\d+)/.exec(value)?.[1] ?? "").padEnd(9, "0"));
+  return fraction(left) - fraction(right);
+}
+
+function currentAttempt(node?: AgentNodeView, latest?: ThreadTranscriptItemView) {
+  if (!node?.active_attempt_id) return undefined;
+  if (latest?.attempt_id && latest.attempt_id !== node.active_attempt_id &&
+    compareTimestamps(latest.created_at, node.updated_at) > 0) return latest.attempt_id;
+  return node.active_attempt_id;
+}
+
 function superseded(call: PublicModelStreamSnapshot["call"], node?: AgentNodeView, latest?: ThreadTranscriptItemView) {
-  const started = Date.parse(call.started_at);
-  if (node?.active_attempt_id && node.active_attempt_id !== call.attempt_id && Date.parse(node.updated_at) >= started) return true;
+  if (node?.active_attempt_id && node.active_attempt_id !== call.attempt_id && compareTimestamps(node.updated_at, call.started_at) >= 0) return true;
   if (!latest) return false;
-  if (latest.attempt_id !== call.attempt_id) return Date.parse(latest.created_at) >= started;
+  if (latest.attempt_id !== call.attempt_id) return compareTimestamps(latest.created_at, call.started_at) >= 0;
   return (latest.model_attempt ?? 0) > call.model_attempt || latest.model_attempt === call.model_attempt &&
     ["completed", "failed", "cancelled"].includes(latest.status ?? "");
 }
@@ -85,7 +99,7 @@ function specialistState(node: AgentNodeView, current: boolean, status: Companio
   if (status === "waiting" || status === "paused") return status;
   if (status || node.status === "ready") return "idle";
   if (node.status === "waiting") return "waiting";
-  if (!node.active_attempt_live || !node.active_attempt_id) return "unknown";
+  if (!node.active_attempt_live || !node.active_attempt_id || (receipt && receipt.attempt_id !== node.active_attempt_id)) return "unknown";
   return receipt?.status === "cancelling" || receipt?.status === "cancelled" ? "stopping" : "working";
 }
 
@@ -121,11 +135,11 @@ export function projectExecutionCompanions({ threadID, detail, selectedRunID, ex
     ? liveSnapshot.call : undefined;
   let primaryState = status ?? (current ? rootState(observed, live?.cancel_requested) : "idle");
   if (current && (primaryState === "working" || primaryState === "idle") && !live && root && root.status !== "running" &&
-    (!latestRoot || Date.parse(root.updated_at) >= Date.parse(latestRoot.created_at))) {
+    (!latestRoot || compareTimestamps(root.updated_at, latestRoot.created_at) >= 0)) {
     primaryState = root.status === "ready" ? "idle" : root.status;
   }
   const executing = primaryState === "working" || primaryState === "stopping";
-  const activeAttempt = executing ? root?.active_attempt_id : undefined;
+  const activeAttempt = executing ? currentAttempt(root, latestRoot) : undefined;
   const rootCall = lastCall(rootRecords, activeAttempt, executing && !activeAttempt);
   // A qualified route can identify the idle selection. A running model needs a call of its own.
   const route = current && !status && !executing ? run.config?.model_route ?? "" : "";
@@ -136,7 +150,8 @@ export function projectExecutionCompanions({ threadID, detail, selectedRunID, ex
   for (const id of new Set([...children.keys(), ...records.keys()])) {
     if (!id) continue;
     const node = children.get(id);
-    const call = lastCall(records.get(id), current && !status ? node?.active_attempt_id : undefined);
+    const agentRecords = records.get(id);
+    const call = lastCall(agentRecords, current && !status ? currentAttempt(node, agentRecords?.at(-1)) : undefined);
     result.push({ id, role: "specialist", model: call.model, family: familyOf(call.model),
       state: node ? specialistState(node, current, status, call.latest) : "unknown" });
   }

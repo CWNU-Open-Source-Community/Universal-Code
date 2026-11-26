@@ -106,6 +106,30 @@ describe("execution office participants", () => {
     expect(agent).toMatchObject({ family: "gemini", model: "gemini-2.5-pro", state: "working" });
   });
 
+  it("shows the root's newer recorded model while the graph still points to its previous attempt", () => {
+    const durableItems = [
+      call(1, { model_name: "gpt-5" }),
+      call(2, { attempt_id: "next-attempt", model_name: "gemini-2.5-pro", created_at: "2026-11-26T00:00:00.0004Z" }),
+    ];
+    const [agent] = projectExecutionCompanions({ ...base, durableItems, liveStatus: "live", liveSnapshot: live });
+    expect(agent).toMatchObject({ family: "gemini", model: "gemini-2.5-pro", state: "working" });
+
+    const newerRoot = { ...root, active_attempt_id: "third-attempt", updated_at: "2026-11-26T00:00:00.0006Z" };
+    const [pending] = projectExecutionCompanions({ ...base, durableItems, graph: { ...graph, nodes: [newerRoot] } });
+    expect(pending).toMatchObject({ family: "unknown", model: "", state: "working" });
+  });
+
+  it("follows a specialist's new model but waits for its matching execution lease before animating it", () => {
+    const child = node("child", "specialist");
+    const durableItems = [
+      call(1, { agent_id: child.id, attempt_id: child.active_attempt_id, model_name: "claude-sonnet-4" }),
+      call(2, { agent_id: child.id, attempt_id: "next-attempt", model_name: "deepseek-chat", created_at: "2026-11-26T00:00:01Z" }),
+    ];
+    const team = (agent: AgentNodeView) => projectExecutionCompanions({ ...base, durableItems, graph: { ...graph, nodes: [root, agent] } });
+    expect(team(child)[1]).toMatchObject({ family: "deepseek", state: "unknown" });
+    expect(team({ ...child, active_attempt_id: "next-attempt" })[1]).toMatchObject({ family: "deepseek", state: "working" });
+  });
+
   it("uses only the selected historical run's records and never animates an old attempt", () => {
     const older: RunView = { ...run, id: "older", status: "completed", config: { ...run.config, model_route: "gateway/gpt-5" } };
     const previous = { ...base, selectedRunID: "older", detail: { ...detail, runs: [{ run: older, ordinal: 1, created_at: time }] },
