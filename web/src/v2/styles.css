@@ -947,7 +947,6 @@
 @container conversation (width > 720px) {
   .v2-conversation-main-column > .v2-conversation-header {
     grid-template-columns: auto minmax(0, 1fr) auto;
-    reading-flow: grid-rows;
     gap: 8px;
     margin: 6px 16px 0;
     padding: 0;

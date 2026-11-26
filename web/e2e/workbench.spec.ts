@@ -121,16 +121,22 @@ test("normal entry reads a real project file and retains the task after reload",
       expect(toolRow.x).toBe(titleRow.x);
       expect(toolRow.y - (titleRow.y + titleRow.height)).toBe(8);
     }
-    await page.getByRole("button", { name: "对话操作" }).press("ArrowDown");
+    const actions = page.getByRole("button", { name: "对话操作" });
+    const firstTool = navigation.getByRole("button", { name: "对话", exact: true });
+    await actions.press("Tab");
+    await expect(firstTool).toBeFocused();
+    await actions.press("ArrowDown");
     await expect(page.getByRole("menuitem", { name: "归档对话" })).toBeFocused();
     await page.keyboard.press("Tab");
-    await expect(navigation.getByRole("button", { name: "对话", exact: true })).toBeFocused();
+    await expect(firstTool).toBeFocused();
 
     await narrowConversation(page);
     const compactTitle = (await heading.boundingBox())!;
     const compactTools = (await navigation.boundingBox())!;
     expect(compactTools.x).toBeGreaterThanOrEqual(compactTitle.x + compactTitle.width);
     expect(compactTools.y).toBeLessThan(compactTitle.y + compactTitle.height);
+    await navigation.getByRole("button").last().press("Tab");
+    await expect(actions).toBeFocused();
     await withinViewport(page.getByRole("textbox", { name: "继续对话" }), page);
     await withinViewport(page.getByRole("button", { name: "发送消息", exact: true }), page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
