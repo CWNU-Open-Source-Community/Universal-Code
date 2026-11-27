@@ -269,8 +269,8 @@ func TestReadFileToolMissingFileNamesPathCleanly(t *testing.T) {
 	if result.Stderr != "file does not exist in this workspace: nope.txt" {
 		t.Fatalf("stderr must name the workspace-relative path: %q", result.Stderr)
 	}
-	if strings.Contains(result.Stderr, root) {
-		t.Fatalf("stderr must not leak the host workspace root: %q", result.Stderr)
+	if err.Error() != result.Stderr {
+		t.Fatalf("returned error must match the workspace-relative message: %v", err)
 	}
 	if !errors.Is(err, iofs.ErrNotExist) {
 		t.Fatalf("missing-file cause must stay unwrappable: %v", err)
@@ -287,8 +287,8 @@ func TestListWorkspaceToolMissingDirNamesPathCleanly(t *testing.T) {
 	if result.Stderr != "directory does not exist in this workspace: nope-dir" {
 		t.Fatalf("stderr must name the workspace-relative path: %q", result.Stderr)
 	}
-	if strings.Contains(result.Stderr, root) {
-		t.Fatalf("stderr must not leak the host workspace root: %q", result.Stderr)
+	if err.Error() != result.Stderr {
+		t.Fatalf("returned error must match the workspace-relative message: %v", err)
 	}
 	if !errors.Is(err, iofs.ErrNotExist) {
 		t.Fatalf("missing-directory cause must stay unwrappable: %v", err)
