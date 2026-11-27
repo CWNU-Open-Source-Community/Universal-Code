@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -171,14 +172,23 @@ var commandSubcommands = map[string][]string{
 
 	// Two-level groups: "command group" keys complete the first argument
 	// after the group, mirroring the nested dispatch switches.
-	"context instructions": {"scaffold"},
-	"context memory":       {"create", "delete", "disable", "edit", "enable", "export", "list", "show"},
-	"run delivery":         {"checkpoint", "list", "record", "report", "show"},
-	"run schedule":         {"cancel", "create", "pause", "resume"},
-	"workspace checkpoint": {"capture", "fork", "preview", "redo", "rewind", "timeline", "undo"},
-	"run fanout":           {"execute", "execution", "plan", "report", "show"},
-	"run plan":             {"choose", "selection", "show"},
-	"run delegation":       {"apply", "approve", "continue", "reject", "schedule", "show"},
+	"approval grant":            {"create", "list", "revoke", "show"},
+	"mcp client":                {"calls", "inputs", "list", "refresh", "respond", "review", "show", "stage"},
+	"mcp credential":            {"delete", "oauth-discover", "oauth-login", "oauth-status", "set", "status"},
+	"run execution-interaction": {"set"},
+	"run execution-permission":  {"set"},
+	"run execution-profile":     {"set"},
+	"run steer":                 {"cancel", "drain", "enqueue", "list", "show"},
+	"run wake":                  {"cancel", "consume", "schedule", "show"},
+	"skill candidate":           {"approve", "import", "list", "reject", "show"},
+	"context instructions":      {"scaffold"},
+	"context memory":            {"create", "delete", "disable", "edit", "enable", "export", "list", "show"},
+	"run delivery":              {"checkpoint", "list", "record", "report", "show"},
+	"run schedule":              {"cancel", "create", "list", "pause", "resume", "show", "tick"},
+	"workspace checkpoint":      {"capture", "fork", "preview", "redo", "rewind", "timeline", "undo"},
+	"run fanout":                {"execute", "execution", "plan", "report", "show"},
+	"run plan":                  {"choose", "selection", "show"},
+	"run delegation":            {"apply", "approve", "continue", "reject", "schedule", "show"},
 	"run sandbox": {
 		"begin", "cancel", "candidate", "candidate-show",
 		"candidates", "cleanup", "docker-admit", "docker-attempt-resume",
@@ -212,7 +222,9 @@ var commandFlags = map[string][]string{
 	"analyzer execute":                {"--confirm", "--file", "--json", "--media-type", "--run", "--text"},
 	"api openapi":                     {"--output"},
 	"api serve":                       {"--browser-headed", "--code-intel-config", "--enable-batch-validation-execution", "--enable-browser-cdp-control", "--enable-danger-full-access", "--enable-docker-execution", "--enable-file-edit-proposals", "--enable-full-cdp-debug", "--enable-git-advanced", "--enable-github-review", "--enable-permission-control", "--enable-provider-credentials", "--enable-scheduled-job-worker", "--enable-wake-worker", "--enable-workspace-import", "--enable-workspace-sandbox", "--git-worktree-root", "--listen", "--ui-dir"},
-	"approval grant":                  {"--by", "--idempotency-key", "--reason", "--session", "--tool", "--workspace"},
+	"approval grant create":           {"--by", "--idempotency-key", "--reason", "--session", "--tool", "--workspace"},
+	"approval grant list":             {"--limit", "--run", "--session", "--status", "--tool"},
+	"approval grant revoke":           {"--by", "--idempotency-key", "--reason"},
 	"approval list":                   {"--limit", "--run", "--session", "--status", "--tool"},
 	"artifact list":                   {"--limit", "--run", "--source", "--stream"},
 	"artifact read":                   {"--max-bytes"},
@@ -241,11 +253,19 @@ var commandFlags = map[string][]string{
 	"edit propose":                    {"--content", "--content-file", "--path", "--session", "--workspace"},
 	"edit review-approve":             {"--confirm-full", "--enable-danger-full-access", "--enable-permission-control"},
 	"edit review-deny":                {"--confirm-full", "--enable-danger-full-access", "--enable-permission-control"},
-	"exec":                            {"--attach", "--confirm-full", "--continue", "--enable-danger-full-access", "--enable-permission-control", "--image", "--instructions", "--json", "--max-tokens", "--max-tool-calls", "--max-turns", "--output-last-message", "--profile", "--route", "--stdin", "--stream", "--timeout", "--workspace"},
+	"exec":                            {"--attach", "--confirm-full", "--continue", "--enable-danger-full-access", "--enable-permission-control", "--image", "--instructions", "--json", "--max-cost-usd", "--max-tokens", "--max-tool-calls", "--max-turns", "--output-last-message", "--profile", "--route", "--stdin", "--stream", "--timeout", "--workspace"},
 	"headless events":                 {"--after-sequence", "--follow", "--max-events", "--poll-interval", "--timeout"},
 	"hooks list":                      {"--json"},
-	"mcp client":                      {"--file", "--limit", "--run", "--workspace"},
-	"mcp credential":                  {"--confirm", "--from-env"},
+	"mcp client calls":                {"--limit", "--run"},
+	"mcp client inputs":               {"--api", "--run"},
+	"mcp client list":                 {"--limit", "--run", "--workspace"},
+	"mcp client respond":              {"--api", "--input", "--run"},
+	"mcp client review":               {"--action", "--by", "--capability-fingerprint", "--descriptor-fingerprint"},
+	"mcp client stage":                {"--file"},
+	"mcp credential delete":           {"--confirm"},
+	"mcp credential oauth-discover":   {"--confirm"},
+	"mcp credential oauth-login":      {"--callback-port", "--client-id", "--client-id-mode", "--client-secret-env", "--confirm", "--issuer"},
+	"mcp credential set":              {"--confirm", "--from-env"},
 	"mcp serve":                       {"--call-timeout", "--max-concurrent", "--run", "--session-ttl", "--workspace"},
 	"note create":                     {"--category", "--content", "--content-file", "--evidence", "--owner", "--owner-agent", "--pin", "--source", "--tag", "--visibility"},
 	"note list":                       {"--category", "--limit", "--owner", "--owner-agent", "--pinned", "--status", "--tag", "--visibility"},
@@ -263,7 +283,7 @@ var commandFlags = map[string][]string{
 	"report finding attach":           {"--note", "--operation-key", "--operator"},
 	"report finding fix":              {"--operation-key", "--operator", "--reason"},
 	"report show":                     {"--format"},
-	"run create":                      {"--allow-target", "--browser-network", "--browser-origin", "--ignore-project-config", "--ignore-project-instructions", "--instruction-target", "--interactive", "--max-tokens", "--max-tool-calls", "--max-turns", "--network", "--phase", "--profile", "--route", "--session", "--surface", "--timeout", "--workspace"},
+	"run create":                      {"--allow-target", "--browser-network", "--browser-origin", "--ignore-project-config", "--ignore-project-instructions", "--instruction-target", "--interactive", "--max-cost-usd", "--max-tokens", "--max-tool-calls", "--max-turns", "--network", "--phase", "--profile", "--route", "--session", "--surface", "--timeout", "--workspace"},
 	"run delegation apply":            {"--operation-key", "--operator"},
 	"run delegation schedule":         {"--agent", "--max-rounds", "--operation-key", "--operator", "--tools"},
 	"run delegations":                 {"--limit"},
@@ -271,9 +291,9 @@ var commandFlags = map[string][]string{
 	"run delivery list":               {"--limit"},
 	"run events":                      {"--follow", "--timeout"},
 	"run execute":                     {"--confirm-full", "--enable-danger-full-access", "--enable-permission-control", "--finish", "--max-steps", "--summary"},
-	"run execution-interaction":       {"--confirm-container-boundary", "--confirm-debug-boundary", "--confirm-workspace-trust", "--operation-key", "--operator", "--reason", "--trust"},
-	"run execution-permission":        {"--confirm-full", "--enable-danger-full-access", "--enable-permission-control", "--operation-key", "--operator", "--reason"},
-	"run execution-profile":           {"--operation-key", "--operator", "--reason"},
+	"run execution-interaction set":   {"--confirm-container-boundary", "--confirm-debug-boundary", "--confirm-workspace-trust", "--operation-key", "--operator", "--reason", "--trust"},
+	"run execution-permission set":    {"--confirm-full", "--enable-danger-full-access", "--enable-permission-control", "--operation-key", "--operator", "--reason"},
+	"run execution-profile set":       {"--operation-key", "--operator", "--reason"},
 	"run fanout execute":              {"--max-output-tokens", "--operation-key", "--operator"},
 	"run fanout plan":                 {"--operation-key", "--operator", "--path", "--tier"},
 	"run fanout report":               {"--format"},
@@ -287,7 +307,9 @@ var commandFlags = map[string][]string{
 	"run sandbox docker-cancel":       {"--operation-key", "--operator"},
 	"run sandbox docker-readiness":    {"--manifest-file"},
 	"run sandbox docker-start":        {"--admission-operation-key", "--confirm-full", "--manifest-file", "--operation-key", "--operator"},
-	"run schedule":                    {"--limit", "--notifications", "--owner", "--rounds"},
+	"run schedule list":               {"--limit"},
+	"run schedule show":               {"--notifications", "--rounds"},
+	"run schedule tick":               {"--owner"},
 	"run schedule cancel":             {"--operation-key", "--operator", "--revision"},
 	"run schedule create":             {"--at", "--confirm-repair", "--deadline", "--every", "--initial-backoff-seconds", "--max-attempts", "--max-backoff-seconds", "--max-elapsed-seconds", "--max-model-calls", "--max-rounds", "--misfire", "--mode", "--notify", "--operation-key", "--operator", "--stop-on-target-terminal", "--timezone"},
 	"run schedule pause":              {"--operation-key", "--operator", "--revision"},
@@ -296,22 +318,35 @@ var commandFlags = map[string][]string{
 	"run standard-code docker-cancel": {"--operation-key", "--operator"},
 	"run standard-code preset":        {"--backend", "--confirm-workspace-trust", "--enable-docker-execution", "--enable-permission-control", "--enable-workspace-sandbox", "--expected-trust-digest", "--goal", "--json", "--operation-key", "--operator", "--workspace"},
 	"run start":                       {"--stream", "--timeout"},
-	"run steer":                       {"--limit", "--max-steps", "--operation-key", "--operator", "--reason"},
+	"run steer cancel":                {"--operation-key", "--operator", "--reason"},
+	"run steer drain":                 {"--max-steps"},
+	"run steer enqueue":               {"--operation-key", "--operator"},
+	"run steer list":                  {"--limit"},
 	"run step":                        {"--confirm-full", "--enable-danger-full-access", "--enable-permission-control"},
-	"run wake":                        {"--base-backoff-seconds", "--confirm-full", "--enable-danger-full-access", "--enable-permission-control", "--initial-delay-seconds", "--max-attempts", "--max-backoff-seconds", "--max-elapsed-seconds", "--max-steps", "--operation-key", "--operator"},
+	"run wake cancel":                 {"--operation-key", "--operator"},
+	"run wake consume":                {"--confirm-full", "--enable-danger-full-access", "--enable-permission-control", "--max-steps", "--operator"},
+	"run wake schedule":               {"--base-backoff-seconds", "--initial-delay-seconds", "--max-attempts", "--max-backoff-seconds", "--max-elapsed-seconds", "--operation-key", "--operator"},
 	"script new":                      {"--language", "--workspace"},
 	"script run":                      {"--idempotency-key", "--local", "--workspace"},
 	"session create":                  {"--route", "--title", "--workspace"},
 	"session history":                 {"--all"},
 	"session send":                    {"--operation-key"},
 	"session tree":                    {"--json"},
-	"skill candidate":                 {"--candidate-fingerprint", "--confirm-untrusted-skill", "--operation-key", "--operator", "--reason", "--run", "--show-content"},
-	"skill catalog":                   {"--operator", "--surface", "--team"},
+	"skill candidate approve":         {"--candidate-fingerprint", "--operation-key", "--operator", "--reason"},
+	"skill candidate import":          {"--candidate-fingerprint", "--confirm-untrusted-skill", "--operation-key", "--operator"},
+	"skill candidate list":            {"--run"},
+	"skill candidate reject":          {"--candidate-fingerprint", "--operation-key", "--operator", "--reason"},
+	"skill candidate show":            {"--show-content"},
+	"skill catalog disable":           {"--operator", "--surface"},
+	"skill catalog enable":            {"--operator", "--surface"},
+	"skill catalog pin":               {"--operator", "--surface"},
+	"skill catalog revoke":            {"--operator"},
+	"skill catalog trust":             {"--operator", "--team"},
 	"skill import":                    {"--confirm-untrusted-skill", "--operation-key", "--operator", "--surface"},
 	"skill list":                      {"--profile"},
-	"thread create":                   {"--json", "--phase", "--profile", "--route", "--surface", "--workspace"},
+	"thread create":                   {"--json", "--max-turns", "--phase", "--profile", "--route", "--surface", "--workspace"},
 	"thread history":                  {"--all", "--json"},
-	"thread list":                     {"--include-deleted", "--status"},
+	"thread list":                     {"--include-deleted", "--json", "--limit", "--pinned", "--status", "--title-query"},
 	"thread send":                     {"--json", "--operation-key"},
 	"todo create":                     {"--acceptance", "--depends-on", "--description", "--owner", "--owner-agent", "--priority"},
 	"todo list":                       {"--limit", "--owner", "--owner-agent", "--status"},
@@ -348,37 +383,35 @@ var flagValueVocabulary = map[string][]string{
 	"todo create --priority":        {"critical", "high", "low", "normal"},
 }
 
-// flagCompletionKey reduces the typed context to the command group that
-// owns the flag-table entry: the longest leading prefix of the context that
-// names a commandFlags key. Positional arguments (tool invoke's tool name)
-// and flag values sitting between the group and the flag being completed
-// are not part of the key, so flag completion survives them. ok is false
-// for unmatched non-empty contexts; the "" alias entry belongs to the empty
-// context only.
+// flagCompletionKey stops at the last registered command word. Arguments after
+// that word belong to its parser, even when a parent also accepts flags.
 func flagCompletionKey(context []string) (string, bool) {
-	for width := len(context); width > 0; width-- {
-		candidate := strings.Join(context[:width], " ")
-		if _, ok := commandFlags[candidate]; ok {
-			return candidate, true
-		}
+	if len(context) == 0 {
+		return "", true
 	}
-	return "", len(context) == 0
+	spec, ok := findCommandSpec(context[0])
+	if !ok {
+		return "", false
+	}
+	key := spec.name
+	for _, word := range context[1:] {
+		if !slices.Contains(commandSubcommands[key], word) {
+			break
+		}
+		key += " " + word
+	}
+	_, ok = commandFlags[key]
+	return key, ok
 }
 
-// flagValueKey resolves the "<group> <flag>" key for value vocabularies the
-// same longest-prefix way, without requiring the group to carry a
-// commandFlags entry of its own.
-func flagValueKey(prior []string, flag string) (string, bool) {
-	for width := len(prior); width >= 0; width-- {
-		key := strings.Join(prior[:width], " ")
-		if key != "" {
-			key += " "
-		}
-		if _, ok := flagValueVocabulary[key+flag]; ok {
-			return key + flag, true
-		}
+func flagValueKey(context []string, flag string) (string, bool) {
+	key, ok := flagCompletionKey(context)
+	if !ok {
+		return "", false
 	}
-	return "", false
+	key += " " + flag
+	_, ok = flagValueVocabulary[key]
+	return key, ok
 }
 
 // completionCandidates resolves the candidates and the shell directive for

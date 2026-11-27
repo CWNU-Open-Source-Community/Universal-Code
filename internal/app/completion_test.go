@@ -167,7 +167,9 @@ var commandFlagScanTargets = map[string]string{
 	"analyzer execute":                "analyzerExecute",
 	"api openapi":                     "apiOpenAPICommand",
 	"api serve":                       "apiServeCommand",
-	"approval grant":                  "approvalGrantCreate",
+	"approval grant create":           "approvalGrantCreate",
+	"approval grant list":             "approvalGrantList",
+	"approval grant revoke":           "approvalGrantRevoke",
 	"approval list":                   "approvalList",
 	"artifact list":                   "artifactList",
 	"artifact read":                   "artifactRead",
@@ -209,8 +211,16 @@ var commandFlagScanTargets = map[string]string{
 	"git remote update-pr":            "gitRemoteCommand",
 	"headless events":                 "headlessEvents",
 	"hooks list":                      "hooksList",
-	"mcp client":                      "mcpClientCommand",
-	"mcp credential":                  "mcpCredentialCommand",
+	"mcp client calls":                "mcpClientCommand",
+	"mcp client inputs":               "mcpInputCommand",
+	"mcp client list":                 "mcpClientCommand",
+	"mcp client respond":              "mcpInputCommand",
+	"mcp client review":               "mcpClientReviewCommand",
+	"mcp client stage":                "mcpClientCommand",
+	"mcp credential delete":           "mcpCredentialCommand",
+	"mcp credential oauth-discover":   "mcpOAuthCommand",
+	"mcp credential oauth-login":      "mcpOAuthCommand",
+	"mcp credential set":              "mcpCredentialCommand",
 	"mcp serve":                       "mcpServeCommand",
 	"note create":                     "noteCreate",
 	"note list":                       "noteList",
@@ -236,9 +246,9 @@ var commandFlagScanTargets = map[string]string{
 	"run delivery list":               "runDeliveryCheckpointList",
 	"run events":                      "runEvents",
 	"run execute":                     "runSupervisorExecute",
-	"run execution-interaction":       "runExecutionInteraction",
-	"run execution-permission":        "runExecutionPermission",
-	"run execution-profile":           "runExecutionProfile",
+	"run execution-interaction set":   "runExecutionInteraction",
+	"run execution-permission set":    "runExecutionPermission",
+	"run execution-profile set":       "runExecutionProfile",
 	"run fanout execute":              "runFanoutExecute",
 	"run fanout plan":                 "runFanoutPlan",
 	"run fanout report":               "runFanoutReport",
@@ -252,7 +262,9 @@ var commandFlagScanTargets = map[string]string{
 	"run sandbox docker-cancel":       "runDockerSandboxCancel",
 	"run sandbox docker-readiness":    "runDockerSandboxReadiness",
 	"run sandbox docker-start":        "runDockerSandboxStart",
-	"run schedule":                    "runSchedule",
+	"run schedule list":               "runSchedule",
+	"run schedule show":               "runSchedule",
+	"run schedule tick":               "runSchedule",
 	"run schedule cancel":             "runScheduleTransition",
 	"run schedule create":             "runScheduleCreate",
 	"run schedule pause":              "runScheduleTransition",
@@ -262,20 +274,33 @@ var commandFlagScanTargets = map[string]string{
 	"run standard-code preset":        "runStandardCodePreset",
 	"run delegation":                  "runDelegation",
 	"run start":                       "runTransition",
-	"run steer":                       "runOperatorSteering",
+	"run steer cancel":                "runOperatorSteering",
+	"run steer drain":                 "runOperatorSteering",
+	"run steer enqueue":               "runOperatorSteering",
+	"run steer list":                  "runOperatorSteering",
 	"workspace checkpoint":            "workspaceCheckpointCommand",
 	"workspace checkpoint undo":       "workspaceCheckpointCursorAction",
 	"workspace checkpoint redo":       "workspaceCheckpointCursorAction",
 	"run step":                        "runSupervisorStep",
-	"run wake":                        "runWake",
+	"run wake cancel":                 "runWake",
+	"run wake consume":                "runWake",
+	"run wake schedule":               "runWake",
 	"script new":                      "scriptNew",
 	"script run":                      "scriptRun",
 	"session create":                  "sessionCreate",
 	"session history":                 "sessionHistory",
 	"session send":                    "sessionSend",
 	"session tree":                    "sessionTree",
-	"skill candidate":                 "skillCandidateCommand",
-	"skill catalog":                   "skillCatalogCommand",
+	"skill candidate approve":         "skillCandidateCommand",
+	"skill candidate import":          "skillCandidateCommand",
+	"skill candidate list":            "skillCandidateCommand",
+	"skill candidate reject":          "skillCandidateCommand",
+	"skill candidate show":            "skillCandidateCommand",
+	"skill catalog disable":           "skillCatalogCommand",
+	"skill catalog enable":            "skillCatalogCommand",
+	"skill catalog pin":               "skillCatalogCommand",
+	"skill catalog revoke":            "skillCatalogCommand",
+	"skill catalog trust":             "skillCatalogCommand",
 	"skill import":                    "skillCommand",
 	"skill list":                      "skillCommand",
 	"thread create":                   "threadCreate",
@@ -360,6 +385,44 @@ func TestCommandFlagsMatchDispatch(t *testing.T) {
 				t.Errorf("flag %q of %q does not appear in its dispatch source; the vocabulary drifted", flag, key)
 			}
 		}
+	}
+}
+
+func TestCompleteFlagsUseTheSelectedParser(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	flagLine := regexp.MustCompile(`(?m)^  -([a-z][a-z0-9-]*)\b`)
+	for _, command := range []string{
+		"exec", "run create", "thread create", "thread list", "approval grant create", "approval grant list",
+		"mcp client stage", "mcp client list", "mcp credential set", "mcp credential delete",
+		"run execution-interaction set", "run execution-permission set", "run execution-profile set",
+		"run schedule list", "run schedule show", "run steer cancel", "run steer list", "run wake consume",
+		"skill candidate show", "skill candidate list", "skill catalog trust", "skill catalog pin",
+	} {
+		t.Run(command, func(t *testing.T) {
+			path := strings.Fields(command)
+			_, stderr, _ := executeTestCommand(t, append(slices.Clone(path), "-h")...)
+			var parsed []string
+			for _, match := range flagLine.FindAllStringSubmatch(stderr, -1) {
+				parsed = append(parsed, "--"+match[1])
+			}
+			completed, directive := completionCandidates(path, "--")
+			if len(parsed) == 0 || !slices.Equal(completed, parsed) || directive != completionDirectiveNoFileComp {
+				t.Errorf("completion %v, parser %v (%s)", completed, parsed, stderr)
+			}
+		})
+	}
+	for _, command := range []string{
+		"mcp client", "mcp client show server-id", "mcp credential status name", "skill catalog list",
+		"mcp credential oauth-status server-id", "skill catalog audit", "run execution-profile run-id",
+		"run wake show run-id", "run steer show steering-id",
+	} {
+		if got, _ := completionCandidates(strings.Fields(command), "--"); len(got) != 0 {
+			t.Errorf("%s suggests flags from another command: %v", command, got)
+		}
+	}
+	// OAuth discovery rejects the login options accepted by its shared flag set.
+	if got, _ := completionCandidates(strings.Fields("mcp credential oauth-discover server-id"), "--"); !slices.Equal(got, []string{"--confirm"}) {
+		t.Errorf("OAuth discovery flags: %v", got)
 	}
 }
 
@@ -550,24 +613,37 @@ func commandFunctionBody(t *testing.T, name string) string {
 // functions that hold their nested switches; the normalized-name lookup
 // only covers top-level command functions.
 var nestedDispatchFunctions = map[string]string{
-	"run delegation":       "runDelegation",
-	"skill import":         "skillCommand",
-	"skill list":           "skillCommand",
-	"context instructions": "contextCommand",
-	"context memory":       "contextMemory",
-	"run delivery":         "runDeliveryCheckpoint",
-	"run fanout":           "runFanout",
-	"run plan":             "runPlanDelivery",
-	"run sandbox":          "runSandboxManifest",
-	"run standard-code":    "runStandardCode",
-	"report finding":       "reportFindingCommand",
-	"skill catalog":        "skillCatalogCommand",
-	"workspace checkpoint": "workspaceCheckpointCommand",
+	"approval grant":            "approvalGrantCommand",
+	"mcp client":                "mcpClientCommand",
+	"mcp credential":            "mcpCredentialCommand",
+	"run execution-interaction": "runExecutionInteraction",
+	"run execution-permission":  "runExecutionPermission",
+	"run execution-profile":     "runExecutionProfile",
+	"run schedule":              "runSchedule",
+	"run steer":                 "runOperatorSteering",
+	"run wake":                  "runWake",
+	"skill candidate":           "skillCandidateCommand",
+	"run delegation":            "runDelegation",
+	"skill import":              "skillCommand",
+	"skill list":                "skillCommand",
+	"context instructions":      "contextCommand",
+	"context memory":            "contextMemory",
+	"run delivery":              "runDeliveryCheckpoint",
+	"run fanout":                "runFanout",
+	"run plan":                  "runPlanDelivery",
+	"run sandbox":               "runSandboxManifest",
+	"run standard-code":         "runStandardCode",
+	"report finding":            "reportFindingCommand",
+	"skill catalog":             "skillCatalogCommand",
+	"workspace checkpoint":      "workspaceCheckpointCommand",
 }
 
 func TestCommandSubcommandsMatchDispatch(t *testing.T) {
 	for name, subcommands := range commandSubcommands {
 		body := commandFunctionBody(t, name)
+		if name == "mcp credential" {
+			body += functionBodyByExactName(t, "mcpOAuthCommand")
+		}
 		for _, sub := range subcommands {
 			if !strings.Contains(body, sub) {
 				t.Errorf("subcommand %q of %q does not appear in its dispatch source; the vocabulary drifted", sub, name)
