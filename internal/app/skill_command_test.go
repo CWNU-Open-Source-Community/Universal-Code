@@ -324,24 +324,29 @@ func TestSkillPackageRegistryCLIRequiresCatalogAndRejectsBuiltins(t *testing.T) 
 	packagePath := filepath.Join(t.TempDir(), "reserved.zip")
 	writeTestSkillPackage(t, packagePath, manifest, content)
 	if _, stderr, code := executeTestCommand(t, "skill", "import", packagePath,
-		"--operation-key", "skill-package-boundary-0001",
-		"--confirm-untrusted-skill"); code != 2 || !strings.Contains(stderr, "--surface is required") {
-		t.Fatalf("missing catalog surface must name the required flag: code=%d stderr=%q", code, stderr)
-	}
-	if _, stderr, code := executeTestCommand(t, "skill", "import-dir", packagePath,
-		"--operation-key", "skill-package-boundary-0001",
-		"--confirm-untrusted-skill"); code != 2 || !strings.Contains(stderr, "--surface is required") {
-		t.Fatalf("import-dir missing surface must name the required flag: code=%d stderr=%q", code, stderr)
-	}
-	if _, stderr, code := executeTestCommand(t, "skill", "import", packagePath,
-		"--surface", "web", "--operation-key", "skill-package-boundary-0001",
-		"--confirm-untrusted-skill"); code != 2 || !strings.Contains(stderr, "unsupported execution surface \"web\"") || !strings.Contains(stderr, "must be code or cyber") {
-		t.Fatalf("invalid catalog surface must name valid choices: code=%d stderr=%q", code, stderr)
-	}
-	if _, stderr, code := executeTestCommand(t, "skill", "import", packagePath,
 		"--surface", "code", "--operation-key", "skill-package-boundary-0001",
 		"--confirm-untrusted-skill"); code != 4 || !strings.Contains(stderr, "built-in Skill name") {
 		t.Fatalf("reserved name import: code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestSkillImportSurfaceErrors(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	for _, tc := range []struct{ command, sourceFlag string }{
+		{"import", ""}, {"import-dir", ""}, {"import-url", "--sha256 <hex>"}, {"import-git", "--commit <sha>"},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			_, stderr, code := executeTestCommand(t, "skill", tc.command, "source")
+			if code != 2 || !strings.Contains(stderr, "--surface is required") ||
+				!strings.Contains(stderr, "--confirm-untrusted-skill") || !strings.Contains(stderr, tc.sourceFlag) {
+				t.Fatalf("missing surface: code=%d stderr=%q", code, stderr)
+			}
+			_, stderr, code = executeTestCommand(t, "skill", tc.command, "source", "--surface", "policy denied")
+			if code != 2 || !strings.Contains(stderr, "must be code or cyber") ||
+				!strings.Contains(stderr, `unsupported execution surface "policy denied"`) {
+				t.Fatalf("invalid surface: code=%d stderr=%q", code, stderr)
+			}
+		})
 	}
 }
 
