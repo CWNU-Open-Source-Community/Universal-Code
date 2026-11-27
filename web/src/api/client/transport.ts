@@ -4,6 +4,8 @@ import type { PageResult, SuccessEnvelope } from "../types";
 import type { ClientFeatures } from "./capabilities";
 import type { QueryValue } from "./protocol";
 
+const threadTranscriptPath = /^\/threads\/[^/]+\/transcript$/u;
+
 // APIClient validates the read bearer and same-origin base before constructing this transport.
 export class APITransport {
   constructor(
@@ -29,7 +31,7 @@ export class APITransport {
       throw new APIRequestError("API collection response omitted pagination metadata", "INVALID_RESPONSE", 502,
         envelope.request_id);
     }
-    const items = /^\/threads\/[^/]+\/transcript$/u.test(path)
+    const items = threadTranscriptPath.test(path)
       ? parseThreadTranscriptItems(envelope.data as unknown[]) as T[]
       : envelope.data;
     return { items, page: envelope.page, requestID: envelope.request_id };
@@ -154,9 +156,12 @@ export class APITransport {
       /[\s\u0000-\u001f\u007f]/u.test(observationKey))) {
       throw new Error("A normalized original operation key is required");
     }
+    const headers = this.headers();
+    if (threadTranscriptPath.test(path)) headers.Prefer = "include-agent-identity";
+    if (observationKey !== undefined) headers["Idempotency-Key"] = observationKey;
     const response = await fetch(this.url(path, query), {
       method: "GET",
-      headers: { ...this.headers(), ...(observationKey === undefined ? {} : { "Idempotency-Key": observationKey }) },
+      headers,
       signal,
       cache: "no-store",
       credentials: "omit",

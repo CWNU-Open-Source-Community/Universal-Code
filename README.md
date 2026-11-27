@@ -99,6 +99,10 @@ open build/desktop/TraverseBoard.app
 
 可在客户端 **设置 → 外观** 中自由切换 **系统跟随、浅色、深色、雾透玻璃**。
 
+打开对话里的 **执行记录** 即可查看模型办公室。图中两位代理都使用 Claude，子代理在工位处理任务，主代理在沙发旁待命。下方保留每次运行的工具调用、审批和异常记录。
+
+![模型办公室里的 Claude 子代理正在工作，主代理正在待命](docs/images/execution-office.jpg)
+
 ---
 
 ## 详细文档导航
@@ -120,7 +124,8 @@ open build/desktop/TraverseBoard.app
 
 欢迎提交 Issue 与 Pull Request！在开始开发前，请先阅读我们的 [贡献指南 (CONTRIBUTING.md)](CONTRIBUTING.md)。
 
-## 开源许可证与字体合规
+## 许可证与第三方素材
 
-- 本项目基于 [Apache License 2.0](LICENSE) 协议开源。
+- 本项目的代码采用 [Apache License 2.0](LICENSE)。
 - **第三方字体声明**：中文界面包含华为技术有限公司授权的 HarmonyOS Sans Fonts，完整 [字体许可文本](web/public/licenses/HarmonyOS-Sans.txt) 随软件一并分发；字体源文件与校验哈希详见 [字体出处说明](web/src/assets/fonts/PROVENANCE.md)。
+- 模型办公室的角色动画仅供非商业使用。动画取自 [hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets)，其中 DeepSeek 蓝毛女仆动画原作来自 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)。角色署名及相同方式共享条款详见[素材说明](web/src/v2/components/execution-companion-art/PROVENANCE.md)。

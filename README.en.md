@@ -99,6 +99,10 @@ When opening the app or starting a new thread, click the model selector above th
 
 Switch between **System, Light, Dark, and Mist** under **Settings → Appearance**.
 
+Open **Execution records** in a conversation to see its model office. Both agents shown here use Claude. The specialist is at work while the main agent waits by the sofa. The log below lists tool calls, approvals, and exceptions for each run.
+
+![A Claude specialist at the desk and the main agent by the sofa](docs/images/execution-office.jpg)
+
 ---
 
 ## Documentation Index
@@ -120,7 +124,8 @@ Switch between **System, Light, Dark, and Mist** under **Settings → Appearance
 
 Contributions, issues, and feature requests are welcome! Check out our [Contributing Guide](CONTRIBUTING.md) to get started.
 
-## License & Font Compliance
+## License and third-party assets
 
-- Distributed under the [Apache License 2.0](LICENSE).
+- The application code is distributed under the [Apache License 2.0](LICENSE).
 - **Third-party Font Notice**: The Chinese UI bundles HarmonyOS Sans Fonts licensed by Huawei Device Co., Ltd. The complete [font license](web/public/licenses/HarmonyOS-Sans.txt) is shipped with the app; see [font provenance and hashes](web/src/assets/fonts/PROVENANCE.md) for details.
+- The Model Office character animations are available for noncommercial use. The collection comes from [hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets), including the original DeepSeek blue maid animations by [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet). See the [artwork credits and share-alike terms](web/src/v2/components/execution-companion-art/PROVENANCE.md).

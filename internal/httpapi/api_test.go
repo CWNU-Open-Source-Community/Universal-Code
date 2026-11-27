@@ -60,6 +60,47 @@ type apiFixture struct {
 	workspace         store.WorkspaceRecord
 }
 
+func TestAgentGraphChecksSpecialistExecutionLease(t *testing.T) {
+	fixture := newAPIFixture(t)
+	ctx := t.Context()
+	run, child, attempt, _ := prepareOpenAPISpecialistCancellationTarget(t, fixture)
+	check := func(wantLive bool) {
+		t.Helper()
+		var graph AgentGraphView
+		decodeData(t, fixture.get(t, "/api/v1/runs/"+run.ID+"/agent-graph"), &graph)
+		for _, node := range graph.Nodes {
+			if node.ID == child.ID {
+				if node.ActiveAttemptID != attempt.ID || node.Status != "running" || node.ActiveAttemptLive != wantLive {
+					t.Fatalf("specialist live=%v, got %+v", wantLive, node)
+				}
+				return
+			}
+		}
+		t.Fatal("specialist missing from graph")
+	}
+	check(true)
+	lease, found, err := fixture.store.GetRunExecutionLease(ctx, run.ID)
+	if err != nil || !found {
+		t.Fatalf("lease found=%t, err=%v", found, err)
+	}
+	expired := AgentGraphView{RunID: run.ID, Nodes: []AgentNodeView{{
+		ID: child.ID, Role: "specialist", Status: "running", ActiveAttemptID: attempt.ID,
+	}}}
+	if err := fixture.api.markLiveSpecialistAttempts(ctx, &expired, lease.ExpiresAt); err != nil || expired.Nodes[0].ActiveAttemptLive {
+		t.Fatalf("expired specialist lease was live: %+v, err=%v", expired.Nodes[0], err)
+	}
+	if _, _, err := fixture.store.ReleaseRunExecutionLease(ctx, lease); err != nil {
+		t.Fatal(err)
+	}
+	check(false)
+	if _, err := fixture.store.AcquireRunExecutionLease(ctx, domain.AcquireRunExecutionLeaseRequest{
+		RunID: run.ID, OwnerID: "next-execution", TTL: time.Minute,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	check(false)
+}
+
 func newAPIFixture(t *testing.T) *apiFixture {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "http-api.db")
@@ -683,6 +724,39 @@ func TestThreadTranscriptUsesStableCrossRunCursorAndSafeProjection(t *testing.T)
 		http.StatusBadRequest, "INVALID_ARGUMENT")
 	assertAPIError(t, fixture.get(t, path+"-different?cursor="+url.QueryEscape(oldCursor)),
 		http.StatusNotFound, "NOT_FOUND")
+}
+
+func TestThreadTranscriptNegotiatesModelIdentityForStrictV1Clients(t *testing.T) {
+	fixture := newAPIFixture(t)
+	run, child, _, model := prepareOpenAPISpecialistCancellationTarget(t, fixture)
+	thread, err := fixture.store.GetThreadByRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, prefer := range []string{"", "include-agent-identity"} {
+		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8765/api/v1/threads/"+thread.ID+"/transcript", nil)
+		request.Header.Set("Authorization", "Bearer "+testAccessToken)
+		request.Header.Set("Prefer", prefer)
+		request.RemoteAddr = "127.0.0.1:45000"
+		response := httptest.NewRecorder()
+		fixture.api.ServeHTTP(response, request)
+		var rows []ThreadTranscriptItemView
+		decodeData(t, response, &rows)
+		found := false
+		for _, row := range rows {
+			if row.Kind != "model_call" {
+				continue
+			}
+			found = true
+			if prefer == "" && (row.AgentID != "" || row.ModelName != "") ||
+				prefer != "" && (row.AgentID != child.ID || row.ModelName != model.Model) {
+				t.Fatalf("Prefer %q returned agent %q and model %q", prefer, row.AgentID, row.ModelName)
+			}
+		}
+		if !found {
+			t.Fatal("missing specialist call")
+		}
+	}
 }
 
 func TestThreadTranscriptKeepsCommittedInputBeforeToolsAcrossPages(t *testing.T) {
