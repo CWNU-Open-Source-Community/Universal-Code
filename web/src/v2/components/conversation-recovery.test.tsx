@@ -399,17 +399,40 @@ it("uses the composer's primary action for stopping and for sending a new requir
   expect(submit).toHaveBeenCalledOnce();
 });
 
-it("announces a recorded interruption only once when the execution receipt also reports it", async () => {
+it.each(["record", "receipt"] as const)("announces a stop once in the mounted status region when the %s arrives first", async (first) => {
   const detail = "本轮已停止。已完成的修改和已受理的补充要求已保留，可发送消息继续。";
-  const notice = { ...failureItem("message-a", 42, detail), activity_type: "checkpoint", title: "本轮已停止", status: "cancelled" };
-  renderRecovery(vi.fn(), { hasThreadExecutionRead: true, threadExecution: vi.fn().mockResolvedValue({
-    version: "thread_execution.v1", thread_id: "thread-a", state: "idle", last_turn_interrupted: true,
-    queued_messages: 0, capability_grant: false }),
-    getPage: vi.fn().mockResolvedValue({ items: [notice], page: { limit: 100 } }) });
-  const record = await screen.findByText("已停止", { selector: "li" });
-  expect(record).toHaveAttribute("aria-live", "polite");
-  expect(screen.getAllByText("已停止")).toHaveLength(1);
-  expect(screen.queryByText(detail)).not.toBeInTheDocument();
+  const notice: ThreadTranscriptItemView = { ...failureItem("message-a", 42, detail),
+    activity_type: "checkpoint", title: "本轮已停止", status: "cancelled" };
+  let execution: ThreadExecutionView = { version: "thread_execution.v1", thread_id: "thread-a",
+    execution_id: "execution-a", state: "running", queued_messages: 0, capability_grant: false };
+  let items: ThreadTranscriptItemView[] = [];
+  const view = renderRecovery(vi.fn(), { hasThreadExecutionRead: true, threadExecution: vi.fn(async () => execution),
+    getPage: vi.fn().mockImplementation(async () => ({ items, page: { limit: 100 }, requestID: "stop-record" })) });
+  await screen.findByRole("textbox", { name: "继续对话" });
+  const region = view.container.querySelector<HTMLParagraphElement>('.v2-composer-dock p[role="status"][aria-live="polite"]')!;
+  expect(region).toBeEmptyDOMElement();
+  const announcements: string[] = [];
+  const observer = new MutationObserver(() => { announcements.push(region.textContent ?? ""); });
+  observer.observe(region, { childList: true, subtree: true, characterData: true });
+  try {
+    for (const source of [first, first === "record" ? "receipt" : "record"]) {
+      if (source === "record") {
+        items = [notice];
+        await act(async () => { await view.queryClient.invalidateQueries({ queryKey: v2QueryKeys.transcript("thread-a") }); });
+      } else {
+        execution = { ...execution, state: "idle", execution_id: undefined, last_turn_interrupted: true };
+        await act(async () => { await view.queryClient.invalidateQueries({ queryKey: v2QueryKeys.execution("thread-a") }); });
+      }
+      await waitFor(() => expect(region).toHaveTextContent("已停止"));
+    }
+    expect(region).toBeInTheDocument();
+    expect(region).toHaveClass("sr-only");
+    expect(await screen.findByText("已停止", { selector: "li" })).not.toHaveAttribute("aria-live");
+    expect(announcements).toEqual(["已停止"]);
+    expect(screen.queryByText(detail)).not.toBeInTheDocument();
+  } finally {
+    observer.disconnect();
+  }
 });
 
 it("keeps the draft and retry available when an input Escape does not finish stopping", async () => {

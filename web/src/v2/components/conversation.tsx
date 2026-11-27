@@ -866,6 +866,10 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       ? localUIMessage(detailQuery.error.message, t) : t("请求未返回对话数据", "No conversation data returned")}</details></div>;
   const detail = detailQuery.data;
   const currentRun = detail.active_run ?? detail.last_run;
+  const stoppedInTranscript = visibleNarrative.findLast((entry) => entry.kind === "user" ||
+    (entry.kind === "notice" && entry.stoppedRunID === currentRun.id))?.kind === "notice";
+  const stoppedInExecution = confirmedExecution?.state === "idle" && confirmedExecution.last_turn_interrupted &&
+    detail.recovery?.run_id !== currentRun.id;
   currentRunIDRef.current = currentRun.id;
   const workspace = workspaces.find(({ id }) => id === detail.thread.workspace_id);
   const runActive = executionQuery.data ? executionQuery.data.state !== "idle"
@@ -1288,9 +1292,10 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
         : executionQuery.data?.state === "stopping" && <p className="v2-composer-caption" role="status">{t("正在停止执行。可以继续编辑，停止完成后再发送。", "Stopping execution. You can keep editing and send when stopping finishes.")}</p>}
       {detail.recovery && <V2ThreadRunRecovery recovery={detail.recovery}
         approvalSaved={narrative.some((entry) => recoveryRepresentsNotice(entry, detail.recovery))} />}
-      {executionQuery.data?.state === "idle" && executionQuery.data.last_turn_interrupted && detail.recovery?.run_id !== currentRun.id &&
-        !visibleNarrative.some((entry) => entry.kind === "notice" && entry.stoppedRunID === currentRun.id) &&
-        <p className="v2-composer-caption" role="status">{t("已停止", "Stopped")}</p>}
+      <p className={stoppedInExecution && !stoppedInTranscript ? "v2-composer-caption" : "sr-only"}
+        role="status" aria-live="polite" aria-atomic="true">
+        {stoppedInExecution || stoppedInTranscript ? t("已停止", "Stopped") : null}
+      </p>
       {client.hasControl && <V2ThreadPinPrompt key={threadID} client={client} threadID={threadID}
         paused={working || approvalReplacesComposer || contextOpen || modalVisible || stageFullView || menuOpen} onReply={replyToPinProposal}
         onClose={() => setComposerFocusRequest({ threadID })} />}
