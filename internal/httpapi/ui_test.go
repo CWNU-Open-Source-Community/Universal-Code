@@ -283,7 +283,7 @@ func assertUISecurityHeaders(t *testing.T, response *httptest.ResponseRecorder, 
 // API's 401/404 contract.
 func TestTypedNilUIHandlerFallsThroughToAPIDispatch(t *testing.T) {
 	fixture := newAPIFixture(t)
-	var typedNil *nullUIHandler
+	var typedNil *webui.Bundle
 	api, err := New(fixture.store, Config{AccessToken: testAccessToken, UIHandler: typedNil})
 	if err != nil {
 		t.Fatal(err)
@@ -302,7 +302,3 @@ func TestTypedNilUIHandlerFallsThroughToAPIDispatch(t *testing.T) {
 			notFound.Code, notFound.Body.String())
 	}
 }
-
-type nullUIHandler struct{}
-
-func (*nullUIHandler) ServeHTTP(http.ResponseWriter, *http.Request) {}
