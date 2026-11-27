@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-
-	"cyberagent-workbench/internal/apperror"
 	"fmt"
 	"os"
 	"os/exec"
@@ -325,7 +323,7 @@ func canonicalExistingRepositoryRoot(root string) (string, error) {
 		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(resolved, ".git")); err != nil {
-		return "", apperror.New(apperror.CodeFailedPrecondition, "repository root does not contain Git metadata")
+		return "", repositoryMetadataError(err)
 	}
 	return filepath.Clean(resolved), nil
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -446,9 +447,16 @@ func normalizeRepositoryRoot(root string) (string, error) {
 		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
-		return "", apperror.New(apperror.CodeFailedPrecondition, "repository root does not contain Git metadata")
+		return "", repositoryMetadataError(err)
 	}
 	return root, nil
+}
+
+func repositoryMetadataError(err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return apperror.Wrap(apperror.CodeFailedPrecondition, "repository root does not contain Git metadata", err)
+	}
+	return err
 }
 
 // hardenedGitEnvironment runs git with system/global config ignored, hooks,
