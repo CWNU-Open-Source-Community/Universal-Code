@@ -1224,9 +1224,11 @@ type ThreadTranscriptItemView struct {
 	Status                string                           `json:"status,omitempty"`
 	Verifiable            bool                             `json:"verifiable"`
 	InstructionAuthorized bool                             `json:"instruction_authorized"`
+	AgentID               string                           `json:"agent_id,omitempty"`
 	AttemptID             string                           `json:"attempt_id,omitempty"`
 	ModelAttempt          int                              `json:"model_attempt,omitempty"`
 	Model                 string                           `json:"model,omitempty"`
+	ModelName             string                           `json:"model_name,omitempty"`
 	ToolRound             int                              `json:"tool_round,omitempty"`
 	ToolName              string                           `json:"tool_name,omitempty"`
 	StreamResponseID      string                           `json:"stream_response_id,omitempty"`
@@ -2007,8 +2009,8 @@ func threadTranscriptItemView(value threadtranscript.Item) ThreadTranscriptItemV
 		Position: value.Position, ActivityType: string(value.Type), Stage: string(value.Stage),
 		Kind: string(value.Kind), Source: string(value.Source), Title: value.Title,
 		Detail: value.Detail, Status: value.Status, Verifiable: value.Verifiable,
-		InstructionAuthorized: value.InstructionAuthorized, AttemptID: value.AttemptID,
-		ModelAttempt: value.ModelAttempt, Model: value.Model, ToolRound: value.ToolRound,
+		InstructionAuthorized: value.InstructionAuthorized, AgentID: value.AgentID, AttemptID: value.AttemptID,
+		ModelAttempt: value.ModelAttempt, Model: value.Model, ModelName: value.ModelName, ToolRound: value.ToolRound,
 		ToolName: value.ToolName, StreamResponseID: value.StreamResponseID,
 		StreamItemID: value.StreamItemID, StreamCallID: value.StreamCallID,
 		DurableCallID: value.DurableCallID, SourceRef: value.SourceRef,

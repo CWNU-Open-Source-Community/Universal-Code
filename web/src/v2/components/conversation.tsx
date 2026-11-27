@@ -1032,7 +1032,7 @@ export function V2Conversation({ client, threadID, workspaces, onArchive, onMana
       recordsContent={<>
         {!transcriptQuery.isLoading && <V2LazySurface loadingText={t("正在加载执行记录…", "Loading execution records…")}
           errorLabel={t("执行记录", "Execution records")} resetKey={threadID} onDismiss={handleCollapseWorkspace}>
-          <V2ExecutionRecords client={client} key={threadID} detail={detail} threadID={threadID} durableItems={transcriptItems}
+          <V2ExecutionRecords client={client} key={threadID} detail={detail} execution={confirmedExecution} threadID={threadID} durableItems={transcriptItems}
             liveSnapshot={liveSnapshot} liveStatus={publicStream.status}
             hasOlder={Boolean(transcriptQuery.hasNextPage)} isFetchingOlder={transcriptQuery.isFetchingNextPage}
             onLoadOlder={() => void loadOlderTranscript()} />

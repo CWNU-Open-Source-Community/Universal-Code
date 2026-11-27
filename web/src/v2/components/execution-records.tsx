@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, Search, X } from "lucide-react";
 import type { APIClient } from "../../api/client";
-import type { PublicModelStreamSnapshot, ThreadDetailView, ThreadTranscriptItemView } from "../../api/types";
+import type { AgentGraphView, PublicModelStreamSnapshot, ThreadDetailView, ThreadExecutionView, ThreadTranscriptItemView } from "../../api/types";
 import type { PublicModelStreamStatus } from "../../hooks/use-public-model-stream";
 import { StatusLabel } from "../../components/common";
 import { LifecycleStatusLabel } from "../../components/lifecycle-status";
@@ -11,6 +11,8 @@ import { SafeMarkdown } from "../../components/safe-markdown";
 import { mergeThreadTranscriptItems, VirtualTranscriptList,
   type TranscriptReadingPosition } from "../../components/thread-transcript";
 import { ActivityItemDetail } from "./activity-detail";
+import { projectExecutionCompanions } from "./execution-companion-activity";
+import { ExecutionCompanions } from "./execution-companions";
 import { V2ImagePreview } from "./image-input";
 import "./secondary-page.css";
 import "./execution-records.css";
@@ -19,6 +21,7 @@ export interface V2ExecutionRecordsProps {
   client: APIClient;
   threadID: string;
   detail: ThreadDetailView;
+  execution?: ThreadExecutionView;
   durableItems: ThreadTranscriptItemView[];
   liveSnapshot: PublicModelStreamSnapshot | null;
   liveStatus: PublicModelStreamStatus;
@@ -60,7 +63,7 @@ export function V2ExecutionRecords(props: V2ExecutionRecordsProps) {
   return <ExecutionRecordsContent key={props.threadID} {...props} />;
 }
 
-function ExecutionRecordsContent({ client, threadID, detail, durableItems, liveSnapshot, liveStatus,
+function ExecutionRecordsContent({ client, threadID, detail, execution, durableItems, liveSnapshot, liveStatus,
   hasOlder, isFetchingOlder, onLoadOlder }: V2ExecutionRecordsProps) {
   const { t, locale } = useLocale();
   const queryClient = useQueryClient();
@@ -82,6 +85,24 @@ function ExecutionRecordsContent({ client, threadID, detail, durableItems, liveS
     [durableItems, liveSnapshot, liveStatus]);
   const runs = useMemo(() => [...new Map(items.map((item) => [item.run_id, item.run_ordinal])).entries()]
     .sort((a, b) => a[1] - b[1]), [items]);
+  const currentRunID = detail.thread.active_run_id || detail.active_run?.id || detail.thread.last_run_id || detail.last_run?.id;
+  const officeRunID = ui.runID || currentRunID || "";
+  const knownRun = Boolean(officeRunID) && (officeRunID === currentRunID || runs.some(([id]) => id === officeRunID) ||
+    detail.runs?.some(({ run }) => run.id === officeRunID) === true);
+  const graphQuery = useQuery({
+    queryKey: ["run", officeRunID, "agent-graph"],
+    queryFn: async ({ signal }) => {
+      const result = await client.get<AgentGraphView>(`/runs/${encodeURIComponent(officeRunID)}/agent-graph`, {}, signal);
+      if (result.run_id !== officeRunID || !Array.isArray(result.nodes)) throw new Error("Unexpected run in agent graph");
+      return result;
+    },
+    enabled: knownRun,
+    refetchInterval: (query) => officeRunID === currentRunID && (execution?.state === "running" ||
+      query.state.data?.nodes.some((node) => node.active_attempt_live)) ? 3000 : false,
+  });
+  const graph = knownRun && !graphQuery.isError && graphQuery.data?.run_id === officeRunID ? graphQuery.data : undefined;
+  const companions = useMemo(() => projectExecutionCompanions({ threadID, detail, selectedRunID: ui.runID,
+    execution, liveSnapshot, liveStatus, durableItems, graph }), [threadID, detail, ui.runID, execution, liveSnapshot, liveStatus, durableItems, graph]);
   const visible = useMemo(() => {
     const term = ui.search.trim().toLocaleLowerCase();
     if (ui.filter === "all" && !term) return items.filter((item) => !ui.runID || item.run_id === ui.runID);
@@ -109,11 +130,11 @@ function ExecutionRecordsContent({ client, threadID, detail, durableItems, liveS
     restoreFocus.current = true;
     update({ selected: null });
   }, [update]);
-  const currentRunID = detail.thread.active_run_id || detail.thread.last_run_id;
   const hasFilters = ui.filter !== "all" || ui.search !== "" || ui.runID !== "";
   const matchCount = hasFilters ? visible.filter((item) => item.sequence !== 0).length : 0;
   const reset = () => update({ filter: "all", search: "", runID: "", position: undefined });
   return <section className={`v2-execution-records-content${ui.selected ? " has-selection" : ""}`} aria-label={t("执行记录", "Execution records")}>
+    <ExecutionCompanions companions={companions} />
     <header className="v2-execution-records-controls">
       <div className="v2-execution-records-tools">
         <div className="v2-page-segments" role="group" aria-label={t("记录类型", "Record type")}>
@@ -133,6 +154,7 @@ function ExecutionRecordsContent({ client, threadID, detail, durableItems, liveS
       </div>
       <div className="v2-execution-records-scope">
         <div className="v2-execution-records-range">
+          {knownRun && graphQuery.isError && <span role="status">{t("无法读取智能体列表", "Could not load agents")}</span>}
           <span>{t(`已加载 ${durableItems.length} 条`, `${durableItems.length} records loaded`)}{hasOlder ? t(" · 还有更早记录", " · Earlier records available") : t(" · 已到最早记录", " · Earliest record reached")}</span>
           {hasFilters && <span>{t(`显示 ${matchCount} 条记录`, `${matchCount} records shown`)}</span>}
           {items.some((item) => item.provisional) && <span>{t("含未落盘的实时内容", "Includes unsaved live content")}</span>}

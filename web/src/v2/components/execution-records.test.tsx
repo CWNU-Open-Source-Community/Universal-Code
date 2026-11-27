@@ -17,8 +17,9 @@ function item(id: string, overrides: Partial<ThreadTranscriptItemView> = {}): Th
     source: "harness", title: id, status: "completed", verifiable: true, instruction_authorized: false,
     durable: true, provisional: false, ...overrides };
 }
-function setup(items: ThreadTranscriptItemView[], client = {} as APIClient) {
+function setup(items: ThreadTranscriptItemView[], overrides: Partial<APIClient> = {}) {
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = { get: async (path: string) => ({ run_id: path.split("/")[2], nodes: [] }), ...overrides } as APIClient;
   const props: V2ExecutionRecordsProps = { client, threadID: "thread-1", detail: { thread: { id: "thread-1", last_run_id: "run-2" } } as ThreadDetailView,
     durableItems: items, liveSnapshot: null, liveStatus: "stopped", hasOlder: true, isFetchingOlder: false, onLoadOlder: vi.fn() };
   const draw = (current = props) => render(<QueryClientProvider client={cache}><V2ExecutionRecords {...current} /></QueryClientProvider>);
@@ -36,6 +37,32 @@ function result(runID = "run-1") {
 }
 
 describe("V2ExecutionRecords", () => {
+  it("shows the agents for the selected run even when the log is filtered", async () => {
+    const get = vi.fn(async (path: string) => {
+      const runID = path.split("/")[2];
+      const root = { id: runID + "-root", role: "root", status: "completed" };
+      return { run_id: runID, root_agent_id: root.id, nodes: [root] };
+    });
+    const current = { id: "run-2", status: "completed", config: { model_route: "code" } };
+    const older = { id: "run-1", status: "completed", config: { model_route: "code" } };
+    const { props, draw } = setup([
+      item("older-call", { kind: "model_call", attempt_id: "older-attempt", model_name: "gemini-2.5-pro" }),
+      item("current-call", { kind: "model_call", run_id: "run-2", run_ordinal: 2, attempt_id: "current-attempt", model_name: "gpt-5" }),
+    ], { get: get as APIClient["get"] });
+    const detail = { ...props.detail, last_run: current, runs: [{ ordinal: 1, run: older }, { ordinal: 2, run: current }] } as ThreadDetailView;
+    const user = userEvent.setup();
+    const view = draw({ ...props, detail });
+    const office = () => view.container.querySelector(".v2-execution-office")!;
+    await waitFor(() => expect(office().querySelector('[data-family="gpt"]')).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "工具" }));
+    expect(screen.getByText("已加载范围内没有匹配记录。")).toBeVisible();
+    expect(office().querySelector('[data-family="gpt"]')).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("执行记录范围"), "run-1");
+    await waitFor(() => expect(office().querySelector('[data-family="gemini"]')).toBeInTheDocument());
+    expect(office().querySelector('[data-family="gpt"]')).toBeNull();
+    expect(get.mock.calls.map(([url]) => url)).toEqual(["/runs/run-2/agent-graph", "/runs/run-1/agent-graph"]);
+  });
+
   it("keeps an old model start as a time-bound fact without presenting it as current Agent activity", async () => {
     const { draw } = setup([
       item("open-boundary", { sequence: 0, status: "running" }),
