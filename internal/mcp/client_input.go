@@ -105,9 +105,6 @@ func prepareInput(params *sdk.ElicitParams) ([]InputField, json.RawMessage, erro
 	}
 	fields := make([]InputField, 0, len(schema.Properties))
 	for name, value := range schema.Properties {
-		if !validRemoteName(name) || redact.SensitiveJSONFieldName(name) || redact.String(name) != name {
-			return nil, nil, errors.New("MCP forms cannot request credentials")
-		}
 		var property struct {
 			Type        string   `json:"type"`
 			Title       string   `json:"title"`
@@ -124,6 +121,9 @@ func prepareInput(params *sdk.ElicitParams) ([]InputField, json.RawMessage, erro
 		}
 		if json.Unmarshal(value, &property) != nil || !slices.Contains([]string{"string", "boolean", "number", "integer", "array"}, property.Type) || len(property.Enum) > 64 {
 			return nil, nil, errors.New("unsupported MCP form field")
+		}
+		if !validRemoteName(name) || redact.SensitiveJSONField(name, property.Type == "boolean") || redact.String(name) != name {
+			return nil, nil, errors.New("MCP forms cannot request credentials")
 		}
 		var keywords map[string]json.RawMessage
 		_ = json.Unmarshal(value, &keywords)

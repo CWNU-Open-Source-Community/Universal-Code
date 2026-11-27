@@ -91,6 +91,19 @@ func TestInputBrokerValidationAndSingleConsumption(t *testing.T) {
 		}
 	}
 }
+func TestInputFormDistinguishesPassFlagsFromPasswords(t *testing.T) {
+	form := func(schema string) error {
+		_, _, err := prepareInput(&sdk.ElicitParams{Message: "Check", RequestedSchema: json.RawMessage(schema)})
+		return err
+	}
+	if err := form(`{"type":"object","properties":{"verification_pass":{"type":"boolean"}}}`); err != nil {
+		t.Fatalf("verification flag rejected: %v", err)
+	}
+	if err := form(`{"type":"object","properties":{"db_pass":{"type":"string"}}}`); err == nil {
+		t.Fatal("credential field accepted")
+	}
+}
+
 func TestInputBrokerCancelAndRevocation(t *testing.T) {
 	for _, revoke := range []bool{false, true} {
 		t.Run(map[bool]string{true: "revoked", false: "cancelled"}[revoke], func(t *testing.T) {

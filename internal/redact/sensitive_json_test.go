@@ -48,9 +48,18 @@ func TestSensitiveJSONFieldNameCoversPassFamily(t *testing.T) {
 			t.Fatalf("credential field %q was not recognized", value)
 		}
 	}
-	for _, value := range []string{"passthrough", "pass_reference", "bypass"} {
+	for _, value := range []string{"passthrough", "pass_through", "pass_reference", "bypass"} {
 		if SensitiveJSONFieldName(value) {
 			t.Fatalf("non-credential field %q was classified as a credential", value)
 		}
+	}
+}
+
+func TestSanitizePreservesBooleanPassResults(t *testing.T) {
+	raw := []byte(`{"verification_pass":false,"pass":true,"db_pass":"fixture","pass_through":"visible"}`)
+	safe, err := SanitizeSensitiveJSON(raw)
+	want := `{"db_pass":"[REDACTED:sensitive-field]","pass":true,"pass_through":"visible","verification_pass":false}`
+	if err != nil || string(safe) != want {
+		t.Fatalf("sanitized pass fields = %s, err = %v", safe, err)
 	}
 }
