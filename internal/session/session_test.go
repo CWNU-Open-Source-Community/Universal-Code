@@ -479,14 +479,6 @@ func TestSessionWriteCreatesFileEditProposal(t *testing.T) {
 	if result.FileEditID == "" || !strings.Contains(result.Text, "-# Old") || !strings.Contains(result.Text, "+# Updated") {
 		t.Fatalf("unexpected write proposal result: %#v", result)
 	}
-	// The proposal hint must name the path a session-proposed edit actually
-	// takes: `edit approve <id>` applies it directly. The run-bound sequence
-	// alone sent operators into "does not belong to the requested Run".
-	if !strings.Contains(result.Text, "edit approve "+result.FileEditID) ||
-		!strings.Contains(result.Text, "edit review-approve <run-id>") ||
-		!strings.Contains(result.Text, "16-256 bytes") {
-		t.Fatalf("write proposal hint must cover both approval paths and the key contract: %q", result.Text)
-	}
 	edit, err := store.GetFileEdit(context.Background(), result.FileEditID)
 	if err != nil {
 		t.Fatal(err)

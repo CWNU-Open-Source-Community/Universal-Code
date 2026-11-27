@@ -606,8 +606,19 @@ func (m *Manager) handleWorkspaceWrite(ctx context.Context, sess Session, path s
 		}
 		return edit, response
 	}
-	response := fmt.Sprintf("File edit %s proposed for %s. Inspect with `cyberagent edit show %s`. Session-proposed edits apply directly with `edit approve %s`; Run-bound edits require `edit review-approve <run-id> %s` followed by `edit apply <run-id> %s --operation-key <key>` (operation key: normalized UTF-8, 16-256 bytes, no whitespace). Deny with `cyberagent edit deny %s`.\n\n%s",
-		edit.ID, edit.Path, edit.ID, edit.ID, edit.ID, edit.ID, edit.ID, edit.Diff)
+	record, err := m.store.GetApprovalByProposal(ctx, edit.ID)
+	var guidance string
+	switch {
+	case err != nil:
+		guidance = fmt.Sprintf("Approval lookup failed: %v.", err)
+	case record.RunID == "":
+		guidance = fmt.Sprintf("Apply with `cyberagent edit approve %s` or deny with `cyberagent edit deny %s`.", edit.ID, edit.ID)
+	default:
+		guidance = fmt.Sprintf("Approve with `cyberagent edit review-approve %s %s`, then apply while the Run is running with `cyberagent edit apply %s %s --operation-key <key>`. Use a normalized UTF-8 operation key of 16-256 bytes without whitespace or control characters. Deny with `cyberagent edit review-deny %s %s`.",
+			record.RunID, edit.ID, record.RunID, edit.ID, record.RunID, edit.ID)
+	}
+	response := fmt.Sprintf("File edit %s proposed for %s. Inspect with `cyberagent edit show %s`. %s\n\n%s",
+		edit.ID, edit.Path, edit.ID, guidance, edit.Diff)
 	if edit.SecretsRedacted {
 		response += "\nSensitive values were redacted before the proposal was stored."
 	}

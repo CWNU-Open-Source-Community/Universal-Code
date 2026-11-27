@@ -1485,6 +1485,50 @@ func TestExecuteContextCancelsProviderAndPersistsFailure(t *testing.T) {
 	}
 }
 
+func TestSessionWriteApprovalGuidance(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	if _, stderr, code := executeTestCommand(t, "workspace", "init", "files"); code != 0 {
+		t.Fatal(stderr)
+	}
+	standalone, stderr, code := executeTestCommand(t, "session", "create", "--workspace", "files")
+	standaloneID := sessionIDPattern.FindString(standalone)
+	if code != 0 || standaloneID == "" {
+		t.Fatalf("create standalone session: %s%s", standalone, stderr)
+	}
+	proposal, stderr, code := executeTestCommand(t, "session", "send", standaloneID, "/write standalone.txt updated")
+	editID := editIDPattern.FindString(proposal)
+	if code != 0 || editID == "" || !strings.Contains(proposal, "edit approve "+editID) ||
+		strings.Contains(proposal, "review-approve") {
+		t.Fatalf("standalone proposal guidance: %s%s", proposal, stderr)
+	}
+	if applied, stderr, code := executeTestCommand(t, "edit", "approve", editID); code != 0 || !strings.Contains(applied, " applied") {
+		t.Fatalf("apply standalone edit: %s%s", applied, stderr)
+	}
+	created, stderr, code := executeTestCommand(t, "run", "create", "edit a file", "--workspace", "files")
+	runID, sessionID := runIDPattern.FindString(created), sessionIDPattern.FindString(created)
+	if code != 0 || runID == "" || sessionID == "" {
+		t.Fatalf("create run: %s%s", created, stderr)
+	}
+	if _, stderr, code := executeTestCommand(t, "run", "start", runID); code != 0 {
+		t.Fatal(stderr)
+	}
+	proposal, stderr, code = executeTestCommand(t, "session", "send", sessionID, "/write note.txt updated")
+	editID = editIDPattern.FindString(proposal)
+	if code != 0 || editID == "" ||
+		!strings.Contains(proposal, "edit review-approve "+runID+" "+editID) ||
+		!strings.Contains(proposal, "edit apply "+runID+" "+editID+" --operation-key <key>") ||
+		!strings.Contains(proposal, "16-256 bytes") || strings.Contains(proposal, "edit approve ") {
+		t.Fatalf("run-bound proposal guidance: %s%s", proposal, stderr)
+	}
+	if _, stderr, code := executeTestCommand(t, "edit", "review-approve", runID, editID); code != 0 {
+		t.Fatal(stderr)
+	}
+	applied, stderr, code := executeTestCommand(t, "edit", "apply", runID, editID, "--operation-key", "apply-session-note-0001")
+	if code != 0 || !strings.Contains(applied, "file_written: true") {
+		t.Fatalf("apply reviewed file: %s%s", applied, stderr)
+	}
+}
+
 func TestRunCLIEndToEndLifecycle(t *testing.T) {
 	t.Setenv("CYBERAGENT_HOME", t.TempDir())
 	if _, stderr, code := executeTestCommand(t, "workspace", "init", "demo"); code != 0 {
