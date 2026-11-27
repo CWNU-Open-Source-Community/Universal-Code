@@ -15,6 +15,9 @@ import (
 
 const drydockCLIUsage = "usage: cyberagent drydock status|create|use|checkpoint|rewind|undo|fork|deliver|cleanup|reconcile|gc [--run <run-id>] [--generation <n>] [--operation-key <key>] [explicit confirmation flags]"
 
+const drydockFullModeUsage = "\n  To execute in Full mode, also pass --enable-danger-full-access --confirm-full."
+const drydockRestoreUsage = "\n  Preview by default. To restore, pass --confirm --enable-permission-control." + drydockFullModeUsage
+
 func drydockOperationUsage(action string) string {
 	switch action {
 	case "status":
@@ -26,11 +29,11 @@ func drydockOperationUsage(action string) string {
 	case "checkpoint":
 		return "usage: cyberagent drydock checkpoint --run <run-id> --generation <n> --operation-key <key> [--title <text>] [--confirm-observed-changes] [--json]"
 	case "rewind":
-		return "usage: cyberagent drydock rewind --run <run-id> --generation <n> --operation-key <key> --target-checkpoint <id> [--confirm] [--confirm-observed-changes] [--json]"
+		return "usage: cyberagent drydock rewind --run <run-id> --generation <n> --operation-key <key> --target-checkpoint <id> [--confirm-observed-changes] [--json]" + drydockRestoreUsage
 	case "undo":
-		return "usage: cyberagent drydock undo --run <run-id> --generation <n> --operation-key <key> [--confirm] [--confirm-observed-changes] [--json]"
+		return "usage: cyberagent drydock undo --run <run-id> --generation <n> --operation-key <key> [--confirm-observed-changes] [--json]" + drydockRestoreUsage
 	case "fork":
-		return "usage: cyberagent drydock fork --run <run-id> --generation <n> --operation-key <key> --confirm --enable-permission-control --target-checkpoint <id> --expected-current-checkpoint <id> --workspace-name <name> --workspace-root <root> --branch <branch> [--goal <text>] [--json]"
+		return "usage: cyberagent drydock fork --run <run-id> --generation <n> --operation-key <key> --confirm --enable-permission-control --target-checkpoint <id> --expected-current-checkpoint <id> --workspace-name <name> --workspace-root <root> --branch <branch> [--goal <text>] [--json]" + drydockFullModeUsage
 	case "deliver":
 		return "usage: cyberagent drydock deliver --run <run-id> --generation <n> --operation-key <key> --confirm [--json]"
 	case "cleanup":
@@ -54,6 +57,10 @@ func (a *App) drydockCommand(ctx context.Context, args []string) error {
 		return errors.New(drydockOperationUsage(action))
 	}
 	fs := newFlagSet("drydock "+action, a.errOut)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), drydockOperationUsage(action))
+		fs.PrintDefaults()
+	}
 	runID := fs.String("run", "", "exact Standard Code Run identity")
 	generation := fs.Int64("generation", 0, "expected Drydock ownership generation")
 	operationKey := fs.String("operation-key", "", "stable operation idempotency key")

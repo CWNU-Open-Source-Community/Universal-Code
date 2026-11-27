@@ -102,10 +102,17 @@ func testDrydockCLIPermission(t *testing.T, mode string) {
 	currentGeneration := confirmed.Workspace.Generation
 	for _, action := range []string{"rewind", "undo"} {
 		args := []string{"drydock", action, "--run", runID, "--generation", strconv.FormatInt(currentGeneration, 10),
-			"--operation-key", "drydock-cli-" + action + "-0001", "--confirm", "--json"}
+			"--operation-key", "drydock-cli-" + action + "-0001", "--json"}
 		if action == "rewind" {
 			args = append(args, "--target-checkpoint", confirmed.Checkpoint.ID)
 		}
+		previewJSON, stderr, code := executeTestCommand(t, args...)
+		var preview application.DrydockRewindResult
+		if code != 0 || json.Unmarshal([]byte(previewJSON), &preview) != nil || preview.Confirmed ||
+			preview.Receipt != nil || preview.After != nil || preview.Workspace.Generation != currentGeneration {
+			t.Fatalf("%s preview=%s stderr=%q code=%d", action, previewJSON, stderr, code)
+		}
+		args = append(args, "--confirm")
 		// The CLI wires the existing service, but must not enable its permission
 		// gate merely because a restore was requested.
 		if _, stderr, code = executeTestCommand(t, args...); code != 5 || !strings.Contains(stderr, "not authorized") {
@@ -169,19 +176,25 @@ func runDrydockCLIGit(t *testing.T, root string, args ...string) string {
 // and blocked the checkpoint/rewind lifecycle entirely.
 func TestDrydockUsagePerSubcommand(t *testing.T) {
 	t.Setenv("CYBERAGENT_HOME", t.TempDir())
-	cases := map[string]string{
-		"checkpoint": "--generation <n>",
-		"rewind":     "--target-checkpoint <id>",
-		"fork":       "--enable-permission-control",
-		"deliver":    "--confirm",
-		"create":     "--confirm-workspace-trust",
-		"gc":         "--confirm",
+	cases := map[string][]string{
+		"checkpoint": {"--generation <n>"},
+		"rewind":     {"--target-checkpoint <id>", "Preview by default", "--confirm --enable-permission-control", "--enable-danger-full-access --confirm-full"},
+		"undo":       {"Preview by default", "--confirm --enable-permission-control", "--enable-danger-full-access --confirm-full"},
+		"fork":       {"--confirm --enable-permission-control", "--enable-danger-full-access --confirm-full"},
+		"deliver":    {"--confirm"},
+		"create":     {"--confirm-workspace-trust"},
+		"gc":         {"--confirm"},
 	}
-	for sub, want := range cases {
+	for sub, fragments := range cases {
 		_, stderr, code := executeTestCommand(t, "drydock", sub)
-		if code != 2 || !strings.Contains(stderr, "usage: cyberagent drydock "+sub) ||
-			!strings.Contains(stderr, want) {
-			t.Fatalf("drydock %s usage must expose its own flags (want %q): stderr=%q code=%d", sub, want, stderr, code)
+		if code != 2 || !strings.Contains(stderr, "usage: cyberagent drydock "+sub) {
+			t.Fatalf("drydock %s: stderr=%q code=%d", sub, stderr, code)
+		}
+		_, help, _ := executeTestCommand(t, "drydock", sub, "--help")
+		for _, want := range fragments {
+			if !strings.Contains(stderr, want) || !strings.Contains(help, want) {
+				t.Errorf("drydock %s usage and --help must both contain %q; usage=%q help=%q", sub, want, stderr, help)
+			}
 		}
 	}
 	if _, stderr, code := executeTestCommand(t, "drydock", "not-an-op"); code != 2 ||
