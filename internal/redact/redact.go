@@ -2,6 +2,7 @@ package redact
 
 import (
 	"regexp"
+	"strings"
 )
 
 type Finding struct {
@@ -71,12 +72,12 @@ var defaultRules = []rule{
 		// real leak shape no other rule covers; the username stays visible
 		// and only the password is removed.
 		label:       "url-credential",
-		pattern:     regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.\-]*://[^\s/:@]+:)([^\s/@]+)@`),
+		pattern:     regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.\-]*://[^\s/?#:@]*:)([^\s/?#@]+)@`),
 		replacement: `$1[REDACTED:url-credential]@`,
 	},
 	{
 		label:       "assigned-secret",
-		pattern:     regexp.MustCompile(`(?i)\b([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|PRIVATE[_-]?KEY)[A-Z0-9_]*\s*[:=]\s*)(["']?)([^\s"']{8,})(["']?)`),
+		pattern:     regexp.MustCompile(`(?i)\b((?:[A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY)[A-Z0-9_]*|(?:[A-Z0-9]+[_-])*PASS)\s*[:=]\s*)(["']?)([^\s"']{8,})(["']?)`),
 		replacement: `$1$2[REDACTED:secret]$4`,
 	},
 }
@@ -94,6 +95,12 @@ func textResult(value string, preserveQuotedPlaceholders bool) Result {
 	counts := map[string]int{}
 	order := make([]string, 0, len(defaultRules))
 	for _, rule := range defaultRules {
+		// These expressions start at a word boundary. Check their required
+		// separators first so ordinary multi-megabyte diffs skip the scans.
+		if rule.label == "url-credential" && !strings.Contains(out, "://") ||
+			rule.label == "assigned-secret" && !strings.ContainsAny(out, ":=") {
+			continue
+		}
 		matches := rule.pattern.FindAllString(out, -1)
 		if len(matches) == 0 {
 			continue

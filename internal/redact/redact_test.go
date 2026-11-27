@@ -96,20 +96,19 @@ func TestStringRedactsConnectionStringsAndTruncatedKeys(t *testing.T) {
 			t.Fatalf("%s must be redacted: %s", tc.name, out)
 		}
 	}
-	// The username survives URL redaction; credential-free URLs and short
-	// non-secret values stay untouched.
-	out := String("postgres://admin:[REDACTED:url-credential]@db.internal:5432/app")
-	if !strings.Contains(out, "admin:") || !strings.Contains(out, ":5432/app") {
-		t.Fatalf("url redaction must keep the user and port: %s", out)
-	}
-	plain := String("see https://example.com/docs and passed=true")
-	if plain != "see https://example.com/docs and passed=true" {
-		t.Fatalf("credential-free URL or short value changed: %q", plain)
-	}
-	// Known limitation: a truncated key whose body is not base64/whitespace
-	// (output cut mid-word) is not matched by the conservative tail rule.
-	partial := String("-----BEGIN OPENSSH PRIVATE KEY-----b3BlbnNza-truncated-no-end")
-	if !strings.Contains(partial, "b3BlbnNza") {
-		t.Fatalf("documented limitation changed unexpectedly: %q", partial)
+	for _, tc := range []struct{ input, want string }{
+		{"postgres://admin:fixture@db.internal:5432/app", "postgres://admin:[REDACTED:url-credential]@db.internal:5432/app"},
+		{"redis://:fixture@localhost:6379/0", "redis://:[REDACTED:url-credential]@localhost:6379/0"},
+		{"https://example.com:443?contact=alice@example.org", "https://example.com:443?contact=alice@example.org"},
+		{"https://example.com:443#contact=alice@example.org", "https://example.com:443#contact=alice@example.org"},
+		{"https://example.com?reply=mailto:alice@example.org", "https://example.com?reply=mailto:alice@example.org"},
+		{"CACHE_BYPASS=immutable PASSTHROUGH=unmodified", "CACHE_BYPASS=immutable PASSTHROUGH=unmodified"},
+		{"PASS_THROUGH=unmodified", "PASS_THROUGH=unmodified"},
+		{"APP-PASS=fixture-value", "APP-PASS=[REDACTED:secret]"},
+		{"PASS=fixture-value", "PASS=[REDACTED:secret]"},
+	} {
+		if got := String(tc.input); got != tc.want {
+			t.Errorf("String(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }
