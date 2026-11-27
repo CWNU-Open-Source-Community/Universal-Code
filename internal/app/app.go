@@ -381,6 +381,8 @@ func (a *App) dispatch(ctx context.Context, args []string) error {
 		return a.githubReviewCommand(ctx, args[1:])
 	case "headless":
 		return a.headlessCommand(ctx, args[1:])
+	case "hooks":
+		return a.hooksCommand(ctx, args[1:])
 	case "exec":
 		return a.execCommand(ctx, args[1:])
 	case "run":
@@ -483,6 +485,7 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.out, "  cyberagent provider list|test|qualify|price-import|price-list")
 	fmt.Fprintln(a.out, "  cyberagent model list|set")
 	fmt.Fprintln(a.out, "  cyberagent skill list|discover|show|validate|package|import|import-url|import-git|import-dir|installed|remove|candidate|candidates|select|selection|select-external|external-selection|catalog")
+	fmt.Fprintln(a.out, "  cyberagent skill catalog list|trust|revoke|pin|enable|disable|audit")
 	fmt.Fprintln(a.out, "  cyberagent context compact|show|instructions|memory")
 	fmt.Fprintln(a.out, "  cyberagent context instructions scaffold --workspace <name> [--target <dir>] [--print]  (writes AGENTS.md only when absent; never overwrites / 仅在缺失时写入 AGENTS.md，绝不覆盖)")
 	fmt.Fprintln(a.out, "  cyberagent context memory create|list|show|edit|enable|disable|delete|export")
@@ -510,11 +513,12 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.out, "  cyberagent git-op stage|unstage|commit|create-branch|switch-branch --run <run-id> [--path p]... [--all] [--message m] [--branch b] --operation-key <key> [--confirm]")
 	fmt.Fprintln(a.out, "  cyberagent git-remote fetch|pull|push-branch|create-pr|update-pr --run <run-id> --remote <https-url> --branch <name> [--base <name>] [--title <t>] [--body <b>] [--pr-number <n>] [--credential <name>] [--ttl 30s] --operation-key <key> [--confirm]")
 	fmt.Fprintln(a.out, "  cyberagent headless events")
-	fmt.Fprintln(a.out, `  cyberagent exec --workspace <name> "prompt" [--stdin] [--profile code|review|learn|script] [--route <route>] [--instructions <text>] [--timeout 30m] [--json | --stream] [--attach <file>]... [--image <png>]... [--max-turns n] [--max-tokens n] [--max-tool-calls n] [--max-cost-usd d] [--output-last-message <path>] [--continue <thread-id>] [--enable-permission-control --enable-danger-full-access --confirm-full]`)
+	fmt.Fprintln(a.out, "  cyberagent hooks list|validate")
+	fmt.Fprintln(a.out, "  "+execUsage)
 	fmt.Fprintln(a.out, "  cyberagent run create|adapt-task|list|show|mode|phase|execution-profile|execution-interaction|execution-permission|browser-cdp-permission|capability-readiness|command-plan|command-execute|host-execute|project-action|command-proposal|events|usage|start|step|execute|checkpoint|graph|lease|finish|fail|pause|resume|cancel|delegations|delegation|specialist-step|plans|plan|delivery|steer|fanouts|fanout|sandbox|standard-code|wake|schedule")
 	fmt.Fprintln(a.out, "  cyberagent run plan show|choose|selection")
 	fmt.Fprintln(a.out, "  cyberagent run sandbox docker-readiness|docker-admit|docker-start|docker-cancel|docker-status")
-	fmt.Fprintln(a.out, "  cyberagent run standard-code docker-readiness|docker-prepare|docker-execute|docker-cancel|docker-recover")
+	fmt.Fprintln(a.out, "  cyberagent run standard-code preset|pause-and-configure|docker-readiness|docker-prepare|docker-execute|docker-cancel|docker-recover")
 	fmt.Fprintln(a.out, "  cyberagent run delivery report|record|checkpoint|list|show")
 	fmt.Fprintln(a.out, "  cyberagent run fanout plan|execute|show|execution|report")
 	fmt.Fprintln(a.out, "  cyberagent todo create|list|show|update|start|block|reopen|unblock|complete|cancel")

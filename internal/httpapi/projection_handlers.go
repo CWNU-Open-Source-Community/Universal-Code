@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
@@ -11,7 +13,8 @@ func (a *API) runAgentGraph(request *http.Request, runID string) (any, *Page, er
 	if err := rejectQuery(request.URL.Query()); err != nil {
 		return nil, nil, err
 	}
-	if _, err := a.store.GetRun(request.Context(), runID); err != nil {
+	run, err := a.store.GetRun(request.Context(), runID)
+	if err != nil {
 		return nil, nil, err
 	}
 	nodes, err := a.store.ListAgentNodes(request.Context(), runID)
@@ -34,7 +37,44 @@ func (a *API) runAgentGraph(request *http.Request, runID string) (any, *Page, er
 			view.Nodes = append(view.Nodes, agentNodeView(node, nil))
 		}
 	}
+	if run.Status == domain.RunRunning {
+		if err := a.markLiveSpecialistAttempts(request.Context(), &view, time.Now()); err != nil {
+			return nil, nil, err
+		}
+	}
 	return view, nil, nil
+}
+
+func (a *API) markLiveSpecialistAttempts(ctx context.Context, graph *AgentGraphView, now time.Time) error {
+	reader, ok := a.store.(interface {
+		GetAgentAttempt(context.Context, string) (domain.AgentAttempt, bool, error)
+	})
+	if !ok {
+		return nil
+	}
+	var lease domain.RunExecutionLease
+	for index := range graph.Nodes {
+		node := &graph.Nodes[index]
+		if node.Role != string(domain.AgentRoleSpecialist) || node.Status != string(domain.AgentRunning) || node.ActiveAttemptID == "" {
+			continue
+		}
+		if lease.LeaseID == "" {
+			current, found, err := a.store.GetRunExecutionLease(ctx, graph.RunID)
+			if err != nil || !found || !current.ActiveAt(now) {
+				return err
+			}
+			lease = current
+		}
+		attempt, found, err := reader.GetAgentAttempt(ctx, node.ActiveAttemptID)
+		if err != nil {
+			return err
+		}
+		// An approval wait or interrupted process can leave a durable running node.
+		node.ActiveAttemptLive = found && attempt.Status == domain.AgentAttemptRunning &&
+			attempt.RunID == graph.RunID && attempt.AgentID == node.ID && attempt.ID == node.ActiveAttemptID &&
+			attempt.LeaseID == lease.LeaseID && attempt.LeaseGeneration == lease.Generation
+	}
+	return nil
 }
 
 func (a *API) runExternalSkills(request *http.Request, runID string) (any, *Page, error) {

@@ -51,6 +51,7 @@
 [data-prayu-density="compact"] .v2-execution-records-row { padding-block: 6px; gap: 3px; }
 [data-prayu-density="compact"] .v2-execution-records-content .thread-transcript-virtual-row { padding-block: 1px; }
 @container execution-records (max-width: 700px) {
+  .v2-execution-records-content.has-selection > .v2-execution-office { display: none; }
   .v2-execution-records-detail { position: absolute; inset: 0; border-left: 0; background: var(--prayu-surface-solid); z-index: 2; }
   .v2-execution-records-content.has-selection .v2-execution-records-records { visibility: hidden; }
 }

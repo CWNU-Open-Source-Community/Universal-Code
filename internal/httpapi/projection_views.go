@@ -105,6 +105,8 @@ type AgentNodeView struct {
 	UpdatedAt        time.Time             `json:"updated_at"`
 	FinishedAt       *time.Time            `json:"finished_at,omitempty"`
 	Completion       *AgentCompletionView  `json:"completion,omitempty"`
+
+	ActiveAttemptLive bool `json:"active_attempt_live,omitempty"`
 }
 
 type AgentGraphView struct {

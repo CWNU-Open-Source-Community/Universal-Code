@@ -86,9 +86,9 @@ export function parseThreadTranscriptItem(value: unknown): ThreadTranscriptItemV
   const required = ["activity_type", "canonical_id", "created_at", "durable", "id",
     "instruction_authorized", "kind", "provisional", "run_id",
     "run_ordinal", "sequence", "source", "stage", "title", "verifiable", "version"];
-  const optional = ["activity_detail_ref", "activity_summary", "attempt_id", "boundary_reason", "detail",
+  const optional = ["activity_detail_ref", "activity_summary", "agent_id", "attempt_id", "boundary_reason", "detail",
     "detail_available", "delivery_mode", "durable_call_id", "promoted_to_message_id", "promoted_from_message_id",
-    "model", "model_attempt", "position", "source_ref", "status", "stream_call_id", "stream_item_id",
+    "model", "model_attempt", "model_name", "position", "source_ref", "status", "stream_call_id", "stream_item_id",
     "stream_response_id", "tool_name", "tool_round", "web_evidence", "images", "attachments", "peer_message", "task"];
   if (!isRecord(value) || !hasOnlyKeys(value, [...required, ...optional]) ||
     required.some((key) => !Object.prototype.hasOwnProperty.call(value, key)) ||
@@ -106,7 +106,7 @@ export function parseThreadTranscriptItem(value: unknown): ThreadTranscriptItemV
     value.provisional !== false || value.durable !== true) {
     throw new APIRequestError("Thread transcript item is invalid", "INVALID_RESPONSE", 502);
   }
-  for (const field of ["activity_detail_ref", "attempt_id", "boundary_reason", "durable_call_id", "source_ref", "status",
+  for (const field of ["activity_detail_ref", "agent_id", "attempt_id", "boundary_reason", "durable_call_id", "source_ref", "status",
     "stream_call_id", "stream_item_id", "stream_response_id", "tool_name", "promoted_to_message_id", "promoted_from_message_id"]) {
     if (value[field] !== undefined && !boundedIdentity(value[field])) {
       throw new APIRequestError("Thread transcript identity is invalid", "INVALID_RESPONSE", 502);
@@ -117,7 +117,8 @@ export function parseThreadTranscriptItem(value: unknown): ThreadTranscriptItemV
     value.position !== undefined && !safePositiveInteger(value.position) ||
     value.model_attempt !== undefined && !safePositiveInteger(value.model_attempt) ||
     value.tool_round !== undefined && !safeBoundedCount(value.tool_round, 100) ||
-    (value.model !== undefined && (typeof value.model !== "string" || !boundedText(value.model, 256)))) {
+    (value.model !== undefined && !boundedText(value.model, 256)) ||
+    (value.model_name !== undefined && !boundedText(value.model_name, 256))) {
     throw new APIRequestError("Thread transcript metadata is invalid", "INVALID_RESPONSE", 502);
   }
   if ((value.sequence === 0) !== (value.boundary_reason !== undefined) ||

@@ -61,6 +61,7 @@ type Item struct {
 	AttemptID             string
 	ModelAttempt          int
 	Model                 string
+	ModelName             string `json:"-"` // Opt-in thread transcript metadata.
 	ToolRound             int
 	CreatedAt             time.Time
 }
@@ -118,9 +119,8 @@ func projectEvent(event events.Event) (Item, bool) {
 		return projectMessage(event, base)
 	case events.ModelStartedEvent:
 		base.Kind, base.Title, base.Status = KindModelCall, "模型调用开始", "running"
-		identity := modelIdentity(event.PayloadJSON)
-		base.Detail = identity
-		base.Model = identity
+		base.Model, base.ModelName = modelIdentity(event.PayloadJSON)
+		base.Detail = base.Model
 		base.AttemptID = cleanLabel(stringField(event.PayloadJSON, "attempt_id"))
 		base.ModelAttempt = int(intField(event.PayloadJSON, "model_attempt"))
 		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
@@ -136,9 +136,8 @@ func projectEvent(event events.Event) (Item, bool) {
 		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
 	case events.ModelCompletedEvent:
 		base.Kind, base.Title, base.Status = KindModelCall, "模型响应完成", "completed"
-		identity := modelIdentity(event.PayloadJSON)
-		base.Model = identity
-		base.Detail = completedModelDetail(event.PayloadJSON, identity)
+		base.Model, base.ModelName = modelIdentity(event.PayloadJSON)
+		base.Detail = completedModelDetail(event.PayloadJSON, base.Model)
 		base.AttemptID = cleanLabel(stringField(event.PayloadJSON, "attempt_id"))
 		base.ModelAttempt = int(intField(event.PayloadJSON, "model_attempt"))
 		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
@@ -147,10 +146,7 @@ func projectEvent(event events.Event) (Item, bool) {
 		}
 	case events.ModelFailedEvent:
 		base.Kind, base.Title, base.Status = KindModelCall, "模型调用失败", "failed"
-		identity := modelIdentity(event.PayloadJSON)
-		if identity != "" {
-			base.Model = identity
-		}
+		base.Model, base.ModelName = modelIdentity(event.PayloadJSON)
 		base.AttemptID = cleanLabel(stringField(event.PayloadJSON, "attempt_id"))
 		base.ModelAttempt = int(intField(event.PayloadJSON, "model_attempt"))
 		base.ToolRound = int(intField(event.PayloadJSON, "tool_round"))
@@ -873,16 +869,16 @@ func projectMessage(event events.Event, base Item) (Item, bool) {
 	return base, base.Detail != ""
 }
 
-func modelIdentity(payloadJSON string) string {
+func modelIdentity(payloadJSON string) (label, name string) {
 	provider := cleanLabel(stringField(payloadJSON, "provider"))
 	model := cleanLabel(stringField(payloadJSON, "model"))
 	switch {
 	case provider != "" && model != "":
-		return provider + " / " + model
+		return provider + " / " + model, model
 	case model != "":
-		return model
+		return model, model
 	default:
-		return provider
+		return provider, ""
 	}
 }
 

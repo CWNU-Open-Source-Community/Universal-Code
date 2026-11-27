@@ -6700,6 +6700,7 @@ export interface components {
         };
         AgentNodeView: {
             active_attempt_id?: string;
+            active_attempt_live?: boolean;
             allowed_read_paths?: string[];
             /** Format: int32 */
             child_limit: number;
@@ -15681,6 +15682,7 @@ export interface components {
             activity_summary?: components["schemas"]["ThreadActivitySummaryView"];
             /** @enum {string} */
             activity_type: "message" | "search" | "read" | "edit" | "execute" | "verify" | "approval" | "checkpoint" | "delivery";
+            agent_id?: string;
             attachments?: components["schemas"]["WorkspaceFileAttachment"][];
             attempt_id?: string;
             boundary_reason?: string;
@@ -15700,6 +15702,7 @@ export interface components {
             model?: string;
             /** Format: int32 */
             model_attempt?: number;
+            model_name?: string;
             peer_message?: components["schemas"]["ThreadPeerMessage"];
             /** Format: int32 */
             position?: number;
@@ -31369,7 +31372,10 @@ export interface operations {
                 /** @description Opaque cursor bound to this Thread transcript route and source-record ordering */
                 cursor?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Use include-agent-identity to return the recorded model name and specialist ID on model calls. */
+                Prefer?: string;
+            };
             path: {
                 /** @description Thread identity */
                 thread_id: string;

@@ -1724,7 +1724,7 @@ go run ./cmd/cyberagent run pause <run-id>
 go run ./cmd/cyberagent run resume <run-id>
 go run ./cmd/cyberagent run cancel <run-id>
 go run ./cmd/cyberagent run show <run-id>
-go run ./cmd/cyberagent run events <run-id>
+go run ./cmd/cyberagent run events <run-id> --follow
 go run ./cmd/cyberagent todo create <run-id> "inspect parser" --priority high --acceptance "tests pass"
 go run ./cmd/cyberagent todo create <run-id> "write tests" --depends-on <work-id>
 go run ./cmd/cyberagent todo list <run-id> --status pending,blocked
