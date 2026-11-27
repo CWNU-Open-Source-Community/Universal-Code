@@ -403,23 +403,15 @@ func (m *Manager) ApproveWithPreWriteCheck(ctx context.Context, id string,
 			return m.fail(ctx, edit, createErr)
 		}
 	}
-	writeTarget, err := tools.NewWorkspaceFS(workspaceRoot).ResolveForWrite(edit.Path)
-	if err != nil {
+	fs := tools.NewWorkspaceFS(workspaceRoot)
+	if err := checkEditPath(fs, edit.Path, target,
+		"workspace path changed during approval; refusing to write"); err != nil {
 		return m.fail(ctx, edit, err)
 	}
-	if writeTarget != target {
-		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
-			"workspace path changed during approval; refusing to write"))
-	}
-	latest, latestExists, err := readCurrentTextFromRoot(root, rootedPath)
-	if err != nil {
+	if err := checkEditHash(root, rootedPath, edit.OriginalHash,
+		"workspace file changed during approval; refusing to overwrite"); err != nil {
 		return m.fail(ctx, edit, err)
 	}
-	if contentHash(latest, latestExists) != edit.OriginalHash {
-		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
-			"workspace file changed during approval; refusing to overwrite"))
-	}
-	target = writeTarget
 	mode := os.FileMode(0o644)
 	if info, statErr := root.Stat(rootedPath); statErr == nil {
 		mode = info.Mode().Perm()
@@ -435,21 +427,13 @@ func (m *Manager) ApproveWithPreWriteCheck(ctx context.Context, id string,
 			_ = root.Remove(stagedPath)
 		}
 	}()
-	finalTarget, err := tools.NewWorkspaceFS(workspaceRoot).ResolveForWrite(edit.Path)
-	if err != nil {
+	if err := checkEditPath(fs, edit.Path, target,
+		"workspace path changed before atomic replacement; refusing to write"); err != nil {
 		return m.fail(ctx, edit, err)
 	}
-	if finalTarget != target {
-		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
-			"workspace path changed before atomic replacement; refusing to write"))
-	}
-	latest, latestExists, err = readCurrentTextFromRoot(root, rootedPath)
-	if err != nil {
+	if err := checkEditHash(root, rootedPath, edit.OriginalHash,
+		"workspace file changed before atomic replacement; refusing to overwrite"); err != nil {
 		return m.fail(ctx, edit, err)
-	}
-	if contentHash(latest, latestExists) != edit.OriginalHash {
-		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
-			"workspace file changed before atomic replacement; refusing to overwrite"))
 	}
 	if preWrite != nil {
 		if err := preWrite(); err != nil {
@@ -458,20 +442,20 @@ func (m *Manager) ApproveWithPreWriteCheck(ctx context.Context, id string,
 	}
 	// A live authorization check may block on a database or policy adapter.
 	// Re-read the target after it returns, just as the move path does.
-	finalTarget, err = tools.NewWorkspaceFS(workspaceRoot).ResolveForWrite(edit.Path)
-	if err != nil || finalTarget != target {
-		return m.fail(ctx, edit, errors.New("workspace path changed after authorization check"))
+	if err := checkEditPath(fs, edit.Path, target,
+		"workspace path changed after authorization check"); err != nil {
+		return m.fail(ctx, edit, err)
 	}
-	latest, latestExists, err = readCurrentTextFromRoot(root, rootedPath)
-	if err != nil || contentHash(latest, latestExists) != edit.OriginalHash {
-		return m.fail(ctx, edit, errors.New("workspace file changed after authorization check"))
+	if err := checkEditHash(root, rootedPath, edit.OriginalHash,
+		"workspace file changed after authorization check"); err != nil {
+		return m.fail(ctx, edit, err)
 	}
 	if operation == OperationCreate || edit.OriginalHash == missingHash {
 		// Linking the completed staging inode into an absent target is an
 		// atomic no-clobber publish. A concurrent creator therefore wins and
 		// this proposal fails closed instead of overwriting its file.
 		if err := root.Link(stagedPath, rootedPath); err != nil {
-			return m.fail(ctx, edit, err)
+			return m.fail(ctx, edit, classifyLinkConflict(err, "workspace create target already exists"))
 		}
 		if err := root.Remove(stagedPath); err != nil {
 			// Post-publish: the target already holds the proposed content;
@@ -535,14 +519,13 @@ func (m *Manager) approveMove(ctx context.Context, edit Edit,
 	linkedRecovery := sourceHash == edit.OriginalHash &&
 		destinationHash == edit.DestinationProposedHash
 	if linkedRecovery {
-		same, sameErr := sameRootFile(root, rootedSource, rootedDestination)
-		if sameErr != nil || !same {
-			return m.fail(ctx, edit, errors.New(
-				"workspace move destination is not the recoverable source link"))
+		if err := checkEditIdentity(root, rootedSource, rootedDestination,
+			"workspace move destination is not the recoverable source link"); err != nil {
+			return m.fail(ctx, edit, err)
 		}
 	} else if sourceHash != edit.OriginalHash ||
 		destinationHash != edit.DestinationOriginalHash {
-		return m.fail(ctx, edit, errors.New(
+		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
 			"workspace move source or destination changed; refusing to rename"))
 	}
 	edit.Status = StatusApproved
@@ -552,58 +535,56 @@ func (m *Manager) approveMove(ctx context.Context, edit Edit,
 	if err != nil {
 		return Edit{}, err
 	}
-	latestSource, err := fs.ResolveForWrite(edit.Path)
-	if err != nil || latestSource != source {
-		return m.fail(ctx, edit, errors.New("workspace move source changed during approval"))
+	if err := checkEditPath(fs, edit.Path, source,
+		"workspace move source changed during approval"); err != nil {
+		return m.fail(ctx, edit, err)
 	}
-	latestDestination, err := fs.ResolveForWrite(edit.DestinationPath)
-	if err != nil || latestDestination != destination {
-		return m.fail(ctx, edit, errors.New("workspace move destination changed during approval"))
+	if err := checkEditPath(fs, edit.DestinationPath, destination,
+		"workspace move destination changed during approval"); err != nil {
+		return m.fail(ctx, edit, err)
+	}
+	// The destination must start absent. After publication it must be the
+	// hard link to the source, including when an interrupted move resumes.
+	checkFiles := func(linked bool, message string) error {
+		if err := checkEditHash(root, rootedSource, edit.OriginalHash, message); err != nil {
+			return err
+		}
+		if !linked {
+			return checkEditHash(root, rootedDestination, edit.DestinationOriginalHash, message)
+		}
+		if err := checkEditHash(root, rootedDestination, edit.DestinationProposedHash, message); err != nil {
+			return err
+		}
+		return checkEditIdentity(root, rootedSource, rootedDestination, message)
 	}
 	if !linkedRecovery {
-		latestSourceHash, sourceErr := currentHashFromRoot(root, rootedSource)
-		latestDestinationHash, destinationErr := currentHashFromRoot(root, rootedDestination)
-		if sourceErr != nil || destinationErr != nil || latestSourceHash != edit.OriginalHash ||
-			latestDestinationHash != edit.DestinationOriginalHash {
-			return m.fail(ctx, edit, errors.New(
-				"workspace move changed before no-clobber publish; refusing to continue"))
+		if err := checkFiles(false, "workspace move changed before no-clobber publish; refusing to continue"); err != nil {
+			return m.fail(ctx, edit, err)
 		}
 		if preWrite != nil {
 			if err := preWrite(); err != nil {
 				return Edit{}, err
 			}
 		}
-		latestSource, err = fs.ResolveForWrite(edit.Path)
-		if err != nil || latestSource != source {
-			return m.fail(ctx, edit, errors.New(
-				"workspace move source changed after authorization check"))
+		if err := checkEditPath(fs, edit.Path, source,
+			"workspace move source changed after authorization check"); err != nil {
+			return m.fail(ctx, edit, err)
 		}
-		latestDestination, err = fs.ResolveForWrite(edit.DestinationPath)
-		if err != nil || latestDestination != destination {
-			return m.fail(ctx, edit, errors.New(
-				"workspace move destination changed after authorization check"))
+		if err := checkEditPath(fs, edit.DestinationPath, destination,
+			"workspace move destination changed after authorization check"); err != nil {
+			return m.fail(ctx, edit, err)
 		}
-		latestSourceHash, sourceErr = currentHashFromRoot(root, rootedSource)
-		latestDestinationHash, destinationErr = currentHashFromRoot(root, rootedDestination)
-		if sourceErr != nil || destinationErr != nil || latestSourceHash != edit.OriginalHash ||
-			latestDestinationHash != edit.DestinationOriginalHash {
-			return m.fail(ctx, edit, errors.New(
-				"workspace move changed after authorization check; refusing to publish"))
+		if err := checkFiles(false, "workspace move changed after authorization check; refusing to publish"); err != nil {
+			return m.fail(ctx, edit, err)
 		}
 		// A hard-link publish is atomic and cannot replace a destination that
 		// appeared after the hash check. Removing the source completes the move;
 		// a crash between these steps leaves a recognizable, recoverable pair.
 		if err := root.Link(rootedSource, rootedDestination); err != nil {
-			return m.fail(ctx, edit, err)
+			return m.fail(ctx, edit, classifyLinkConflict(err, "workspace move destination already exists"))
 		}
-		same, sameErr := sameRootFile(root, rootedSource, rootedDestination)
-		linkedSourceHash, sourceErr := currentHashFromRoot(root, rootedSource)
-		linkedDestinationHash, destinationErr := currentHashFromRoot(root, rootedDestination)
-		if sameErr != nil || !same || sourceErr != nil || destinationErr != nil ||
-			linkedSourceHash != edit.OriginalHash ||
-			linkedDestinationHash != edit.DestinationProposedHash {
-			return m.fail(ctx, edit, errors.New(
-				"workspace move changed during no-clobber publish"))
+		if err := checkFiles(true, "workspace move changed during no-clobber publish"); err != nil {
+			return m.fail(ctx, edit, err)
 		}
 	}
 	// Moving is a two-step publish. Recheck both the live authorization and
@@ -614,22 +595,16 @@ func (m *Manager) approveMove(ctx context.Context, edit Edit,
 			return Edit{}, err
 		}
 	}
-	latestSource, err = fs.ResolveForWrite(edit.Path)
-	if err != nil || latestSource != source {
-		return m.fail(ctx, edit, errors.New("workspace move source changed before source removal"))
+	if err := checkEditPath(fs, edit.Path, source,
+		"workspace move source changed before source removal"); err != nil {
+		return m.fail(ctx, edit, err)
 	}
-	latestDestination, err = fs.ResolveForWrite(edit.DestinationPath)
-	if err != nil || latestDestination != destination {
-		return m.fail(ctx, edit, errors.New("workspace move destination changed before source removal"))
+	if err := checkEditPath(fs, edit.DestinationPath, destination,
+		"workspace move destination changed before source removal"); err != nil {
+		return m.fail(ctx, edit, err)
 	}
-	finalSourceBeforeRemove, sourceErr := currentHashFromRoot(root, rootedSource)
-	finalDestinationBeforeRemove, destinationErr := currentHashFromRoot(root, rootedDestination)
-	same, sameErr := sameRootFile(root, rootedSource, rootedDestination)
-	if sourceErr != nil || destinationErr != nil || sameErr != nil || !same ||
-		finalSourceBeforeRemove != edit.OriginalHash ||
-		finalDestinationBeforeRemove != edit.DestinationProposedHash {
-		return m.fail(ctx, edit, errors.New(
-			"workspace move changed before source removal; refusing to continue"))
+	if err := checkFiles(true, "workspace move changed before source removal; refusing to continue"); err != nil {
+		return m.fail(ctx, edit, err)
 	}
 	if err := root.Remove(rootedSource); err != nil {
 		if sourceHashAfter, hashErr := currentHashFromRoot(root, rootedSource); hashErr != nil || sourceHashAfter != missingHash {
@@ -675,7 +650,7 @@ func (m *Manager) approveDelete(ctx context.Context, edit Edit,
 		return m.store.SaveFileEdit(ctx, edit)
 	}
 	if currentHash != edit.OriginalHash {
-		return m.fail(ctx, edit, errors.New(
+		return m.fail(ctx, edit, apperror.New(apperror.CodeConflict,
 			"workspace delete target changed; refusing to remove"))
 	}
 	edit.Status = StatusApproved
@@ -685,27 +660,27 @@ func (m *Manager) approveDelete(ctx context.Context, edit Edit,
 	if err != nil {
 		return Edit{}, err
 	}
-	latest, err := tools.NewWorkspaceFS(workspaceRoot).ResolveForWrite(edit.Path)
-	if err != nil || latest != target {
-		return m.fail(ctx, edit, errors.New("workspace delete target changed during approval"))
+	fs := tools.NewWorkspaceFS(workspaceRoot)
+	if err := checkEditPath(fs, edit.Path, target,
+		"workspace delete target changed during approval"); err != nil {
+		return m.fail(ctx, edit, err)
 	}
-	latestHash, err := currentHashFromRoot(root, rootedPath)
-	if err != nil || latestHash != edit.OriginalHash {
-		return m.fail(ctx, edit, errors.New(
-			"workspace delete target changed before removal; refusing to continue"))
+	if err := checkEditHash(root, rootedPath, edit.OriginalHash,
+		"workspace delete target changed before removal; refusing to continue"); err != nil {
+		return m.fail(ctx, edit, err)
 	}
 	if preWrite != nil {
 		if err := preWrite(); err != nil {
 			return Edit{}, err
 		}
 	}
-	latest, err = tools.NewWorkspaceFS(workspaceRoot).ResolveForWrite(edit.Path)
-	if err != nil || latest != target {
-		return m.fail(ctx, edit, errors.New("workspace delete target changed after authorization check"))
+	if err := checkEditPath(fs, edit.Path, target,
+		"workspace delete target changed after authorization check"); err != nil {
+		return m.fail(ctx, edit, err)
 	}
-	latestHash, err = currentHashFromRoot(root, rootedPath)
-	if err != nil || latestHash != edit.OriginalHash {
-		return m.fail(ctx, edit, errors.New("workspace delete content changed after authorization check"))
+	if err := checkEditHash(root, rootedPath, edit.OriginalHash,
+		"workspace delete content changed after authorization check"); err != nil {
+		return m.fail(ctx, edit, err)
 	}
 	if err := root.Remove(rootedPath); err != nil {
 		return m.fail(ctx, edit, err)
@@ -1009,6 +984,10 @@ func (m *Manager) List(ctx context.Context, filter ListFilter) ([]Edit, error) {
 }
 
 func (m *Manager) fail(ctx context.Context, edit Edit, cause error) (Edit, error) {
+	var readErr *workspaceReadError
+	if errors.As(cause, &readErr) && readErr.changed {
+		cause = apperror.Wrap(apperror.CodeConflict, cause.Error(), cause)
+	}
 	if edit.Operation == OperationCreate {
 		cause = fmt.Errorf("%w; newly created parent directories, if any, are retained", cause)
 	}
@@ -1071,14 +1050,26 @@ func openWorkspaceRootForFile(workspaceRoot string, path string, createParents .
 		return nil, "", "", cause
 	}
 	latestTarget, err := resolve(relPath)
-	if err != nil || latestTarget != target {
-		return fail(errors.New("workspace path changed while opening its root handle"))
+	if err != nil {
+		return fail(err)
 	}
-	openedInfo, openedErr := root.Stat(".")
-	currentInfo, currentErr := os.Lstat(canonicalRoot)
-	if openedErr != nil || currentErr != nil || !currentInfo.IsDir() ||
+	if latestTarget != target {
+		return fail(apperror.New(apperror.CodeConflict, "workspace path changed while opening its root handle"))
+	}
+	openedInfo, err := root.Stat(".")
+	if err != nil {
+		return fail(err)
+	}
+	currentInfo, err := os.Lstat(canonicalRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return fail(apperror.Wrap(apperror.CodeConflict, "workspace root changed while opening its root handle", err))
+	}
+	if err != nil {
+		return fail(err)
+	}
+	if !currentInfo.IsDir() ||
 		currentInfo.Mode()&os.ModeSymlink != 0 || !os.SameFile(openedInfo, currentInfo) {
-		return fail(errors.New("workspace root changed while opening its root handle"))
+		return fail(apperror.New(apperror.CodeConflict, "workspace root changed while opening its root handle"))
 	}
 	return root, filepath.FromSlash(relPath), target, nil
 }
@@ -1192,6 +1183,50 @@ func currentHashFromRoot(root *rootfs.ExactRoot, path string) (string, error) {
 		return "", err
 	}
 	return contentHash(current, exists), nil
+}
+
+// Rechecks preserve inspection errors and classify observed mismatches as conflicts.
+func checkEditPath(fs tools.WorkspaceFS, path, expected, message string) error {
+	current, err := fs.ResolveForWrite(path)
+	if err != nil {
+		return err
+	}
+	if current != expected {
+		return apperror.New(apperror.CodeConflict, message)
+	}
+	return nil
+}
+
+func checkEditHash(root *rootfs.ExactRoot, path, expected, message string) error {
+	current, err := currentHashFromRoot(root, path)
+	if err != nil {
+		return err
+	}
+	if current != expected {
+		return apperror.New(apperror.CodeConflict, message)
+	}
+	return nil
+}
+
+func checkEditIdentity(root *rootfs.ExactRoot, left, right, message string) error {
+	same, err := sameRootFile(root, left, right)
+	if errors.Is(err, os.ErrNotExist) {
+		return apperror.Wrap(apperror.CodeConflict, message, err)
+	}
+	if err != nil {
+		return err
+	}
+	if !same {
+		return apperror.New(apperror.CodeConflict, message)
+	}
+	return nil
+}
+
+func classifyLinkConflict(err error, message string) error {
+	if errors.Is(err, os.ErrExist) {
+		return apperror.Wrap(apperror.CodeConflict, message, err)
+	}
+	return err
 }
 
 func sameRootFile(root *rootfs.ExactRoot, left string, right string) (bool, error) {
