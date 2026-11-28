@@ -3,10 +3,13 @@ package repository
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -48,6 +51,47 @@ func newExecutor(t *testing.T) *MutationExecutor {
 		t.Fatal(err)
 	}
 	return executor
+}
+
+func TestRepositoryMetadataStatErrors(t *testing.T) {
+	for _, cause := range []error{fs.ErrNotExist, fs.ErrPermission, syscall.EIO} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			statErr := &fs.PathError{Op: "stat", Path: ".git", Err: cause}
+			got := repositoryMetadataError(statErr)
+			if cause == fs.ErrNotExist {
+				if apperror.CodeOf(got) != apperror.CodeFailedPrecondition || !errors.Is(got, cause) {
+					t.Fatalf("missing Git metadata: got %v", got)
+				}
+			} else if got != statErr {
+				t.Fatalf("got %v, want original stat error %v", got, statErr)
+			}
+		})
+	}
+}
+
+func TestRepositoryRootsPreserveUnreadableMetadata(t *testing.T) {
+	root := t.TempDir()
+	metadata := filepath.Join(root, ".git")
+	if runtime.GOOS == "windows" {
+		if output, err := exec.Command("cmd", "/c", "mklink", "/J", metadata, metadata).CombinedOutput(); err != nil {
+			t.Fatalf("create metadata junction: %v: %s", err, output)
+		}
+	} else if err := os.Symlink(".git", metadata); err != nil {
+		t.Fatal(err)
+	}
+	_, err := os.Stat(metadata)
+	var statErr *fs.PathError
+	if !errors.As(err, &statErr) || errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("expected an unresolvable link at .git, got %v", err)
+	}
+	for name, normalize := range map[string]func(string) (string, error){
+		"mutation": normalizeRepositoryRoot,
+		"worktree": canonicalExistingRepositoryRoot,
+	} {
+		if _, err := normalize(root); !errors.Is(err, statErr.Err) || apperror.CodeOf(err) == apperror.CodeFailedPrecondition {
+			t.Errorf("%s: got %v, want the underlying stat error %v", name, err, statErr.Err)
+		}
+	}
 }
 
 func TestMutationStageUnstageCommitLifecycle(t *testing.T) {

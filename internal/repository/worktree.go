@@ -323,7 +323,7 @@ func canonicalExistingRepositoryRoot(root string) (string, error) {
 		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(resolved, ".git")); err != nil {
-		return "", errors.New("repository root does not contain Git metadata")
+		return "", repositoryMetadataError(err)
 	}
 	return filepath.Clean(resolved), nil
 }

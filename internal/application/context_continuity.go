@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+
+	"cyberagent-workbench/internal/apperror"
 	"fmt"
 	"sort"
 	"strings"
@@ -306,7 +308,7 @@ func (s *ContextContinuityService) Tree(ctx context.Context,
 		return contextmgr.SessionTree{}, err
 	}
 	if sess.WorkspaceID == "" {
-		return contextmgr.SessionTree{}, errors.New("session tree requires a Workspace-bound Session")
+		return contextmgr.SessionTree{}, apperror.New(apperror.CodeFailedPrecondition, "session tree requires a Workspace-bound Session")
 	}
 	all, err := s.store.ListWorkspaceContinuityNodes(ctx, sess.WorkspaceID, 2000)
 	if err != nil {
