@@ -209,7 +209,7 @@ jobs:
           }
 
       - name: Set up repository-pinned Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: true
@@ -271,7 +271,7 @@ jobs:
           echo 'Stable macOS publication requires Developer ID signing, notarization and final-package manual acceptance; this pipeline currently produces previews only.' >&2
           exit 1
       - name: Set up repository-pinned Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: true
@@ -349,7 +349,7 @@ jobs:
           }
 
       - name: Set up repository-pinned Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: true
@@ -773,7 +773,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Exact Windows candidate download failed" }
 
       - name: Set up repository-pinned Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: true
@@ -1109,7 +1109,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Exact Partner Center artifact download failed" }
 
       - name: Set up repository-pinned Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: true
