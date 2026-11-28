@@ -186,6 +186,16 @@ func TestMCPGatewayRedactsSensitiveJSONFieldsBeforeDurableOutcome(t *testing.T) 
 	}
 }
 
+func TestMCPArgumentsDistinguishPassFlagsFromPasswords(t *testing.T) {
+	flags := json.RawMessage(`{"verification_pass":false}`)
+	if got, err := normalizeMCPArguments(flags); err != nil || string(got) != string(flags) {
+		t.Fatalf("verification flag = %s, err = %v", got, err)
+	}
+	if _, err := normalizeMCPArguments(json.RawMessage(`{"db_pass":"fixture"}`)); err == nil {
+		t.Fatal("inline password accepted")
+	}
+}
+
 func TestMCPContentPayloadVersionSeparatesMethods(t *testing.T) {
 	old := `{"version":"mcp-client.v1","server_id":"docs","tool_name":"lookup","capability_fingerprint":"` + strings.Repeat("a", 64) + `","arguments":{}}`
 	_, canonical, err := NormalizeMCPToolPayload(json.RawMessage(old))

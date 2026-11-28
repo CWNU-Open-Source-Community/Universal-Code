@@ -40,7 +40,8 @@ func containsMCPInlineCredential(value any) bool {
 	switch typed := value.(type) {
 	case map[string]any:
 		for key, child := range typed {
-			if mcpSensitiveFieldName(key) || redact.String(key) != key ||
+			_, boolean := child.(bool)
+			if redact.SensitiveJSONField(key, boolean) || redact.String(key) != key ||
 				containsMCPInlineCredential(child) {
 				return true
 			}
@@ -66,8 +67,4 @@ func sanitizeMCPResultContent(content string) string {
 		return redact.String(content)
 	}
 	return string(canonical)
-}
-
-func mcpSensitiveFieldName(value string) bool {
-	return redact.SensitiveJSONFieldName(value)
 }

@@ -27,6 +27,12 @@ var sensitiveJSONMetadataSuffixes = map[string]bool{
 // Explicit reference and accounting metadata remain visible because they name
 // an already-reviewed credential; they do not carry the credential itself.
 func SensitiveJSONFieldName(value string) bool {
+	return SensitiveJSONField(value, false)
+}
+
+// SensitiveJSONField also takes the value or schema type into account. A
+// boolean pass flag records an outcome, while a string pass can hold a password.
+func SensitiveJSONField(value string, boolean bool) bool {
 	words := sensitiveJSONFieldWords(value)
 	if len(words) == 0 {
 		return false
@@ -44,6 +50,9 @@ func SensitiveJSONFieldName(value string) bool {
 			"credentials", "cookie", "password", "passwd", "secret", "token":
 			return true
 		}
+	}
+	if !boolean && words[len(words)-1] == "pass" {
+		return true
 	}
 	return strings.Contains(compact, "password") ||
 		strings.Contains(compact, "passwd") ||
@@ -118,7 +127,8 @@ func sanitizeSensitiveJSONValue(value any) any {
 			if String(key) != key {
 				continue
 			}
-			if SensitiveJSONFieldName(key) {
+			_, boolean := child.(bool)
+			if SensitiveJSONField(key, boolean) {
 				result[key] = SensitiveJSONFieldPlaceholder
 				continue
 			}
