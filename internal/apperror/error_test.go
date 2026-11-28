@@ -48,8 +48,22 @@ func TestNormalizeClassifiesStandardAndLegacyErrors(t *testing.T) {
 		if got := CodeOf(Normalize(test.err)); got != test.code {
 			t.Fatalf("Normalize(%q) code=%s want=%s", test.err, got, test.code)
 		}
+		if errors.Is(test.err, sql.ErrNoRows) {
+			// The missing-row message is deliberately rewritten for operators;
+			// covered by the assertions below.
+			continue
+		}
 		if Normalize(test.err).Error() != test.err.Error() {
 			t.Fatalf("Normalize changed human-readable error: %q", Normalize(test.err))
 		}
+	}
+	// A missing row keeps its NotFound classification and its cause, but the
+	// operator-facing message names the condition instead of the SQL driver.
+	normalized := Normalize(sql.ErrNoRows)
+	if normalized.Error() != "the requested record was not found" {
+		t.Fatalf("sql.ErrNoRows message = %q, want the readable not-found text", normalized.Error())
+	}
+	if !errors.Is(normalized, sql.ErrNoRows) {
+		t.Fatalf("sql.ErrNoRows cause must stay unwrappable after normalization")
 	}
 }
