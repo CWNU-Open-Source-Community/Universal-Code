@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -1095,7 +1096,7 @@ func (a *API) Handler() http.Handler {
 func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	requestID := idgen.New("req")
 	tracked := &responseWriter{ResponseWriter: writer}
-	uiRequest := a.uiHandler != nil && request != nil && request.URL != nil &&
+	uiRequest := uiHandlerPresent(a.uiHandler) && request != nil && request.URL != nil &&
 		!reservedAPIPath(request.URL.Path)
 	if uiRequest {
 		setUISecurityHeaders(tracked.Header(), requestID, "")
@@ -1658,6 +1659,25 @@ func (a *API) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 
 func reservedAPIPath(value string) bool {
 	return value == "/api" || strings.HasPrefix(value, "/api/")
+}
+
+// uiHandlerPresent reports whether a usable UI handler was wired. A typed
+// nil pointer stored in the interface (a *webui.Bundle wired without a
+// built UI) must count as absent: treating it as present sent every
+// non-API path into the UI branch, where the nil receiver failed as a
+// plain 500 instead of the API's 401/404 contract.
+func uiHandlerPresent(handler http.Handler) bool {
+	if handler == nil {
+		return false
+	}
+	value := reflect.ValueOf(handler)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map,
+		reflect.Pointer, reflect.Slice:
+		return !value.IsNil()
+	default:
+		return true
+	}
 }
 
 func (a *API) serveUI(writer http.ResponseWriter, request *http.Request, requestID string) {
