@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"cyberagent-workbench/internal/apperror"
 )
 
 type memoryStore struct {
@@ -325,7 +327,7 @@ func TestManagerMoveRefusesOccupiedDestinationAfterReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	failed, err := manager.Approve(context.Background(), move.ID, root)
-	if err == nil || failed.Status != StatusFailed {
+	if apperror.CodeOf(err) != apperror.CodeConflict || failed.Status != StatusFailed {
 		t.Fatalf("occupied destination move=%#v err=%v", failed, err)
 	}
 	data, _ := os.ReadFile(filepath.Join(root, "source.txt"))
@@ -498,7 +500,7 @@ func TestManagerMoveRefusesDestinationReplacementBetweenAuthorityChecks(t *testi
 			}
 			return nil
 		})
-	if err == nil || failed.Status != StatusFailed || checks != 2 {
+	if apperror.CodeOf(err) != apperror.CodeConflict || failed.Status != StatusFailed || checks != 2 {
 		t.Fatalf("replaced destination move=%+v checks=%d err=%v", failed, checks, err)
 	}
 	if data, readErr := os.ReadFile(source); readErr != nil || string(data) != "owned\n" {
@@ -534,7 +536,7 @@ func TestManagerMoveRevalidatesSourceAfterAuthorizationCheck(t *testing.T) {
 			checks++
 			return os.WriteFile(source, []byte("changed during check\n"), 0o644)
 		})
-	if err == nil || failed.Status != StatusFailed || checks != 1 {
+	if apperror.CodeOf(err) != apperror.CodeConflict || failed.Status != StatusFailed || checks != 1 {
 		t.Fatalf("source drift move=%+v checks=%d err=%v", failed, checks, err)
 	}
 	if _, err := os.Stat(destination); !os.IsNotExist(err) {
@@ -562,7 +564,7 @@ func TestManagerCreateRefusesConcurrentTargetAfterReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	failed, err := manager.Approve(context.Background(), created.ID, root)
-	if err == nil || failed.Status != StatusFailed {
+	if apperror.CodeOf(err) != apperror.CodeConflict || failed.Status != StatusFailed {
 		t.Fatalf("concurrent create=%#v err=%v", failed, err)
 	}
 	data, readErr := os.ReadFile(target)
