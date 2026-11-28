@@ -94,10 +94,10 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 		return err
 	}
 	if *streamEvents && *jsonOutput {
-		return errors.New("--stream and --json cannot be combined")
+		return errors.New(`usage: cyberagent exec "prompt" [--json | --stream]; --stream and --json cannot be combined`)
 	}
 	if *outputLastMessage != strings.TrimSpace(*outputLastMessage) {
-		return errors.New("exec --output-last-message path cannot contain surrounding whitespace")
+		return errors.New("usage: cyberagent exec --output-last-message <path>; --output-last-message path cannot contain surrounding whitespace")
 	}
 	prompt := strings.Join(fs.Args(), " ")
 	if *stdin {
@@ -131,7 +131,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	}
 	continueID := strings.TrimSpace(*continueThread)
 	if continueID == "" && strings.TrimSpace(*workspaceName) == "" {
-		return errors.New("exec requires --workspace <name> (or --continue <thread-id>)")
+		return errors.New(`usage: cyberagent exec --workspace <name> "prompt" (or --continue <thread-id>); exec requires a workspace or thread`)
 	}
 	// Validate the fixed instructions before any Run exists: a late pin
 	// failure would otherwise strand a created Run, and the operator gets the
@@ -512,15 +512,17 @@ func (a *App) importExecAttachments(ctx context.Context,
 		return nil, nil
 	}
 	if len(paths) > domain.MaxThreadMessageAttachments {
-		return nil, fmt.Errorf("exec supports at most %d attachments, got %d",
-			domain.MaxThreadMessageAttachments, len(paths))
+		return nil, apperror.New(apperror.CodeInvalidArgument,
+			fmt.Sprintf("exec supports at most %d attachments, got %d",
+				domain.MaxThreadMessageAttachments, len(paths)))
 	}
 	service := application.NewFileAttachmentService(a.store)
 	references := make([]domain.FileAttachmentReference, 0, len(paths))
 	for index, rawPath := range paths {
 		path := rawPath
 		if path == "" {
-			return nil, fmt.Errorf("exec --attach requires a file path (empty value at position %d)", index+1)
+			return nil, apperror.New(apperror.CodeInvalidArgument,
+				fmt.Sprintf("exec --attach requires a file path (empty value at position %d)", index+1))
 		}
 		data, err := readExecInputFile(path, fileattachment.MaxBytes)
 		if err != nil {
@@ -567,14 +569,16 @@ func (a *App) importExecImages(ctx context.Context,
 		return nil, nil
 	}
 	if len(paths) > domain.MaxThreadMessageImages {
-		return nil, fmt.Errorf("exec supports at most %d images, got %d",
-			domain.MaxThreadMessageImages, len(paths))
+		return nil, apperror.New(apperror.CodeInvalidArgument,
+			fmt.Sprintf("exec supports at most %d images, got %d",
+				domain.MaxThreadMessageImages, len(paths)))
 	}
 	references := make([]domain.ImageReference, 0, len(paths))
 	for index, rawPath := range paths {
 		path := rawPath
 		if path == "" {
-			return nil, fmt.Errorf("exec --image requires a file path (empty value at position %d)", index+1)
+			return nil, apperror.New(apperror.CodeInvalidArgument,
+				fmt.Sprintf("exec --image requires a file path (empty value at position %d)", index+1))
 		}
 		data, err := readExecInputFile(path, imageattachment.MaxBytes)
 		if err != nil {
@@ -582,7 +586,8 @@ func (a *App) importExecImages(ctx context.Context,
 		}
 		mediaType := imageMimeTypeForPath(path)
 		if mediaType == "" {
-			return nil, fmt.Errorf("exec --image %s: unsupported format; use PNG, JPEG, or WebP", path)
+			return nil, apperror.New(apperror.CodeInvalidArgument,
+				fmt.Sprintf("exec --image %s: unsupported format; use PNG, JPEG, or WebP", path))
 		}
 		image, err := a.store.SaveWorkspaceImage(ctx, workspaceID,
 			idgen.New("cli-exec-image"), mediaType, filepath.Base(path), data)
