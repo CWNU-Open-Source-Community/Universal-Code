@@ -621,6 +621,8 @@ Setting `CYBERAGENT_COMPLETE_PROTOCOL=4` on that call adds a final
 `:4` to suppress filename completion or `:0` to request it. Older
 scripts receive one candidate per line and an empty result for paths.
 
+Flag completion works after a positional argument, such as `tool invoke <tool> --pay`. Enum values also complete in the `--flag=value` form, such as `exec --profile=re`. File-valued flags use the shell’s filename completion.
+
 ### Read-only LSP code intelligence
 
 Web and Desktop **Settings → Extensions** can stage a language-server configuration

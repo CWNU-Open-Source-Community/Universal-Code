@@ -129,6 +129,362 @@ func TestCommandTableIntegrity(t *testing.T) {
 	}
 }
 
+func TestCommandFlagsIntegrity(t *testing.T) {
+	tableFlags := make(map[string]bool, len(commandTable))
+	for _, spec := range commandTable {
+		tableFlags[spec.name] = true
+	}
+	for key, flags := range commandFlags {
+		parts := strings.Split(key, " ")
+		if key != "" {
+			if !tableFlags[parts[0]] {
+				t.Fatalf("flag map key %q starts from unregistered command %q", key, parts[0])
+			}
+			for i := 1; i < len(parts); i++ {
+				parent := strings.Join(parts[:i], " ")
+				if !slices.Contains(commandSubcommands[parent], parts[i]) {
+					t.Fatalf("flag map key %q: %q is not a verified subcommand of %q", key, parts[i], parent)
+				}
+			}
+		}
+		previous := ""
+		for _, flag := range flags {
+			if !strings.HasPrefix(flag, "-") || len(flag) < 2 {
+				t.Fatalf("flag %q of %q must carry its leading dash", flag, key)
+			}
+			if previous != "" && flag <= previous {
+				t.Fatalf("flags of %q must stay sorted and unique: %q after %q", key, flag, previous)
+			}
+			previous = flag
+		}
+	}
+}
+
+// commandFlagScanTargets maps flag keys to the dispatch function whose body
+// declares the flags (several nested groups declare flags in their
+// sub-handlers rather than the group dispatcher).
+var commandFlagScanTargets = map[string]string{
+	"analyzer execute":                "analyzerExecute",
+	"api openapi":                     "apiOpenAPICommand",
+	"api serve":                       "apiServeCommand",
+	"approval grant create":           "approvalGrantCreate",
+	"approval grant list":             "approvalGrantList",
+	"approval grant revoke":           "approvalGrantRevoke",
+	"approval list":                   "approvalList",
+	"artifact list":                   "artifactList",
+	"artifact read":                   "artifactRead",
+	"code-intel status":               "codeIntelStatus",
+	"context compact":                 "contextCompact",
+	"context instructions":            "contextInstructions",
+	"context instructions scaffold":   "contextInstructionsScaffold",
+	"context memory create":           "contextMemoryCreate",
+	"context memory delete":           "contextMemoryDelete",
+	"context memory disable":          "contextMemoryStatus",
+	"context memory edit":             "contextMemoryEdit",
+	"context memory enable":           "contextMemoryStatus",
+	"context memory list":             "contextMemoryList",
+	"context show":                    "contextShow",
+	"ctf init":                        "ctfInit",
+	"debug query":                     "debugCommand",
+	"doctor browser-network-probe":    "doctorBrowserNetworkProbeCommand",
+	"doctor browser-network-review":   "doctorBrowserNetworkReviewCommand",
+	"doctor browser-readiness":        "doctorBrowserReadinessCommand",
+	"doctor bundle":                   "doctorBundleCommand",
+	"doctor portable":                 "doctorPortableCommand",
+	"doctor snapshot":                 "doctorSnapshotCommand",
+	"edit apply":                      "editApply",
+	"edit deny":                       "editDeny",
+	"edit list":                       "editList",
+	"edit propose":                    "editPropose",
+	"edit review-approve":             "editReview",
+	"edit review-deny":                "editReview",
+	"exec":                            "execCommand",
+	"git op commit":                   "gitOpCommand",
+	"git op create-branch":            "gitOpCommand",
+	"git op stage":                    "gitOpCommand",
+	"git op switch-branch":            "gitOpCommand",
+	"git op unstage":                  "gitOpCommand",
+	"git remote create-pr":            "gitRemoteCommand",
+	"git remote fetch":                "gitRemoteCommand",
+	"git remote pull":                 "gitRemoteCommand",
+	"git remote push-branch":          "gitRemoteCommand",
+	"git remote update-pr":            "gitRemoteCommand",
+	"headless events":                 "headlessEvents",
+	"hooks list":                      "hooksList",
+	"mcp client calls":                "mcpClientCommand",
+	"mcp client inputs":               "mcpInputCommand",
+	"mcp client list":                 "mcpClientCommand",
+	"mcp client respond":              "mcpInputCommand",
+	"mcp client review":               "mcpClientReviewCommand",
+	"mcp client stage":                "mcpClientCommand",
+	"mcp credential delete":           "mcpCredentialCommand",
+	"mcp credential oauth-discover":   "mcpOAuthCommand",
+	"mcp credential oauth-login":      "mcpOAuthCommand",
+	"mcp credential set":              "mcpCredentialCommand",
+	"mcp serve":                       "mcpServeCommand",
+	"note create":                     "noteCreate",
+	"note list":                       "noteList",
+	"note update":                     "noteUpdate",
+	"plugin import-git":               "pluginImportGitCommand",
+	"plugin import-url":               "pluginImportURLCommand",
+	"plugin review":                   "pluginReviewCommand",
+	"plugin rollback":                 "pluginRollbackCommand",
+	"plugin stage":                    "pluginStageCommand",
+	"plugin stage-mcp":                "pluginStageMCPCommand",
+	"project-config show":             "projectConfigCommand",
+	"provider price-import":           "providerCommand",
+	"report check":                    "reportCheck",
+	"report finding accept":           "reportFindingAccept",
+	"report finding attach":           "reportFindingAttach",
+	"report finding fix":              "reportFindingFix",
+	"report show":                     "reportShow",
+	"run create":                      "runCreate",
+	"run delegation apply":            "runDelegationApply",
+	"run delegation schedule":         "runDelegationSchedule",
+	"run delegations":                 "runDelegations",
+	"run delivery checkpoint":         "runDeliveryCheckpointRecord",
+	"run delivery list":               "runDeliveryCheckpointList",
+	"run events":                      "runEvents",
+	"run execute":                     "runSupervisorExecute",
+	"run execution-interaction set":   "runExecutionInteraction",
+	"run execution-permission set":    "runExecutionPermission",
+	"run execution-profile set":       "runExecutionProfile",
+	"run fanout execute":              "runFanoutExecute",
+	"run fanout plan":                 "runFanoutPlan",
+	"run fanout report":               "runFanoutReport",
+	"run host-execute":                "runHostExecute",
+	"run list":                        "runList",
+	"run phase":                       "runPhase",
+	"run plan choose":                 "runPlanDeliveryChoose",
+	"run plans":                       "runPlanDeliveryProposals",
+	"run project-action":              "runProjectAction",
+	"run sandbox docker-admit":        "runDockerSandboxAdmit",
+	"run sandbox docker-cancel":       "runDockerSandboxCancel",
+	"run sandbox docker-readiness":    "runDockerSandboxReadiness",
+	"run sandbox docker-start":        "runDockerSandboxStart",
+	"run schedule list":               "runSchedule",
+	"run schedule show":               "runSchedule",
+	"run schedule tick":               "runSchedule",
+	"run schedule cancel":             "runScheduleTransition",
+	"run schedule create":             "runScheduleCreate",
+	"run schedule pause":              "runScheduleTransition",
+	"run schedule resume":             "runScheduleTransition",
+	"run specialist-step":             "runSpecialistStep",
+	"run standard-code docker-cancel": "runStandardCodeCancel",
+	"run standard-code preset":        "runStandardCodePreset",
+	"run delegation":                  "runDelegation",
+	"run start":                       "runTransition",
+	"run steer cancel":                "runOperatorSteering",
+	"run steer drain":                 "runOperatorSteering",
+	"run steer enqueue":               "runOperatorSteering",
+	"run steer list":                  "runOperatorSteering",
+	"workspace checkpoint":            "workspaceCheckpointCommand",
+	"workspace checkpoint undo":       "workspaceCheckpointCursorAction",
+	"workspace checkpoint redo":       "workspaceCheckpointCursorAction",
+	"run step":                        "runSupervisorStep",
+	"run wake cancel":                 "runWake",
+	"run wake consume":                "runWake",
+	"run wake schedule":               "runWake",
+	"script new":                      "scriptNew",
+	"script run":                      "scriptRun",
+	"session create":                  "sessionCreate",
+	"session history":                 "sessionHistory",
+	"session send":                    "sessionSend",
+	"session tree":                    "sessionTree",
+	"skill candidate approve":         "skillCandidateCommand",
+	"skill candidate import":          "skillCandidateCommand",
+	"skill candidate list":            "skillCandidateCommand",
+	"skill candidate reject":          "skillCandidateCommand",
+	"skill candidate show":            "skillCandidateCommand",
+	"skill catalog disable":           "skillCatalogCommand",
+	"skill catalog enable":            "skillCatalogCommand",
+	"skill catalog pin":               "skillCatalogCommand",
+	"skill catalog revoke":            "skillCatalogCommand",
+	"skill catalog trust":             "skillCatalogCommand",
+	"skill import":                    "skillCommand",
+	"skill list":                      "skillCommand",
+	"thread create":                   "threadCreate",
+	"thread history":                  "threadHistory",
+	"thread list":                     "threadList",
+	"thread send":                     "threadSend",
+	"todo create":                     "todoCreate",
+	"todo list":                       "todoList",
+	"tool list":                       "toolList",
+	"tui":                             "tuiCommand",
+	"ui-evidence artifact":            "uiEvidenceArtifact",
+	"ui-evidence list":                "uiEvidenceList",
+	"web-evidence list":               "webEvidenceCommand",
+	"workspace checkpoint capture":    "workspaceCheckpointCapture",
+	"workspace checkpoint fork":       "workspaceCheckpointFork",
+	"workspace checkpoint preview":    "workspaceCheckpointPreview",
+	"workspace checkpoint rewind":     "workspaceCheckpointRewind",
+	"workspace checkpoint timeline":   "workspaceCheckpointTimeline",
+	"workspace read":                  "workspaceRead",
+	"workspace tree":                  "workspaceTree",
+	"tool deny":                       "toolDeny",
+	"tool invoke":                     "toolInvoke",
+}
+
+func functionBodyByExactName(t *testing.T, functionName string) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate test source file")
+	}
+	dir := filepath.Dir(thisFile)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read app package sources: %v", err)
+	}
+	want := strings.ToLower(functionName)
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		srcBytes, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+		src := string(srcBytes)
+		marker := "func (a *App) "
+		for searchFrom := 0; ; searchFrom++ {
+			relative := strings.Index(src[searchFrom:], marker)
+			if relative < 0 {
+				break
+			}
+			position := searchFrom + relative
+			searchFrom = position
+			offset := position + len(marker)
+			end := strings.Index(src[offset:], "(")
+			if end < 0 {
+				continue
+			}
+			function := src[offset : offset+end]
+			if strings.ToLower(function) != want {
+				continue
+			}
+			bodyStart := offset + end
+			if next := strings.Index(src[bodyStart:], "\nfunc "); next >= 0 {
+				return src[bodyStart : bodyStart+next]
+			}
+			return src[bodyStart:]
+		}
+	}
+	t.Fatalf("function %q not found in package sources", functionName)
+	return ""
+}
+
+func TestCommandFlagsMatchDispatch(t *testing.T) {
+	for key, flags := range commandFlags {
+		if key == "" {
+			continue
+		}
+		body := functionBodyByExactName(t, commandFlagScanTargets[key])
+		for _, flag := range flags {
+			if !strings.Contains(body, strings.TrimLeft(flag, "-")) {
+				t.Errorf("flag %q of %q does not appear in its dispatch source; the vocabulary drifted", flag, key)
+			}
+		}
+	}
+}
+
+func TestCompleteFlagsUseTheSelectedParser(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	flagLine := regexp.MustCompile(`(?m)^  -([a-z][a-z0-9-]*)\b`)
+	for _, command := range []string{
+		"exec", "run create", "thread create", "thread list", "approval grant create", "approval grant list",
+		"mcp client stage", "mcp client list", "mcp credential set", "mcp credential delete",
+		"run execution-interaction set", "run execution-permission set", "run execution-profile set",
+		"run schedule list", "run schedule show", "run steer cancel", "run steer list", "run wake consume",
+		"skill candidate show", "skill candidate list", "skill catalog trust", "skill catalog pin",
+	} {
+		t.Run(command, func(t *testing.T) {
+			path := strings.Fields(command)
+			_, stderr, _ := executeTestCommand(t, append(slices.Clone(path), "-h")...)
+			var parsed []string
+			for _, match := range flagLine.FindAllStringSubmatch(stderr, -1) {
+				parsed = append(parsed, "--"+match[1])
+			}
+			completed, directive := completionCandidates(path, "--")
+			if len(parsed) == 0 || !slices.Equal(completed, parsed) || directive != completionDirectiveNoFileComp {
+				t.Errorf("completion %v, parser %v (%s)", completed, parsed, stderr)
+			}
+		})
+	}
+	for _, command := range []string{
+		"mcp client", "mcp client show server-id", "mcp credential status name", "skill catalog list",
+		"mcp credential oauth-status server-id", "skill catalog audit", "run execution-profile run-id",
+		"run wake show run-id", "run steer show steering-id",
+	} {
+		if got, _ := completionCandidates(strings.Fields(command), "--"); len(got) != 0 {
+			t.Errorf("%s suggests flags from another command: %v", command, got)
+		}
+	}
+	// OAuth discovery rejects the login options accepted by its shared flag set.
+	if got, _ := completionCandidates(strings.Fields("mcp credential oauth-discover server-id"), "--"); !slices.Equal(got, []string{"--confirm"}) {
+		t.Errorf("OAuth discovery flags: %v", got)
+	}
+}
+
+func TestCompleteFlags(t *testing.T) {
+	out, err := dispatchForOutput(t, "__complete", "exec", "--w")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "--workspace" {
+		t.Fatalf("'exec --w' must complete --workspace only, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "workspace", "tree", "--")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "--depth" {
+		t.Fatalf("'workspace tree --' must complete --depth only, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "todo", "create", "--p")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "--priority" {
+		t.Fatalf("'todo create --p' must complete --priority only, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "context", "memory", "create", "--s")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 2 || got[0] != "--scope" || got[1] != "--source-ref" {
+		t.Fatalf("'context memory create --s' must complete both s-flags, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "note", "create", "--c")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 3 || got[0] != "--category" || got[1] != "--content" || got[2] != "--content-file" {
+		t.Fatalf("'note create --c' must complete the three c-flags sorted, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "skill", "list", "--p")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "--profile" {
+		t.Fatalf("'skill list --p' must complete --profile only, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "workspace", "--")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 0 {
+		t.Fatalf("commands outside the flag map must offer no flag candidates, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "-")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 4 || got[0] != "--help" || got[3] != "-v" {
+		t.Fatalf("top-level flag aliases must complete, got %v", got)
+	}
+}
+
 func TestCommandSubcommandsIntegrity(t *testing.T) {
 	table := make(map[string]bool, len(commandTable))
 	for _, spec := range commandTable {
@@ -212,7 +568,7 @@ func commandFunctionBody(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatalf("read app package sources: %v", err)
 	}
-	want := strings.ToLower(strings.ReplaceAll(lookup, "-", ""))
+	want := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(lookup, "-", ""), " ", ""))
 	if !strings.Contains(name, " ") {
 		want += "command"
 	}
@@ -257,19 +613,37 @@ func commandFunctionBody(t *testing.T, name string) string {
 // functions that hold their nested switches; the normalized-name lookup
 // only covers top-level command functions.
 var nestedDispatchFunctions = map[string]string{
-	"context instructions": "contextCommand",
-	"context memory":       "contextMemory",
-	"run delivery":         "runDeliveryCheckpoint",
-	"run fanout":           "runFanout",
-	"run plan":             "runPlanDelivery",
-	"run sandbox":          "runSandboxManifest",
-	"run standard-code":    "runStandardCode",
-	"skill catalog":        "skillCatalogCommand",
+	"approval grant":            "approvalGrantCommand",
+	"mcp client":                "mcpClientCommand",
+	"mcp credential":            "mcpCredentialCommand",
+	"run execution-interaction": "runExecutionInteraction",
+	"run execution-permission":  "runExecutionPermission",
+	"run execution-profile":     "runExecutionProfile",
+	"run schedule":              "runSchedule",
+	"run steer":                 "runOperatorSteering",
+	"run wake":                  "runWake",
+	"skill candidate":           "skillCandidateCommand",
+	"run delegation":            "runDelegation",
+	"skill import":              "skillCommand",
+	"skill list":                "skillCommand",
+	"context instructions":      "contextCommand",
+	"context memory":            "contextMemory",
+	"run delivery":              "runDeliveryCheckpoint",
+	"run fanout":                "runFanout",
+	"run plan":                  "runPlanDelivery",
+	"run sandbox":               "runSandboxManifest",
+	"run standard-code":         "runStandardCode",
+	"report finding":            "reportFindingCommand",
+	"skill catalog":             "skillCatalogCommand",
+	"workspace checkpoint":      "workspaceCheckpointCommand",
 }
 
 func TestCommandSubcommandsMatchDispatch(t *testing.T) {
 	for name, subcommands := range commandSubcommands {
 		body := commandFunctionBody(t, name)
+		if name == "mcp credential" {
+			body += functionBodyByExactName(t, "mcpOAuthCommand")
+		}
 		for _, sub := range subcommands {
 			if !strings.Contains(body, sub) {
 				t.Errorf("subcommand %q of %q does not appear in its dispatch source; the vocabulary drifted", sub, name)
@@ -512,7 +886,8 @@ func TestBashReadlineCompletesFilesAndCommands(t *testing.T) {
 if [ "$1" = __complete ]; then
     [ "$CYBERAGENT_COMPLETE_PROTOCOL" = 4 ] || exit 1
     case "$2" in
-        skill) printf ':0\n' ;;
+        skill|tool) printf ':0\n' ;;
+        exec) [ "$3" = --profile ] && [ "$4" = re ] && printf 'review\n:4\n' ;;
         wo) printf 'workspace\n:4\n' ;;
     esac
 else
@@ -533,12 +908,18 @@ touch 'release notes.zip'
 ` +
 		"cyberagent skill import rele\t\n" +
 		"cyberagent skill import pack\tbundle.zip\n" +
+		"cyberagent exec --profile=re\t\n" +
+		"cyberagent tool invoke example --payload-file=rele\t\n" +
+		"COMP_WORDBREAKS=${COMP_WORDBREAKS//=/}\n" +
+		"cyberagent tool invoke example --payload-file=pack\tbundle.zip\n" +
 		"cyberagent wo\tlist\nexit\n")
 	got, err := cmd.Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "[skill][import][release notes.zip]\n[skill][import][packages/bundle.zip]\n[workspace][list]\n"
+	want := "[skill][import][release notes.zip]\n[skill][import][packages/bundle.zip]\n" +
+		"[exec][--profile=review]\n[tool][invoke][example][--payload-file=release notes.zip]\n" +
+		"[tool][invoke][example][--payload-file=packages/bundle.zip]\n[workspace][list]\n"
 	if string(got) != want {
 		t.Fatalf("arguments after Tab completion:\ngot  %q\nwant %q", got, want)
 	}
@@ -625,5 +1006,159 @@ func TestCompletionCommandRequiresShell(t *testing.T) {
 		if _, err := dispatchForOutput(t, args...); err == nil {
 			t.Fatalf("dispatch %v must require exactly one shell", args)
 		}
+	}
+}
+
+func TestFlagValueVocabularyIntegrity(t *testing.T) {
+	for key, values := range flagValueVocabulary {
+		flagIdx := strings.LastIndex(key, " --")
+		if flagIdx < 0 {
+			t.Fatalf("flag value key %q must end with a --flag", key)
+		}
+		commandKey := key[:flagIdx]
+		flag := key[flagIdx+1:]
+		if _, ok := commandFlags[commandKey]; !ok {
+			t.Fatalf("flag value key %q: command key %q has no flag vocabulary", key, commandKey)
+		}
+		if !slices.Contains(commandFlags[commandKey], flag) {
+			t.Fatalf("flag value key %q: flag %q is not in the command's flag vocabulary", key, flag)
+		}
+		previous := ""
+		for _, value := range values {
+			if previous != "" && value <= previous {
+				t.Fatalf("values of %q must stay sorted and unique: %q after %q", key, value, previous)
+			}
+			previous = value
+		}
+	}
+}
+
+// flagValueSourceExceptions lists value keys whose choices come from domain
+// constants rather than literals in the dispatch source (the category help
+// string carries the default only).
+var flagValueSourceExceptions = map[string]bool{
+	"note create --category": true,
+}
+
+func TestFlagValueVocabularyMatchDispatch(t *testing.T) {
+	for key, values := range flagValueVocabulary {
+		flagIdx := strings.LastIndex(key, " --")
+		commandKey := key[:flagIdx]
+		body := commandFunctionBody(t, commandKey)
+		for _, value := range values {
+			if flagValueSourceExceptions[key] {
+				continue
+			}
+			if !strings.Contains(body, value) {
+				t.Errorf("flag value %q of %q does not appear in its dispatch source; the vocabulary drifted", value, key)
+			}
+		}
+	}
+}
+
+func TestCompleteFlagValues(t *testing.T) {
+	out, err := dispatchForOutput(t, "__complete", "exec", "--profile", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 4 || got[0] != "code" || got[3] != "script" {
+		t.Fatalf("'exec --profile' must complete the four profiles, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "todo", "create", "--priority", "hi")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 1 || got[0] != "high" {
+		t.Fatalf("'todo create --priority hi' must complete high only, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "note", "create", "--visibility", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 3 || got[0] != "owner" || got[1] != "root" || got[2] != "run" {
+		t.Fatalf("'note create --visibility' must complete the three visibilities, got %v", got)
+	}
+}
+
+func TestCompleteAttachedFlagValues(t *testing.T) {
+	for _, test := range []struct {
+		args      []string
+		want      []string
+		directive string
+	}{
+		{[]string{"exec", "--profile=re"}, []string{"--profile=review"}, ":4"},
+		{[]string{"todo", "create", "title", "--priority="}, []string{"--priority=critical", "--priority=high", "--priority=low", "--priority=normal"}, ":4"},
+		{[]string{"exec", "--profile=unknown"}, nil, ":4"},
+		{[]string{"tool", "invoke", "tool-name", "--payload-file=sample"}, nil, ":0"},
+	} {
+		out, err := dispatchForOutput(t, append([]string{"__complete"}, test.args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := completionCandidatesFromOutput(t, out, test.directive); !slices.Equal(got, test.want) {
+			t.Errorf("%v: got %v, want %v", test.args, got, test.want)
+		}
+	}
+}
+
+func TestCompleteRunFlagsAtTheirDispatchPaths(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"run", "delivery", "checkpoint", "work-id", "--oper"}, []string{"--operation-key", "--operator"}},
+		{[]string{"run", "delivery", "list", "run-id", "--l"}, []string{"--limit"}},
+		{[]string{"run", "events", "run-id", "--"}, []string{"--follow", "--timeout"}},
+		{[]string{"run", "start", "run-id", "--"}, []string{"--stream", "--timeout"}},
+	} {
+		out, err := dispatchForOutput(t, append([]string{"__complete"}, test.args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := completionCandidatesFromOutput(t, out, ":4"); !slices.Equal(got, test.want) {
+			t.Errorf("%v: got %v, want %v", test.args, got, test.want)
+		}
+	}
+	if got := commandSubcommands["run delivery checkpoint"]; len(got) != 0 {
+		t.Errorf("checkpoint takes a work ID, unexpected subcommands %v", got)
+	}
+}
+
+// TestCompleteFlagsAfterPositionalAndPathShapedValues pins the two shapes
+// the manual documents for tool invoke: flags still complete after the
+// positional tool name, and --payload-file publishes no value vocabulary so
+// its value position hands back to the shell's path completion.
+func TestCompleteFlagsAfterPositionalAndPathShapedValues(t *testing.T) {
+	out, err := dispatchForOutput(t, "__complete", "tool", "invoke", "web.browser", "--pay")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 2 || got[0] != "--payload" || got[1] != "--payload-file" {
+		t.Fatalf("flags after the tool name must still complete, got %v", got)
+	}
+	out, err = dispatchForOutput(t, "__complete", "tool", "invoke", "web.browser", "--payload-file", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":0"); len(got) != 0 {
+		t.Fatalf("--payload-file values must hand back to path completion, got %v", got)
+	}
+	// A published value vocabulary still completes across the positional
+	// title argument.
+	out, err = dispatchForOutput(t, "__complete", "todo", "create", "write tests", "--priority", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 4 || got[0] != "critical" || got[3] != "normal" {
+		t.Fatalf("'todo create <title> --priority' must complete the four priorities, got %v", got)
+	}
+	// Flag values that are not published must not suppress path completion
+	// for arbitrary flags either.
+	out, err = dispatchForOutput(t, "__complete", "tool", "invoke", "web.browser", "--run", "")
+	if err != nil {
+		t.Fatalf("dispatch __complete: %v", err)
+	}
+	if got := completionCandidatesFromOutput(t, out, ":0"); len(got) != 0 {
+		t.Fatalf("unpublished flag values must hand back to path completion, got %v", got)
 	}
 }
