@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"cyberagent-workbench/internal/domain"
 )
 
 func dispatchForOutput(t *testing.T, args ...string) (string, error) {
@@ -1042,6 +1044,14 @@ var flagValueSourceExceptions = map[string]bool{
 
 func TestFlagValueVocabularyMatchDispatch(t *testing.T) {
 	for key, values := range flagValueVocabulary {
+		if key == "exec --profile" {
+			for _, value := range values {
+				if _, err := domain.ParseProfile(value); err != nil {
+					t.Errorf("exec --profile completes %q, which its parser rejects: %v", value, err)
+				}
+			}
+			continue
+		}
 		flagIdx := strings.LastIndex(key, " --")
 		commandKey := key[:flagIdx]
 		body := commandFunctionBody(t, commandKey)
@@ -1061,8 +1071,9 @@ func TestCompleteFlagValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch __complete: %v", err)
 	}
-	if got := completionCandidatesFromOutput(t, out, ":4"); len(got) != 4 || got[0] != "code" || got[3] != "script" {
-		t.Fatalf("'exec --profile' must complete the four profiles, got %v", got)
+	want := []string{"code", "learn", "review", "script"}
+	if got := completionCandidatesFromOutput(t, out, ":4"); !slices.Equal(got, want) {
+		t.Fatalf("'exec --profile' completions = %v, want %v", got, want)
 	}
 	out, err = dispatchForOutput(t, "__complete", "todo", "create", "--priority", "hi")
 	if err != nil {
