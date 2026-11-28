@@ -233,6 +233,11 @@ func (a *App) sessionHistory(ctx context.Context, manager *session.Manager, args
 	if fs.NArg() != 1 {
 		return errors.New("usage: cyberagent session history <session-id> [--all]")
 	}
+	// An absent session must not read as an empty transcript: verify the
+	// session exists before reporting "no messages".
+	if _, err := manager.RequireSession(ctx, fs.Arg(0)); err != nil {
+		return err
+	}
 	messages, err := manager.History(ctx, fs.Arg(0), *all)
 	if err != nil {
 		return err
