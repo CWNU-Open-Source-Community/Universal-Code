@@ -16,6 +16,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/workspaceidentity"
 )
@@ -103,7 +104,17 @@ func Load(ctx context.Context, configPath string) (Config, error) {
 		return Config{}, err
 	}
 	resolved, err := filepath.EvalSymlinks(absolute)
-	if err != nil || !sameInstructionPath(absolute, resolved) {
+	if err != nil {
+		// EvalSymlinks fails for a missing file too: naming the absent file
+		// beats accusing the operator of symlink indirection (and keeps the
+		// NOT_FOUND classification instead of an internal failure).
+		if errors.Is(err, fs.ErrNotExist) {
+			return Config{}, apperror.New(apperror.CodeNotFound,
+				fmt.Sprintf("project config file does not exist: %s", configPath))
+		}
+		return Config{}, fmt.Errorf("project config path evaluation failed: %w", err)
+	}
+	if !sameInstructionPath(absolute, resolved) {
 		return Config{}, errors.New("project config path cannot contain symlink or junction indirection")
 	}
 	info, err := os.Lstat(configPath)
