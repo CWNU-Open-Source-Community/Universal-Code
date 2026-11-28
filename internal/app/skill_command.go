@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"cyberagent-workbench/internal/apperror"
 	"cyberagent-workbench/internal/application"
 	"cyberagent-workbench/internal/domain"
 	"cyberagent-workbench/internal/skills"
@@ -103,10 +104,11 @@ func (a *App) skillCommand(ctx context.Context, args []string) error {
 		})); err != nil {
 			return err
 		}
+		const usage = "usage: cyberagent skill import <package.zip> --surface code|cyber --operation-key <stable-key> --confirm-untrusted-skill [--operator cli_operator]"
 		if flags.NArg() != 1 {
-			return errors.New("usage: cyberagent skill import <package.zip> --surface code|cyber --operation-key <stable-key> --confirm-untrusted-skill [--operator cli_operator]")
+			return errors.New(usage)
 		}
-		surface, err := domain.ParseExecutionSurface(*surfaceValue)
+		surface, err := parseSkillImportSurface(*surfaceValue, usage)
 		if err != nil {
 			return err
 		}
@@ -505,6 +507,17 @@ func (a *App) skillCatalogCommand(ctx context.Context, args []string, registry *
 	}
 }
 
+func parseSkillImportSurface(value, usage string) (domain.ExecutionSurface, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", apperror.New(apperror.CodeInvalidArgument, usage+"; --surface is required")
+	}
+	surface, err := domain.ParseExecutionSurface(value)
+	if err != nil {
+		return "", apperror.Wrap(apperror.CodeInvalidArgument, "usage: --surface must be code or cyber; "+err.Error(), err)
+	}
+	return surface, nil
+}
+
 func (a *App) skillImportSourceCommand(ctx context.Context, args []string, kind string, registry *skills.Registry) error {
 	service, _, err := a.skillCatalogService(registry)
 	if err != nil {
@@ -528,11 +541,12 @@ func (a *App) skillImportSourceCommand(ctx context.Context, args []string, kind 
 	})); err != nil {
 		return err
 	}
+	usage := "usage: cyberagent skill import-" + kind + " <source> --surface code|cyber --operation-key <stable-key> --confirm-untrusted-skill"
+	usage += map[string]string{"url": " --sha256 <hex>", "git": " --commit <sha>"}[kind]
 	if flags.NArg() != 1 {
-		return fmt.Errorf("usage: cyberagent skill import-%s <source> --surface code|cyber --operation-key <stable-key> --confirm-untrusted-skill %s",
-			kind, map[string]string{"url": "--sha256 <hex>", "git": "--commit <sha>", "dir": ""}[kind])
+		return errors.New(usage)
 	}
-	surface, err := domain.ParseExecutionSurface(*surfaceValue)
+	surface, err := parseSkillImportSurface(*surfaceValue, usage)
 	if err != nil {
 		return err
 	}
