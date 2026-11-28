@@ -121,3 +121,17 @@ func TestTodoCLIHelpAndValidation(t *testing.T) {
 		t.Fatalf("invalid status returned code=%d stderr=%s", code, stderr)
 	}
 }
+
+// Transition usage text must reference the subcommand the operator typed:
+// the domain status names (completed, cancelled, blocked) are not
+// dispatchable subcommands, and following the old text hit
+// `unknown todo subcommand`.
+func TestTodoTransitionUsageUsesSubcommandNames(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	for _, sub := range []string{"complete", "cancel", "block", "start"} {
+		_, stderr, code := executeTestCommand(t, "todo", sub)
+		if code != 2 || !strings.Contains(stderr, "usage: cyberagent todo "+sub+" <work-id>") {
+			t.Fatalf("todo %s usage must reference its own subcommand: stderr=%q code=%d", sub, stderr, code)
+		}
+	}
+}

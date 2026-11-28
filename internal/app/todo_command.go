@@ -212,12 +212,22 @@ func (a *App) todoUpdate(ctx context.Context, service *application.WorkItemServi
 }
 
 func (a *App) todoTransition(ctx context.Context, service *application.WorkItemService, target domain.WorkItemStatus, args []string) error {
+	// Usage text and flag-set names must reference the CLI subcommand the
+	// operator actually typed: the domain status names (completed, cancelled,
+	// blocked) are not dispatchable subcommands, and following the old text
+	// landed on "unknown todo subcommand".
 	name := string(target)
-	if target == domain.WorkItemInProgress {
+	switch target {
+	case domain.WorkItemInProgress:
 		name = "start"
-	}
-	if target == domain.WorkItemPending {
+	case domain.WorkItemPending:
 		name = "reopen"
+	case domain.WorkItemCompleted:
+		name = "complete"
+	case domain.WorkItemCancelled:
+		name = "cancel"
+	case domain.WorkItemBlocked:
+		name = "block"
 	}
 	fs := newFlagSet("todo "+name, a.errOut)
 	version := fs.Int64("version", 0, "expected version; zero uses the current version")
