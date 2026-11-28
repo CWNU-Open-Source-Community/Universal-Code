@@ -58,17 +58,21 @@ func (a *App) contextInstructions(ctx context.Context, args []string) error {
 	}
 	workspaceValue := strings.TrimSpace(*workspaceName)
 	runValue := strings.TrimSpace(*runID)
+	// --confirm belongs to the --run scope only: the pinned snapshot a
+	// refresh mutates is run state, while --workspace is a stateless live
+	// view. The usage line must say so, or operators follow it into the
+	// dead-end scope error below.
 	if fs.NArg() != 0 || (workspaceValue == "") == (runValue == "") {
-		return errors.New("usage: cyberagent context instructions (--workspace <name> | --run <run-id>) [--target <path>] [--confirm --expected-fingerprint <pinned-sha256> --expected-live-fingerprint <live-sha256>] [--json]")
+		return errors.New("usage: cyberagent context instructions (--workspace <name> | --run <run-id>) [--target <path>] [--json]; --confirm requires --run with --expected-fingerprint <pinned-sha256> and --expected-live-fingerprint <live-sha256>")
 	}
 	if runValue != "" {
 		if *confirm && (!flagWasSet(fs, "expected-fingerprint") ||
 			!flagWasSet(fs, "expected-live-fingerprint")) {
-			return errors.New("confirmed project instruction refresh requires pinned and live fingerprints")
+			return errors.New("usage: cyberagent context instructions --run <run-id> --confirm --expected-fingerprint <pinned-sha256> --expected-live-fingerprint <live-sha256>; confirmed refresh requires pinned and live fingerprints")
 		}
 		if !*confirm && (flagWasSet(fs, "expected-fingerprint") ||
 			flagWasSet(fs, "expected-live-fingerprint")) {
-			return errors.New("expected project instruction fingerprints are valid only with --confirm")
+			return errors.New("usage: cyberagent context instructions --run <run-id> --confirm --expected-fingerprint <pinned-sha256> --expected-live-fingerprint <live-sha256>; expected fingerprints are valid only with --confirm")
 		}
 		service := application.NewProjectInstructionService(a.store)
 		var state application.ProjectInstructionState
@@ -96,7 +100,7 @@ func (a *App) contextInstructions(ctx context.Context, args []string) error {
 	}
 	if *confirm || flagWasSet(fs, "expected-fingerprint") ||
 		flagWasSet(fs, "expected-live-fingerprint") {
-		return errors.New("project instruction refresh requires --run <run-id>")
+		return errors.New("usage: cyberagent context instructions --run <run-id> --confirm --expected-fingerprint <pinned-sha256> --expected-live-fingerprint <live-sha256>; project instruction refresh requires --run <run-id>")
 	}
 	record, err := a.store.GetWorkspaceByName(ctx, workspace.Slug(workspaceValue))
 	if err != nil {
