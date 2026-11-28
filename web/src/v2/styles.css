@@ -1616,18 +1616,18 @@
 .v2-composer-icon { border-radius: var(--prayu-radius-control, 10px); height: 30px; padding: 0; width: 30px; }
 .v2-composer-icon:disabled { color: var(--v2-muted); opacity: .72; }
 .v2-shell .v2-send-button {
-  background: var(--prayu-primary-bg);
+  background: var(--prayu-text);
   border: 1px solid var(--prayu-primary-border);
   border-radius: 50%;
   box-shadow: 0 1px 3px var(--prayu-primary-shadow);
-  color: var(--prayu-primary-fg);
+  color: var(--prayu-surface-solid);
   height: 28px;
   padding: 0;
   transition: opacity 120ms ease, transform 90ms ease;
   width: 28px;
   flex-shrink: 0;
 }
-.v2-send-button:hover:not(:disabled) { background: var(--prayu-primary-hover); }
+.v2-send-button:hover { background: color-mix(in srgb, var(--prayu-text) 86%, var(--prayu-surface-solid)); }
 .v2-send-button:active:not(:disabled) { transform: scale(.92); }
 .v2-shell .v2-send-button:disabled { background: var(--v2-control-hover); border-color: transparent; box-shadow: none; color: var(--v2-muted); }
 .v2-composer-chip {
@@ -2684,7 +2684,6 @@ article.v2-approval-card:focus-visible { outline: 2px solid var(--prayu-focus); 
 .v2-sidebar-backdrop { display: none; }
 .v2-workspace-start { margin-left: auto; position: relative; }
 .v2-sidebar .v2-workspace-start { margin-left: 0; }
-.v2-header-actions .v2-stop-button { width: auto; min-width: 72px; gap: 6px; padding-inline: 10px; color: var(--v2-danger); }
 .v2-jump-latest { align-self: center; background: var(--v2-control); border: 1px solid var(--v2-border); border-radius: 20px; cursor: pointer; padding: 7px 16px; }
 
 @media (max-width: 720px) {

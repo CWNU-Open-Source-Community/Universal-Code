@@ -100,6 +100,7 @@ export type NarrativeEntry = (
       text: string;
       createdAt: string;
       failureOrigin?: { runId: string; sourceRef: string; eventSequence: number };
+      stoppedRunID?: string;
     }) & { task?: NarrativeTask };
 
 const toolActivities = new Set<NarrativeToolKind>([
@@ -423,7 +424,6 @@ export function projectThreadNarrative(
     if (item.source === "harness" && tone !== "warning") continue;
     if (hiddenHarnessStatuses.has(status) && noticeTone(item) === "neutral") continue;
     if (tone !== "neutral") {
-      const text = localUIMessage(normalizedText(item), t);
       const eventKey = `${item.run_id}:${item.sequence}:${item.id}`;
       if (noticeEvents.has(eventKey)) continue;
       noticeEvents.add(eventKey);
@@ -431,8 +431,10 @@ export function projectThreadNarrative(
         item.stage === "blocked" && ["failed", "cancelled"].includes(item.status ?? "") &&
         item.durable && !item.provisional && item.source_ref
         ? { runId: item.run_id, sourceRef: item.source_ref, eventSequence: item.sequence } : undefined;
+      const stoppedRunID = item.status === "cancelled" && item.title === "本轮已停止" ? failureOrigin?.runId : undefined;
       result.push({ id: item.id, ...taskFields, kind: "notice", tone,
-        text, createdAt: item.created_at, ...(failureOrigin ? { failureOrigin } : {}) });
+        text: stoppedRunID ? t("已停止", "Stopped") : localUIMessage(normalizedText(item), t),
+        createdAt: item.created_at, ...(failureOrigin ? { failureOrigin } : {}), ...(stoppedRunID ? { stoppedRunID } : {}) });
     }
   }
 

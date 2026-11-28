@@ -8,12 +8,20 @@ import { useState } from "react";
 import { APIRequestError, APIClient } from "../../api/client";
 import type { RunLifecycleControlView, ThreadExecutionView } from "../../api/types";
 import { v2QueryKeys } from "../query-keys";
-import { useV2ThreadExecution, V2PausedThreadControl, V2ThreadExecutionControl } from "./thread-execution-control";
+import { useV2ThreadExecution, useV2ThreadStop, V2PausedThreadControl } from "./thread-execution-control";
+
+function StopControl({ client, threadID, execution }: { client: APIClient; threadID: string; execution?: ThreadExecutionView }) {
+  const stop = useV2ThreadStop(client, threadID, execution);
+  return stop && <>
+    <button disabled={stop.state === "stopping"} onClick={stop.request} type="button">Stop</button>
+    {stop.unconfirmed && <span role="alert">Unconfirmed</span>}
+  </>;
+}
 
 function ObservedControl({ client }: { client: APIClient }) {
   const query = useV2ThreadExecution(client, "thread-a");
   return <><output>{query.data?.state ?? "unavailable"}</output>
-    <V2ThreadExecutionControl client={client} threadID="thread-a" execution={query.data} /></>;
+    <StopControl client={client} threadID="thread-a" execution={query.data} /></>;
 }
 
 it("only lifts a pause on an explicit click without resubmitting the failed tool or a message", async () => {
@@ -222,7 +230,7 @@ it("does not request or poll an unavailable execution route even with a control 
   try {
     await act(async () => { await vi.advanceTimersByTimeAsync(1_800); });
     expect(read).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "停止当前执行" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
   } finally {
     view.unmount();
     queryClient.clear();
@@ -241,7 +249,7 @@ it("keeps observing a supported execution route with only the read token and can
   const view = render(<QueryClientProvider client={queryClient}><ObservedControl client={client} /></QueryClientProvider>);
   try {
     await screen.findByText("running");
-    expect(screen.queryByRole("button", { name: "停止当前执行" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
     await screen.findByText("idle");
     expect(read).toHaveBeenCalledTimes(2);
     expect(stop).not.toHaveBeenCalled();
@@ -261,7 +269,7 @@ it("stops automatic polling if a previously advertised execution route returns 4
     await act(async () => { await vi.advanceTimersByTimeAsync(1_800); });
     expect(read).toHaveBeenCalledTimes(1);
     expect(queryClient.getQueryState(v2QueryKeys.execution("thread-a"))?.status).toBe("error");
-    expect(screen.queryByRole("button", { name: "停止当前执行" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
   } finally {
     view.unmount();
     queryClient.clear();
@@ -289,14 +297,17 @@ it.each(["success", "failure"] as const)("keeps a delayed stop %s bound to its s
   function Control({ threadID }: { threadID: string }) {
     const query = useQuery<ThreadExecutionView>({ queryKey: v2QueryKeys.execution(threadID),
       queryFn: async () => execution(threadID), enabled: false });
-    return <V2ThreadExecutionControl client={client} threadID={threadID} execution={query.data} />;
+    return <StopControl client={client} threadID={threadID} execution={query.data} />;
   }
   const content = (threadID: string) => <QueryClientProvider client={queryClient}><Control threadID={threadID} /></QueryClientProvider>;
   const view = render(content("thread-a"));
-  await userEvent.setup().click(screen.getByRole("button", { name: "停止当前执行" }));
+  await userEvent.setup().click(screen.getByRole("button", { name: "Stop" }));
   await waitFor(() => expect(interruptThread).toHaveBeenCalledWith("thread-a", "execution-thread-a", "v2-thread-stop-execution-thread-a"));
   view.rerender(content("thread-b"));
-  await waitFor(() => expect(screen.getByRole("button", { name: "停止当前执行" })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled());
+  view.rerender(content("thread-a"));
+  expect(screen.getByRole("button", { name: "Stop" })).toBeDisabled();
+  view.rerender(content("thread-b"));
   await act(async () => {
     if (outcome === "success") finish(execution("thread-a", "idle"));
     else fail(new Error("Task A connection interrupted"));
@@ -306,7 +317,7 @@ it.each(["success", "failure"] as const)("keeps a delayed stop %s bound to its s
   expect(queryClient.getQueryData(v2QueryKeys.execution("thread-b"))).toEqual(stateB);
   expect(queryClient.getQueryState(v2QueryKeys.execution("thread-b"))?.isInvalidated).toBe(false);
   expect(queryClient.getQueryData(v2QueryKeys.execution("thread-a"))).toEqual(outcome === "success" ? execution("thread-a", "idle") : stateA);
-  expect(screen.getByRole("button", { name: "停止当前执行" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   view.unmount();
   queryClient.clear();

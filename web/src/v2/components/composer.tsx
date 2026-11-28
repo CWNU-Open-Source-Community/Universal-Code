@@ -1,10 +1,10 @@
 import { fullPermissionNotReadyMessage, localUIMessage } from "../../lib/local-ui-message";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, ChevronDown, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command, SquarePen } from "lucide-react";
+import { ArrowUp, ChevronDown, LoaderCircle, Paperclip, ClipboardPaste, FolderOpen, Database, Command, Square, SquarePen } from "lucide-react";
 import { APIRequestError, type APIClient } from "../../api/client";
 import { useLocale } from "../../lib/locale";
-import type { WorkspaceView } from "../../api/types";
+import type { ThreadExecutionView, WorkspaceView } from "../../api/types";
 import { V2ModelRouteControl, type V2PendingModelRoute } from "./model-route-control";
 import { V2PermissionControl } from "./permission-control";
 import { V2ComposerAddMenu, type ComposerAddAction } from "./composer-add-menu";
@@ -37,7 +37,7 @@ export type V2ComposerSubmitResult = void | typeof v2ComposerNotSubmitted;
 export function V2Composer({ client, threadID, workspaceID, runID, workspaces, disabled = false, submitDisabled = false,
   projectID, allowProjectless = false,
   placeholder, projectControls, newThreadControls, threadControls, runActive = false, onManageModels,
-  pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, onStop, draft, onDraftChange, onStartNextMessage,
+  pendingModelRoute, onPendingModelRouteChange, onWorkspaceChange, onSubmit, onStop, stopState, draft, onDraftChange, onStartNextMessage,
   fileReferenceUnavailableReason, confirmedSubmission, presentedSubmissionErrors = [] }: {
   client: APIClient;
   threadID: string;
@@ -59,6 +59,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   onWorkspaceChange: (workspaceID: string) => void;
   onSubmit: (content: string, files?: V2FileReference[], images?: WorkspaceImageAttachment[], draftVersion?: V2DraftVersion, attachments?: WorkspaceFileAttachment[], mcpReferences?: MCPDraftReference[]) => Promise<V2ComposerSubmitResult>;
   onStop?: () => boolean;
+  stopState?: Exclude<ThreadExecutionView["state"], "idle">;
   draft?: string;
   onDraftChange?: (content: string, expected?: string) => void;
   onStartNextMessage?: () => void;
@@ -239,7 +240,10 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
   const fingerprint = JSON.stringify([normalized, references.files, imageIdentities(images.images), fileAttachmentIdentities(attachments.attachments), mcpReferenceIdentities(mcp.references)]);
   const sameMessagePending = pendingContents.current.has(fingerprint) ||
     pendingSubmissions.some(({ input }) => JSON.stringify([input.content, input.files ?? [], imageIdentities(input.images), fileAttachmentIdentities(input.attachments), mcpReferenceIdentities(input.mcpReferences)]) === fingerprint);
-  const ready = !disabled && !submitDisabled && !creatingLocalChat && !managedDraft?.state.conflict && !managedDraft?.state.error && !images.uploading && !images.pending && !attachments.uploading && !attachments.pending && !nativeClipboard.pending && !nativeClipboard.busy && !importStatus.busy && (!images.images.length || imageCapability.allowed) && !sameMessagePending && Boolean(workspaceID) && (byteLength > 0 || images.images.length > 0 || attachments.attachments.length > 0 || mcp.references.length > 0) &&
+  const showStop = !disabled && onStop && stopState && (stopState !== "running" || !hasUnsentDraft || sameMessagePending);
+  const stopLabel = stopState === "stopping" ? t("正在停止", "Stopping") :
+    stopState === "stop_failed" ? t("重试停止", "Retry stop") : t("停止当前执行", "Stop current run");
+  const ready = !disabled && !showStop && !submitDisabled && !creatingLocalChat && !managedDraft?.state.conflict && !managedDraft?.state.error && !images.uploading && !images.pending && !attachments.uploading && !attachments.pending && !nativeClipboard.pending && !nativeClipboard.busy && !importStatus.busy && (!images.images.length || imageCapability.allowed) && !sameMessagePending && Boolean(workspaceID) && (byteLength > 0 || images.images.length > 0 || attachments.attachments.length > 0 || mcp.references.length > 0) &&
     byteLength <= maximumContentBytes && !(fileReferenceUnavailableReason && (references.files.length > 0 || mcp.references.length > 0));
   const draftSavedLocally = Boolean(recovery) && !persistenceWarning &&
     (!managedDraft || managedDraft.state.persisted && !managedDraft.state.error) &&
@@ -346,7 +350,7 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
     const target = event.target;
     // React portals also propagate through this form. Only the message editor
     // may interrupt; menus and dialogs retain their own Escape behavior.
-    if (!(target instanceof Element) || !event.currentTarget.contains(target) || target.closest("[inert]") ||
+    if (!(target instanceof Element) || !event.currentTarget.contains(target) || target.closest("[inert], [hidden]") ||
       !target.closest('textarea, .v2-markdown-input[contenteditable="true"]') ||
       document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return;
     if (onStop()) { event.preventDefault(); event.stopPropagation(); }
@@ -496,10 +500,15 @@ export function V2Composer({ client, threadID, workspaceID, runID, workspaces, d
             <V2ModelRouteControl client={client} onManageModels={onManageModels}
               onPendingRouteChange={onPendingModelRouteChange} pendingRoute={pendingModelRoute}
               runActive={runActive} threadID={threadID} />}
-          <button aria-label={t("发送消息", "Send message")} className="v2-send-button" disabled={!ready} type="submit">
+          {showStop ? <button className="v2-send-button" type="button" disabled={stopState === "stopping"} onClick={onStop}
+            aria-label={stopLabel} title={stopState === "stopping" ? stopLabel : `${stopLabel} (Esc)`}
+            aria-keyshortcuts={stopState === "stopping" ? undefined : "Escape"}>
+            {stopState === "stopping" ? <LoaderCircle aria-hidden="true" className="spin" size={18} />
+              : <Square aria-hidden="true" fill="currentColor" size={14} />}
+          </button> : <button aria-label={t("发送消息", "Send message")} className="v2-send-button" disabled={!ready} type="submit">
             {sameMessagePending ? <LoaderCircle aria-hidden="true" className="spin" size={18} />
               : <ArrowUp aria-hidden="true" size={19} />}
-          </button>
+          </button>}
         </div>
       </div>
     </div>
