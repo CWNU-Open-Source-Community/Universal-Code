@@ -30,6 +30,12 @@ import (
 	"cyberagent-workbench/internal/workspace"
 )
 
+const execUsage = `cyberagent exec (--workspace <name> [--profile code|review|learn|script] [--route <route>]` +
+	` [--max-turns <n>] [--max-tokens <n>] [--max-tool-calls <n>] [--max-cost-usd <amount>] | --continue <thread-id>)` +
+	` ("prompt" | --stdin) [--instructions <text>] [--timeout <duration>] [--json | --stream]` +
+	` [--attach <file>]... [--image <file>]... [--output-last-message <path>]` +
+	` [--enable-permission-control [--enable-danger-full-access [--confirm-full]]]`
+
 // execCommand implements `cyberagent exec`: one non-interactive prompt
 // executed through the ordinary Thread turn machinery, the final assistant
 // reply on stdout. With --continue, the prompt continues an existing Thread:
@@ -127,7 +133,7 @@ func (a *App) execCommand(ctx context.Context, args []string) error {
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return errors.New(`usage: cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--instructions <text>] [--timeout 30m] [--json] [--continue <thread-id>]`)
+		return errors.New("usage: " + execUsage)
 	}
 	continueID := strings.TrimSpace(*continueThread)
 	if continueID == "" && strings.TrimSpace(*workspaceName) == "" {

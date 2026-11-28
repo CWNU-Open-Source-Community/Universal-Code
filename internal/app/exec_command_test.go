@@ -12,7 +12,9 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +29,35 @@ import (
 	"cyberagent-workbench/internal/policy"
 	"cyberagent-workbench/internal/store"
 )
+
+func TestExecUsageMatchesRegisteredFlags(t *testing.T) {
+	t.Setenv("CYBERAGENT_HOME", t.TempDir())
+	_, stderr, code := executeTestCommand(t, "exec")
+	usage, ok := strings.CutPrefix(strings.TrimSpace(stderr), "error: usage: ")
+	if code != 2 || !ok || usage == "" {
+		t.Fatalf("exec without a prompt: code=%d stderr=%q", code, stderr)
+	}
+	help, err := dispatchForOutput(t, "help", "exec")
+	if err != nil || !strings.Contains(help, "\nusage: "+usage+"\n") {
+		t.Fatalf("help exec differs from the missing-prompt usage: help=%q err=%v", help, err)
+	}
+
+	// Go's FlagSet prints every registered option, including repeatable flags.
+	_, flagHelp, _ := executeTestCommand(t, "exec", "--help")
+	var registered []string
+	for _, match := range regexp.MustCompile(`(?m)^  -([a-zA-Z0-9_-]+)`).FindAllStringSubmatch(flagHelp, -1) {
+		registered = append(registered, "--"+match[1])
+	}
+	if len(registered) == 0 {
+		t.Fatalf("no registered flags found in exec --help: %q", flagHelp)
+	}
+	documented := regexp.MustCompile(`--[a-zA-Z0-9_-]+`).FindAllString(usage, -1)
+	slices.Sort(documented)
+	slices.Sort(registered)
+	if !slices.Equal(registered, documented) {
+		t.Errorf("exec usage flags = %v, registered flags = %v", documented, registered)
+	}
+}
 
 func TestClipExecGoalPreservesUTF8Boundaries(t *testing.T) {
 	prompt := strings.Repeat("长", 3000) // 9000 bytes of multi-byte content

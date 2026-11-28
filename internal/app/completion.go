@@ -36,7 +36,7 @@ var commandTable = []commandSpec{
 	{"doctor", "Diagnose installation, runtime readiness, and run health", "cyberagent doctor portable|snapshot|bundle|browser-readiness|browser-network-probe|browser-network-review"},
 	{"drydock", "Manage deterministic run checkpoints, rewind, fork, and cleanup", "cyberagent drydock status|create|use|checkpoint|rewind|undo|fork|deliver|cleanup|reconcile|gc"},
 	{"edit", "Propose and review workspace file edits", "cyberagent edit propose|list|show|review-approve|review-deny|approve|apply|deny"},
-	{"exec", "Start a one-shot agent run and print its result", `cyberagent exec --workspace <name> "prompt" [--profile code|review|learn|script] [--route <route>] [--instructions <text>] [--timeout 30m] [--json] [--continue <thread-id>]`},
+	{"exec", "Start a one-shot agent run and print its result", execUsage},
 	{"git-advanced", "Preview and run advanced Git operations against a workspace", "cyberagent git-advanced status|discover-hunks|preview|run"},
 	{"git-op", "Review and execute typed local Git mutations bound to a run", "cyberagent git-op stage|unstage|commit|create-branch|switch-branch --run <run-id> [--path p]... [--all] [--message m] [--branch b] --operation-key <key> [--confirm]"},
 	{"git-remote", "Review and execute network-scoped Git remote and PR operations", "cyberagent git-remote fetch|pull|push-branch|create-pr|update-pr --run <run-id> --remote <https-url> --branch <name> [--base <name>] [--title <t>] [--body <b>] [--pr-number <n>] [--credential <name>] [--ttl 30s] --operation-key <key> [--confirm]"},
