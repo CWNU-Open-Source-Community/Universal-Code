@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -251,5 +252,45 @@ func TestReadFileToolRejectsSpecialFiles(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(result.Stderr, "regular file") {
 		t.Fatalf("directory was not rejected as a non-regular file: result=%#v err=%v", result, err)
+	}
+}
+
+// A failed lookup must name the workspace-relative path plainly: the raw
+// stat text carries the host's absolute path and Windows syscall details,
+// which reach the model context through tool results and stay in the
+// durable session history that later turns feed back to the model.
+func TestReadFileToolMissingFileNamesPathCleanly(t *testing.T) {
+	root := t.TempDir()
+	tool := NewReadFileTool(root)
+	result, err := tool.Run(context.Background(), Call{Args: map[string]string{"path": "nope.txt"}})
+	if err == nil {
+		t.Fatal("expected missing file to fail")
+	}
+	if result.Stderr != "file does not exist in this workspace: nope.txt" {
+		t.Fatalf("stderr must name the workspace-relative path: %q", result.Stderr)
+	}
+	if err.Error() != result.Stderr {
+		t.Fatalf("returned error must match the workspace-relative message: %v", err)
+	}
+	if !errors.Is(err, iofs.ErrNotExist) {
+		t.Fatalf("missing-file cause must stay unwrappable: %v", err)
+	}
+}
+
+func TestListWorkspaceToolMissingDirNamesPathCleanly(t *testing.T) {
+	root := t.TempDir()
+	tool := NewListWorkspaceTool(root)
+	result, err := tool.Run(context.Background(), Call{Args: map[string]string{"path": "nope-dir"}})
+	if err == nil {
+		t.Fatal("expected missing directory to fail")
+	}
+	if result.Stderr != "directory does not exist in this workspace: nope-dir" {
+		t.Fatalf("stderr must name the workspace-relative path: %q", result.Stderr)
+	}
+	if err.Error() != result.Stderr {
+		t.Fatalf("returned error must match the workspace-relative message: %v", err)
+	}
+	if !errors.Is(err, iofs.ErrNotExist) {
+		t.Fatalf("missing-directory cause must stay unwrappable: %v", err)
 	}
 }

@@ -669,7 +669,7 @@ func (a *App) workspaceTree(ctx context.Context, args []string) error {
 	if outcome.Result != nil && outcome.Result.Stdout != "" {
 		fmt.Fprintln(a.out, outcome.Result.Stdout)
 	}
-	if outcome.Result != nil && outcome.Result.Stderr != "" {
+	if err == nil && outcome.Result != nil && outcome.Result.Stderr != "" {
 		fmt.Fprintln(a.errOut, outcome.Result.Stderr)
 	}
 	if err == nil && !outcome.Decision.Allowed {
@@ -701,7 +701,7 @@ func (a *App) workspaceRead(ctx context.Context, args []string) error {
 	if outcome.Result != nil && outcome.Result.Stdout != "" {
 		fmt.Fprintln(a.out, outcome.Result.Stdout)
 	}
-	if outcome.Result != nil && outcome.Result.Stderr != "" {
+	if err == nil && outcome.Result != nil && outcome.Result.Stderr != "" {
 		fmt.Fprintln(a.errOut, outcome.Result.Stderr)
 	}
 	if err == nil && !outcome.Decision.Allowed {
