@@ -211,7 +211,7 @@ func (m *Manager) Review(ctx context.Context, serverID string,
 		record.ApprovedCapabilityFingerprint = ""
 	default:
 		return ServerRecord{}, apperror.New(apperror.CodeInvalidArgument,
-			"MCP review action is invalid")
+			"MCP review action is invalid; supported actions: approve_discovery, enable_capabilities, disable, revoke")
 	}
 	record.ReviewedBy = strings.TrimSpace(request.ReviewedBy)
 	record.ReviewedAt = &now
