@@ -15,9 +15,9 @@ const MaxDurableDepth = 64
 var ErrDurableCycle = errors.New("durable wait dependency would create a cycle")
 
 var (
-	ErrDurableSelfLoop   = errors.New("durable wait dependency cannot target its own source")
-	ErrDurableDepth      = errors.New("durable wait chain exceeds the maximum depth")
-	ErrDurableCapacity   = errors.New("durable wait graph capacity exceeded")
+	ErrDurableSelfLoop    = errors.New("durable wait dependency cannot target its own source")
+	ErrDurableDepth       = errors.New("durable wait chain exceeds the maximum depth")
+	ErrDurableCapacity    = errors.New("durable wait graph capacity exceeded")
 	ErrDurableReverseWait = errors.New("lower runtime layer cannot durably wait on an Agent")
 )
 
@@ -117,9 +117,13 @@ func (d *DAG) ValidateInsert(edge DurableEdge) error {
 			edge.Source.ID, edge.Target.Kind, edge.Target.ID)
 	}
 	// The new chain depth is the longest incoming wait chain to the source
-	// plus the longest outgoing chain from the target plus this edge.
-	incoming := d.longestIncoming(from, make(map[string]struct{}), 0)
-	outgoing := d.longestOutgoing(to, make(map[string]struct{}), 0)
+	// plus the longest outgoing chain from the target plus this edge. The
+	// helpers memoize per node: a backtracking enumeration of every simple
+	// path is exponential on diamond lattices (which durable wait graphs
+	// legitimately contain within MaxActiveEdges) and ran inside the store's
+	// write transaction.
+	incoming := d.longestIncoming(from, map[string]int{}, 0)
+	outgoing := d.longestOutgoing(to, map[string]int{}, 0)
 	if incoming+outgoing+1 > MaxDurableDepth {
 		return fmt.Errorf("%w: chain depth %d exceeds %d", ErrDurableDepth,
 			incoming+outgoing+1, MaxDurableDepth)
@@ -161,43 +165,48 @@ func (d *DAG) reachable(start, target string) bool {
 	return false
 }
 
-func (d *DAG) longestIncoming(node string, seen map[string]struct{}, depth int) int {
+// longestIncoming returns the longest wait chain ending at node. Persisted
+// graphs are acyclic (cycles are rejected at insert), so per-node memoization
+// makes the walk linear; the depth guard bounds recursion if corrupt state
+// ever carries a cycle.
+func (d *DAG) longestIncoming(node string, memo map[string]int, depth int) int {
 	if depth > MaxDurableDepth {
 		return MaxDurableDepth
+	}
+	if cached, ok := memo[node]; ok {
+		return cached
 	}
 	longest := 0
 	for source, neighbors := range d.neighbors {
 		if _, exists := neighbors[node]; !exists {
 			continue
 		}
-		if _, ok := seen[source]; ok {
-			continue
-		}
-		seen[source] = struct{}{}
-		length := 1 + d.longestIncoming(source, seen, depth+1)
-		delete(seen, source)
-		if length > longest {
+		if length := 1 + d.longestIncoming(source, memo, depth+1); length > longest {
 			longest = length
 		}
+	}
+	if depth <= MaxDurableDepth {
+		memo[node] = longest
 	}
 	return longest
 }
 
-func (d *DAG) longestOutgoing(node string, seen map[string]struct{}, depth int) int {
+// longestOutgoing is the outgoing mirror of longestIncoming.
+func (d *DAG) longestOutgoing(node string, memo map[string]int, depth int) int {
 	if depth > MaxDurableDepth {
 		return MaxDurableDepth
 	}
+	if cached, ok := memo[node]; ok {
+		return cached
+	}
 	longest := 0
 	for next := range d.neighbors[node] {
-		if _, ok := seen[next]; ok {
-			continue
-		}
-		seen[next] = struct{}{}
-		length := 1 + d.longestOutgoing(next, seen, depth+1)
-		delete(seen, next)
-		if length > longest {
+		if length := 1 + d.longestOutgoing(next, memo, depth+1); length > longest {
 			longest = length
 		}
+	}
+	if depth <= MaxDurableDepth {
+		memo[node] = longest
 	}
 	return longest
 }
@@ -205,4 +214,3 @@ func (d *DAG) longestOutgoing(node string, seen map[string]struct{}, depth int) 
 func trimID(value string) string {
 	return strings.TrimSpace(value)
 }
-
