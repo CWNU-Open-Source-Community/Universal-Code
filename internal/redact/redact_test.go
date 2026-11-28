@@ -75,3 +75,40 @@ func TestStringLeavesNormalTextAlone(t *testing.T) {
 		t.Fatalf("normal text changed: %q", out)
 	}
 }
+
+// Connection strings, generic pass= assignments, and truncated PEM blocks
+// are common real leak shapes the original rule set missed (verified
+// empirically before this change).
+func TestStringRedactsConnectionStringsAndTruncatedKeys(t *testing.T) {
+	cases := []struct{ name, input, mustNotLeak string }{
+		{"postgres url", "connecting to postgres://admin:s3cr3t-pw@db.internal:5432/app", "s3cr3t-pw"},
+		{"mysql url", "mysql://root:hunter2@localhost/db", "hunter2"},
+		{"https userinfo", "https://user:secret9@api.example.com/v1", "secret9"},
+		{"generic pass assignment", "db_pass=sup3r-s3cr3t configured", "sup3r-s3cr3t"},
+		{"truncated pem", "-----BEGIN OPENSSH PRIVATE KEY-----b3BlbnNzaC1rZXktdjEAAAAAb3BlbnNzaC1rZXk", "b3BlbnNzaC1rZXktdjEA"},
+	}
+	for _, tc := range cases {
+		out := String(tc.input)
+		if strings.Contains(out, tc.mustNotLeak) {
+			t.Fatalf("%s leaked %q: %s", tc.name, tc.mustNotLeak, out)
+		}
+		if !strings.Contains(out, "[REDACTED:") {
+			t.Fatalf("%s must be redacted: %s", tc.name, out)
+		}
+	}
+	for _, tc := range []struct{ input, want string }{
+		{"postgres://admin:fixture@db.internal:5432/app", "postgres://admin:[REDACTED:url-credential]@db.internal:5432/app"},
+		{"redis://:fixture@localhost:6379/0", "redis://:[REDACTED:url-credential]@localhost:6379/0"},
+		{"https://example.com:443?contact=alice@example.org", "https://example.com:443?contact=alice@example.org"},
+		{"https://example.com:443#contact=alice@example.org", "https://example.com:443#contact=alice@example.org"},
+		{"https://example.com?reply=mailto:alice@example.org", "https://example.com?reply=mailto:alice@example.org"},
+		{"CACHE_BYPASS=immutable PASSTHROUGH=unmodified", "CACHE_BYPASS=immutable PASSTHROUGH=unmodified"},
+		{"PASS_THROUGH=unmodified", "PASS_THROUGH=unmodified"},
+		{"APP-PASS=fixture-value", "APP-PASS=[REDACTED:secret]"},
+		{"PASS=fixture-value", "PASS=[REDACTED:secret]"},
+	} {
+		if got := String(tc.input); got != tc.want {
+			t.Errorf("String(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}

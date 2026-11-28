@@ -2,6 +2,7 @@ package redact
 
 import (
 	"regexp"
+	"strings"
 )
 
 type Finding struct {
@@ -24,6 +25,15 @@ var defaultRules = []rule{
 	{
 		label:       "private-key",
 		pattern:     regexp.MustCompile(`(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----`),
+		replacement: "[REDACTED:private-key]",
+	},
+	{
+		// Bounded output often cuts a PEM block before its END marker; the
+		// complete-block rule above then misses it and the whole key body
+		// leaks. Match a header whose remainder to the end of the text is
+		// only base64/whitespace.
+		label:       "private-key-truncated",
+		pattern:     regexp.MustCompile(`(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----[A-Za-z0-9+/=\s]+$`),
 		replacement: "[REDACTED:private-key]",
 	},
 	{
@@ -57,8 +67,17 @@ var defaultRules = []rule{
 		replacement: `$1[REDACTED:bearer-token]`,
 	},
 	{
+		// Credentials embedded in connection strings and URLs
+		// (postgres://admin:pw@host, https://user:secret9@host) are a common
+		// real leak shape no other rule covers; the username stays visible
+		// and only the password is removed.
+		label:       "url-credential",
+		pattern:     regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.\-]*://[^\s/?#:@]*:)([^\s/?#@]+)@`),
+		replacement: `$1[REDACTED:url-credential]@`,
+	},
+	{
 		label:       "assigned-secret",
-		pattern:     regexp.MustCompile(`(?i)\b([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY)[A-Z0-9_]*\s*[:=]\s*)(["']?)([^\s"']{8,})(["']?)`),
+		pattern:     regexp.MustCompile(`(?i)\b((?:[A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY)[A-Z0-9_]*|(?:[A-Z0-9]+[_-])*PASS)\s*[:=]\s*)(["']?)([^\s"']{8,})(["']?)`),
 		replacement: `$1$2[REDACTED:secret]$4`,
 	},
 }
@@ -76,6 +95,12 @@ func textResult(value string, preserveQuotedPlaceholders bool) Result {
 	counts := map[string]int{}
 	order := make([]string, 0, len(defaultRules))
 	for _, rule := range defaultRules {
+		// These expressions start at a word boundary. Check their required
+		// separators first so ordinary multi-megabyte diffs skip the scans.
+		if rule.label == "url-credential" && !strings.Contains(out, "://") ||
+			rule.label == "assigned-secret" && !strings.ContainsAny(out, ":=") {
+			continue
+		}
 		matches := rule.pattern.FindAllString(out, -1)
 		if len(matches) == 0 {
 			continue
