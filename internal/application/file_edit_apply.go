@@ -635,9 +635,16 @@ func normalizeFileEditApplyRequest(request ApplyFileEditRequest) (
 			"FileEdit apply request is invalid")
 	}
 	key, err := domain.NormalizeAgentOperationKey(request.OperationKey)
-	if err != nil || key != request.OperationKey || containsSpaceOrControl(key) {
+	if err != nil {
+		// Surface the actual key contract (length, normalization): operators
+		// following the proposal hint pick human-scale keys like "op-edit-1"
+		// and otherwise hit this wall with no guidance.
 		return ApplyFileEditRequest{}, apperror.New(apperror.CodeInvalidArgument,
-			"FileEdit apply idempotency key is invalid")
+			"FileEdit apply idempotency key is invalid: "+err.Error())
+	}
+	if key != request.OperationKey || containsSpaceOrControl(key) {
+		return ApplyFileEditRequest{}, apperror.New(apperror.CodeInvalidArgument,
+			"FileEdit apply idempotency key is invalid: the key must already be normalized without whitespace or control characters")
 	}
 	request.OperationKey = key
 	if request.WorkerSource != nil && (request.WorkerSource.Ref.RunID != request.RunID || request.WorkerSource.Ref.AgentID != request.AppliedBy || request.WorkerSource.CallID == "" || !request.WorkerSource.RequireStarted) {
